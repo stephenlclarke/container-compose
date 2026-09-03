@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import signal
 import shutil
 import subprocess
 import sys
@@ -346,6 +347,321 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             self.assertEqual(checkpoint["executable"], "/bin/sh")
             self.assertIn("command_sha256", checkpoint)
             self.assertNotIn("command", checkpoint)
+
+    def test_stage_output_is_durable_and_not_forwarded_to_controller(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoints = Path(directory) / "checkpoints"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--checkpoint-dir",
+                    str(checkpoints),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint",
+                    "tree-a",
+                    "--seconds",
+                    "5",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    "printf 'durable stage output\\n'",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertNotIn("durable stage output", completed.stdout)
+            output_paths = tuple(checkpoints.glob("compose-ci.*.log"))
+            self.assertEqual(len(output_paths), 1)
+            output_path = output_paths[0]
+            self.assertEqual(
+                output_path.read_text(encoding="utf-8"), "durable stage output\n"
+            )
+            checkpoint = json.loads(
+                (checkpoints / "compose-ci.success.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(checkpoint["output_file"], output_path.name)
+            self.assertEqual(
+                checkpoint["output_sha256"],
+                hashlib.sha256(output_path.read_bytes()).hexdigest(),
+            )
+
+    def test_missing_or_modified_output_invalidates_success_checkpoint(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints = root / "checkpoints"
+            run_log = root / "runs.log"
+
+            first = self.run_stage(checkpoints, run_log, "tree-a")
+            output_path = next(checkpoints.glob("compose-ci.*.log"))
+            output_path.write_text("modified\n", encoding="utf-8")
+            modified = self.run_stage(checkpoints, run_log, "tree-a")
+            output_path.unlink()
+            missing = self.run_stage(checkpoints, run_log, "tree-a")
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(modified.returncode, 0, modified.stderr)
+            self.assertEqual(missing.returncode, 0, missing.stderr)
+            self.assertEqual(run_log.read_text(encoding="utf-8"), "run\n" * 3)
+            self.assertIn("invalidating release checkpoint", modified.stdout)
+            self.assertIn("invalidating release checkpoint", missing.stdout)
+
+    def test_failed_rerun_cannot_revalidate_an_invalidated_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints = root / "checkpoints"
+            command = root / "stage.sh"
+            command.write_text("#!/bin/sh\nprintf 'same output\\n'\n", encoding="utf-8")
+            command.chmod(0o700)
+            arguments = [
+                sys.executable,
+                str(SCRIPT),
+                "--checkpoint-dir",
+                str(checkpoints),
+                "--stage",
+                "compose-ci",
+                "--fingerprint",
+                "tree-a",
+                "--seconds",
+                "5",
+                "--",
+                str(command),
+            ]
+
+            first = subprocess.run(
+                arguments, capture_output=True, text=True, check=False
+            )
+            output_path = next(checkpoints.glob("compose-ci.*.log"))
+            output_path.write_text("corrupt\n", encoding="utf-8")
+            command.write_text(
+                "#!/bin/sh\nprintf 'same output\\n'\nexit 9\n", encoding="utf-8"
+            )
+            failed = subprocess.run(
+                arguments, capture_output=True, text=True, check=False
+            )
+            repeated = subprocess.run(
+                arguments, capture_output=True, text=True, check=False
+            )
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(failed.returncode, 9, failed.stderr)
+            self.assertEqual(repeated.returncode, 9, repeated.stderr)
+            self.assertIn("invalidating release checkpoint", failed.stdout)
+            self.assertNotIn("reusing exact-input release checkpoint", repeated.stdout)
+            self.assertFalse((checkpoints / "compose-ci.success.json").exists())
+
+    def test_failure_report_contains_only_the_bounded_output_tail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoints = Path(directory) / "checkpoints"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--checkpoint-dir",
+                    str(checkpoints),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint",
+                    "tree-a",
+                    "--seconds",
+                    "5",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "import sys\n"
+                    "for number in range(1, 201):\n"
+                    "    print(number)\n"
+                    "sys.exit(9)\n",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 9)
+            self.assertIn("last 80 output lines", completed.stderr)
+            self.assertNotIn("\n120\n", completed.stderr)
+            self.assertIn("\n121\n", completed.stderr)
+            self.assertTrue(completed.stderr.endswith("200\n"))
+
+    def test_failure_report_is_also_bounded_by_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--checkpoint-dir",
+                    str(Path(directory) / "checkpoints"),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint",
+                    "tree-a",
+                    "--seconds",
+                    "5",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "import sys\n"
+                    "print('x' * 131072)\n"
+                    "print('final diagnostic')\n"
+                    "sys.exit(9)\n",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 9)
+            self.assertIn("limited to 32768 bytes", completed.stderr)
+            self.assertIn("[earlier output omitted]", completed.stderr)
+            self.assertTrue(completed.stderr.endswith("final diagnostic\n"))
+            self.assertLess(len(completed.stderr.encode("utf-8")), 34 * 1024)
+
+    def test_stage_timeout_reports_the_durable_output_tail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--checkpoint-dir",
+                    str(Path(directory) / "checkpoints"),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint",
+                    "tree-a",
+                    "--seconds",
+                    "1",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "import time\n"
+                    "print('timeout diagnostic', flush=True)\n"
+                    "time.sleep(30)\n",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 124)
+            self.assertIn("exceeded 1-second deadline", completed.stderr)
+            self.assertIn("timeout diagnostic", completed.stderr)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires FIFO support")
+    def test_timeout_diagnostic_rejects_a_fifo_without_blocking(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoints = Path(directory) / "checkpoints"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--checkpoint-dir",
+                    str(checkpoints),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint",
+                    "tree-a",
+                    "--seconds",
+                    "1",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "import glob, os, sys, time\n"
+                    "active = glob.glob(os.path.join(sys.argv[1], "
+                    "'.compose-ci.active-*.log'))[0]\n"
+                    "os.unlink(active)\n"
+                    "os.mkfifo(active)\n"
+                    "time.sleep(30)\n",
+                    str(checkpoints),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+
+            self.assertEqual(completed.returncode, 124, completed.stderr)
+
+    def test_controller_signal_cleans_up_the_deadline_worker_session(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            ready = root / "ready"
+            cleanup = root / "cleanup"
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--checkpoint-dir",
+                    str(root / "checkpoints"),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint",
+                    "tree-a",
+                    "--seconds",
+                    "30",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    f"trap 'touch {cleanup}; exit 0' TERM; "
+                    f"touch {ready}; while :; do sleep 1; done",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            ready_deadline = time.monotonic() + 3
+            while not ready.exists():
+                if time.monotonic() >= ready_deadline:
+                    process.kill()
+                    process.communicate(timeout=2)
+                    self.fail("checkpoint worker did not become ready")
+                time.sleep(0.01)
+
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=8)
+
+            self.assertEqual(process.returncode, 143, stdout + stderr)
+            self.assertTrue(cleanup.exists(), stdout + stderr)
+
+    def test_stage_cannot_succeed_after_removing_its_durable_output(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints = root / "checkpoints"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--checkpoint-dir",
+                    str(checkpoints),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint",
+                    "tree-a",
+                    "--seconds",
+                    "5",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    'rm "$1"/.compose-ci.active-*.log',
+                    "remove-output",
+                    str(checkpoints),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 74, completed.stderr)
+            self.assertIn("could not verify release checkpoint output", completed.stderr)
+            self.assertFalse((checkpoints / "compose-ci.success.json").exists())
 
     def test_tightening_the_deadline_invalidates_the_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

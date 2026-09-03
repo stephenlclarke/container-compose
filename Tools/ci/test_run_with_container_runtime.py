@@ -50,6 +50,44 @@ class RunWithContainerRuntimeTest(unittest.TestCase):
         return cls.local_execution_root() / f"container-compose-runtime-{os.getuid()}"
 
     @staticmethod
+    def runtime_package_digest(package_root: Path) -> str:
+        encoded_root = os.fsencode(package_root)
+        entries: list[tuple[bytes, bytes, int, bytes]] = []
+
+        def add_path(path: bytes) -> None:
+            relative_path = os.path.relpath(path, encoded_root)
+            metadata = os.lstat(path)
+            mode = metadata.st_mode & 0o7777
+            if os.path.islink(path):
+                raise AssertionError(f"indirect runtime fixture entry: {path!r}")
+            if os.path.isdir(path):
+                entries.append((relative_path, b"d", mode, b""))
+                return
+            digest = hashlib.sha256(Path(os.fsdecode(path)).read_bytes()).hexdigest()
+            entries.append((relative_path, b"f", mode, digest.encode()))
+
+        for binary_name in (
+            b"container",
+            b"container-apiserver",
+            b"container-engine",
+        ):
+            add_path(os.path.join(encoded_root, b"bin", binary_name))
+        libexec_root = os.path.join(encoded_root, b"libexec/container")
+        for current_root, directories, files in os.walk(
+            libexec_root, followlinks=False
+        ):
+            for name in sorted(directories + files):
+                add_path(os.path.join(current_root, name))
+
+        manifest = hashlib.sha256(b"container-runtime-package-v1\0")
+        for relative_path, kind, mode, digest in sorted(entries):
+            manifest.update(kind + b"\0")
+            manifest.update(relative_path + b"\0")
+            manifest.update(f"{mode:04o}".encode() + b"\0")
+            manifest.update(digest + b"\0")
+        return manifest.hexdigest()
+
+    @staticmethod
     def runtime_environment() -> dict[str, str]:
         environment = os.environ.copy()
         for variable in (
@@ -449,6 +487,7 @@ exit 113
         path.write_text(
             "#!/usr/bin/env bash\n"
             "set -euo pipefail\n"
+            f"# isolated fixture: {path}\n"
             'if [[ "$*" == "system status --format json" ]]; then\n'
             f'  printf \'{{"engineSocket":"%s"}}\\n\' "{status_socket}"\n'
             "  exit 1\n"
@@ -959,10 +998,8 @@ exit 113
             )
 
             staged_paths: list[str] = []
-            source_digest = hashlib.sha256(
-                str(package_root.resolve()).encode()
-            ).hexdigest()[:16]
-            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            package_digest = self.runtime_package_digest(package_root)
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
             try:
                 for _ in range(2):
                     result = subprocess.run(
@@ -1003,6 +1040,71 @@ exit 113
                 self.assertTrue(staged_root.is_dir())
                 marker = staged_root / ".container-compose-runtime-candidate-staging"
                 self.assertTrue(marker.is_file())
+            finally:
+                if staged_root.is_dir():
+                    shutil.rmtree(staged_root)
+
+    def test_relocated_identical_packages_share_the_staged_content_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            first_root = temporary_root / "first"
+            package_bin = first_root / "bin"
+            package_libexec = first_root / "libexec" / "container"
+            package_bin.mkdir(parents=True)
+            package_libexec.mkdir(parents=True)
+            candidate = package_bin / "container"
+            self.write_fake_container(candidate)
+            for executable_name in ("container-apiserver", "container-engine"):
+                executable = package_bin / executable_name
+                executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                executable.chmod(0o755)
+            (package_libexec / "payload").write_text("same\n", encoding="utf-8")
+            second_root = temporary_root / "second"
+            shutil.copytree(first_root, second_root)
+
+            package_digest = self.runtime_package_digest(first_root)
+            self.assertEqual(
+                package_digest, self.runtime_package_digest(second_root)
+            )
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
+            environment = self.runtime_environment()
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
+                    "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
+                    "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
+                }
+            )
+            try:
+                first = subprocess.run(
+                    [str(SCRIPT), str(candidate), "/usr/bin/true"],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+                second = subprocess.run(
+                    [
+                        str(SCRIPT),
+                        str(second_root / "bin" / "container"),
+                        "/usr/bin/true",
+                    ],
+                    cwd=ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+
+                self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+                self.assertTrue(staged_root.is_dir())
+                self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+                self.assertIn(
+                    "Reusing unchanged staged Container runtime candidate",
+                    second.stdout,
+                )
             finally:
                 if staged_root.is_dir():
                     shutil.rmtree(staged_root)
@@ -1071,10 +1173,8 @@ exit 113
                     f"payload {index}\n", encoding="utf-8"
                 )
 
-            source_digest = hashlib.sha256(
-                str(package_root.resolve()).encode()
-            ).hexdigest()[:16]
-            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            package_digest = self.runtime_package_digest(package_root)
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
             marker = staged_root / ".container-compose-runtime-candidate-staging"
             environment = self.runtime_environment()
             environment.update(
@@ -1117,7 +1217,7 @@ exit 113
                 if staged_root.is_dir():
                     shutil.rmtree(staged_root)
 
-    def test_interrupted_replacement_preserves_recoverable_marker(self) -> None:
+    def test_interrupted_staging_preserves_the_previous_content_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
             package_root = temporary_root / "candidate"
@@ -1138,10 +1238,8 @@ exit 113
                     f"payload {index}\n", encoding="utf-8"
                 )
 
-            source_digest = hashlib.sha256(
-                str(package_root.resolve()).encode()
-            ).hexdigest()[:16]
-            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            package_digest = self.runtime_package_digest(package_root)
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
             self.local_user_root().mkdir(mode=0o700, exist_ok=True)
             staged_root.mkdir(mode=0o700)
             marker = staged_root / ".container-compose-runtime-candidate-staging"
@@ -1184,6 +1282,10 @@ exit 113
                 self.assertTrue(staged_root.is_dir())
                 self.assertEqual(marker.read_text(encoding="utf-8").strip(), old_marker_value)
 
+                changed_package_digest = self.runtime_package_digest(package_root)
+                changed_staged_root = self.local_user_root() / (
+                    f"candidate-{changed_package_digest[:16]}"
+                )
                 second = subprocess.run(
                     [str(SCRIPT), str(candidate), "/usr/bin/true"],
                     cwd=ROOT,
@@ -1197,7 +1299,12 @@ exit 113
                 )
                 candidate_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
                 self.assertEqual(
-                    marker.read_text(encoding="utf-8").strip(),
+                    (
+                        changed_staged_root
+                        / ".container-compose-runtime-candidate-staging"
+                    )
+                    .read_text(encoding="utf-8")
+                    .strip(),
                     "container-compose runtime candidate staging v1 "
                     + candidate_digest,
                 )
@@ -1207,6 +1314,11 @@ exit 113
                     first.communicate(timeout=5)
                 if staged_root.is_dir():
                     shutil.rmtree(staged_root)
+                if (
+                    "changed_staged_root" in locals()
+                    and changed_staged_root.is_dir()
+                ):
+                    shutil.rmtree(changed_staged_root)
 
     def test_interrupted_initial_staging_directory_is_recoverable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1223,10 +1335,8 @@ exit 113
                 executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
                 executable.chmod(0o755)
 
-            source_digest = hashlib.sha256(
-                str(package_root.resolve()).encode()
-            ).hexdigest()[:16]
-            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            package_digest = self.runtime_package_digest(package_root)
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
             self.local_user_root().mkdir(mode=0o700, exist_ok=True)
             fake_bin = temporary_root / "fake-bin"
             fake_bin.mkdir()
@@ -1314,10 +1424,8 @@ exit 113
                 "complete\n", encoding="utf-8"
             )
 
-            source_digest = hashlib.sha256(
-                str(package_root.resolve()).encode()
-            ).hexdigest()[:16]
-            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            package_digest = self.runtime_package_digest(package_root)
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
             self.local_user_root().mkdir(mode=0o700, exist_ok=True)
             staged_root.mkdir(mode=0o700)
             marker = staged_root / ".container-compose-runtime-candidate-staging"
@@ -1387,10 +1495,8 @@ exit 113
                 executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
                 executable.chmod(0o755)
 
-            source_digest = hashlib.sha256(
-                str(package_root.resolve()).encode()
-            ).hexdigest()[:16]
-            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            package_digest = self.runtime_package_digest(package_root)
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
             container_log = temporary_root / "container.log"
             environment = self.runtime_environment()
             environment.update(
@@ -1484,10 +1590,8 @@ exit 113
                     "READY": str(ready),
                 }
             )
-            source_digest = hashlib.sha256(
-                str(package_root.resolve()).encode()
-            ).hexdigest()[:16]
-            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            package_digest = self.runtime_package_digest(package_root)
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
             first = subprocess.Popen(
                 [
                     str(SCRIPT),
@@ -1553,10 +1657,8 @@ exit 113
                 executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
                 executable.chmod(0o755)
 
-            source_digest = hashlib.sha256(
-                str(package_root.resolve()).encode()
-            ).hexdigest()[:16]
-            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            package_digest = self.runtime_package_digest(package_root)
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
             environment = self.runtime_environment()
             environment.update(
                 {
@@ -1621,10 +1723,8 @@ exit 113
                 '> "$(RESULT_PATH)"\n',
                 encoding="utf-8",
             )
-            source_digest = hashlib.sha256(
-                str(package_root.resolve()).encode()
-            ).hexdigest()[:16]
-            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            package_digest = self.runtime_package_digest(package_root)
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
             environment = self.runtime_environment()
             environment.update(
                 {
@@ -1685,10 +1785,8 @@ exit 113
                 executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
                 executable.chmod(0o755)
 
-            source_digest = hashlib.sha256(
-                str(package_root.resolve()).encode()
-            ).hexdigest()[:16]
-            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            package_digest = self.runtime_package_digest(package_root)
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
             self.local_user_root().mkdir(mode=0o700, exist_ok=True)
             protected_target = temporary_root / "protected-target"
             protected_target.mkdir()
@@ -1741,11 +1839,9 @@ exit 113
                 executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
                 executable.chmod(0o755)
 
-            source_digest = hashlib.sha256(
-                str(package_root.resolve()).encode()
-            ).hexdigest()[:16]
+            package_digest = self.runtime_package_digest(package_root)
             candidate_digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
-            staged_root = self.local_user_root() / f"candidate-{source_digest}"
+            staged_root = self.local_user_root() / f"candidate-{package_digest[:16]}"
             self.local_user_root().mkdir(mode=0o700, exist_ok=True)
             staged_root.mkdir(mode=0o700)
             marker = staged_root / ".container-compose-runtime-candidate-staging"

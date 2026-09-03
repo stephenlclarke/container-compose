@@ -1043,6 +1043,39 @@ require_local_virtualization() {
   fi
 }
 
+# Keep the live release gate independent of whichever interactive application
+# launched it. In particular, Codex and shell updates may prepend transient
+# shims or a developer Swift toolchain to PATH between retries. The gate uses
+# the stable Homebrew front doors plus Apple's selected Xcode toolchain, with
+# GNU Make preferred when it is installed.
+release_gate_execution_path() {
+  local directory
+  local -a candidates=(
+    /opt/homebrew/opt/make/libexec/gnubin
+    /usr/local/opt/make/libexec/gnubin
+    /opt/homebrew/bin
+    /opt/homebrew/sbin
+    /usr/local/bin
+    /usr/bin
+    /bin
+    /usr/sbin
+    /sbin
+  )
+  local result=""
+  for directory in "${candidates[@]}"; do
+    [[ -d "${directory}" ]] || continue
+    case ":${result}:" in
+      *":${directory}:"*) continue ;;
+    esac
+    result="${result:+${result}:}${directory}"
+  done
+  if [[ -z "${result}" ]]; then
+    printf 'could not construct the sealed release-gate PATH\n' >&2
+    return 1
+  fi
+  printf '%s\n' "${result}"
+}
+
 # Build one packaged Container runtime for the exact source head, then unpack
 # it into a fresh read-only root for this gate. Keep the reusable archive and
 # its evidence on the configured artifact volume, but stage launchd-managed
@@ -2494,7 +2527,7 @@ retained_stable_init_image_gate_digest() {
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   (
-  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_container_alias staged_containerization_path staged_containerization_alias
+  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_container_alias staged_containerization_path staged_containerization_alias release_gate_path release_gate_make
   local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest candidate_sha init_image_digest_before init_image_digest_after
   local -a RELEASE_QUIESCED_LABELS=()
   local -a RELEASE_QUIESCED_PLISTS=()
@@ -2663,9 +2696,17 @@ PY
     >"${runtime_parent}/.container-compose-release-runtime-identity"
   profile_root="${runtime_parent}/profiles"
   mkdir -p "${profile_root}"
+  release_gate_path="$(release_gate_execution_path)"
+  release_gate_make="$(PATH="${release_gate_path}" command -v make || true)"
+  if [[ "${release_gate_make}" != /* || ! -x "${release_gate_make}" ]]; then
+    printf 'sealed release-gate PATH has no executable make: %s\n' \
+      "${release_gate_path}" >&2
+    return 1
+  fi
   status=0
   run_local_release_gate_command env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
     -u CONTAINER_RUNTIME_SERVICE_NAMESPACE -u CONTAINER_RUNTIME_RUN_ID \
+    PATH="${release_gate_path}" \
     HAWKEYE_AUTO_INSTALL=1 \
     CONTAINER_RUNTIME_APP_ROOT="${runtime_app_root}" \
     CONTAINER_RUNTIME_RUN_ID="${runtime_run_id}" \
@@ -2681,7 +2722,7 @@ PY
     CONTAINER_COMPOSE_CONTAINER="${container_binary}" \
     LLVM_PROFILE_FILE="${profile_root}/%p-%m.profraw" \
     "${path}/scripts/run-with-container-runtime.sh" "${container_binary}" \
-    make -C "${path}" release-gate \
+    "${release_gate_make}" -C "${path}" release-gate \
     "CONTAINER_BUILDER_SHIM_STACK_REPO=$(repo_path "container-builder-shim")" \
     "CONTAINERIZATION_STACK_REPO=${containerization_path}" \
     "CONTAINER_STACK_REPO=${container_path}" \

@@ -1001,14 +1001,15 @@ stage_runtime_candidate_if_needed() {
             "$container_binary" >&2
         exit 2
     fi
-    local source_package_root_digest
-    source_package_root_digest=$(LC_ALL=C printf '%s' "$source_package_root" \
-        | shasum -a 256 | awk '{print substr($1, 1, 16)}')
-    runtime_candidate_staging_root="$runtime_local_user_root/candidate-$source_package_root_digest"
-    acquire_runtime_candidate_staging_lock "$deadline" || return "$?"
     local source_package_sha256_before
     source_package_sha256_before=$(fingerprint_runtime_package \
         "$deadline" "$source_package_root") || return "$?"
+    # A retry extracts the same signed package below a fresh temporary source
+    # path. Name the persistent system-volume copy from the complete package
+    # identity so an unchanged candidate receives the same checkpoint input
+    # and can be reused across release-controller invocations.
+    runtime_candidate_staging_root="$runtime_local_user_root/candidate-${source_package_sha256_before:0:16}"
+    acquire_runtime_candidate_staging_lock "$deadline" || return "$?"
     local marker="$runtime_candidate_staging_root/.container-compose-runtime-candidate-staging"
     local existing_marker_value=
     if [[ -e "$runtime_candidate_staging_root" ]]; then
