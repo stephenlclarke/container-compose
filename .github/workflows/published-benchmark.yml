@@ -40,6 +40,7 @@ on:
 
 permissions:
   actions: write
+  attestations: read
   contents: write
   pull-requests: write
 

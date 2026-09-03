@@ -902,6 +902,7 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         self.assertIn("validate-package-artifacts", workflow)
         self.assertIn("gh run download", workflow)
         self.assertIn("gh attestation verify", workflow)
+        self.assertIn("  attestations: read", workflow)
         self.assertIn("--allow-package-run-backfill", workflow)
         self.assertIn("--artifact-source", workflow)
         self.assertIn("--init-distribution", workflow)
