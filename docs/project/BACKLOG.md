@@ -135,7 +135,7 @@ grant, security, recovery, and external-client contracts are proved.
 Tracking issue: [[Parity] Complete Docker logging-provider and history
 semantics](https://github.com/stephenlclarke/container-compose/issues/271).
 
-The current 0.14.1 stable release retains durable `json-file` and `local`
+The current 0.14.1 candidate retains durable `json-file` and `local`
 histories, `none`, Syslog, Journald, Fluentd, GELF, Splunk HEC, AWS Logs,
 Google Cloud Logs, installed Docker logging plugins, dual cache, bounded live
 readers, recovery, rotation, compression, and exact-process foreground
