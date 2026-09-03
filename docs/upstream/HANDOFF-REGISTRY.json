@@ -7678,8 +7678,13 @@
         {
           "kind": "issue",
           "path": "docs/upstream/container-compose/ISSUE-446.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-447.md"
         }
-      ]
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/447"
     },
     {
       "id": "container-compose-333",
