@@ -261,6 +261,16 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
             PIPELINE_MAKEFILE,
         )
 
+    def test_runtime_validation_reserves_capacity_for_runner_lease_renewal(
+        self,
+    ) -> None:
+        runtime_validation = CI_WORKFLOW.split("  validate_runtime:", 1)[1].split(
+            "  prebuilt_binaries:", 1
+        )[0]
+
+        self.assertIn('SWIFT_TEST_FLAGS: "--jobs 8"', runtime_validation)
+        self.assertIn("$(SWIFT_TEST_FLAGS)", PIPELINE_MAKEFILE)
+
     def test_release_state_is_persistent_and_candidate_keyed(self) -> None:
         self.assertNotIn(
             "RELEASE_PIPELINE_STATE_ROOT: ${{ github.workspace }}",

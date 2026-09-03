@@ -258,6 +258,10 @@ jobs:
     # Cover validation/coverage, CLI smoke, up to two queued maintenance
     # transactions, this transaction's two scans, and setup overhead.
     timeout-minutes: 250
+    env:
+      # Leave CPU capacity for the self-hosted runner listener to renew its
+      # GitHub job lease while Swift compiles the coverage graph.
+      SWIFT_TEST_FLAGS: "--jobs 8"
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
