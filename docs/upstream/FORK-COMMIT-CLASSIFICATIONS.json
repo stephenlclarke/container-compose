@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-09-03",
+  "reviewedAt": "2026-09-04",
   "repositories": {
     "container": {
       "upstreamHead": "025f57c6c0fed55bc155af0ddc13b11fff6f22e6",
-      "forkHead": "2647090a8af74cf18fae2472342cdb55bab60e45",
+      "forkHead": "83cfab33d0b1ca5976ce979b3755761e58cc957a",
       "slices": [
         {
           "id": "container-support-maintenance",
@@ -475,7 +475,9 @@
             "f558eb452a2315d87153d4f4828950d783387a80",
             "239345a8a955930a352cc651a50222a72f511ff7",
             "c4356f8795790ef2e5dc1a75644cf83085515b7a",
-            "44eef61528dba8e0193056c3a80143ba4e977cb4"
+            "44eef61528dba8e0193056c3a80143ba4e977cb4",
+            "f2e259d30010e1f7137cd7caa1d67fd71dc660cd",
+            "36bc521f305b78b2a70c3cd8a6de796c003c90d0"
           ]
         },
         {
@@ -720,8 +722,8 @@
       ]
     },
     "containerization": {
-      "upstreamHead": "fc9e63846f365151aa6d3bf39d65e662abf431fc",
-      "forkHead": "818f5917819a32dac1bc233605c253b4a105e0e0",
+      "upstreamHead": "d7fc7c15a257e348000f3ed3708e84a9d33add97",
+      "forkHead": "7807badff6a8bd1d53fa1c6696543f7fffab0fa4",
       "slices": [
         {
           "id": "containerization-support-maintenance",
