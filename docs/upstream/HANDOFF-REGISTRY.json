@@ -7668,6 +7668,20 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/445"
     },
     {
+      "id": "container-compose-446",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Remove undeclared gtimeout dependency from managed Sonar gates",
+      "state": "active-draft",
+      "lastVerified": "2026-09-03",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-446.md"
+        }
+      ]
+    },
+    {
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",
