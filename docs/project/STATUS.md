@@ -373,9 +373,10 @@ Normal repository validation uses `make ci`, targeted tests while iterating,
 the complete Docker Compose parity target when Compose or runtime behavior
 changes, and `make release-gate` before stable publication.
 
-The 0.14.1 immutable package passed the hosted Stable Release Gate, including
-the supported parity suite. Its exact release commit also completed CI,
-Quality, CodeQL, Documentation, and Prebuilt Binaries successfully.
+The 0.14.1 candidate has passed exact-main CI and Current packaging. It has not
+yet passed the hosted Stable Release Gate and is not an immutable release.
+CodeQL, the complete parity gate, stable packaging, and final documentation are
+release-gate work rather than evidence already earned by this candidate.
 
 The maintained local parity suite covers project loading, Compose and
 Dockerfile models, lifecycle, logging, terminal sessions, networking, IPAM,
