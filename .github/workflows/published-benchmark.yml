@@ -40,6 +40,7 @@ on:
 
 permissions:
   actions: write
+  attestations: read
   contents: write
   pull-requests: write
 
@@ -57,6 +58,7 @@ jobs:
     outputs:
       target: ${{ steps.versions.outputs.target }}
       baseline: ${{ steps.versions.outputs.baseline }}
+      latest: ${{ steps.versions.outputs.latest }}
     steps:
       - name: Checkout benchmark controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -90,8 +92,12 @@ jobs:
             > "${RUNNER_TEMP}/comparison.json"
           target="$(jq -r '.target' "${RUNNER_TEMP}/comparison.json")"
           baseline="$(jq -r '.baseline' "${RUNNER_TEMP}/comparison.json")"
-          printf 'target=%s\n' "${target}" >> "${GITHUB_OUTPUT}"
-          printf 'baseline=%s\n' "${baseline}" >> "${GITHUB_OUTPUT}"
+          latest="$(jq -r '.latest' "${RUNNER_TEMP}/comparison.json")"
+          {
+            printf 'target=%s\n' "${target}"
+            printf 'baseline=%s\n' "${baseline}"
+            printf 'latest=%s\n' "${latest}"
+          } >> "${GITHUB_OUTPUT}"
           printf 'Benchmarking %s against %s.\n' "${target}" "${baseline}" \
             >> "${GITHUB_STEP_SUMMARY}"
 
@@ -107,6 +113,7 @@ jobs:
       BENCHMARK_ROOT: /private/tmp/container-compose-published-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
       TARGET_VERSION: ${{ needs.resolve.outputs.target }}
       BASELINE_VERSION: ${{ needs.resolve.outputs.baseline }}
+      LATEST_STABLE_VERSION: ${{ needs.resolve.outputs.latest }}
       REPETITIONS: ${{ inputs.repetitions }}
       RUNTIME_ROOT_PREFIX: /private/tmp/ccpb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -165,8 +172,10 @@ jobs:
         run: |
           set -euo pipefail
           # No source products are built. Both complete runtime/plugin pairs
-          # come from immutable published GitHub assets and must match a
-          # historical Homebrew formula URL and SHA-256 before execution.
+          # come from immutable published GitHub assets. Normal stable assets
+          # must match historical Homebrew formulae; an older maintenance
+          # backfill may instead use its retained, attested package run because
+          # it intentionally never replaced the newer stable formula pair.
           # The exact guest init image is a required release asset: it cannot
           # be recovered from Homebrew, rebuilt, or inherited from the host.
           # A successful retained package run is the recovery authority when
@@ -176,6 +185,7 @@ jobs:
             actions_dir="${BENCHMARK_ROOT}/downloads/${version}/actions"
             distribution="${release_dir}"
             artifact_source="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${version}"
+            backfill_arguments=()
             if ! gh release download "${version}" \
               --repo "${GITHUB_REPOSITORY}" \
               --dir "${release_dir}" \
@@ -221,7 +231,7 @@ jobs:
                 --repo "${GITHUB_REPOSITORY}" \
                 --workflow prebuilt-binaries.yml \
                 --limit 500 \
-                --json databaseId,displayTitle,status,conclusion,event,createdAt,url \
+                --json databaseId,displayTitle,status,conclusion,event,createdAt,url,headBranch,headSha \
                 > "${runs}"
               python3 Tools/parity/published_release_benchmark.py \
                 resolve-package-run \
@@ -229,6 +239,7 @@ jobs:
                 --version "${version}" \
                 > "${resolved}"
               package_run_id="$(jq -r '.runId' "${resolved}")"
+              package_run_head_sha="$(jq -r '.headSha' "${resolved}")"
               artifact_source="$(jq -r '.url' "${resolved}")"
               gh api \
                 "repos/${GITHUB_REPOSITORY}/actions/runs/${package_run_id}/artifacts" \
@@ -246,6 +257,18 @@ jobs:
                 --dir "${actions_dir}" \
                 --name 'container-compose-plugin-release-arm64.tar.gz'
               distribution="${actions_dir}"
+              backfill_arguments+=(--allow-package-run-backfill)
+              for asset in \
+                container-release-arm64.tar.gz \
+                container-compose-plugin-release-arm64.tar.gz; do
+                gh attestation verify "${distribution}/${asset}" \
+                  --repo "${GITHUB_REPOSITORY}" \
+                  --signer-workflow \
+                    "${GITHUB_REPOSITORY}/.github/workflows/prebuilt-binaries.yml" \
+                  --signer-digest "${package_run_head_sha}" \
+                  --source-ref refs/heads/main \
+                  --source-digest "${package_run_head_sha}"
+              done
             fi
             Tools/release/verify-developer-id-archive.sh \
               "${distribution}/container-release-arm64.tar.gz"
@@ -258,6 +281,8 @@ jobs:
               --tap-repository homebrew-tap \
               --source-repository . \
               --artifact-source "${artifact_source}" \
+              "${backfill_arguments[@]}" \
+              --latest-stable-version "${LATEST_STABLE_VERSION}" \
               --output "${BENCHMARK_ROOT}/prepared/${version}"
             init_archive="${BENCHMARK_ROOT}/prepared/${version}/init/container-vminit-arm64.oci.tar"
             init_references=()
