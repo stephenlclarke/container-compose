@@ -98,6 +98,32 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('ROOT="${CONTAINER_STACK_RELEASE_ROOT:-${HOME}/github}"', self.script)
         self.assertIn("CONTAINER_STACK_RELEASE_ROOT", self.script)
 
+    def test_local_release_gate_uses_a_stable_noninteractive_path(self) -> None:
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                "CONTAINER_STACK_RELEASE_LIBRARY=1; "
+                f"source {shlex.quote(str(SCRIPT))}; "
+                "release_gate_execution_path",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        path = completed.stdout.strip()
+        self.assertTrue(path)
+        self.assertNotIn(".codex", path)
+        self.assertNotIn(".swiftly", path)
+        for directory in path.split(os.pathsep):
+            self.assertTrue(Path(directory).is_absolute())
+        selected_make = shutil.which("make", path=path)
+        self.assertIsNotNone(selected_make)
+        self.assertTrue(Path(selected_make or "").is_file())
+
     def test_local_release_gate_stages_the_init_archive_on_the_system_volume(self) -> None:
         staging = 'staged_init_image_archive="${runtime_parent}/vminit.oci.tar"'
         copy = 'cp "${init_image_archive}" "${staged_init_image_archive}"'
