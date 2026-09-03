@@ -275,14 +275,24 @@ jobs:
           tape="${demo_session_root}/container-compose-current-demo.tape"
           demo_init_image_archive="${demo_session_root}/init-image.oci.tar"
           prior_container="${demo_root}/bin/container"
-          if [[ -x "${prior_container}" ]]; then
-            CONTAINER_APP_ROOT="${demo_app_root}" \
-              python3 Tools/ci/run-command-with-deadline.py \
-              --seconds 30 --grace-seconds 5 -- \
-              "${prior_container}" system stop || true
-          fi
-          CONTAINER_APP_ROOT="${demo_app_root}" \
-            bash Tools/release/wait-for-container-system-stop.sh
+          container_binary="${prior_container}"
+          cleanup() {
+            local status=$?
+            trap - EXIT
+            trap '' HUP INT QUIT TERM
+            if ! bash Tools/release/stop-current-demo-runtime.sh \
+              "${demo_session_root}" "${container_binary}"; then
+              status=1
+            fi
+            exit "${status}"
+          }
+          trap cleanup EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 131' QUIT
+          trap 'exit 143' TERM
+          bash Tools/release/stop-current-demo-runtime.sh \
+            "${demo_session_root}" "${prior_container}"
 
           rm -rf -- \
             "${demo_root}" \
@@ -314,12 +324,6 @@ jobs:
           container_binary="${demo_root}/bin/container"
           test -x "${container_binary}"
           test -x "${demo_root}/libexec/container-plugins/compose/bin/compose"
-          cleanup() {
-            python3 Tools/ci/run-command-with-deadline.py \
-              --seconds 30 --grace-seconds 5 -- \
-              "${container_binary}" system stop || true
-          }
-          trap cleanup EXIT
 
           export CONTAINER_INSTALL_ROOT="${demo_root}"
           export CONTAINER_APP_ROOT="${demo_app_root}"
