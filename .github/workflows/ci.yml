@@ -595,13 +595,12 @@ jobs:
           SONAR_QUALITYGATE_WAIT: "true"
         run: |
           set -euo pipefail
-          sonar_timeout="$(command -v gtimeout || true)"
-          if [[ -z "${sonar_timeout}" ]]; then
-            printf 'gtimeout is required to bound each SonarQube invocation\n' >&2
-            exit 1
-          fi
           run_bounded_sonar_scan() {
-            "${sonar_timeout}" --kill-after=30s 1500s make sonar-scan
+            python3 Tools/ci/run-command-with-deadline.py \
+              --seconds 1500 \
+              --grace-seconds 30 \
+              -- \
+              make sonar-scan
           }
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             release_version="${GITHUB_REF_NAME#v}"

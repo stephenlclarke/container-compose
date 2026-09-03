@@ -304,11 +304,6 @@ jobs:
         timeout-minutes: 160
         run: |
           set -euo pipefail
-          sonar_timeout="$(command -v gtimeout || true)"
-          if [[ -z "${sonar_timeout}" ]]; then
-            printf 'gtimeout is required to bound canonical Sonar recovery\n' >&2
-            exit 1
-          fi
           export CONTAINER_RUNTIME_LOCK_FILE="/tmp/container-compose-sonar-${UID}.lock"
           export CONTAINER_RUNTIME_LOCK_TIMEOUT_SECONDS=7200
           source Tools/ci/container-runtime-lock.sh
@@ -325,7 +320,11 @@ jobs:
               "${AUTHORITY_SHA}" "${main_sha:-missing}" >&2
             exit 75
           fi
-          "${sonar_timeout}" --kill-after=30s 1500s make sonar-scan
+          python3 Tools/ci/run-command-with-deadline.py \
+            --seconds 1500 \
+            --grace-seconds 30 \
+            -- \
+            make sonar-scan
           main_sha="$(
             git ls-remote --heads "https://github.com/${GITHUB_REPOSITORY}.git" refs/heads/main |
               awk '{ print $1 }' |
