@@ -261,15 +261,19 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
             PIPELINE_MAKEFILE,
         )
 
-    def test_runtime_validation_reserves_capacity_for_runner_lease_renewal(
+    def test_runtime_validation_uses_pinned_managed_macos_toolchain(
         self,
     ) -> None:
         runtime_validation = CI_WORKFLOW.split("  validate_runtime:", 1)[1].split(
             "  prebuilt_binaries:", 1
         )[0]
 
-        self.assertIn('SWIFT_TEST_FLAGS: "--jobs 8"', runtime_validation)
-        self.assertIn("$(SWIFT_TEST_FLAGS)", PIPELINE_MAKEFILE)
+        self.assertIn("runs-on: macos-26", runtime_validation)
+        self.assertIn(
+            "DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer",
+            runtime_validation,
+        )
+        self.assertNotIn("self-hosted", runtime_validation)
 
     def test_release_state_is_persistent_and_candidate_keyed(self) -> None:
         self.assertNotIn(

@@ -254,14 +254,15 @@ jobs:
     if: >
       needs.changes.outputs.heavy == 'true' &&
       needs.resolve-canonical-main.result == 'success'
-    runs-on: [self-hosted, macOS, ARM64, container-compose-current]
+    # This lane compiles and exercises unit/CLI coverage only. Keep VM-backed
+    # integration in the recoverable release graph and use a managed runner
+    # here so a host broker disconnect cannot revoke an otherwise valid build.
+    runs-on: macos-26
     # Cover validation/coverage, CLI smoke, up to two queued maintenance
     # transactions, this transaction's two scans, and setup overhead.
     timeout-minutes: 250
     env:
-      # Leave CPU capacity for the self-hosted runner listener to renew its
-      # GitHub job lease while Swift compiles the coverage graph.
-      SWIFT_TEST_FLAGS: "--jobs 8"
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
