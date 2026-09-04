@@ -985,6 +985,7 @@ stage_stable_local_validation_checkout() {
   local stable_path="$3"
   local checkout_kind="${4:-containerization}"
   local marker_value="container-compose stable validation checkout v1 ${checkout_kind}"
+  local exclude_path=""
   local legacy_target="" staged_identity="" published_identity=""
 
   case "${checkout_kind}" in
@@ -1024,6 +1025,24 @@ stage_stable_local_validation_checkout() {
     umask 077
     stage_local_validation_checkout "${source_path}" "${temporary_path}" \
       "${checkout_kind}" >/dev/null
+    exclude_path="${temporary_path}/.git/info/exclude"
+    if [[ ! -f "${exclude_path}" || -L "${exclude_path}" ]]; then
+      printf 'stable release validation checkout has no trusted local exclude file: %s\n' \
+        "${exclude_path}" >&2
+      exit 1
+    fi
+    # These files are release-owned tools, artifacts, and lifecycle metadata,
+    # not source inputs. Keep them in the physical checkout for validation and
+    # recovery, but hide only their exact root-relative paths from the
+    # clean-source contract enforced by run-with-container-runtime.sh. Do not
+    # depend on the source repository retaining equivalent .gitignore rules.
+    printf '\n/%s\n/%s\n/%s\n/%s\n/%s\n' \
+      '.local/bin/hawkeye' \
+      'bin/vmlinux-*' \
+      'bin/vmlinuz-*' \
+      '.container-compose-release-validation-checkout' \
+      '.container-compose-release-validation-runtime' \
+      >>"${exclude_path}"
     printf '%s\n' "${marker_value}" \
       >"${temporary_path}/.container-compose-release-validation-checkout"
   ); then
