@@ -1760,9 +1760,8 @@ github_cli() {{
             '--current-asset "container-compose-demo-current.gif"', package
         )
 
-        self.assertIn("- Prebuilt Binaries", workflow)
-        self.assertIn('"${WORKFLOW_RUN_DISPLAY_TITLE}" != "Prebuilt Binaries · main"', workflow)
-        self.assertIn("Skipping non-Current package workflow", workflow)
+        self.assertNotIn("workflow_run:", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("group: container-compose-current-demo", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn(
@@ -1777,6 +1776,7 @@ github_cli() {{
         self.assertIn("stop-current-demo-runtime.sh", workflow)
         self.assertIn("trap 'exit 143' TERM", workflow)
         self.assertIn("trap '' HUP INT QUIT TERM", workflow)
+        self.assertIn("CONTAINER_DEMO_SKIP_GRACEFUL_STOP=true", workflow)
         self.assertLess(
             workflow.index("trap 'exit 143' TERM"),
             workflow.index(

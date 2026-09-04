@@ -40,12 +40,16 @@ expected_plist="${demo_app_root}/apiserver/apiserver.plist"
 service_label=com.apple.container.apiserver
 user_domain="gui/$(id -u)"
 launchctl_bin="${CONTAINER_DEMO_LAUNCHCTL:-/bin/launchctl}"
+ps_bin="${CONTAINER_DEMO_PS:-/bin/ps}"
+kill_bin="${CONTAINER_DEMO_KILL:-/bin/kill}"
 deadline_runner="${CONTAINER_DEMO_DEADLINE_RUNNER:-$(
   dirname "${BASH_SOURCE[0]}"
 )/../ci/run-command-with-deadline.py}"
 stop_waiter="${CONTAINER_SYSTEM_STOP_WAITER:-$(
   dirname "${BASH_SOURCE[0]}"
 )/wait-for-container-system-stop.sh}"
+graceful_stop_seconds="${CONTAINER_DEMO_GRACEFUL_STOP_SECONDS:-3}"
+skip_graceful_stop="${CONTAINER_DEMO_SKIP_GRACEFUL_STOP:-false}"
 
 if [[ -z "${demo_session_root}" || "${demo_session_root}" != /* ||
       "${demo_session_root}" == / || ! -d "${demo_session_root}" ||
@@ -69,9 +73,21 @@ if [[ "${container_binary}" != "${expected_container}" ]]; then
     "${container_binary}" >&2
   exit 2
 fi
-if [[ ! -x "${launchctl_bin}" ]]; then
-  printf 'Current demo launch-agent inspector is not executable: %s\n' \
-    "${launchctl_bin}" >&2
+if [[ ! -x "${launchctl_bin}" || ! -x "${ps_bin}" ||
+      ! -x "${kill_bin}" ]]; then
+  printf 'Current demo cleanup tools are not executable: %s %s %s\n' \
+    "${launchctl_bin}" "${ps_bin}" "${kill_bin}" >&2
+  exit 2
+fi
+if ! [[ "${graceful_stop_seconds}" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'Current demo graceful-stop seconds must be a positive integer: %s\n' \
+    "${graceful_stop_seconds}" >&2
+  exit 2
+fi
+if [[ "${skip_graceful_stop}" != "true" &&
+      "${skip_graceful_stop}" != "false" ]]; then
+  printf 'CONTAINER_DEMO_SKIP_GRACEFUL_STOP must be true or false: %s\n' \
+    "${skip_graceful_stop}" >&2
   exit 2
 fi
 
@@ -92,19 +108,134 @@ demo_service_is_loaded() {
   fi
 }
 
-if demo_service_is_loaded; then
-  if [[ ! -x "${container_binary}" ]]; then
-    printf 'Current demo service is loaded but its CLI is unavailable: %s\n' \
-      "${container_binary}" >&2
-    exit 2
+# Boot out every remaining service only after proving that every matching
+# launch agent belongs to this marker-protected demo root. Validation happens
+# before mutation so an unrelated production service remains a hard failure.
+bootout_demo_owned_services() {
+  local label=""
+  local loaded_plist=""
+  local services=""
+  local -a labels=()
+
+  if ! services="$("${launchctl_bin}" list)"; then
+    printf 'failed to list Container launch agents with %s\n' \
+      "${launchctl_bin}" >&2
+    return 1
   fi
-  CONTAINER_APP_ROOT="${demo_app_root}" \
-    python3 "${deadline_runner}" --seconds 30 --grace-seconds 5 -- \
-      "${container_binary}" system stop || true
-fi
+  while read -r _ _ label; do
+    if [[ "${label}" == com.apple.container.* ]]; then
+      if ! [[ "${label}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        printf 'refusing unsafe Current demo launch-agent label: %s\n' \
+          "${label}" >&2
+        return 2
+      fi
+      if ! "${launchctl_bin}" print "${user_domain}/${label}" \
+          >"${service_state}" 2>/dev/null; then
+        printf 'cannot inspect Current demo launch agent: %s\n' \
+          "${label}" >&2
+        return 2
+      fi
+      loaded_plist="$(awk '$1 == "path" && $2 == "=" { print $3; exit }' \
+        "${service_state}")"
+      case "${loaded_plist}" in
+        "${demo_app_root}"/*)
+          labels+=("${label}")
+          ;;
+        *)
+          printf 'refusing to boot out unrelated Container launch agent at %s\n' \
+            "${loaded_plist:-<unknown>}" >&2
+          return 2
+          ;;
+      esac
+    fi
+  done <<<"${services}"
+
+  for label in "${labels[@]}"; do
+    # A parent service may have removed a child between the snapshot and this
+    # loop. Revalidate every survivor immediately before mutation and accept a
+    # service that is already absent.
+    if ! "${launchctl_bin}" print "${user_domain}/${label}" \
+        >"${service_state}" 2>/dev/null; then
+      continue
+    fi
+    loaded_plist="$(awk '$1 == "path" && $2 == "=" { print $3; exit }' \
+      "${service_state}")"
+    case "${loaded_plist}" in
+      "${demo_app_root}"/*)
+        "${launchctl_bin}" bootout "${user_domain}/${label}"
+        ;;
+      *)
+        printf 'refusing to boot out replaced Container launch agent at %s\n' \
+          "${loaded_plist:-<unknown>}" >&2
+        return 2
+        ;;
+    esac
+  done
+}
+
+# The Compose engine is not launchd-managed. Recover it and any other
+# demo-root executable with bounded TERM/KILL escalation after all verified
+# demo launch agents have been booted out.
+stop_demo_owned_processes() {
+  local attempt=0
+  local process_id=""
+  local process_uid=""
+  local executable=""
+  local snapshot=""
+  local -a process_ids=()
+
+  if ! snapshot="$("${ps_bin}" -axo pid=,uid=,command=)"; then
+    printf 'failed to inspect Current demo processes with %s\n' \
+      "${ps_bin}" >&2
+    return 1
+  fi
+  while read -r process_id process_uid executable _; do
+    case "${executable}" in
+      "${demo_session_root}"/*)
+        if ! [[ "${process_id}" =~ ^[1-9][0-9]*$ ]] ||
+           [[ "${process_uid}" != "$(id -u)" ]]; then
+          printf 'refusing unsafe Current demo process: pid=%s uid=%s executable=%s\n' \
+            "${process_id:-missing}" "${process_uid:-missing}" \
+            "${executable:-missing}" >&2
+          return 2
+        fi
+        process_ids+=("${process_id}")
+        ;;
+    esac
+  done <<<"${snapshot}"
+
+  if ((${#process_ids[@]} == 0)); then
+    return 0
+  fi
+  "${kill_bin}" -TERM "${process_ids[@]}" 2>/dev/null || true
+  for ((attempt = 1; attempt <= 10; attempt++)); do
+    local -a remaining=()
+    for process_id in "${process_ids[@]}"; do
+      if "${kill_bin}" -0 "${process_id}" 2>/dev/null; then
+        remaining+=("${process_id}")
+      fi
+    done
+    process_ids=("${remaining[@]}")
+    ((${#process_ids[@]} == 0)) && return 0
+    sleep 0.1
+  done
+  "${kill_bin}" -KILL "${process_ids[@]}" 2>/dev/null || true
+}
 
 if demo_service_is_loaded; then
-  "${launchctl_bin}" bootout "${user_domain}/${service_label}"
+  if [[ "${skip_graceful_stop}" == "false" ]]; then
+    if [[ ! -x "${container_binary}" ]]; then
+      printf 'Current demo service is loaded but its CLI is unavailable: %s\n' \
+        "${container_binary}" >&2
+      exit 2
+    fi
+    CONTAINER_APP_ROOT="${demo_app_root}" \
+      python3 "${deadline_runner}" --seconds "${graceful_stop_seconds}" \
+        --grace-seconds 1 -- "${container_binary}" system stop || true
+  fi
 fi
+
+bootout_demo_owned_services
+stop_demo_owned_processes
 
 LAUNCHCTL_BIN="${launchctl_bin}" bash "${stop_waiter}"

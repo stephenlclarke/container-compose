@@ -19,6 +19,7 @@
 
 import os
 import signal
+import shutil
 import subprocess
 import tempfile
 import time
@@ -74,6 +75,9 @@ case "$1" in
     ;;
   list)
     printf 'PID Status Label\n'
+    if [[ -f "${SERVICE_STATE}" ]]; then
+      printf '123 0 com.apple.container.apiserver\n'
+    fi
     ;;
   *)
     exit 114
@@ -161,7 +165,14 @@ elif [[ "$1" == bootout ]]; then
   printf '%s\n' "$2" > "${BOOTOUT_LOG}"
   rm -f "${SERVICE_STATE}"
 else
-  exit 114
+  if [[ "$1" == list ]]; then
+    printf 'PID Status Label\n'
+    if [[ -f "${SERVICE_STATE}" ]]; then
+      printf '123 0 com.apple.container.apiserver\n'
+    fi
+  else
+    exit 114
+  fi
 fi
 """,
             encoding="utf-8",
@@ -189,6 +200,99 @@ fi
         self.assertEqual(process.returncode, 0, stdout + stderr)
         self.assertTrue(bootout_log.is_file())
         self.assertFalse(state.exists())
+
+    def test_forced_cleanup_skips_cli_and_removes_all_demo_services(self) -> None:
+        temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary_directory.cleanup)
+        root = Path(temporary_directory.name)
+        session = root / "session"
+        app_root = session / "app"
+        container = session / "install" / "bin" / "container"
+        marker = session / ".container-compose-current-demo-root"
+        launchctl = root / "launchctl"
+        waiter = root / "waiter"
+        service_directory = root / "services"
+        stop_log = root / "stop.log"
+        bootout_log = root / "bootout.log"
+
+        container.parent.mkdir(parents=True)
+        app_root.mkdir(parents=True)
+        service_directory.mkdir()
+        session.chmod(0o700)
+        marker.write_text("container-compose-current-demo-v1\n", encoding="utf-8")
+        worker = session / "install" / "bin" / "demo-worker"
+        shutil.copyfile("/bin/sleep", worker)
+        worker.chmod(0o755)
+        worker_process = subprocess.Popen([str(worker), "30"])
+        self.addCleanup(
+            lambda: worker_process.kill() if worker_process.poll() is None else None
+        )
+        services = {
+            "com.apple.container.apiserver": app_root
+            / "apiserver"
+            / "apiserver.plist",
+            "com.apple.container.container-runtime-linux.demo": app_root
+            / "containers"
+            / "demo"
+            / "service.plist",
+        }
+        for label, plist in services.items():
+            (service_directory / label).write_text(str(plist), encoding="utf-8")
+        launchctl.write_text(
+            """#!/usr/bin/env bash
+set -euo pipefail
+argument="${2:-}"
+label="${argument##*/}"
+case "$1" in
+  print)
+    [[ -f "${SERVICE_DIRECTORY}/${label}" ]] || exit 113
+    printf 'path = %s\n' "$(cat "${SERVICE_DIRECTORY}/${label}")"
+    ;;
+  bootout)
+    printf '%s\n' "$2" >> "${BOOTOUT_LOG}"
+    rm -f "${SERVICE_DIRECTORY}/${label}"
+    ;;
+  list)
+    printf 'PID Status Label\n'
+    for service in "${SERVICE_DIRECTORY}"/*; do
+      [[ -f "${service}" ]] || continue
+      printf '123 0 %s\n' "${service##*/}"
+    done
+    ;;
+  *)
+    exit 114
+    ;;
+esac
+""",
+            encoding="utf-8",
+        )
+        waiter.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        launchctl.chmod(0o755)
+        waiter.chmod(0o755)
+        result = subprocess.run(
+            ["bash", str(SCRIPT), str(session), str(container)],
+            capture_output=True,
+            check=False,
+            env=os.environ
+            | {
+                "BOOTOUT_LOG": str(bootout_log),
+                "CONTAINER_DEMO_LAUNCHCTL": str(launchctl),
+                "CONTAINER_DEMO_SKIP_GRACEFUL_STOP": "true",
+                "CONTAINER_SYSTEM_STOP_WAITER": str(waiter),
+                "SERVICE_DIRECTORY": str(service_directory),
+                "STOP_LOG": str(stop_log),
+            },
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(stop_log.exists())
+        self.assertEqual(list(service_directory.iterdir()), [])
+        worker_process.wait(timeout=2)
+        self.assertIsNotNone(worker_process.returncode)
+        booted_out = bootout_log.read_text(encoding="utf-8")
+        for label in services:
+            self.assertIn(label, booted_out)
 
 
 if __name__ == "__main__":

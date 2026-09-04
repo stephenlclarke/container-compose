@@ -15,16 +15,9 @@
 #===----------------------------------------------------------------------===#
 
 name: Current Demo
-run-name: Current Demo · ${{ inputs.ref || github.event.workflow_run.head_sha }}
+run-name: Current Demo · ${{ inputs.ref }}
 
 on:
-  workflow_run:
-    workflows:
-      - Prebuilt Binaries
-    types:
-      - completed
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       ref:
@@ -47,8 +40,7 @@ jobs:
   resolve-current:
     name: Resolve Current Demo Source
     if: >
-      github.repository == 'stephenlclarke/container-compose' &&
-      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      github.repository == 'stephenlclarke/container-compose'
     runs-on: ubuntu-24.04
     outputs:
       publish: ${{ steps.resolve.outputs.publish }}
@@ -59,33 +51,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_REF: ${{ inputs.ref }}
-          WORKFLOW_RUN_DISPLAY_TITLE: ${{ github.event.workflow_run.display_title }}
-          WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" &&
-                "${WORKFLOW_RUN_DISPLAY_TITLE}" != "Prebuilt Binaries · main" ]]; then
-            printf 'Skipping non-Current package workflow: %s\n' \
-              "${WORKFLOW_RUN_DISPLAY_TITLE:-<unset>}"
-            {
-              printf 'publish=false\n'
-              printf 'sha=%s\n' "${WORKFLOW_HEAD_SHA}"
-            } >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
           remote="https://github.com/${GITHUB_REPOSITORY}.git"
           main_sha="$(
             git ls-remote --heads "${remote}" refs/heads/main \
               | awk '{ print $1 }' \
               | tail -n 1
           )"
-          source_sha="${WORKFLOW_HEAD_SHA}"
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            source_sha="${REQUESTED_REF}"
-            if [[ "${source_sha}" == "main" ]]; then
-              source_sha="${main_sha}"
-            fi
+          source_sha="${REQUESTED_REF}"
+          if [[ "${source_sha}" == "main" ]]; then
+            source_sha="${main_sha}"
           fi
           if [[ ! "${source_sha}" =~ ^[0-9a-f]{40}$ ]]; then
             printf 'Current demo source is not an immutable commit: %s\n' \
@@ -280,8 +257,12 @@ jobs:
             local status=$?
             trap - EXIT
             trap '' HUP INT QUIT TERM
-            if ! bash Tools/release/stop-current-demo-runtime.sh \
-              "${demo_session_root}" "${container_binary}"; then
+            if ((status >= 128)); then
+              CONTAINER_DEMO_SKIP_GRACEFUL_STOP=true \
+                bash Tools/release/stop-current-demo-runtime.sh \
+                  "${demo_session_root}" "${container_binary}" || status=1
+            elif ! bash Tools/release/stop-current-demo-runtime.sh \
+                "${demo_session_root}" "${container_binary}"; then
               status=1
             fi
             exit "${status}"
