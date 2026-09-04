@@ -6554,6 +6554,83 @@ esac
             self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
             self.assertNotEqual(candidate_head, remote_head)
 
+    def test_release_helper_retains_reviewed_release_documentation_repairs(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            remote_head = self.git(local, "rev-parse", "origin/main")
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {
+                    "README.md": "current candidate\n",
+                    "docs/guides/INSTALL.md": "stable lane\n",
+                },
+                "docs(release): align 0.6.71 candidate guidance",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("retaining unpublished release candidate", result.stdout)
+            self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
+            self.assertNotEqual(candidate_head, remote_head)
+
+    def test_release_helper_rejects_release_docs_commits_with_source_changes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"Sources/ComposePlugin/ComposePlugin.swift": "unexpected\n"},
+                "docs(release): disguise a source change",
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "release documentation repair changes an unexpected file",
+                result.stderr,
+            )
+
+    def test_release_helper_retains_the_release_recovery_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            remote_head = self.git(local, "rev-parse", "origin/main")
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {
+                    "Tools/release/test_container_stack_release.py": "focused tests\n",
+                    "scripts/CONTAINER_STACK_RELEASE.sh": "recovery rule\n",
+                },
+                "fix(release): recover reviewed documentation repairs",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
+            self.assertNotEqual(candidate_head, remote_head)
+
     def test_retained_candidate_rejects_current_from_any_commit_but_its_parent(
         self,
     ) -> None:

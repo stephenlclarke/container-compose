@@ -29,21 +29,23 @@ images and publish Compose YAML, env-file layers, and optional image digest
 override layers or application image indexes as OCI project artifacts. Swift owns
 orchestration and maps supported Compose behavior to the matched runtime stack.
 
-## 0.14.1 Current candidate
+## 0.14.2 Current candidate
 
-[`0.14.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0)
+[`0.14.1`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.1)
 is the current stable macOS arm64 release. The rolling
 [`current`](https://github.com/stephenlclarke/container-compose/releases/tag/current)
-prerelease carries the reviewed 0.14.1 candidate with its matched Container
-stack. It is not an immutable 0.14.1 release until the hosted Stable Release
+prerelease carries the reviewed 0.14.2 candidate with its matched Container
+stack. It is not an immutable 0.14.2 release until the hosted Stable Release
 Gate, including the supported Docker Compose parity suite, succeeds and
 publishes that version.
 
-The 0.14.1 maintenance candidate retains stopped containers and their log
+The 0.14.2 maintenance candidate retains stopped containers and their log
 histories after foreground `up --abort-on-container-exit`,
 `--abort-on-container-failure`, and `--exit-code-from` completion. Its matched
 runtime also recovers interrupted prepared cleanup, preserves short-lived VM
-exits, and keeps known-immediate starts off the speculative prewarm path.
+exits, keeps known-immediate starts off the speculative prewarm path, and
+serializes cctl VM-backed integration tests so concurrent validation cannot
+collide in the per-user runtime namespace.
 
 The 0.14 release line adds explicit isolation and a faster, more
 memory-responsive runtime:
@@ -149,7 +151,7 @@ supported commands include a `Limitations` line that names the remaining gap.
 Use `--ansi never` for plain output. Unsupported runtime behavior fails before
 side effects with an explicit `unsupported compose feature` message.
 
-For the 0.14.1 candidate, the generated help classifies 40 commands as green and six as
+For the 0.14.2 candidate, the generated help classifies 40 commands as green and six as
 orange (`attach`, `events`, `exec`, `logs`, `run`, and `up`); no command is
 red. It classifies 262 documented long options as green and only
 `exec --privileged` as orange; no documented long option is red. Orange command
@@ -174,7 +176,7 @@ become implicit exceptions.
 >
 > The complete maintained 62-target Docker Compose comparison suite passed in one uninterrupted 1,152.03-second run against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. Its three-sample warm-image bridge comparator measured `up` at 0.153s for Docker Compose and 1.228s for container-compose (8.01×), while `down` measured 10.178s and 5.916s respectively (0.58×). Named-network service discovery, aliases, one-off aliases, recreate behavior, and source-scoped links all passed their live Docker oracles. Exact revisions, timing tables, fingerprints, and interpretation are retained in the [macOS Compose parity and performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md).
 >
-> This retained run predates the current 0.14.1 candidate and is not a claim that the project goal is complete. Its lifecycle matrix covers warm-image 1/10/50-service detached startup and teardown, but its 31 July one-repetition debug diagnostic was slower than Docker at 10 and 50 services and is not release-grade evidence. That run did not include the later logging performance lanes; cold-resource collection, `develop.watch` sync, and build-context transfer remain open, and every partial surface in the current ledger remains open.
+> This retained run predates the current 0.14.2 candidate and is not a claim that the project goal is complete. Its lifecycle matrix covers warm-image 1/10/50-service detached startup and teardown, but its 31 July one-repetition debug diagnostic was slower than Docker at 10 and 50 services and is not release-grade evidence. That run did not include the later logging performance lanes; cold-resource collection, `develop.watch` sync, and build-context transfer remain open, and every partial surface in the current ledger remains open.
 
 <!-- Separate GitHub callouts. -->
 
@@ -217,7 +219,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [DESIGN.md](docs/project/DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](docs/project/STATUS.md): understand the functionality and explicit limitations in the current stable release and candidate.
 - [BACKLOG.md](docs/project/BACKLOG.md): understand the remaining parity contracts and follow their live GitHub issues.
-- [Runtime capability contract](docs/architecture/runtime-capabilities.md): see the versioned matched-runtime requirements negotiated by 0.14.1 before side effects.
+- [Runtime capability contract](docs/architecture/runtime-capabilities.md): see the versioned matched-runtime requirements negotiated by 0.14.2 before side effects.
 - [Docker logging-driver design](docs/architecture/docker-logging-driver-semantics-design.md): review the released logging architecture, retained evidence, and remaining provider and certification gaps.
 - [Container-family parity architecture](docs/architecture/coherent-container-family-parity-design.md): understand the integrated authority, runtime topology, dependency order, and devcontainer/shared Engine design.
 - [Container-family parity development cycle](docs/architecture/container-family-development-cycle.md): deliver vertical slices with local-first validation, review-to-clean convergence, MBP runners, clean GitHub state, upstream monitoring, and comparable-or-better performance.

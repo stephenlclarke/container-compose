@@ -685,6 +685,35 @@ validate_unpublished_release_commit() {
     return 0
   fi
 
+  if [[ "${subject}" =~ ^docs\(release\):\  ]]; then
+    if [[ -z "${files}" ]]; then
+      printf 'release documentation repair commit has no documentation changes: %s\n' \
+        "${commit}" >&2
+      return 1
+    fi
+    IFS=',' read -r -a release_files <<<"${files}"
+    for file in "${release_files[@]}"; do
+      case "${file}" in
+        README.md|docs/*.md) ;;
+        *)
+          printf 'release documentation repair changes an unexpected file: %s %s\n' \
+            "${commit}" "${file}" >&2
+          return 1
+          ;;
+      esac
+    done
+    return 0
+  fi
+
+  if [[ "${subject}" == "fix(release): recover reviewed documentation repairs" ]]; then
+    if [[ "${files}" != "Tools/release/test_container_stack_release.py,scripts/CONTAINER_STACK_RELEASE.sh" ]]; then
+      printf 'release recovery repair changes an unexpected file set: %s %s\n' \
+        "${commit}" "${files}" >&2
+      return 1
+    fi
+    return 0
+  fi
+
   printf 'container-compose main contains an unpublished non-release commit; refusing recovery: %s\n' \
     "${subject}" >&2
   return 1
