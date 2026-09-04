@@ -378,6 +378,67 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "--no-dangling",
             )
 
+    def test_stable_containerization_checkout_is_marked_and_git_clean(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="c.") as directory:
+            root = Path(directory)
+            source = root / "source"
+            staged = root / "containerization"
+            stable = Path("/tmp") / (
+                f"container-compose-release-containerization-{os.getuid()}-"
+                f"test-{os.getpid()}"
+            )
+            source.mkdir()
+            self.run_command("git", "-C", str(source), "init", "--quiet")
+            (source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            self.run_command("git", "-C", str(source), "add", "tracked.txt")
+            self.run_command(
+                "git",
+                "-C",
+                str(source),
+                "-c",
+                "user.name=Release Test",
+                "-c",
+                "user.email=release-test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            )
+            (source / "bin").mkdir()
+            (source / "bin" / "vmlinux-arm64").write_bytes(b"kernel")
+            (source / ".local" / "bin").mkdir(parents=True)
+            source_hawkeye = source / ".local" / "bin" / "hawkeye"
+            source_hawkeye.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            source_hawkeye.chmod(0o755)
+
+            try:
+                result = self.run_release_function(
+                    root,
+                    (
+                        "published=$(stage_stable_local_validation_checkout "
+                        f"{shlex.quote(str(source))} {shlex.quote(str(staged))} "
+                        f"{shlex.quote(str(stable))}); "
+                        f"test \"$published\" = {shlex.quote(str(stable))}; "
+                        "test -f "
+                        f"{shlex.quote(str(stable / '.container-compose-release-validation-checkout'))}; "
+                        "printf 'identity fixture\\n' >"
+                        f"{shlex.quote(str(stable / '.container-compose-release-validation-runtime'))}; "
+                        "test -z \"$(git -C "
+                        f"{shlex.quote(str(stable))} "
+                        "status --porcelain --untracked-files=all)\"; "
+                        "cleanup_stable_local_validation_checkout "
+                        f"{shlex.quote(str(stable))}"
+                    ),
+                )
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(stable.exists())
+            finally:
+                if stable.exists() and not stable.is_symlink():
+                    shutil.rmtree(stable)
+
     def test_local_validation_checkout_propagates_copy_failure_in_condition(
         self,
     ) -> None:
