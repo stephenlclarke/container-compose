@@ -985,7 +985,7 @@ stage_stable_local_validation_checkout() {
   local stable_path="$3"
   local checkout_kind="${4:-containerization}"
   local marker_value="container-compose stable validation checkout v1 ${checkout_kind}"
-  local legacy_target=""
+  local legacy_target="" staged_identity="" published_identity=""
 
   case "${checkout_kind}" in
     container | containerization) ;;
@@ -1031,12 +1031,33 @@ stage_stable_local_validation_checkout() {
       "${temporary_path}" >&2
     return 1
   fi
+  staged_identity="$(stable_validation_path_identity "${temporary_path}")"
   if ! mv "${temporary_path}" "${stable_path}"; then
     printf 'failed to publish stable release validation checkout: %s\n' \
       "${stable_path}" >&2
     return 1
   fi
+  published_identity="$(stable_validation_path_identity "${stable_path}")"
+  if [[ -z "${staged_identity}" || \
+    "${published_identity}" != "${staged_identity}" ]] || \
+    ! validate_stable_local_validation_checkout "${stable_path}" \
+      "${checkout_kind}"; then
+    printf 'stable release validation checkout publication did not preserve the staged directory: %s\n' \
+      "${stable_path}" >&2
+    return 1
+  fi
   printf '%s\n' "${stable_path}"
+}
+
+# Print a directory's filesystem and inode identity for publication checks.
+stable_validation_path_identity() {
+  local path="$1"
+
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    /usr/bin/stat -f '%d:%i' "${path}" 2>/dev/null
+  else
+    stat -c '%d:%i' "${path}" 2>/dev/null
+  fi
 }
 
 # Print PIDs whose executable command begins inside one stable checkout.
@@ -1740,19 +1761,28 @@ record_stable_container_validation_runtime_identity() {
     printf 'refusing to record an unexpected nested Container validation identity\n' >&2
     return 1
   fi
-  printf 'app_root=%s\nnamespace=%s\n' "${app_root}" "${service_namespace}" \
-    >"${identity}"
+  if ! (
+    umask 077
+    printf 'app_root=%s\nnamespace=%s\n' "${app_root}" "${service_namespace}" \
+      >"${identity}"
+  ); then
+    printf 'failed to record nested Container validation identity: %s\n' \
+      "${identity}" >&2
+    return 1
+  fi
 }
 
 # Recover one interrupted nested runtime before replacing its stable checkout.
 recover_stable_container_validation_runtime() {
   local stable_container_path="$1"
   local identity="${stable_container_path}/.container-compose-release-validation-runtime"
-  local key value app_root="" service_namespace="" runtime_parent=""
+  local cli="${stable_container_path}/bin/container"
+  local key value app_root="" service_namespace="" runtime_parent="" active_pids=""
 
   validate_stable_local_validation_checkout "${stable_container_path}" \
     container || return 1
   [[ -f "${identity}" && ! -L "${identity}" ]] || return 0
+  stable_validation_path_has_safe_ownership "${identity}" || return 1
   while IFS='=' read -r key value; do
     case "${key}" in
       app_root) app_root="${value}" ;;
@@ -1764,19 +1794,54 @@ recover_stable_container_validation_runtime() {
       "${identity}" >&2
     return 1
   fi
-  if [[ ! -d "${stable_container_path}/bin" || \
-    -L "${stable_container_path}/bin" || ! -f "${stable_container_path}/bin/container" || \
-    -L "${stable_container_path}/bin/container" ]]; then
-    printf 'stable Container validation CLI is not a trusted regular file: %s\n' \
-      "${stable_container_path}/bin/container" >&2
+  if [[ ! "${app_root}" =~ ^(/private)?/tmp/c\.[^/]+/i/stack-release-app-root$ ]] || \
+    [[ ! "${service_namespace}" =~ ^io\.github\.container\.stack-validation\.[A-Za-z0-9]+$ ]]; then
+    printf 'stable Container validation identity has unexpected values: %s\n' \
+      "${identity}" >&2
     return 1
   fi
-  stable_validation_path_has_safe_ownership "${identity}" || return 1
+  runtime_parent="$(dirname "$(dirname "${app_root}")")"
+
+  # The identity is written before Container's release build begins. If the
+  # host stops before the CLI exists, no nested service could have started;
+  # recover the independently marked runtime parent without requiring output
+  # from a build that never completed.
+  if [[ -L "${cli}" ]]; then
+    printf 'stable Container validation CLI is an unexpected symlink: %s\n' \
+      "${cli}" >&2
+    return 1
+  fi
+  if [[ ! -e "${cli}" ]]; then
+    if [[ -e "${stable_container_path}/bin" ]]; then
+      if [[ ! -d "${stable_container_path}/bin" || \
+        -L "${stable_container_path}/bin" ]] || \
+        ! stable_validation_path_has_safe_ownership \
+          "${stable_container_path}/bin"; then
+        printf 'stable Container validation bin path is not trusted: %s\n' \
+          "${stable_container_path}/bin" >&2
+        return 1
+      fi
+    fi
+    active_pids="$(stable_local_validation_checkout_processes \
+      "${stable_container_path}")"
+    if [[ -n "${active_pids}" ]]; then
+      printf 'stable Container validation CLI is missing while checkout processes remain: %s\n' \
+        "${stable_container_path}" >&2
+      return 1
+    fi
+    cleanup_release_runtime_parent "${runtime_parent}"
+    return
+  fi
+  if [[ ! -d "${stable_container_path}/bin" || \
+    -L "${stable_container_path}/bin" || ! -f "${cli}" || \
+    -L "${cli}" ]]; then
+    printf 'stable Container validation CLI is not a trusted regular file: %s\n' \
+      "${cli}" >&2
+    return 1
+  fi
   stable_validation_path_has_safe_ownership \
     "${stable_container_path}/bin" || return 1
-  stable_validation_path_has_safe_ownership \
-    "${stable_container_path}/bin/container" || return 1
-  runtime_parent="$(dirname "$(dirname "${app_root}")")"
+  stable_validation_path_has_safe_ownership "${cli}" || return 1
   stop_stable_container_validation_runtime "${stable_container_path}" \
     "${app_root}" "${service_namespace}" || return 1
   cleanup_release_runtime_parent "${runtime_parent}"
