@@ -32,7 +32,7 @@
 #   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
 #                      "docker compose" when available, otherwise docker-compose.
 #   TAR                GNU tar binary used to create metadata fixtures. Defaults
-#                      to tar.
+#                      to gtar when available, otherwise tar.
 #   PARITY_TIMING_OUTPUT
 #                      Optional path for a tab-separated timing report.
 #   PARITY_TIMEOUT_SECONDS
@@ -56,7 +56,13 @@ readonly REPO_ROOT
 STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
-TAR_BINARY="${TAR:-tar}"
+if [[ -n "${TAR:-}" ]]; then
+    TAR_BINARY="$TAR"
+elif command -v gtar >/dev/null 2>&1; then
+    TAR_BINARY=gtar
+else
+    TAR_BINARY=tar
+fi
 PARITY_TIMING_OUTPUT="${PARITY_TIMING_OUTPUT:-}"
 PARITY_TIMEOUT_SECONDS="${PARITY_TIMEOUT_SECONDS:-120}"
 PARITY_TIMING_MAX_RATIO="${PARITY_TIMING_MAX_RATIO:-10}"

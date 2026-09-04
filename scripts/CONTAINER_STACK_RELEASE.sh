@@ -1053,6 +1053,8 @@ release_gate_execution_path() {
   local -a candidates=(
     /opt/homebrew/opt/make/libexec/gnubin
     /usr/local/opt/make/libexec/gnubin
+    /opt/homebrew/opt/gnu-tar/libexec/gnubin
+    /usr/local/opt/gnu-tar/libexec/gnubin
     /opt/homebrew/bin
     /opt/homebrew/sbin
     /usr/local/bin
@@ -1074,6 +1076,29 @@ release_gate_execution_path() {
     return 1
   fi
   printf '%s\n' "${result}"
+}
+
+# Validate the sealed PATH before any build starts. The copy/archive parity
+# fixtures rely on GNU tar semantics that BSD tar cannot reproduce exactly.
+require_release_gate_gnu_tar() {
+  local execution_path="${1:-}"
+  local tar_binary=""
+  local version_output=""
+
+  if [[ -z "${execution_path}" ]]; then
+    execution_path="$(release_gate_execution_path)"
+  fi
+  tar_binary="$(PATH="${execution_path}" command -v tar 2>/dev/null || true)"
+  if [[ "${tar_binary}" != /* || ! -x "${tar_binary}" ]]; then
+    printf 'sealed release-gate PATH has no executable tar: %s\n' \
+      "${execution_path}" >&2
+    return 1
+  fi
+  version_output="$("${tar_binary}" --version 2>/dev/null || true)"
+  if [[ "${version_output}" != *"GNU tar"* ]]; then
+    printf 'GNU tar is required by the release parity fixtures; install gnu-tar before starting the release\n' >&2
+    return 1
+  fi
 }
 
 # Build one packaged Container runtime for the exact source head, then unpack
@@ -2527,7 +2552,7 @@ retained_stable_init_image_gate_digest() {
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   (
-  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_container_alias staged_containerization_path staged_containerization_alias release_gate_path release_gate_make
+  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_container_alias staged_containerization_path staged_containerization_alias release_gate_path release_gate_make release_gate_tar
   local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest candidate_sha init_image_digest_before init_image_digest_after
   local -a RELEASE_QUIESCED_LABELS=()
   local -a RELEASE_QUIESCED_PLISTS=()
@@ -2553,6 +2578,9 @@ run_local_release_gate() {
     --tap "${HOMEBREW_TAP_REPO}" \
     --compose-repository "${path}" \
     --container-repository "${container_path}"
+  release_gate_path="$(release_gate_execution_path)"
+  require_release_gate_gnu_tar "${release_gate_path}"
+  release_gate_tar="$(PATH="${release_gate_path}" command -v tar)"
   require_local_virtualization
   if [[ "${EXECUTE}" == "1" ]]; then
     trap release_local_release_gate_host_state EXIT
@@ -2696,7 +2724,6 @@ PY
     >"${runtime_parent}/.container-compose-release-runtime-identity"
   profile_root="${runtime_parent}/profiles"
   mkdir -p "${profile_root}"
-  release_gate_path="$(release_gate_execution_path)"
   release_gate_make="$(PATH="${release_gate_path}" command -v make || true)"
   if [[ "${release_gate_make}" != /* || ! -x "${release_gate_make}" ]]; then
     printf 'sealed release-gate PATH has no executable make: %s\n' \
@@ -2704,7 +2731,7 @@ PY
     return 1
   fi
   status=0
-  run_local_release_gate_command env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
+  run_local_release_gate_command env -u TAR -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
     -u CONTAINER_RUNTIME_SERVICE_NAMESPACE -u CONTAINER_RUNTIME_RUN_ID \
     PATH="${release_gate_path}" \
     HAWKEYE_AUTO_INSTALL=1 \
@@ -2723,6 +2750,7 @@ PY
     LLVM_PROFILE_FILE="${profile_root}/%p-%m.profraw" \
     "${path}/scripts/run-with-container-runtime.sh" "${container_binary}" \
     "${release_gate_make}" -C "${path}" release-gate \
+    "TAR=${release_gate_tar}" \
     "CONTAINER_BUILDER_SHIM_STACK_REPO=$(repo_path "container-builder-shim")" \
     "CONTAINERIZATION_STACK_REPO=${containerization_path}" \
     "CONTAINER_STACK_REPO=${container_path}" \

@@ -123,6 +123,43 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         selected_make = shutil.which("make", path=path)
         self.assertIsNotNone(selected_make)
         self.assertTrue(Path(selected_make or "").is_file())
+        selected_tar = shutil.which("tar", path=path)
+        self.assertIsNotNone(selected_tar)
+        tar_version = subprocess.run(
+            [selected_tar or "tar", "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(tar_version.returncode, 0, tar_version.stderr)
+        self.assertIn("GNU tar", tar_version.stdout)
+
+    def test_local_release_gate_rejects_non_gnu_tar_before_building(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bin_directory = Path(directory)
+            fake_tar = bin_directory / "tar"
+            fake_tar.write_text(
+                "#!/bin/bash\nprintf '%s\\n' 'bsdtar 3.7.4'\n",
+                encoding="utf-8",
+            )
+            fake_tar.chmod(0o755)
+
+            rejected = self.run_release_function(
+                ROOT,
+                f"require_release_gate_gnu_tar {shlex.quote(str(bin_directory))}",
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("GNU tar is required", rejected.stderr)
+
+            fake_tar.write_text(
+                "#!/bin/bash\nprintf '%s\\n' 'tar (GNU tar) 1.35'\n",
+                encoding="utf-8",
+            )
+            accepted = self.run_release_function(
+                ROOT,
+                f"require_release_gate_gnu_tar {shlex.quote(str(bin_directory))}",
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
 
     def test_local_release_gate_stages_the_init_archive_on_the_system_volume(self) -> None:
         staging = 'staged_init_image_archive="${runtime_parent}/vminit.oci.tar"'
@@ -145,6 +182,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('candidate_sha="$(git -C "${path}" rev-parse HEAD)"', local_gate)
         self.assertIn('run python3 "${HOMEBREW_PREFLIGHT_TOOL}"', local_gate)
         self.assertNotIn('${path}/Tools/release/homebrew-preflight.py', local_gate)
+        self.assertIn("run_local_release_gate_command env -u TAR", local_gate)
+        self.assertIn('release_gate_tar="$(PATH="${release_gate_path}" command -v tar)"', local_gate)
+        self.assertIn('"TAR=${release_gate_tar}"', local_gate)
         self.assertIn('init_image_digest_before="$(shasum -a 256', local_gate)
         self.assertIn('init_image_digest_after="$(shasum -a 256', local_gate)
         self.assertIn("local release gate guest snapshot changed", local_gate)
