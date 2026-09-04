@@ -52,6 +52,8 @@ TEXT_EVENTS_FILE=""
 PROJECT_NAME="container-compose-events-$RANDOM-$$"
 EVENTS_PID=""
 DOCKER_COMPOSE_COMMAND=()
+EVENTS_STOP_TIMEOUT_SECONDS="${EVENTS_STOP_TIMEOUT_SECONDS:-5}"
+STARTED_PROCESS_PID=""
 
 # Print a warning message to stderr.
 warning() {
@@ -134,14 +136,48 @@ create_fixture() {
     : >"$EVENTS_FILE"
 }
 
+# Start a command in its own process group so its complete process tree can be
+# stopped without signalling this parity script or its release controller.
+start_process_group() {
+    local output_file="$1"
+    shift
+
+    python3 -c '
+import os
+import sys
+
+os.setsid()
+os.execvp(sys.argv[1], sys.argv[1:])
+' "$@" >"$output_file" &
+    STARTED_PROCESS_PID="$!"
+}
+
+# Stop a process group within a bounded grace period. Docker's CLI wrapper can
+# otherwise survive TERM while waiting for its Compose plugin child forever.
+stop_process_group() {
+    local process_group_pid="$1"
+    local timeout_seconds="$2"
+    local deadline
+
+    kill -TERM -- "-$process_group_pid" >/dev/null 2>&1 || true
+    ((deadline = SECONDS + timeout_seconds))
+    while kill -0 -- "-$process_group_pid" >/dev/null 2>&1; do
+        if ((SECONDS >= deadline)); then
+            kill -KILL -- "-$process_group_pid" >/dev/null 2>&1 || true
+            break
+        fi
+        sleep 0.1
+    done
+    wait "$process_group_pid" >/dev/null 2>&1 || true
+}
+
 # Stop the background event watcher if it is still running.
 stop_events_watcher() {
     if [[ -z "$EVENTS_PID" ]]; then
         return 0
     fi
 
-    kill "$EVENTS_PID" >/dev/null 2>&1 || true
-    wait "$EVENTS_PID" >/dev/null 2>&1 || true
+    stop_process_group "$EVENTS_PID" "$EVENTS_STOP_TIMEOUT_SECONDS"
     EVENTS_PID=""
 }
 
@@ -158,8 +194,9 @@ cleanup() {
 
 # Start `Docker Compose events --json` in the background.
 start_events_watcher() {
-    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --json api >"$EVENTS_FILE" &
-    EVENTS_PID="$!"
+    start_process_group "$EVENTS_FILE" \
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --json api
+    EVENTS_PID="$STARTED_PROCESS_PID"
     sleep 1
 }
 
@@ -336,14 +373,14 @@ run_filtered_replay() {
     local replay_pid
     local deadline
 
-    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --json --since "$since" --until "$until" api >"$FILTERED_EVENTS_FILE" &
-    replay_pid="$!"
+    start_process_group "$FILTERED_EVENTS_FILE" \
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --json --since "$since" --until "$until" api
+    replay_pid="$STARTED_PROCESS_PID"
     ((deadline = SECONDS + 30))
 
     while kill -0 "$replay_pid" >/dev/null 2>&1; do
         if ((SECONDS >= deadline)); then
-            kill "$replay_pid" >/dev/null 2>&1 || true
-            wait "$replay_pid" >/dev/null 2>&1 || true
+            stop_process_group "$replay_pid" "$EVENTS_STOP_TIMEOUT_SECONDS"
             error 'timed out waiting for docker compose events --since/--until replay'
             return 1
         fi
@@ -366,14 +403,14 @@ run_text_replay() {
     local replay_pid
     local deadline
 
-    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --since "$since" --until "$until" api >"$TEXT_EVENTS_FILE" &
-    replay_pid="$!"
+    start_process_group "$TEXT_EVENTS_FILE" \
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$PROJECT_NAME" -f "$COMPOSE_FILE" events --since "$since" --until "$until" api
+    replay_pid="$STARTED_PROCESS_PID"
     ((deadline = SECONDS + 30))
 
     while kill -0 "$replay_pid" >/dev/null 2>&1; do
         if ((SECONDS >= deadline)); then
-            kill "$replay_pid" >/dev/null 2>&1 || true
-            wait "$replay_pid" >/dev/null 2>&1 || true
+            stop_process_group "$replay_pid" "$EVENTS_STOP_TIMEOUT_SECONDS"
             error 'timed out waiting for docker compose events text replay'
             return 1
         fi
@@ -475,4 +512,6 @@ main() {
     printf 'Docker Compose events parity check passed for project %s\n' "$PROJECT_NAME"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

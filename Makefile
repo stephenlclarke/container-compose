@@ -590,7 +590,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-compose-phase4-parity
 .PHONY: docker-compose-format-template-actions-parity
 .PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity docker-compose-deploy-job-modes-parity
-.PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test
+.PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
 .PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle docker-rest-logging-oracle docker-rest-logging-candidate docker-rest-logging-parity docker-rest-discovery-oracle docker-rest-discovery-candidate docker-rest-discovery-parity docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate docker-rest-image-discovery-parity docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate docker-rest-image-mutation-parity
 .PHONY: pipeline-help pipeline-bootstrap pipeline-runtime-check pipeline-state-init pipeline-lint pipeline-plan pipeline-preflight pipeline pipeline-resume pipeline-status pipeline-self-test pipeline-execute
 
@@ -2726,6 +2726,9 @@ isolation-performance-harness-test:
 signal-log-reliability-harness-test:
 	$(PYTHON) Tools/parity/test_signal_log_reliability.py
 
+compose-events-harness-test:
+	$(PYTHON) Tools/parity/test_compose_events_watcher.py
+
 upstream-divergence-report:
 	$(PYTHON) Tools/ci/upstream-divergence-report.py --fetch --output .build/reports/upstream-divergence.md --json-output .build/reports/upstream-divergence.json
 
@@ -2778,9 +2781,9 @@ source-preflight: upstream-handoff-registry-check stack-consistency core-runtime
 
 check: source-preflight lint
 
-lint: lint-static coverage-tools-test performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test
+lint: lint-static coverage-tools-test performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
 
-source-checks: source-preflight lint-static coverage-python-tools-test performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test
+source-checks: source-preflight lint-static coverage-python-tools-test performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
 
 lint-static:
 	@while IFS= read -r -d '' script; do \

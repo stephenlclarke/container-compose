@@ -61,6 +61,7 @@ class MakefileFailFastTests(unittest.TestCase):
                 "performance-matrix-harness-test",
                 "isolation-performance-harness-test",
                 "signal-log-reliability-harness-test",
+                "compose-events-harness-test",
             ],
         )
 
