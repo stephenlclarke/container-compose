@@ -549,6 +549,137 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(cleaned.returncode, 0, cleaned.stderr)
             self.assertFalse(stable.exists())
 
+    def test_stable_checkout_publication_rejects_a_raced_destination(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="c.publish-race.") as directory:
+            root = Path(directory)
+            source = root / "source"
+            temporary = root / "container"
+            stable = Path("/tmp") / (
+                f"container-compose-release-container-{os.getuid()}-"
+                f"race-test-{os.getpid()}-{time.time_ns()}"
+            )
+            source.mkdir()
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(stable), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if stable.exists()
+                else None
+            )
+            self.run_command("git", "-C", str(source), "init", "--quiet")
+            (source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            self.run_command("git", "-C", str(source), "add", "tracked.txt")
+            self.run_command(
+                "git",
+                "-C",
+                str(source),
+                "-c",
+                "user.name=Release Test",
+                "-c",
+                "user.email=release-test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            )
+
+            raced = self.run_release_function(
+                root,
+                "if stage_stable_local_validation_checkout "
+                f"{shlex.quote(str(source))} {shlex.quote(str(temporary))} "
+                f"{shlex.quote(str(stable))} container; then exit 99; fi",
+                shell_setup=(
+                    "mv() { mkdir -m 700 -- \"$2\"; command mv \"$@\"; }; "
+                    "export -f mv"
+                ),
+            )
+
+            self.assertEqual(raced.returncode, 0, raced.stderr)
+            self.assertIn("did not preserve the staged directory", raced.stderr)
+            self.assertFalse(
+                (stable / ".container-compose-release-validation-checkout").exists()
+            )
+
+    def test_runtime_identity_is_private_under_a_collaborative_umask(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="c.identity-mode.") as directory:
+            root = Path(directory)
+            stable = Path("/tmp") / (
+                f"container-compose-release-container-{os.getuid()}-"
+                f"identity-test-{os.getpid()}-{time.time_ns()}"
+            )
+            stable.mkdir(mode=0o700)
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(stable), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if stable.exists()
+                else None
+            )
+            namespace = "io.github.container.stack-validation.0123456789ab"
+            recorded = self.run_release_function(
+                root,
+                "record_stable_container_validation_runtime_identity "
+                f"{shlex.quote(str(stable))} "
+                f"{shlex.quote(str(root / 'i' / 'stack-release-app-root'))} "
+                f"{shlex.quote(namespace)}",
+                shell_setup="umask 0002",
+            )
+
+            self.assertEqual(recorded.returncode, 0, recorded.stderr)
+            identity = stable / ".container-compose-release-validation-runtime"
+            self.assertEqual(identity.stat().st_mode & 0o077, 0)
+
+    def test_retained_recovery_accepts_an_interrupted_prebuild_checkout(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="c.prebuild-recovery.") as directory:
+            runtime_parent = Path(directory)
+            stable = Path("/tmp") / (
+                f"container-compose-release-container-{os.getuid()}-"
+                f"prebuild-test-{os.getpid()}-{time.time_ns()}"
+            )
+            stable.mkdir(mode=0o700)
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(stable), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if stable.exists()
+                else None
+            )
+            (stable / ".container-compose-release-validation-checkout").write_text(
+                "container-compose stable validation checkout v1 container\n",
+                encoding="utf-8",
+            )
+            identity = stable / ".container-compose-release-validation-runtime"
+            identity.write_text(
+                f"app_root={runtime_parent}/i/stack-release-app-root\n"
+                "namespace=io.github.container.stack-validation.0123456789ab\n",
+                encoding="utf-8",
+            )
+            identity.chmod(0o600)
+            (runtime_parent / ".container-compose-release-runtime-parent").write_text(
+                "container-compose release runtime parent v1\n", encoding="utf-8"
+            )
+
+            recovered = self.run_release_function(
+                Path("/tmp"),
+                "recover_stable_container_validation_runtime "
+                f"{shlex.quote(str(stable))}",
+            )
+
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertFalse(runtime_parent.exists())
+            self.assertTrue(stable.exists())
+
     def test_stable_checkout_cleanup_retains_a_live_executable_tree(self) -> None:
         stable = Path("/tmp") / (
             f"container-compose-release-container-{os.getuid()}-"
