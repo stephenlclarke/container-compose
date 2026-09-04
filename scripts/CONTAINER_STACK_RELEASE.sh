@@ -976,6 +976,162 @@ stage_local_validation_checkout() {
   printf '%s\n' "${staged_path}"
 }
 
+# Move one freshly verified checkout to a stable physical system-volume path.
+# macOS Local Network privacy decisions include the executable's canonical path,
+# so a symlink whose target changes on every release still creates a new client.
+stage_stable_local_validation_checkout() {
+  local source_path="$1"
+  local temporary_path="$2"
+  local stable_path="$3"
+  local checkout_kind="${4:-containerization}"
+  local marker_value="container-compose stable validation checkout v1 ${checkout_kind}"
+  local legacy_target=""
+
+  case "${checkout_kind}" in
+    container | containerization) ;;
+    *)
+      printf 'unsupported stable release validation checkout kind: %s\n' \
+        "${checkout_kind:-unset}" >&2
+      return 2
+      ;;
+  esac
+  if [[ ! "${stable_path}" =~ ^(/private)?/tmp/container-compose-release-${checkout_kind}-[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+    printf 'stable release validation checkout path is invalid: %s\n' \
+      "${stable_path:-unset}" >&2
+    return 2
+  fi
+
+  # A previous implementation published this name as a symlink. Remove only
+  # that known legacy shape before replacing it with the physical checkout.
+  if [[ -L "${stable_path}" ]]; then
+    if ! legacy_target="$(readlink "${stable_path}")" || \
+      ! cleanup_local_validation_checkout_alias "${stable_path}" \
+        "${legacy_target}" "${checkout_kind}"; then
+      return 1
+    fi
+  fi
+  if [[ -e "${stable_path}" && "${checkout_kind}" == "container" ]] && \
+    ! recover_stable_container_validation_runtime "${stable_path}"; then
+    return 1
+  fi
+  if [[ -e "${stable_path}" ]] && \
+    ! cleanup_stable_local_validation_checkout "${stable_path}" \
+      "${checkout_kind}"; then
+    return 1
+  fi
+
+  if ! (
+    umask 077
+    stage_local_validation_checkout "${source_path}" "${temporary_path}" \
+      "${checkout_kind}" >/dev/null
+    printf '%s\n' "${marker_value}" \
+      >"${temporary_path}/.container-compose-release-validation-checkout"
+  ); then
+    printf 'failed to stage and privately mark stable release validation checkout: %s\n' \
+      "${temporary_path}" >&2
+    return 1
+  fi
+  if ! mv "${temporary_path}" "${stable_path}"; then
+    printf 'failed to publish stable release validation checkout: %s\n' \
+      "${stable_path}" >&2
+    return 1
+  fi
+  printf '%s\n' "${stable_path}"
+}
+
+# Print PIDs whose executable command begins inside one stable checkout.
+stable_local_validation_checkout_processes() {
+  local checkout_path="$1"
+  local canonical_path
+
+  canonical_path="$(cd "$(dirname "${checkout_path}")" && pwd -P)/$(basename "${checkout_path}")"
+  "${RELEASE_PS}" -axo pid=,command= | /usr/bin/awk \
+    -v supplied="${checkout_path}/" -v canonical="${canonical_path}/" '
+      {
+        pid = $1
+        $1 = ""
+        sub(/^[[:space:]]+/, "")
+        if (index($0, supplied) == 1 || index($0, canonical) == 1) {
+          print pid
+        }
+      }
+    '
+}
+
+# Delete only an owned stable checkout, and never remove its executable tree
+# while a launchd-owned process still refers to it.
+stable_validation_path_has_safe_ownership() {
+  local path="$1"
+  local owner_uid="" mode=""
+
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    owner_uid="$(/usr/bin/stat -f '%u' "${path}" 2>/dev/null || true)"
+    mode="$(/usr/bin/stat -f '%Lp' "${path}" 2>/dev/null || true)"
+  else
+    owner_uid="$(stat -c '%u' "${path}" 2>/dev/null || true)"
+    mode="$(stat -c '%a' "${path}" 2>/dev/null || true)"
+  fi
+  if [[ "${owner_uid}" != "$(id -u)" || ! "${mode}" =~ ^[0-7]{3,4}$ ]] || \
+    (((8#${mode} & 0022) != 0)); then
+    printf 'unsafe stable release validation path ownership or mode (uid=%s mode=%s): %s\n' \
+      "${owner_uid:-unknown}" "${mode:-unknown}" "${path}" >&2
+    return 1
+  fi
+}
+
+validate_stable_local_validation_checkout() {
+  local stable_path="$1"
+  local checkout_kind="${2:-containerization}"
+  local marker marker_value=""
+
+  case "${checkout_kind}" in
+    container | containerization) ;;
+    *)
+      printf 'unsupported stable release validation checkout kind: %s\n' \
+        "${checkout_kind:-unset}" >&2
+      return 2
+      ;;
+  esac
+  if [[ ! "${stable_path}" =~ ^(/private)?/tmp/container-compose-release-${checkout_kind}-[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || \
+    [[ -L "${stable_path}" ]]; then
+    printf 'refusing to remove an unexpected stable release validation checkout: %s\n' \
+      "${stable_path}" >&2
+    return 1
+  fi
+  [[ -e "${stable_path}" ]] || return 0
+  marker="${stable_path}/.container-compose-release-validation-checkout"
+  if [[ -f "${marker}" && ! -L "${marker}" ]]; then
+    IFS= read -r marker_value <"${marker}" || true
+  fi
+  if [[ "${marker_value}" != "container-compose stable validation checkout v1 ${checkout_kind}" ]]; then
+    printf 'refusing to remove an unmarked stable release validation checkout: %s\n' \
+      "${stable_path}" >&2
+    return 1
+  fi
+  stable_validation_path_has_safe_ownership "${stable_path}" || return 1
+  stable_validation_path_has_safe_ownership "${marker}" || return 1
+}
+
+cleanup_stable_local_validation_checkout() {
+  local stable_path="$1"
+  local checkout_kind="${2:-containerization}"
+  local active_pids=""
+
+  [[ -n "${stable_path}" ]] || return 0
+  [[ -e "${stable_path}" ]] || return 0
+  validate_stable_local_validation_checkout "${stable_path}" \
+    "${checkout_kind}" || return 1
+  active_pids="$(stable_local_validation_checkout_processes "${stable_path}")"
+  if [[ -n "${active_pids}" ]]; then
+    printf 'retaining stable release validation checkout with active processes (%s): %s\n' \
+      "$(tr '\n' ' ' <<<"${active_pids}" | sed 's/[[:space:]]*$//')" \
+      "${stable_path}" >&2
+    return 1
+  fi
+  chmod -R u+w "${stable_path}"
+  find "${stable_path}" -depth -delete
+}
+
 # Print the builder image repository, tag, and digest compiled by container.
 container_builder_image_metadata() {
   local package
@@ -1429,19 +1585,201 @@ cleanup_local_release_gate_resources() {
   local runtime_parent="$2"
   local runtime_app_root="$3"
   local runtime_service_namespace="$4"
-  local staged_containerization_alias="${5:-}"
-  local staged_containerization_path="${6:-}"
-  local staged_container_alias="${7:-}"
-  local staged_container_path="${8:-}"
+  local stable_containerization_path="${5:-}"
+  local stable_container_path="${6:-}"
+  local container_validation_app_root="${7:-}"
+  local container_validation_namespace="${8:-}"
+  local cleanup_status=0 nested_stop_failed=0 stable_container_cleanup_failed=0
 
   stop_release_runtime_candidate "${container_binary}" "${runtime_app_root}" \
     "${runtime_service_namespace}" || return 1
-  cleanup_local_validation_checkout_alias "${staged_containerization_alias}" \
-    "${staged_containerization_path}" || return 1
-  cleanup_local_validation_checkout_alias "${staged_container_alias}" \
-    "${staged_container_path}" container || return 1
-  cleanup_release_runtime_parent "${runtime_parent}" || return 1
-  cleanup_container_runtime_candidate
+  if [[ -n "${container_validation_app_root}" || \
+    -n "${container_validation_namespace}" ]]; then
+    if [[ -z "${container_validation_app_root}" || \
+      -z "${container_validation_namespace}" ]] || \
+      ! stop_stable_container_validation_runtime "${stable_container_path}" \
+        "${container_validation_app_root}" "${container_validation_namespace}"; then
+      cleanup_status=1
+      nested_stop_failed=1
+    fi
+  fi
+  cleanup_stable_local_validation_checkout "${stable_containerization_path}" || \
+    cleanup_status=1
+  if ((nested_stop_failed == 0)); then
+    if ! cleanup_stable_local_validation_checkout "${stable_container_path}" \
+      container; then
+      cleanup_status=1
+      stable_container_cleanup_failed=1
+    fi
+  fi
+  # With no current nested identity, a retained stable checkout belongs to an
+  # earlier failed gate; the newly allocated parent is independent and safe to
+  # remove. A current failed stop retains its matching app root instead.
+  if [[ -z "${container_validation_app_root}" && \
+    -z "${container_validation_namespace}" ]] || \
+    ((nested_stop_failed == 0 && stable_container_cleanup_failed == 0)); then
+    cleanup_release_runtime_parent "${runtime_parent}" || cleanup_status=1
+  fi
+  cleanup_container_runtime_candidate || cleanup_status=1
+  return "${cleanup_status}"
+}
+
+# Stop Container's nested integration namespace with the exact CLI that
+# created it. Missing build output means integration never started.
+stop_stable_container_validation_runtime() {
+  local stable_container_path="$1"
+  local app_root="$2"
+  local service_namespace="$3"
+  local cli="${stable_container_path}/bin/container"
+  local stop_status=0
+
+  [[ -n "${stable_container_path}" ]] || return 0
+  if [[ ! -x "${cli}" ]]; then
+    return 0
+  fi
+  if [[ ! "${stable_container_path}" =~ ^(/private)?/tmp/container-compose-release-container-[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || \
+    [[ ! "${app_root}" =~ ^(/private)?/tmp/c\.[^/]+/i/stack-release-app-root$ ]] || \
+    [[ ! "${service_namespace}" =~ ^io\.github\.container\.stack-validation\.[A-Za-z0-9]+$ ]]; then
+    printf 'refusing to stop an unexpected nested Container validation runtime: %s\n' \
+      "${stable_container_path}" >&2
+    return 1
+  fi
+  if env CONTAINER_APP_ROOT="${app_root}" \
+    CONTAINER_SERVICE_NAMESPACE="${service_namespace}" \
+    "${RELEASE_COMMAND_DEADLINE_RUNNER}" \
+      --seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" --grace-seconds 0 -- \
+      "${cli}" system stop; then
+    stop_status=0
+  else
+    stop_status="$?"
+  fi
+
+  # SystemStop implementations predating the upstream fix can skip the
+  # APIServer bootout when its health check fails. Constrain the recovery to
+  # this exact namespace and then prove that no checkout executable remains.
+  if force_bootout_stable_container_validation_namespace \
+    "${service_namespace}" "${stable_container_path}"; then
+    return 0
+  fi
+  if [[ "${stop_status}" -eq 124 ]]; then
+    printf 'timed out stopping nested Container validation namespace: %s\n' \
+      "${service_namespace}" >&2
+  elif [[ "${stop_status}" -ne 0 ]]; then
+    printf 'failed to stop nested Container validation namespace: %s\n' \
+      "${service_namespace}" >&2
+  fi
+  return 1
+}
+
+# Boot out only launchd labels owned by one validated nested namespace. This is
+# the bounded recovery path after the exact CLI has attempted graceful stop.
+force_bootout_stable_container_validation_namespace() {
+  local service_namespace="$1"
+  local stable_container_path="$2"
+  local manager domain label active_pids="" launchctl_output=""
+  local -a labels=()
+
+  if [[ ! "${service_namespace}" =~ ^io\.github\.container\.stack-validation\.[A-Za-z0-9]+$ ]] || \
+    [[ ! "${stable_container_path}" =~ ^(/private)?/tmp/container-compose-release-container-[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+    printf 'refusing launchd recovery for an unexpected Container validation namespace: %s\n' \
+      "${service_namespace}" >&2
+    return 1
+  fi
+  manager="$("${RELEASE_LAUNCHCTL}" managername 2>/dev/null || true)"
+  case "${manager}" in
+    Aqua) domain="gui/$(id -u)" ;;
+    Background) domain="user/$(id -u)" ;;
+    System) domain="system" ;;
+    *)
+      printf 'could not resolve launchd domain for Container validation cleanup: %s\n' \
+        "${manager:-unset}" >&2
+      return 1
+      ;;
+  esac
+  if ! launchctl_output="$("${RELEASE_LAUNCHCTL}" list)"; then
+    printf 'failed to enumerate launchd services for Container validation cleanup\n' >&2
+    return 1
+  fi
+  while IFS= read -r label; do
+    [[ -n "${label}" ]] && labels+=("${label}")
+  done < <(/usr/bin/awk -v prefix="${service_namespace}." \
+    'index($3, prefix) == 1 { print $3 }' <<<"${launchctl_output}")
+  for label in "${labels[@]}"; do
+    if ! "${RELEASE_COMMAND_DEADLINE_RUNNER}" \
+      --seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" --grace-seconds 0 -- \
+      "${RELEASE_LAUNCHCTL}" bootout "${domain}/${label}"; then
+      printf 'failed to boot out nested Container validation service: %s/%s\n' \
+        "${domain}" "${label}" >&2
+      return 1
+    fi
+  done
+  for _ in {1..50}; do
+    active_pids="$(stable_local_validation_checkout_processes \
+      "${stable_container_path}")"
+    [[ -z "${active_pids}" ]] && return 0
+    sleep 0.1
+  done
+  printf 'nested Container validation processes survived exact namespace cleanup (%s): %s\n' \
+    "$(tr '\n' ' ' <<<"${active_pids}" | sed 's/[[:space:]]*$//')" \
+    "${stable_container_path}" >&2
+  return 1
+}
+
+# Persist the exact nested runtime identity before the validation command can
+# start services. An interrupted gate can then recover the retained checkout
+# without guessing its launchd namespace or application root.
+record_stable_container_validation_runtime_identity() {
+  local stable_container_path="$1"
+  local app_root="$2"
+  local service_namespace="$3"
+  local identity="${stable_container_path}/.container-compose-release-validation-runtime"
+
+  if [[ ! "${stable_container_path}" =~ ^(/private)?/tmp/container-compose-release-container-[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || \
+    [[ ! "${app_root}" =~ ^(/private)?/tmp/c\.[^/]+/i/stack-release-app-root$ ]] || \
+    [[ ! "${service_namespace}" =~ ^io\.github\.container\.stack-validation\.[A-Za-z0-9]+$ ]]; then
+    printf 'refusing to record an unexpected nested Container validation identity\n' >&2
+    return 1
+  fi
+  printf 'app_root=%s\nnamespace=%s\n' "${app_root}" "${service_namespace}" \
+    >"${identity}"
+}
+
+# Recover one interrupted nested runtime before replacing its stable checkout.
+recover_stable_container_validation_runtime() {
+  local stable_container_path="$1"
+  local identity="${stable_container_path}/.container-compose-release-validation-runtime"
+  local key value app_root="" service_namespace="" runtime_parent=""
+
+  validate_stable_local_validation_checkout "${stable_container_path}" \
+    container || return 1
+  [[ -f "${identity}" && ! -L "${identity}" ]] || return 0
+  while IFS='=' read -r key value; do
+    case "${key}" in
+      app_root) app_root="${value}" ;;
+      namespace) service_namespace="${value}" ;;
+    esac
+  done <"${identity}"
+  if [[ -z "${app_root}" || -z "${service_namespace}" ]]; then
+    printf 'stable Container validation identity is incomplete: %s\n' \
+      "${identity}" >&2
+    return 1
+  fi
+  if [[ ! -d "${stable_container_path}/bin" || \
+    -L "${stable_container_path}/bin" || ! -f "${stable_container_path}/bin/container" || \
+    -L "${stable_container_path}/bin/container" ]]; then
+    printf 'stable Container validation CLI is not a trusted regular file: %s\n' \
+      "${stable_container_path}/bin/container" >&2
+    return 1
+  fi
+  stable_validation_path_has_safe_ownership "${identity}" || return 1
+  stable_validation_path_has_safe_ownership \
+    "${stable_container_path}/bin" || return 1
+  stable_validation_path_has_safe_ownership \
+    "${stable_container_path}/bin/container" || return 1
+  runtime_parent="$(dirname "$(dirname "${app_root}")")"
+  stop_stable_container_validation_runtime "${stable_container_path}" \
+    "${app_root}" "${service_namespace}" || return 1
+  cleanup_release_runtime_parent "${runtime_parent}"
 }
 
 # Delete only the fresh short runtime parent created and marked by this gate.
@@ -2552,8 +2890,8 @@ retained_stable_init_image_gate_digest() {
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   (
-  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_container_alias staged_containerization_path staged_containerization_alias release_gate_path release_gate_make release_gate_tar
-  local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest candidate_sha init_image_digest_before init_image_digest_after
+  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_containerization_path stable_container_path stable_containerization_path release_gate_path release_gate_make release_gate_tar
+  local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest candidate_sha init_image_digest_before init_image_digest_after container_validation_suffix container_validation_app_root container_validation_namespace
   local -a RELEASE_QUIESCED_LABELS=()
   local -a RELEASE_QUIESCED_PLISTS=()
   local -a RELEASE_QUIESCED_ACTION_STARTED=()
@@ -2650,10 +2988,10 @@ PY
     if ! cleanup_local_release_gate_resources "${container_binary:-}" \
       "${runtime_parent:-}" "${runtime_app_root:-}" \
       "${runtime_service_namespace:-}" \
-      "${staged_containerization_alias:-}" \
-      "${staged_containerization_path:-}" \
-      "${staged_container_alias:-}" \
-      "${staged_container_path:-}"; then
+      "${stable_containerization_path:-}" \
+      "${stable_container_path:-}" \
+      "${container_validation_app_root:-}" \
+      "${container_validation_namespace:-}"; then
       cleanup_status=1
     fi
     if ! release_local_release_gate_host_state; then
@@ -2677,14 +3015,10 @@ PY
   # copy only its installed release-policy tool and already-provisioned kernel;
   # build outputs remain fresh.
   staged_containerization_path="${runtime_parent}/containerization"
-  if ! staged_containerization_path="$(stage_local_validation_checkout \
-    "${containerization_path}" "${staged_containerization_path}")"; then
-    return 1
-  fi
-  staged_containerization_alias="${runtime_parent_base}/container-compose-release-containerization-$(id -u)"
-  if ! containerization_path="$(publish_local_validation_checkout_alias \
-    "${staged_containerization_path}" \
-    "${staged_containerization_alias}")"; then
+  stable_containerization_path="${runtime_parent_base}/container-compose-release-containerization-$(id -u)"
+  if ! containerization_path="$(stage_stable_local_validation_checkout \
+    "${containerization_path}" "${staged_containerization_path}" \
+    "${stable_containerization_path}")"; then
     return 1
   fi
   # Container's integration target launches freshly built XPC services. Keep
@@ -2692,13 +3026,19 @@ PY
   # launchd can leave an ad-hoc coverage binary suspended in xpcproxy while a
   # background TCC request waits for removable-volume approval.
   staged_container_path="${runtime_parent}/container"
-  if ! staged_container_path="$(stage_local_validation_checkout \
-    "${container_path}" "${staged_container_path}" container)"; then
+  stable_container_path="${runtime_parent_base}/container-compose-release-container-$(id -u)"
+  if ! container_path="$(stage_stable_local_validation_checkout \
+    "${container_path}" "${staged_container_path}" \
+    "${stable_container_path}" container)"; then
     return 1
   fi
-  staged_container_alias="${runtime_parent_base}/container-compose-release-container-$(id -u)"
-  if ! container_path="$(publish_local_validation_checkout_alias \
-    "${staged_container_path}" "${staged_container_alias}" container)"; then
+  container_validation_suffix="$(git -C "${container_path}" rev-parse --verify HEAD \
+    | tr -cd '[:alnum:]' | cut -c1-12)"
+  container_validation_app_root="${runtime_parent}/i/stack-release-app-root"
+  container_validation_namespace="io.github.container.stack-validation.${container_validation_suffix}"
+  if ! record_stable_container_validation_runtime_identity \
+    "${stable_container_path}" "${container_validation_app_root}" \
+    "${container_validation_namespace}"; then
     return 1
   fi
   # Stage the retained init archive on the local system volume. launchd-managed
@@ -2767,14 +3107,14 @@ PY
 
   if ! cleanup_local_release_gate_resources "${container_binary}" \
     "${runtime_parent}" "${runtime_app_root}" "${runtime_service_namespace}" \
-    "${staged_containerization_alias}" "${staged_containerization_path}" \
-    "${staged_container_alias}" "${staged_container_path}"; then
+    "${stable_containerization_path}" "${stable_container_path}" \
+    "${container_validation_app_root}" "${container_validation_namespace}"; then
     status=1
   fi
-  staged_containerization_alias=""
-  staged_containerization_path=""
-  staged_container_alias=""
-  staged_container_path=""
+  stable_containerization_path=""
+  stable_container_path=""
+  container_validation_app_root=""
+  container_validation_namespace=""
   runtime_parent=""
   runtime_app_root=""
   runtime_service_namespace=""

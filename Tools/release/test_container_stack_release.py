@@ -204,7 +204,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         ]
         staging = 'staged_containerization_path="${runtime_parent}/containerization"'
         container_staging = 'staged_container_path="${runtime_parent}/container"'
-        stage_call = "stage_local_validation_checkout"
+        stage_call = "stage_stable_local_validation_checkout"
         init_source = 'CONTAINERIZATION_INIT_SOURCE_PATH="${containerization_path}"'
         stack_source = '"CONTAINERIZATION_STACK_REPO=${containerization_path}"'
 
@@ -215,13 +215,23 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn(staging, local_gate)
         self.assertIn(container_staging, local_gate)
         self.assertIn(stage_call, local_gate)
-        self.assertIn("publish_local_validation_checkout_alias", local_gate)
+        self.assertNotIn("publish_local_validation_checkout_alias", local_gate)
         self.assertIn(
             "container-compose-release-containerization-$(id -u)", local_gate
         )
         self.assertIn("container-compose-release-container-$(id -u)", local_gate)
+        self.assertIn('"${stable_container_path}" container', local_gate)
         self.assertIn(
-            '"${container_path}" "${staged_container_path}" container', local_gate
+            'container_validation_namespace="io.github.container.stack-validation.',
+            local_gate,
+        )
+        self.assertIn(
+            "record_stable_container_validation_runtime_identity", local_gate
+        )
+        self.assertIn("recover_stable_container_validation_runtime", self.script)
+        self.assertLess(
+            local_gate.index("record_stable_container_validation_runtime_identity"),
+            local_gate.index("run_local_release_gate_command env"),
         )
         self.assertIn(init_source, local_gate)
         self.assertIn(stack_source, local_gate)
@@ -465,6 +475,365 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 source_hawkeye.read_bytes(),
             )
             self.assertEqual(self.git(staged, "remote"), "")
+
+    def test_stable_container_checkout_has_one_physical_path_and_marker_cleanup(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="c.stable-test.") as directory:
+            root = Path(directory)
+            source = root / "source"
+            temporary = root / "container"
+            stable = Path("/tmp") / (
+                f"container-compose-release-container-{os.getuid()}-"
+                f"test-{os.getpid()}-{time.time_ns()}"
+            )
+            source.mkdir()
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(stable), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if stable.exists()
+                else None
+            )
+            self.run_command("git", "-C", str(source), "init", "--quiet")
+            (source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            self.run_command("git", "-C", str(source), "add", "tracked.txt")
+            self.run_command(
+                "git",
+                "-C",
+                str(source),
+                "-c",
+                "user.name=Release Test",
+                "-c",
+                "user.email=release-test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "fixture",
+            )
+            (source / ".local" / "bin").mkdir(parents=True)
+            hawkeye = source / ".local" / "bin" / "hawkeye"
+            hawkeye.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            hawkeye.chmod(0o755)
+
+            staged = self.run_release_function(
+                root,
+                "stage_stable_local_validation_checkout "
+                f"{shlex.quote(str(source))} {shlex.quote(str(temporary))} "
+                f"{shlex.quote(str(stable))} container",
+                shell_setup="umask 0002",
+            )
+            self.assertEqual(staged.returncode, 0, staged.stderr)
+            self.assertEqual(staged.stdout.strip(), str(stable))
+            self.assertTrue(stable.is_dir())
+            self.assertFalse(stable.is_symlink())
+            self.assertFalse(temporary.exists())
+            self.assertEqual(stable.stat().st_mode & 0o022, 0)
+            self.assertEqual(
+                (
+                    stable / ".container-compose-release-validation-checkout"
+                ).read_text(encoding="utf-8").strip(),
+                "container-compose stable validation checkout v1 container",
+            )
+
+            cleaned = self.run_release_function(
+                root,
+                "cleanup_stable_local_validation_checkout "
+                f"{shlex.quote(str(stable))} container",
+            )
+            self.assertEqual(cleaned.returncode, 0, cleaned.stderr)
+            self.assertFalse(stable.exists())
+
+    def test_stable_checkout_cleanup_retains_a_live_executable_tree(self) -> None:
+        stable = Path("/tmp") / (
+            f"container-compose-release-container-{os.getuid()}-"
+            f"live-test-{os.getpid()}-{time.time_ns()}"
+        )
+        stable.mkdir()
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["find", str(stable), "-depth", "-delete"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if stable.exists()
+            else None
+        )
+        (stable / ".container-compose-release-validation-checkout").write_text(
+            "container-compose stable validation checkout v1 container\n",
+            encoding="utf-8",
+        )
+        sleeper = stable / "runtime-sleeper"
+        sleeper.symlink_to("/bin/sleep")
+        process = subprocess.Popen([str(sleeper), "30"])
+        self.assertIsNone(process.poll())
+        self.addCleanup(lambda: process.kill() if process.poll() is None else None)
+        try:
+            retained = self.run_release_function(
+                Path("/tmp"),
+                "if cleanup_stable_local_validation_checkout "
+                f"{shlex.quote(str(stable))} container; then exit 99; fi; "
+                f"test -d {shlex.quote(str(stable))}",
+            )
+            self.assertEqual(retained.returncode, 0, retained.stderr)
+            self.assertIn("active processes", retained.stderr)
+            self.assertIn(str(process.pid), retained.stderr)
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
+
+        cleaned = self.run_release_function(
+            Path("/tmp"),
+            "cleanup_stable_local_validation_checkout "
+            f"{shlex.quote(str(stable))} container",
+        )
+        self.assertEqual(cleaned.returncode, 0, cleaned.stderr)
+        self.assertFalse(stable.exists())
+
+    def test_retained_recovery_rejects_unsafe_ownership_before_execution(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="c.untrusted.") as directory:
+            root = Path(directory)
+            stable = Path("/tmp") / (
+                f"container-compose-release-container-{os.getuid()}-"
+                f"untrusted-test-{os.getpid()}-{time.time_ns()}"
+            )
+            cli = stable / "bin" / "container"
+            executed = root / "executed"
+            cli.parent.mkdir(parents=True)
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(stable), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if stable.exists()
+                else None
+            )
+            cli.write_text(
+                f"#!/usr/bin/env bash\ntouch {shlex.quote(str(executed))}\n",
+                encoding="utf-8",
+            )
+            cli.chmod(0o755)
+            (stable / ".container-compose-release-validation-runtime").write_text(
+                f"app_root={root}/i/stack-release-app-root\n"
+                "namespace=io.github.container.stack-validation.0123456789ab\n",
+                encoding="utf-8",
+            )
+            (stable / ".container-compose-release-validation-checkout").write_text(
+                "container-compose stable validation checkout v1 container\n",
+                encoding="utf-8",
+            )
+            stable.chmod(0o777)
+
+            rejected = self.run_release_function(
+                root,
+                "if recover_stable_container_validation_runtime "
+                f"{shlex.quote(str(stable))}; then exit 99; fi",
+            )
+            self.assertEqual(rejected.returncode, 0, rejected.stderr)
+            self.assertIn("unsafe stable release validation path ownership", rejected.stderr)
+            self.assertFalse(executed.exists())
+
+    def test_failed_retained_recovery_cleans_new_independent_roots(self) -> None:
+        runtime_parent = Path(
+            tempfile.mkdtemp(prefix="c.independent-cleanup.", dir="/tmp")
+        )
+        candidate_root = Path(
+            tempfile.mkdtemp(
+                prefix="container-compose-runtime-candidate.independent-cleanup.",
+                dir="/tmp",
+            )
+        )
+        stable = Path("/tmp") / (
+            f"container-compose-release-container-{os.getuid()}-"
+            f"independent-test-{os.getpid()}-{time.time_ns()}"
+        )
+        for path in (runtime_parent, candidate_root, stable):
+            self.addCleanup(
+                lambda cleanup_path=path: subprocess.run(
+                    ["find", str(cleanup_path), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if cleanup_path.exists()
+                else None
+            )
+        (runtime_parent / ".container-compose-release-runtime-parent").write_text(
+            "container-compose release runtime parent v1\n", encoding="utf-8"
+        )
+        runtime_app_root = runtime_parent / "app"
+        runtime_app_root.mkdir()
+        (candidate_root / ".container-compose-runtime-candidate-run").write_text(
+            "container-compose runtime candidate run v1 fixture digest\n",
+            encoding="utf-8",
+        )
+        candidate_cli = candidate_root / "bin" / "container"
+        candidate_cli.parent.mkdir()
+        candidate_cli.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        candidate_cli.chmod(0o755)
+        stable.mkdir()
+        (stable / ".container-compose-release-validation-checkout").write_text(
+            "container-compose stable validation checkout v1 container\n",
+            encoding="utf-8",
+        )
+        sleeper = stable / "runtime-sleeper"
+        sleeper.symlink_to("/bin/sleep")
+        process = subprocess.Popen([str(sleeper), "30"])
+        self.addCleanup(lambda: process.kill() if process.poll() is None else None)
+        try:
+            cleaned = self.run_release_function(
+                Path("/tmp"),
+                "if cleanup_local_release_gate_resources "
+                f"{shlex.quote(str(candidate_cli))} "
+                f"{shlex.quote(str(runtime_parent))} "
+                f"{shlex.quote(str(runtime_app_root))} "
+                "io.github.stephenlclarke.container-compose.runtime.independent "
+                f"'' {shlex.quote(str(stable))} '' ''; then exit 99; fi; "
+                f"test ! -e {shlex.quote(str(runtime_parent))}; "
+                f"test ! -e {shlex.quote(str(candidate_root))}; "
+                f"test -d {shlex.quote(str(stable))}",
+                shell_setup=(
+                    f"CONTAINER_RUNTIME_CANDIDATE_ROOT={shlex.quote(str(candidate_root))}"
+                ),
+            )
+            self.assertEqual(cleaned.returncode, 0, cleaned.stderr)
+            self.assertIn("active processes", cleaned.stderr)
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
+
+    def test_nested_container_validation_namespace_is_stopped_exactly(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="c.nested-stop.") as directory:
+            root = Path(directory)
+            stable = Path("/tmp") / (
+                f"container-compose-release-container-{os.getuid()}-"
+                f"stop-test-{os.getpid()}-{time.time_ns()}"
+            )
+            cli = stable / "bin" / "container"
+            stop_log = root / "stop.log"
+            launchctl = root / "launchctl"
+            cli.parent.mkdir(parents=True)
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(stable), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if stable.exists()
+                else None
+            )
+            cli.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'printf "%s|%s|%s\\n" "$CONTAINER_APP_ROOT" '
+                '"$CONTAINER_SERVICE_NAMESPACE" "$*" >"$STOP_LOG"\n',
+                encoding="utf-8",
+            )
+            cli.chmod(0o755)
+            launchctl.write_text(
+                "#!/usr/bin/env bash\n"
+                'case "${1:-}" in\n'
+                "  managername) printf 'Aqua\\n' ;;\n"
+                "  list) exit 0 ;;\n"
+                "  *) exit 64 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+            app_root = root / "i" / "stack-release-app-root"
+            namespace = "io.github.container.stack-validation.0123456789ab"
+
+            stopped = self.run_release_function(
+                root,
+                "stop_stable_container_validation_runtime "
+                f"{shlex.quote(str(stable))} {shlex.quote(str(app_root))} "
+                f"{shlex.quote(namespace)}",
+                shell_setup=f"export STOP_LOG={shlex.quote(str(stop_log))}",
+                environment_overrides={
+                    "CONTAINER_STACK_RELEASE_LAUNCHCTL": str(launchctl)
+                },
+            )
+            self.assertEqual(stopped.returncode, 0, stopped.stderr)
+            self.assertEqual(
+                stop_log.read_text(encoding="utf-8").strip(),
+                f"{app_root}|{namespace}|system stop",
+            )
+
+    def test_failed_nested_stop_boots_out_only_the_exact_namespace(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="c.nested-recover.") as directory:
+            root = Path(directory)
+            stable = Path("/tmp") / (
+                f"container-compose-release-container-{os.getuid()}-"
+                f"recover-test-{os.getpid()}-{time.time_ns()}"
+            )
+            cli = stable / "bin" / "container"
+            launchctl = root / "launchctl"
+            launchctl_log = root / "launchctl.log"
+            cli.parent.mkdir(parents=True)
+            self.addCleanup(
+                lambda: subprocess.run(
+                    ["find", str(stable), "-depth", "-delete"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if stable.exists()
+                else None
+            )
+            cli.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+            cli.chmod(0o755)
+            namespace = "io.github.container.stack-validation.0123456789ab"
+            launchctl.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'case "${1:-}" in\n'
+                "  managername) printf 'Aqua\\n' ;;\n"
+                "  list)\n"
+                f"    printf -- '-\\t0\\t{namespace}.apiserver\\n'\n"
+                "    printf -- '-\\t0\\tcom.apple.container.apiserver\\n'\n"
+                "    ;;\n"
+                '  bootout) printf "%s\\n" "$2" >>"$LAUNCHCTL_LOG" ;;\n'
+                "  *) exit 64 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+            app_root = root / "i" / "stack-release-app-root"
+
+            environment = self.non_interactive_environment()
+            environment["CONTAINER_STACK_RELEASE_LAUNCHCTL"] = str(launchctl)
+            environment["LAUNCHCTL_LOG"] = str(launchctl_log)
+            recovered = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "set -euo pipefail\n"
+                    "export CONTAINER_STACK_RELEASE_LIBRARY=1\n"
+                    f"source {shlex.quote(str(SCRIPT))}\n"
+                    "stop_stable_container_validation_runtime "
+                    f"{shlex.quote(str(stable))} {shlex.quote(str(app_root))} "
+                    f"{shlex.quote(namespace)}",
+                ],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=environment,
+            )
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertEqual(
+                launchctl_log.read_text(encoding="utf-8").strip(),
+                f"gui/{os.getuid()}/{namespace}.apiserver",
+            )
 
     def test_release_helper_retains_only_its_unpublished_candidate_before_readiness(self) -> None:
         recovery = self.script[
@@ -7106,6 +7475,7 @@ gh() {
         function_call: str,
         shell_setup: str | None = None,
         shell: str = "bash",
+        environment_overrides: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         lines = [
             "set -euo pipefail",
@@ -7121,6 +7491,8 @@ gh() {
         lines.append(function_call)
         command = "\n".join(lines)
         environment = self.non_interactive_environment()
+        if environment_overrides is not None:
+            environment.update(environment_overrides)
         return subprocess.run(
             [shell, "-c", command],
             capture_output=True,
