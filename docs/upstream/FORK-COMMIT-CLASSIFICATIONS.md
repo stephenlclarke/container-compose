@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `025f57c6c0fed55bc155af0ddc13b11fff6f22e6` | `83cfab33d0b1ca5976ce979b3755761e58cc957a` | 0 | 761 | 641 |
-| `containerization` | `d7fc7c15a257e348000f3ed3708e84a9d33add97` | `7807badff6a8bd1d53fa1c6696543f7fffab0fa4` | 0 | 289 | 230 |
+| `container` | `025f57c6c0fed55bc155af0ddc13b11fff6f22e6` | `1f2e4309f4be3f875c5dc8ee1a07182c0e836a0e` | 0 | 763 | 642 |
+| `containerization` | `d7fc7c15a257e348000f3ed3708e84a9d33add97` | `e97e92bf3b7c86c569b34b31f5655c0571979f8f` | 0 | 291 | 231 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `4aff0ea2e7ff293544a4efac28b508da53aac3d6` | 0 | 48 | 40 |
-| **Total** | | | **0** | **1098** | **911** |
+| **Total** | | | **0** | **1102** | **913** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,7 +32,7 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 656 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `support-maintenance` | 658 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
 | `generic-runtime-primitive` | 230 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
@@ -265,3 +265,9 @@ history after the reviewed merge. Container's cached gateway-identity pin and
 the exact Containerization dependency pin are support maintenance. No generic
 runtime primitive, temporary port, or rejected Compose-policy disposition
 changed in this refresh.
+
+The final 4 September 2026 release refresh advances Containerization through
+`e97e92bf3b7c` and Container through `1f2e4309f4be`. Deterministic serialization
+of the VM-backed `cctl run` integration cases and Container's exact dependency
+pin are support maintenance. No generic runtime primitive, temporary port, or
+rejected Compose-policy disposition changed in this refresh.
