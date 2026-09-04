@@ -2,14 +2,14 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Implementation underway. The current 0.14.1 candidate stack includes lossless IPAM modelling, network-scoped DNS/aliases, bridge mapping, IPv6-only networking, allocation ranges, gateway and auxiliary reservations, runtime DNS, persisted endpoint behavior for the supported vmnet lane, and an explicit shared-VM built-in bridge lane. Custom network/IPAM providers, IPv6 range/auxiliary behavior, durable multiple-pool/provider reconciliation, namespace joins, shared-VM custom Compose networks, and comparable-performance evidence remain. |
+| Status | Implementation underway. The current 0.14.2 candidate stack includes lossless IPAM modelling, network-scoped DNS/aliases, bridge mapping, IPv6-only networking, allocation ranges, gateway and auxiliary reservations, runtime DNS, persisted endpoint behavior for the supported vmnet lane, and an explicit shared-VM built-in bridge lane. Custom network/IPAM providers, IPv6 range/auxiliary behavior, durable multiple-pool/provider reconciliation, namespace joins, shared-VM custom Compose networks, and comparable-performance evidence remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API, devcontainer, and the common Engine Linux sandbox |
 | Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
-| 0.14.1 candidate Container revision | `2647090a8af74cf18fae2472342cdb55bab60e45` |
-| 0.14.1 candidate Containerization revision | `818f5917819a32dac1bc233605c253b4a105e0e0` |
+| 0.14.2 candidate Container revision | `1f2e4309f4be3f875c5dc8ee1a07182c0e836a0e` |
+| 0.14.2 candidate Containerization revision | `e97e92bf3b7c86c569b34b31f5655c0571979f8f` |
 | Design date | 31 July 2026 |
-| Last documentation review | 3 September 2026 against the 0.14.1 Current candidate and STATUS evidence |
+| Last documentation review | 4 September 2026 against the 0.14.2 Current candidate and STATUS evidence |
 
 ## Goal
 

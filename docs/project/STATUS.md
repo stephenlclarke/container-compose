@@ -11,14 +11,14 @@ guidance remains in [INSTALL.md](../guides/INSTALL.md).
 
 ## Current Stable Release
 
-[`0.14.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.0)
-was published for macOS arm64 on 31 August 2026.
+[`0.14.1`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.1)
+was published for macOS arm64 on 3 September 2026.
 
 The immutable release manifest selects:
 
-- Container `f87481688f25bbc9d311ae09c4fcf33f121ba9ae`.
-- Containerization `e5a92e86bf03eb2cc244b3b47b0413b3935abfe4`.
-- Container builder shim `db3e99cc3d19b9a328eb51be3a023a178f80ee81`.
+- Container `2647090a8af74cf18fae2472342cdb55bab60e45`.
+- Containerization `818f5917819a32dac1bc233605c253b4a105e0e0`.
+- Container builder shim `4aff0ea2e7ff293544a4efac28b508da53aac3d6`.
 - Builder image digest
   `sha256:d81d12e1dca1133ede535483a809803e6b256555a73d17f207003279539454a4`.
 - SwiftNIO SSL `09c5c9adcdd2a459187e45fe0143eb01063f244a`.
@@ -27,11 +27,11 @@ The hosted stable-release gate passed for that immutable package. Current and
 Homebrew release artifacts are Developer ID signed, checksummed, attested, and
 bound to the matched runtime stack.
 
-The 0.14.1 Current candidate selects Container
-`2647090a8af74cf18fae2472342cdb55bab60e45`, Containerization
-`818f5917819a32dac1bc233605c253b4a105e0e0`, and Container builder shim
+The 0.14.2 Current candidate selects Container
+`1f2e4309f4be3f875c5dc8ee1a07182c0e836a0e`, Containerization
+`e97e92bf3b7c86c569b34b31f5655c0571979f8f`, and Container builder shim
 `4aff0ea2e7ff293544a4efac28b508da53aac3d6`. These candidate revisions do not
-describe immutable 0.14.1 artifacts until the stable release gate succeeds and
+describe immutable 0.14.2 artifacts until the stable release gate succeeds and
 publishes that version.
 
 ## At a Glance
@@ -373,9 +373,10 @@ Normal repository validation uses `make ci`, targeted tests while iterating,
 the complete Docker Compose parity target when Compose or runtime behavior
 changes, and `make release-gate` before stable publication.
 
-The 0.14.1 candidate has passed exact-main CI and Current packaging. It has not
-yet passed the hosted Stable Release Gate and is not an immutable release.
-CodeQL, the complete parity gate, stable packaging, and final documentation are
+The 0.14.2 candidate has passed the local matched-stack, Compose CI, live
+runtime, and complete Docker Compose parity checkpoints. Its exact-head hosted
+review and Stable Release Gate remain pending, so it is not yet an immutable
+release. CodeQL, stable packaging, and final documentation publication remain
 release-gate work rather than evidence already earned by this candidate.
 
 The maintained local parity suite covers project loading, Compose and
