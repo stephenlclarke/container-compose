@@ -2671,6 +2671,39 @@ github_cli() {{
         self.assertIn("refs/tags/current^{}", workflow)
         self.assertIn('current_tag_sha="$(', workflow)
 
+    def test_current_package_yields_to_an_exact_stable_candidate(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        stable_skip = (
+            "Skipping current package because stable candidate %s owns exact main %s."
+        )
+
+        self.assertIn('stable_candidate_tag="$(', workflow)
+        self.assertIn(
+            "$2 ~ /^refs\\/tags\\/[0-9]+[.][0-9]+[.][0-9]+\\^\\{\\}$/",
+            workflow,
+        )
+        self.assertIn(
+            'api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${stable_candidate_tag}"',
+            workflow,
+        )
+        self.assertIn(
+            'api "repos/${GITHUB_REPOSITORY}/git/tags/${stable_candidate_tag_object}"',
+            workflow,
+        )
+        self.assertIn(
+            ".verification.verified == true and .object.sha == $commit",
+            workflow,
+        )
+        self.assertIn(
+            'if [[ "${stable_candidate_verified}" == "true" ]]',
+            workflow,
+        )
+        self.assertIn(stable_skip, workflow)
+        self.assertLess(
+            workflow.index(stable_skip),
+            workflow.index('current_tag_sha="$('),
+        )
+
     def test_current_package_rechecks_main_before_release_mutations(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         freshness = workflow[
