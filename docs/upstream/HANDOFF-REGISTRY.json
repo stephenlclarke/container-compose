@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-09-02",
+  "generatedAt": "2026-09-05",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -8205,6 +8205,27 @@
           "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/events/PR-container-events-stream.md"
         }
       ]
+    },
+    {
+      "id": "container-compose-488",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Make the recoverable pipeline reliable and efficient",
+      "state": "active-draft",
+      "lastVerified": "2026-09-05",
+      "commits": [
+        "bdfd9cef91399332040de31438eb47175859eef5"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-488.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-489.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/489"
     },
     {
       "id": "process-list-compose-top-process-list",

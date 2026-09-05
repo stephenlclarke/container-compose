@@ -53,6 +53,54 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
             devcontainer_stage,
         )
 
+    def test_compose_source_stage_is_fail_fast_and_tool_tests_run_once(self) -> None:
+        compose_source = PIPELINE_SOURCE.split(
+            "['container-compose', 'compose-source'", 1
+        )[1].split("['container-builder-shim'", 1)[0]
+        compose_go = PIPELINE_SOURCE.split(
+            "['container-compose', 'compose-go-validation'", 1
+        )[1].split("['container-builder-shim'", 1)[0]
+
+        self.assertIn("pipeline-source-check", compose_source)
+        self.assertNotIn(" coverage-tools-test", compose_source)
+        self.assertIn("-j4", compose_go)
+        self.assertIn("pipeline-tool-validation go-test go-build", compose_go)
+        self.assertIn(
+            "pipeline-source-check: source-preflight lint-static",
+            PIPELINE_MAKEFILE,
+        )
+        self.assertEqual(PIPELINE_SOURCE.count("pipeline-tool-validation"), 1)
+
+    def test_stage_root_preserves_unix_socket_path_budget(self) -> None:
+        self.assertIn(
+            "mktemp -d '/private/tmp/ccp.XXXXXX'",
+            REPOSITORY_STAGE,
+        )
+        self.assertIn(
+            '[[ "$execution_root" == /private/tmp/ccp.* ]]',
+            REPOSITORY_STAGE,
+        )
+        longest_fixture_socket = (
+            "/private/tmp/ccp.XXXXXX/tmp/tmpxxxxxxxx/"
+            "app-root/engine-provider/provider.sock"
+        )
+        self.assertLessEqual(len(longest_fixture_socket.encode()), 103)
+
+    def test_stage_forwards_cancellation_to_the_deadline_supervisor(self) -> None:
+        self.assertIn("stage_runner_pid=$!", REPOSITORY_STAGE)
+        self.assertIn(
+            "trap 'forward_stage_signal TERM 143' TERM",
+            REPOSITORY_STAGE,
+        )
+        self.assertIn(
+            '/bin/kill -"$signal_name" "$stage_runner_pid"',
+            REPOSITORY_STAGE,
+        )
+        self.assertIn(
+            'exec /usr/bin/env -i "${clean_environment[@]}"',
+            REPOSITORY_STAGE,
+        )
+
     def test_history_sensitive_release_stages_request_commit_metadata(self) -> None:
         expected_declarations = (
             "'make,go,hawkeye', '.', 'commit,describe'",

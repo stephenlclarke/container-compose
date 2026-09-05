@@ -7,6 +7,8 @@ workflow consolidation pass. It is deliberately separate from release and
 benchmark evidence. The goal is to make a later build-system refinement use
 measured failures rather than repeat discovery.
 
+The reliability follow-up is tracked by [issue #488](https://github.com/stephenlclarke/container-compose/issues/488).
+
 ## Changes in this iteration
 
 The recoverable Nextflow stack graph previously used 12 isolated functional
@@ -38,6 +40,8 @@ one repository share the same checkout and compiler cache.
 This consolidation removes four whole task sandboxes and their duplicate
 dependency planning/build work while increasing functional coverage in three
 repositories.
+
+The follow-up reliability pass keeps stage execution roots under the bounded `/private/tmp/ccp.*` prefix so nested Unix-domain sockets remain below Darwin's 103-byte limit. The Compose source stage now performs only fail-fast source validation; Python tool and parity-harness tests run once in the existing Compose Go lane with four-way Make parallelism, concurrently with Swift validation. Nextflow cancellation is forwarded explicitly from each repository task shell to the deadline supervisor, which already owns process-session cleanup, so a failed sibling stage cannot leave a fixture process running after its task is terminated.
 
 ## Timings observed during the corrective work
 
@@ -76,6 +80,18 @@ source graph differed between commands.
   four waiter tests ran in 0.001 seconds. The edit crossed target boundaries,
   but the ratio still shows that invocation and link topology dominate focused
   feedback.
+- The real cancellation proof completed Compose source validation in 10.5
+  seconds, interrupted the active Go/tool stage, returned the original 130
+  status, and left no deadline runner, fixture process, or `/private/tmp/ccp.*`
+  root behind.
+- The first optimized repository checkpoint ran Compose source validation in
+  10.5 seconds and completed the parallel Swift lane in 5 minutes 59 seconds.
+  The Go/tool lane stopped after 9 minutes 42 seconds on one stale
+  wall-clock-sensitive test rather than hiding or retrying it.
+- The corrected exact implementation head completed the repository profile in
+  9 minutes 23 seconds. Source validation took 10.6 seconds, Swift validation
+  took 5 minutes 5 seconds, and the parallel Go/tool lane took 8 minutes 58
+  seconds. All three receipts and the final summary were complete.
 
 Hosted checks on the merged reviewed heads provide a second, reproducible
 timing set:
@@ -115,6 +131,14 @@ graph with later refinements.
   paths containing spaces are quoted.
 - Direct raw `swift test` for Container can bypass the semantic-helper producer.
   The supported pipeline command now uses Make, which owns that prerequisite.
+- Long per-stage execution roots left too little of Darwin's Unix-socket path budget for nested release-tool fixtures. Fifty-four tests failed and one errored after about 247.85 seconds even though the product behavior was unchanged. Stage roots are now short and the path budget has a focused regression.
+- A terminated devcontainer source stage left its fake `colima start` descendant alive after Nextflow aborted the graph, which could trigger an unattended Keychain dialog. The task shell now forwards HUP, INT, QUIT, and TERM to the process-session supervisor and waits for its bounded cleanup before removing stage state.
+- Compose source validation serialized release, CI, coverage, and parity-harness tests before either functional lane could start. Source validation is now static and fail-fast; the executable tool suites run once with bounded parallelism alongside Swift validation.
+- The API-round-trip deadline test spent half of its six-second budget in the
+  harness's intentional three-second stale-service delay, so it could expire
+  before reaching the API hang it was meant to exercise. Its fixture now
+  bypasses only that fixed delay, retains the simulated 30-second API hang,
+  and reports the invocation log on a count mismatch.
 
 ### Still open for a later build-system iteration
 

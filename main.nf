@@ -91,7 +91,7 @@ def allRepositorySpecs() {
 def sourceStageSpecs() {
     [
         ['container-compose', 'compose-source', 'source', params.sourceTimeoutSeconds as Integer,
-            'HAWKEYE_AUTO_INSTALL=0 make --no-print-directory PYTHON=python3 SWIFT=/usr/bin/swift GO=go MARKDOWNLINT=markdownlint HAWKEYE=hawkeye check',
+            'HAWKEYE_AUTO_INSTALL=0 make --no-print-directory PYTHON=python3 SWIFT=/usr/bin/swift GO=go MARKDOWNLINT=markdownlint HAWKEYE=hawkeye pipeline-source-check',
             'make,apple-swift,go,gofmt,python3,ruby,markdownlint,hawkeye', '.', 'commit'],
         ['container-builder-shim', 'builder-source', 'source', params.sourceTimeoutSeconds as Integer,
             'GOTOOLCHAIN=local make --no-print-directory GO=go HAWKEYE="$(command -v hawkeye)" GOLANGCI_LINT="$(command -v golangci-lint)" check-licenses vet lint && GOTOOLCHAIN=local go list -mod=vendor ./... >/dev/null',
@@ -124,8 +124,9 @@ def functionalStageSpecs() {
             'Package.swift Package.resolved Sources Tests Tools scripts Makefile config.toml docs/project/STATUS.md docs/images/container-compose-icon-octopus.png examples/logging/compose.yml',
             'none'],
         ['container-compose', 'compose-go-validation', 'test', params.functionalTimeoutSeconds as Integer,
-            'GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org make --no-print-directory GO=go go-test go-build',
-            'make,go,otool', 'Tools/compose-normalizer Makefile', 'none'],
+            'HAWKEYE_AUTO_INSTALL=0 GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org make --no-print-directory -j4 PYTHON=python3 SWIFT=/usr/bin/swift GO=go MARKDOWNLINT=markdownlint HAWKEYE=hawkeye pipeline-tool-validation go-test go-build',
+            'make,apple-swift,go,gofmt,python3,ruby,markdownlint,hawkeye,otool',
+            '.', 'commit'],
         ['container-builder-shim', 'builder-validation', 'test', params.functionalTimeoutSeconds as Integer,
             'GOTOOLCHAIN=local GIT_TAG="$PIPELINE_ORIGINAL_DESCRIBE" make --no-print-directory GO=go coverage build',
             'make,go',

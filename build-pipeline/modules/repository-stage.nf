@@ -56,6 +56,7 @@ process RUN_REPOSITORY_STAGE {
     artifact_manifest="$task_root/!{stageName}.artifacts.tsv"
     execution_root=
     stage_command=
+    stage_runner_pid=
     failure_session_root=
     semantic_cache_root=
 
@@ -125,7 +126,7 @@ process RUN_REPOSITORY_STAGE {
         fi
 
         if [[ -n "$execution_root" ]] &&
-            [[ "$execution_root" == /private/tmp/container-compose-pipeline.* ]] &&
+            [[ "$execution_root" == /private/tmp/ccp.* ]] &&
             [[ -f "$execution_root/.container-compose-execution-root" ]] &&
             [[ "$(<"$execution_root/.container-compose-execution-root")" == \
                 'container-compose internal execution v1' ]]; then
@@ -147,6 +148,18 @@ process RUN_REPOSITORY_STAGE {
         record_result_and_cleanup "$stage_status"
         final_status=$?
         exit "$final_status"
+    }
+
+    forward_stage_signal() {
+        local signal_name="$1"
+        local signal_status="$2"
+        trap '' HUP INT QUIT TERM
+        if [[ -n "$stage_runner_pid" ]] &&
+            /bin/kill -0 "$stage_runner_pid" 2>/dev/null; then
+            /bin/kill -"$signal_name" "$stage_runner_pid" 2>/dev/null || true
+            wait "$stage_runner_pid" 2>/dev/null || true
+        fi
+        exit "$signal_status"
     }
 
     case "$repository_name" in
@@ -239,6 +252,10 @@ process RUN_REPOSITORY_STAGE {
         fi
     fi
     trap handle_exit EXIT
+    trap 'forward_stage_signal HUP 129' HUP
+    trap 'forward_stage_signal INT 130' INT
+    trap 'forward_stage_signal QUIT 131' QUIT
+    trap 'forward_stage_signal TERM 143' TERM
 
     metadata_stage="$(/usr/bin/awk -F '\t' '$1 == "stage" { print $2 }' \
         "$source_metadata")"
@@ -481,8 +498,9 @@ process RUN_REPOSITORY_STAGE {
     }
     verify_tool_closure
 
-    execution_root="$(/usr/bin/mktemp -d \
-        "/private/tmp/container-compose-pipeline.${stage_name}.XXXXXX")"
+    # Darwin limits Unix-domain socket paths to 103 bytes. Keep the isolated
+    # root short so nested test fixtures still have enough path budget.
+    execution_root="$(/usr/bin/mktemp -d '/private/tmp/ccp.XXXXXX')"
     printf '%s\n' 'container-compose internal execution v1' \
         >"$execution_root/.container-compose-execution-root"
     /bin/mkdir -p "$execution_root/source" "$execution_root/home/.config" \
@@ -569,8 +587,7 @@ process RUN_REPOSITORY_STAGE {
     fi
     developer_environment=("DEVELOPER_DIR=$recorded_developer_directory")
 
-    run_clean() {
-        /usr/bin/env -i \
+    clean_environment=(
             PATH="$stage_execution_path" \
             HOME="$execution_root/home" \
             XDG_CONFIG_HOME="$execution_root/home/.config" \
@@ -594,20 +611,36 @@ process RUN_REPOSITORY_STAGE {
             GIT_COMMITTER_DATE=2000-01-01T00:00:00Z \
             LC_ALL=C LANG=C TERM=dumb TZ=UTC ZERO_AR_DATE=1 \
             "${developer_environment[@]}" \
-            "${metadata_environment[@]}" \
-            "$@"
+            "${metadata_environment[@]}"
+    )
+
+    run_clean() {
+        /usr/bin/env -i "${clean_environment[@]}" "$@"
+    }
+
+    run_supervised_clean() {
+        set +e
+        (
+            exec /usr/bin/env -i "${clean_environment[@]}" "$@"
+        ) &
+        stage_runner_pid=$!
+        wait "$stage_runner_pid"
+        local command_status=$?
+        stage_runner_pid=
+        set -e
+        return "$command_status"
     }
 
     if [[ "$source_format" == git-bundle ]]; then
         [[ -n "$expected_commit" ]] || exit 2
-        run_clean /usr/bin/python3 "$deadline_runner" --seconds 300 -- \
+        run_supervised_clean /usr/bin/python3 "$deadline_runner" --seconds 300 -- \
             /usr/bin/git clone --quiet --no-checkout "$internal_payload" \
                 "$execution_root/source"
-        run_clean /usr/bin/python3 "$deadline_runner" --seconds 300 -- \
+        run_supervised_clean /usr/bin/python3 "$deadline_runner" --seconds 300 -- \
             /usr/bin/git -C "$execution_root/source" checkout --quiet \
                 --detach "$expected_commit"
     else
-        run_clean /usr/bin/python3 "$deadline_runner" --seconds 120 -- \
+        run_supervised_clean /usr/bin/python3 "$deadline_runner" --seconds 120 -- \
             /usr/bin/tar -xf "$internal_payload" -C "$execution_root/source"
         run_clean /usr/bin/git -C "$execution_root/source" init --quiet
         run_clean /usr/bin/git -C "$execution_root/source" \
@@ -645,10 +678,14 @@ process RUN_REPOSITORY_STAGE {
     set +e
     (
         cd "$execution_root/source"
-        run_clean /usr/bin/python3 "$deadline_runner" \
+        exec /usr/bin/env -i "${clean_environment[@]}" \
+            /usr/bin/python3 "$deadline_runner" \
             --seconds "$deadline_seconds" -- "$stage_command"
-    ) >"$stdout_log" 2>"$stderr_log"
+    ) >"$stdout_log" 2>"$stderr_log" &
+    stage_runner_pid=$!
+    wait "$stage_runner_pid"
     stage_status=$?
+    stage_runner_pid=
     set -e
     /bin/cat "$stdout_log"
     /bin/cat "$stderr_log" >&2

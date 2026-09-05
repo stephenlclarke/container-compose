@@ -592,7 +592,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity docker-compose-deploy-job-modes-parity
 .PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
 .PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle docker-rest-logging-oracle docker-rest-logging-candidate docker-rest-logging-parity docker-rest-discovery-oracle docker-rest-discovery-candidate docker-rest-discovery-parity docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate docker-rest-image-discovery-parity docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate docker-rest-image-mutation-parity
-.PHONY: pipeline-help pipeline-bootstrap pipeline-runtime-check pipeline-state-init pipeline-lint pipeline-plan pipeline-preflight pipeline pipeline-resume pipeline-status pipeline-self-test pipeline-execute
+.PHONY: pipeline-help pipeline-bootstrap pipeline-runtime-check pipeline-state-init pipeline-lint pipeline-plan pipeline-preflight pipeline pipeline-resume pipeline-status pipeline-self-test pipeline-execute pipeline-source-check pipeline-tool-validation
 
 pipeline-help:
 	@printf '%s\n' \
@@ -612,6 +612,12 @@ pipeline-help:
 		'  PIPELINE_SESSION=<failed-session-uuid>' \
 		'  CONTAINER_FAMILY_SOURCE_ROOT=<directory-containing-sibling-repositories>' \
 		'  PIPELINE_STATE_ROOT=<absolute-durable-state-directory>'
+
+# Keep the fail-fast source stage free of executable test suites. Functional
+# validation runs each tool suite once, in parallel with the Swift lane.
+pipeline-source-check: source-preflight lint-static
+
+pipeline-tool-validation: coverage-tools-test performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
 
 pipeline-bootstrap: pipeline-state-init
 	@destination="$${NEXTFLOW_BIN}"; \
