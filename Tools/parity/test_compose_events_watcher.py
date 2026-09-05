@@ -55,7 +55,9 @@ class EventsWatcherShutdownTests(unittest.TestCase):
                         'EVENTS_FILE="$2"; DOCKER_COMPOSE_COMMAND=("$3"); '
                         "start_events_watcher; watcher_pid=$EVENTS_PID; "
                         "stop_events_watcher; "
-                        'if kill -0 -- "-$watcher_pid" 2>/dev/null; then exit 91; fi'
+                        "for _ in {1..20}; do "
+                        'if ! kill -0 -- "-$watcher_pid" 2>/dev/null; then '
+                        "exit 0; fi; sleep 0.05; done; exit 91"
                     ),
                     "_",
                     HARNESS,
