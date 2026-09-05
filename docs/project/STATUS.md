@@ -28,11 +28,22 @@ Homebrew release artifacts are Developer ID signed, checksummed, attested, and
 bound to the matched runtime stack.
 
 The 0.14.2 Current candidate selects Container
-`1f2e4309f4be3f875c5dc8ee1a07182c0e836a0e`, Containerization
-`e97e92bf3b7c86c569b34b31f5655c0571979f8f`, and Container builder shim
-`4aff0ea2e7ff293544a4efac28b508da53aac3d6`. These candidate revisions do not
+`a252482bbacbd15742845764893585131e2c4825`, Containerization
+`b404e03bb914904107a6a9305ba1f0e44c79a59c`, Container builder shim
+`287f2ea3276eca73cd3781ff59b4c9c82d5f3d32`, builder image digest
+`sha256:7398845b67e6d5c5e610e9f1c6bf4ce84e4c7242a8f8002ff2e5e917437cfdf7`,
+and SwiftNIO SSL `3e13ce5f6dd5b7e89fff9ab55ab7caed39fe7285`.
+These candidate revisions do not
 describe immutable 0.14.2 artifacts until the stable release gate succeeds and
 publishes that version.
+
+The candidate additionally carries reviewed runtime corrections for changing
+Kubernetes control-plane addresses, unreadable image entries and build
+contexts, published host paths containing colons, named machine identities,
+completed exec-state reclamation, failed logging consumers, host-only gateway
+reservation, and authoritative foreground exit status and event delivery.
+Containerization and SwiftNIO SSL provide the matched pod-start cleanup, ext4,
+registry, terminal, TLS, EOF, and certificate parsing fixes below that runtime.
 
 ## At a Glance
 

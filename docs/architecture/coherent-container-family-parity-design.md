@@ -5,12 +5,12 @@
 | Status | Integrated design complete; implementation underway. The current 0.14.2 candidate includes the neutral Engine API/gateway, selected enhanced provider, versioned capabilities, durable logging/provider work, explicit dedicated/shared VM isolation, live memory targeting, adaptive reclamation, and several network/image/lifecycle subsets. Docker-compatible namespace joins, singular-authority devcontainer cutover, remaining resource planes, migration, security, and comparable-performance gates are incomplete. |
 | Family | `container-engine-api`, `container-engine`, `container`, `containerization`, `container-compose`, `container-builder-shim`, `devcontainer`, and supporting matched-stack projects |
 | Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
-| 0.14.2 candidate Container revision | `1f2e4309f4be3f875c5dc8ee1a07182c0e836a0e` |
-| 0.14.2 candidate Containerization revision | `e97e92bf3b7c86c569b34b31f5655c0571979f8f` |
+| 0.14.2 candidate Container revision | `a252482bbacbd15742845764893585131e2c4825` |
+| 0.14.2 candidate Containerization revision | `b404e03bb914904107a6a9305ba1f0e44c79a59c` |
 | Original devcontainer design evidence | `b31e80b2b9c09ecc73bb3badf9cd5cf16550a538` on `origin/main`; extraction head must be reselected from a clean reviewed revision |
 | Socktainer comparison | 1.1.1 at `6cc7a32cc37d4ad0c07e9c88a7bbf2abdaceeea0`; conformance input only |
 | Design date | 31 July 2026 |
-| Last documentation review | 4 September 2026 against the 0.14.2 Current candidate and programme STATUS |
+| Last documentation review | 5 September 2026 against the 0.14.2 Current candidate and programme STATUS |
 
 ## Outcome
 
