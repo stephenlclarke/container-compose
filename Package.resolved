@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephenlclarke/container.git",
       "state" : {
-        "revision" : "a252482bbacbd15742845764893585131e2c4825"
+        "revision" : "228897171d71975988ccdc690f1982e7433952af"
       }
     },
     {
@@ -23,7 +23,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephenlclarke/container-engine-api.git",
       "state" : {
-        "revision" : "d713f12cb362c6646d083537f16e6595d3743c74"
+        "revision" : "84830606abf971110071248e087a80ff4abb86d4"
       }
     },
     {
