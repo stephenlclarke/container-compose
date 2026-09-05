@@ -1,11 +1,8 @@
 # Current Apple Upstream Review
 
-This is the current disposition of Apple work that affects the five-repository container stack. Re-check GitHub before changing an Apple-backed component because issue, review, and merge state can change independently.
+This is the current disposition of Apple work that affects the supported Container stack. Re-check GitHub before changing an Apple-backed component because issue, review, and merge state can change independently.
 
-All submitted and tracked Apple pull-request states were queried 3 August
-2026. Fetched Apple and supported-fork baselines and fork classifications were
-last refreshed 30 July 2026; the tables below keep that baseline date explicit
-instead of presenting it as a fresh fetch.
+All Stephen-authored Apple pull-request states were queried 5 September 2026. Every open branch was rebased on its current upstream `main`, focused-tested, signature-checked, pushed to the existing pull request, and given a refresh evidence comment. Fetched support-fork baselines and fork classifications were last refreshed 30 July 2026; the tables below keep that older baseline date explicit instead of presenting it as a fresh fetch.
 
 ## 0.14.0 Optimization Pull-Request Provenance
 
@@ -36,6 +33,7 @@ for this release and is excluded from the list above.
 - `apple/container`
 - `apple/containerization`
 - `apple/container-builder-shim`
+- `apple/swift-nio-ssl`
 
 ## Fetched Main Baselines
 
@@ -68,23 +66,25 @@ fetched Apple head and retains the separately reviewed guest-DNS proxy work.
 
 ### Open
 
-Four Stephen-authored pull requests remain open and await Apple maintainer
-review. No Apple write was performed during this refresh.
+Five Stephen-authored pull requests remain open and await Apple maintainer review. GitHub reports every refreshed branch as mergeable; each is blocked only because Apple review and fork-workflow approval are still required.
 
-| Pull request | Published head | Current state and purpose |
-| --- | --- | --- |
-| [apple/containerization#823](https://github.com/apple/containerization/pull/823) | `3ed10bf1a0dda802cb46c1f0b55934c55a4bd395` | Review required. Prevent deferred directory metadata from following an intermediate symlink or applying to a removed and recreated directory; all 579 stock tests and `make check` pass locally. GitHub reports no checks on the branch. |
-| [apple/containerization#821](https://github.com/apple/containerization/pull/821) | `726e1ffdceada5cc62d32c8fc939aef30220e6ff` | Review required. Restore permissions after ownership so `fchown` cannot clear set-ID bits. This pull request intentionally depends on #820. GitHub reports no checks on the branch. |
-| [apple/containerization#820](https://github.com/apple/containerization/pull/820) | `6e32963617b3ed8f4b63432dbcf834f94807342b` | Review required. Preserve sticky, set-user-ID, and set-group-ID archive permission bits. GitHub reports no checks on the branch. |
-| [apple/containerization#799](https://github.com/apple/containerization/pull/799) | `9c5b9ee19796dc13f0d7d1b0687d780f0db04e29` | Review required with hosted build, signature, and Linux compile checks green. Missing copy sources fail promptly and no longer block later lifecycle operations. |
+- [apple/container#2126](https://github.com/apple/container/pull/2126) is at signed head `6540619ba679e14fbf00a5d99638bb363f26c72f` on Apple `main` `eee7ad097079cc3b02d5309ec10160143f2d0c6a`. The focused `DirectoryWatcherTest` suite passes 5/5 and `git diff --check` passes.
+- [apple/container#2127](https://github.com/apple/container/pull/2127) is at signed head `c8b4d767a77fd70e01b11129199222661a0f92c0` on the same Apple `main`. The focused `ContainerLoadAtBootTests` suite passes 2/2 and `git diff --check` passes.
+- [apple/container#2128](https://github.com/apple/container/pull/2128) is at signed head `7df71fcb0e11a0bf9422e05cda35008438e5bf4b` on the same Apple `main`. The focused `ImagePruneTests` and `UtilityTests` suites pass 14/14 and `git diff --check` passes.
+- [apple/container#2130](https://github.com/apple/container/pull/2130) is at signed head `a496a3abba714baa510704b38339c8565418e07f` on the same Apple `main`. The focused `K8sNodePreparationTests` suite passes 2/2 and `git diff --check` passes.
+- [apple/swift-nio-ssl#598](https://github.com/apple/swift-nio-ssl/pull/598) is at signed head `884b18fc96d8feae3ca63a7e662b8ea0eff31235` on Apple `main` `03827c1a9fdb2b6b00a4e93ede8861520263af8c`. The focused `NIOSSLIntegrationTest.testPlaintextReadBufferCanHoldTwoRecords` regression passes 1/1 and `git diff --check` passes.
 
-No Stephen-authored pull request has been submitted to
-`apple/container-builder-shim`.
+No Stephen-authored pull request has been submitted to `apple/container-builder-shim`.
 
 ### Merged or closed
 
 | Pull request | Final state | Disposition |
 | --- | --- | --- |
+| [apple/container#2129](https://github.com/apple/container/pull/2129) | Closed 31 August 2026 without merge | The resolver-search correction remains recoverable at exact head `6404f2a1096942fcd04bada6856a87de7e788198`; it is not an open Apple submission. |
+| [apple/containerization#823](https://github.com/apple/containerization/pull/823) | Closed 5 August 2026 without merge | The deferred-directory-attribute safety correction remains recoverable at its submitted head; it is not an open Apple submission. |
+| [apple/containerization#821](https://github.com/apple/containerization/pull/821) | Closed 5 August 2026 without merge | The ownership-order permission correction remains recoverable at its submitted head; it is not an open Apple submission. |
+| [apple/containerization#820](https://github.com/apple/containerization/pull/820) | Closed 5 August 2026 without merge | The special-permission-bit correction remains recoverable at its submitted head; it is not an open Apple submission. |
+| [apple/containerization#799](https://github.com/apple/containerization/pull/799) | Closed 5 August 2026 without merge | The missing-source lifecycle correction remains recoverable at its submitted head; it is not an open Apple submission. |
 | [apple/container#2036](https://github.com/apple/container/pull/2036) | Closed 3 August 2026 without merge | The exact fork head remains recoverable for the programme-wide upstream review; it is not an open Apple submission. |
 | [apple/container#2035](https://github.com/apple/container/pull/2035) | Closed 3 August 2026 without merge | The exact fork head remains recoverable for the programme-wide upstream review; it is not an open Apple submission. |
 | [apple/container#2031](https://github.com/apple/container/pull/2031) | Closed 3 August 2026 without merge | The exact fork head remains recoverable for the programme-wide upstream review; it is not an open Apple submission. |
@@ -127,7 +127,7 @@ The previously current supporting documents include:
 - `container-compose/ISSUE-package-compatibility-preflight-drain.md`
 - `container-compose/PR-package-compatibility-preflight-drain.md`
 
-The registry records 305 archived entries, one active development draft, 25 unsubmitted candidates, four submitted candidates, 15 tracked third-party pull requests, ten merged pull requests, and 14 closed pull requests. Submitted PRs #1965, #2031, #2035, #2036, #820, #821, and #823 are first-class registry rows without separate Markdown files. The two stock-shaped PR #33 follow-ups and the Apple pull requests that moved the fetched main branches are also first-class rows.
+The generated reader view carries the current entry, document, and state counts. Current submitted and recently closed Apple pull requests are first-class registry rows even when they do not have separate Markdown handoff files. The two stock-shaped PR #33 follow-ups and the Apple pull requests that moved the fetched main branches are also first-class rows.
 
 An unsubmitted registry row is not automatically handoff-ready. Rebase the
 smallest independent change on current stock Apple `main`, rerun stock
@@ -286,22 +286,14 @@ validation before the local handoff is complete.
   every new patch-unique commit, and rerun `make fork-classifications-check`.
 - Reconcile merged `apple/containerization#813` into the exact Compose
   Containerization development lane and reassess the older vminitd correction.
-- Track the existing open state of Stephen-authored `apple/container#1934`,
-  `#1935`, `#1965`, `#2031`, `#2035`, and `#2036`, and
-  `apple/containerization#799`, `#820`, `#821`, and `#823` read-only until
-  Apple merges, replaces, or closes them. Track third-party
-  `apple/container-builder-shim#87` independently.
-- The 29 July refresh found all ten open Stephen-authored Apple pull requests
-  mergeable and awaiting review, with no actionable author review. PR #799's
-  hosted build, signature, and Linux compile checks are green. Apple Actions
-  report `action_required` without starting jobs for the other nine pull
-  requests; this is not a failing author check.
+- Track Stephen-authored [apple/container#2126](https://github.com/apple/container/pull/2126), [#2127](https://github.com/apple/container/pull/2127), [#2128](https://github.com/apple/container/pull/2128), [#2130](https://github.com/apple/container/pull/2130), and [apple/swift-nio-ssl#598](https://github.com/apple/swift-nio-ssl/pull/598) until Apple merges, replaces, requests changes, or closes them. Track third-party `apple/container-builder-shim#87` independently.
+- The 5 September refresh found all five open Stephen-authored Apple pull requests mergeable and awaiting review, with no actionable author review. Apple has not yet approved the fork-originated workflows, so no current checks exist; this is not a failing author check.
 - Track `apple/container-builder-shim#89` and its `apple/container#2040`
   integration test without duplicating the equivalent supported resolver.
 - Re-run `apple/container#2037` against the next matched Current package. The
   installed package's stale builder digest blocked the first probe before
   context transfer and is not evidence for or against the upstream report.
-- Refresh the local PR #1935 handoff/base analysis after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated; do not update the Apple pull request.
+- Refresh the local closed PR #1935 handoff/base analysis after `apple/container#1862` lands so the preferred upstream XPC commit is not duplicated.
 - Split the supported XPC ownership and ProcessIO backpressure corrections
   derived from `stephenlclarke/container#33` into separate stock-shaped
   handoffs. Neither has been submitted to Apple.
@@ -317,7 +309,7 @@ validation before the local handoff is complete.
   issue or pull request. Keep the local handoffs separate from
   [apple/container-builder-shim#87](https://github.com/apple/container-builder-shim/pull/87),
   which changes `.dockerignore` filtering only.
-- The reporter's post-fix stop-interruption observation on [apple/containerization#799](https://github.com/apple/containerization/pull/799) is not a requested review change. Keep it under local macOS reproduction before widening the existing copy-failure handoff or recording a separate lifecycle handoff.
+- The reporter's post-fix stop-interruption observation on closed [apple/containerization#799](https://github.com/apple/containerization/pull/799) remains a local reproduction question. Keep it under local macOS reproduction before widening the preserved copy-failure handoff or recording a separate lifecycle handoff.
 - The connector review on
   [stephenlclarke/containerization#9](https://github.com/stephenlclarke/containerization/pull/9)
   identified that `LinuxPod` does not yet stage and rewrite a volume
@@ -327,4 +319,4 @@ validation before the local handoff is complete.
 
 ## Submission Boundary
 
-Never push to an Apple remote. Upstream imports stay in standalone commits with their original PR and bug references. Locally authored Apple-shaped changes must have focused tests and matching issue/PR handoffs in this directory, but this programme does not propose, open, refresh, or comment on Apple branches, issues, discussions, or pull requests.
+Never push to an Apple remote. Upstream imports stay in standalone commits with their original PR and bug references. Locally authored Apple-shaped changes must have focused tests and matching issue/PR handoffs in this directory. Publishing, opening, refreshing, or commenting on an Apple branch, issue, discussion, or pull request requires explicit user authorisation; when authorised, publish only the validated head to Stephen's fork and preserve the exact upstream thread.
