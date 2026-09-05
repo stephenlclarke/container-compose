@@ -4064,6 +4064,15 @@ exit 113
     def test_api_round_trip_hang_consumes_the_shared_startup_deadline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
+            fake_bin = temporary_root / "fake-bin"
+            fake_bin.mkdir()
+            (fake_bin / "sleep").write_text(
+                "#!/usr/bin/env bash\n"
+                'if [[ "${1:-}" == "3" ]]; then exit 0; fi\n'
+                'exec /bin/sleep "$@"\n',
+                encoding="utf-8",
+            )
+            (fake_bin / "sleep").chmod(0o755)
             app_root = temporary_root / "app-root"
             container_log = temporary_root / "container.log"
             command_marker = temporary_root / "command-ran"
@@ -4083,6 +4092,7 @@ exit 113
                     "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
                     "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
                     "CONTAINER_TEST_LOG": str(container_log),
+                    "PATH": f"{fake_bin}:{environment['PATH']}",
                 }
             )
 
@@ -4105,8 +4115,10 @@ exit 113
             )
             self.assertFalse(command_marker.exists())
             invocations = container_log.read_text(encoding="utf-8")
-            self.assertEqual(invocations.count("system start"), 1)
-            self.assertEqual(invocations.count("list --all --format json"), 1)
+            self.assertEqual(invocations.count("system start"), 1, invocations)
+            self.assertEqual(
+                invocations.count("list --all --format json"), 1, invocations
+            )
 
     def test_restarts_once_after_transient_xpc_start_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
