@@ -107,7 +107,7 @@ def sourceStageSpecs() {
             'python3,swiftformat,markdownlint', '.', 'commit'],
         ['devcontainer', 'devcontainer-source', 'source', params.sourceTimeoutSeconds as Integer,
             'make --no-print-directory PYTHON=python3 MARKDOWNLINT=markdownlint SWIFTLINT=swiftlint SWIFTFORMAT=swiftformat ACTIONLINT=actionlint format-check lint parity-manifest',
-            'make,python3,swiftformat,swiftlint,shellcheck,markdownlint,actionlint', '.', 'commit'],
+            'make,python3,ruby,swiftformat,swiftlint,shellcheck,markdownlint,actionlint', '.', 'commit'],
         ['container-k8s', 'k8s-source', 'source', params.sourceTimeoutSeconds as Integer,
             'make --no-print-directory PYTHON=python3 MARKDOWNLINT=markdownlint check',
             'make,python3,markdownlint,ruby', '.', 'commit'],
