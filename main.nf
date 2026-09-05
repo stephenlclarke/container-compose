@@ -94,13 +94,13 @@ def sourceStageSpecs() {
             'HAWKEYE_AUTO_INSTALL=0 make --no-print-directory PYTHON=python3 SWIFT=/usr/bin/swift GO=go MARKDOWNLINT=markdownlint HAWKEYE=hawkeye check',
             'make,apple-swift,go,gofmt,python3,ruby,markdownlint,hawkeye', '.', 'commit'],
         ['container-builder-shim', 'builder-source', 'source', params.sourceTimeoutSeconds as Integer,
-            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && GOTOOLCHAIN=local make --no-print-directory GO=go GOLANGCI_LINT="$(command -v golangci-lint)" check-licenses vet lint',
+            'GOTOOLCHAIN=local make --no-print-directory GO=go HAWKEYE="$(command -v hawkeye)" GOLANGCI_LINT="$(command -v golangci-lint)" check-licenses vet lint && GOTOOLCHAIN=local go list -mod=vendor ./... >/dev/null',
             'make,go,golangci-lint,hawkeye', '.', 'commit,describe'],
         ['containerization', 'containerization-source', 'source', params.sourceTimeoutSeconds as Integer,
-            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && HAWKEYE_AUTO_INSTALL=0 make --no-print-directory SWIFT=/usr/bin/swift check',
+            'HAWKEYE_AUTO_INSTALL=0 make --no-print-directory SWIFT=/usr/bin/swift HAWKEYE="$(command -v hawkeye)" check',
             'make,apple-swift,hawkeye', '.', 'commit'],
         ['container', 'container-source', 'source', params.sourceTimeoutSeconds as Integer,
-            'mkdir -p .local/bin && ln -s "$(command -v hawkeye)" .local/bin/hawkeye && HAWKEYE_AUTO_INSTALL=0 make --no-print-directory PYTHON3=python3 check',
+            'HAWKEYE_AUTO_INSTALL=0 make --no-print-directory PYTHON3=python3 HAWKEYE="$(command -v hawkeye)" check',
             'make,apple-swift,python3,hawkeye', '.', 'commit,describe'],
         ['container-engine-api', 'engine-api-source', 'source', params.sourceTimeoutSeconds as Integer,
             'python3 Tools/generate_route_ledger.py --check && python3 -m py_compile Tools/performance/*.py && python3 -B Tools/performance/check_engine_streaming_performance.py --self-test && /bin/bash -n Tools/ci/*.sh && swiftformat --lint Package.swift Sources Tests Tools/ContainerEngineStreamingPerformanceFixture && markdownlint README.md docs',
@@ -118,61 +118,41 @@ def sourceStageSpecs() {
 
 def functionalStageSpecs() {
     [
-        ['container-compose', 'compose-swift-test', 'test', params.functionalTimeoutSeconds as Integer,
-            'CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=0 make --no-print-directory SWIFT=/usr/bin/swift PYTHON=python3 swift-test',
-            'make,apple-swift,go,python3',
+        ['container-compose', 'compose-swift-validation', 'test', params.functionalTimeoutSeconds as Integer,
+            'CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=0 make --no-print-directory SWIFT=/usr/bin/swift PYTHON=python3 swift-test build cli-smoke-built',
+            'make,apple-swift,go,python3,otool,codesign',
             'Package.swift Package.resolved Sources Tests Tools scripts Makefile config.toml docs/project/STATUS.md examples/logging/compose.yml',
             'none'],
-        ['container-compose', 'compose-go-test', 'test', params.functionalTimeoutSeconds as Integer,
-            'GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org make --no-print-directory GO=go go-test',
-            'make,go', 'Tools/compose-normalizer Makefile', 'none'],
-        ['container-compose', 'compose-cli-smoke', 'test', params.functionalTimeoutSeconds as Integer,
-            'GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org make --no-print-directory SWIFT=/usr/bin/swift PYTHON=python3 GO=go build go-build cli-smoke-built',
-            'make,apple-swift,go,python3,otool,codesign',
-            'Package.swift Package.resolved Sources Tests Tools scripts Makefile config.toml docs/images/container-compose-icon-octopus.png',
-            'none'],
-        ['container-builder-shim', 'builder-test', 'test', params.functionalTimeoutSeconds as Integer,
-            'GOTOOLCHAIN=local GIT_TAG="$PIPELINE_ORIGINAL_DESCRIBE" make --no-print-directory GO=go coverage',
+        ['container-compose', 'compose-go-validation', 'test', params.functionalTimeoutSeconds as Integer,
+            'GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org make --no-print-directory GO=go go-test go-build',
+            'make,go,otool', 'Tools/compose-normalizer Makefile', 'none'],
+        ['container-builder-shim', 'builder-validation', 'test', params.functionalTimeoutSeconds as Integer,
+            'GOTOOLCHAIN=local GIT_TAG="$PIPELINE_ORIGINAL_DESCRIBE" make --no-print-directory GO=go coverage build',
             'make,go',
             'go.mod go.sum main.go main_test.go pkg vendor Makefile Protobuf.Makefile',
             'describe'],
-        ['container-builder-shim', 'builder-build', 'build', params.functionalTimeoutSeconds as Integer,
-            'GOTOOLCHAIN=local GIT_TAG="$PIPELINE_ORIGINAL_DESCRIBE" make --no-print-directory GO=go build',
-            'make,go',
-            'go.mod go.sum main.go pkg vendor Makefile Protobuf.Makefile',
-            'describe'],
-        ['containerization', 'containerization-test', 'test', params.functionalTimeoutSeconds as Integer,
-            'CI=1 make --no-print-directory ROOT_DIR="$PWD" SWIFT=/usr/bin/swift test',
-            'make,apple-swift',
-            'Package.swift Package.resolved Sources Tests vminitd/Sources vminitd/Makefile Makefile Protobuf.Makefile .swift-version',
-            'none'],
-        ['containerization', 'containerization-build', 'build', params.functionalTimeoutSeconds as Integer,
-            'CI=1 make --no-print-directory ROOT_DIR="$PWD" SWIFT=/usr/bin/swift containerization',
+        ['containerization', 'containerization-validation', 'test', params.functionalTimeoutSeconds as Integer,
+            'CI=1 make --no-print-directory ROOT_DIR="$PWD" SWIFT=/usr/bin/swift test containerization',
             'make,apple-swift,codesign',
             'Package.swift Package.resolved Sources Tests vminitd/Sources vminitd/Makefile Makefile Protobuf.Makefile .swift-version signing',
             'none'],
-        ['container', 'container-build', 'build', params.functionalTimeoutSeconds as Integer,
-            'CI=1 CONTAINER_SEMANTIC_HELPER_TOOLCHAIN_CACHE="$PIPELINE_INTERNAL_CACHE_ROOT/container-semantic-helper" make --no-print-directory ROOT_DIR="$PWD" PYTHON3=python3 GIT_COMMIT="$PIPELINE_ORIGINAL_COMMIT" RELEASE_VERSION="$PIPELINE_ORIGINAL_DESCRIBE" build',
+        ['container', 'container-validation', 'test', params.functionalTimeoutSeconds as Integer,
+            'CI=1 CONTAINER_SEMANTIC_HELPER_TOOLCHAIN_CACHE="$PIPELINE_INTERNAL_CACHE_ROOT/container-semantic-helper" make --no-print-directory ROOT_DIR="$PWD" PYTHON3=python3 GIT_COMMIT="$PIPELINE_ORIGINAL_COMMIT" RELEASE_VERSION="$PIPELINE_ORIGINAL_DESCRIBE" test build',
             'make,apple-swift,codesign,python3',
             'Package.swift Package.resolved Sources Tests Tools scripts Makefile Protobuf.Makefile signing',
             'commit,describe'],
-        ['container-engine-api', 'engine-api-build', 'build', params.functionalTimeoutSeconds as Integer,
-            '/usr/bin/swift build --disable-automatic-resolution -Xswiftc -warnings-as-errors --build-tests && /usr/bin/swift build --disable-automatic-resolution -Xswiftc -warnings-as-errors --target ContainerEngineStreamingPerformanceFixture',
+        ['container-engine-api', 'engine-api-validation', 'test', params.functionalTimeoutSeconds as Integer,
+            '/usr/bin/swift build --disable-automatic-resolution -Xswiftc -warnings-as-errors --build-tests && /usr/bin/swift test --disable-automatic-resolution --skip-build && /usr/bin/swift build --disable-automatic-resolution -Xswiftc -warnings-as-errors --target ContainerEngineStreamingPerformanceFixture',
             'apple-swift',
             'Package.swift Package.resolved Sources Tests Tools/ContainerEngineStreamingPerformanceFixture',
             'none'],
-        ['devcontainer', 'devcontainer-build', 'build', params.functionalTimeoutSeconds as Integer,
-            'make --no-print-directory SWIFT=/usr/bin/swift build',
+        ['devcontainer', 'devcontainer-validation', 'test', params.functionalTimeoutSeconds as Integer,
+            'make --no-print-directory SWIFT=/usr/bin/swift test build',
             'make,apple-swift',
             'Package.swift Package.resolved Sources Tests Plugins Tools/version-generator Makefile',
             'commit'],
-        ['container-k8s', 'k8s-test', 'test', params.functionalTimeoutSeconds as Integer,
-            '/usr/bin/swift test --disable-automatic-resolution',
-            'apple-swift',
-            'Package.swift Package.resolved Sources Tests Makefile APPLE_CONTAINER_REF',
-            'none'],
-        ['container-k8s', 'k8s-build-smoke', 'test', params.functionalTimeoutSeconds as Integer,
-            '/usr/bin/swift build --disable-automatic-resolution --product k8s && make --no-print-directory cli-smoke-built',
+        ['container-k8s', 'k8s-validation', 'test', params.functionalTimeoutSeconds as Integer,
+            'make --no-print-directory SWIFT=/usr/bin/swift test build cli-smoke-built',
             'make,apple-swift',
             'Package.swift Package.resolved Sources Tests Makefile APPLE_CONTAINER_REF',
             'none'],
@@ -282,8 +262,8 @@ def pipelineSelection() {
             params.stageSelector.toString().split(',')
                 .collect { stageName -> stageName.trim() }
                 .findAll { stageName -> stageName } :
-            ['compose-source', 'compose-swift-test', 'compose-go-test',
-                'compose-cli-smoke']
+            ['compose-source', 'compose-swift-validation',
+                'compose-go-validation']
         def knownStages = (sourceStages + functionalStages).collect { stage -> stage[1] }
         def unknownStages = requestedStages.findAll { stageName ->
             !knownStages.contains(stageName)
@@ -1726,11 +1706,13 @@ workflow PIPELINE {
     ]
     swiftFunctionalInputs = functionalInputs.filter { item ->
         validationStageNames.contains(item[0]) &&
-            swiftRepositoryNames.contains(item[1])
+            swiftRepositoryNames.contains(item[1]) &&
+            item[0] != 'compose-go-validation'
     }
     lightweightFunctionalInputs = functionalInputs.filter { item ->
         validationStageNames.contains(item[0]) &&
-            !swiftRepositoryNames.contains(item[1])
+            (!swiftRepositoryNames.contains(item[1]) ||
+                item[0] == 'compose-go-validation')
     }
     RUN_SWIFT_STAGE(
         swiftFunctionalInputs,
