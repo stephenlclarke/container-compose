@@ -26,7 +26,7 @@ let containerDependency: Package.Dependency = {
     }
     return .package(
         url: "https://github.com/stephenlclarke/container.git",
-        revision: "1f2e4309f4be3f875c5dc8ee1a07182c0e836a0e",
+        revision: "a252482bbacbd15742845764893585131e2c4825",
     )
 }()
 
@@ -38,13 +38,13 @@ let containerizationDependency: Package.Dependency = {
     }
     return .package(
         url: "https://github.com/stephenlclarke/containerization.git",
-        revision: "e97e92bf3b7c86c569b34b31f5655c0571979f8f",
+        revision: "b404e03bb914904107a6a9305ba1f0e44c79a59c",
     )
 }()
 
 let nioSSLDependency: Package.Dependency = .package(
     url: "https://github.com/stephenlclarke/swift-nio-ssl.git",
-    revision: "09c5c9adcdd2a459187e45fe0143eb01063f244a",
+    revision: "3e13ce5f6dd5b7e89fff9ab55ab7caed39fe7285",
 )
 
 let package = Package(

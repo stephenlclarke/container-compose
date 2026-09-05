@@ -73,10 +73,10 @@ attachment in the
 It is present in the coordinated 0.14.2 candidate manifest on the
 [`current` prerelease](https://github.com/stephenlclarke/container-compose/releases/tag/current).
 The candidate manifest uses Container
-`1f2e4309f4be3f875c5dc8ee1a07182c0e836a0e`, Engine API
+`a252482bbacbd15742845764893585131e2c4825`, Engine API
 `386a40c726ecd25d67a3e5933582aebbfbe4fa2f`, Containerization
-`e97e92bf3b7c86c569b34b31f5655c0571979f8f`, and SwiftNIO SSL
-`09c5c9adcdd2a459187e45fe0143eb01063f244a`. This graph must pass the hosted
+`b404e03bb914904107a6a9305ba1f0e44c79a59c`, and SwiftNIO SSL
+`3e13ce5f6dd5b7e89fff9ab55ab7caed39fe7285`. This graph must pass the hosted
 Stable Release Gate before it can be published as 0.14.2. Compose preflight still negotiates the identifier before
 using advanced logging; advertising the requirement does not make every remote
 provider universally available or close the remaining external-client,

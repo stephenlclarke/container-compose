@@ -47,6 +47,17 @@ exits, keeps known-immediate starts off the speculative prewarm path, and
 serializes cctl VM-backed integration tests so concurrent validation cannot
 collide in the per-user runtime namespace.
 
+The current matched stack also preserves Kubernetes control-plane discovery
+across VM address changes; skips unreadable image-list entries; accepts colons
+in published host paths; preserves named host identities in machine runs;
+classifies unreadable build contexts correctly; reaps completed exec state;
+isolates failed logging consumers; keeps host-only gateways reserved without
+installing default routes; and preserves authoritative foreground exit status
+and events. Lower-level fixes cover failed pod-start cleanup, bounded ext4
+parsing, registry bearer challenges, terminal restoration, TLS callback
+configuration identity, re-entrant EOF handling, and certificate-directory
+parsing.
+
 The 0.14 release line adds explicit isolation and a faster, more
 memory-responsive runtime:
 
@@ -117,11 +128,11 @@ in the stable baseline and current candidate. Planned compatibility work is kept
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
 > <!-- upstream-metrics:start -->
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 4 September 2026 snapshot, the three support forks are **1098 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 5 September 2026 snapshot, the three support forks are **1140 commits ahead of Apple upstream**:
 >
-> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 289 ahead** at [`7807badff6a8`](https://github.com/stephenlclarke/containerization/commit/7807badff6a8bd1d53fa1c6696543f7fffab0fa4).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 761 ahead** at [`83cfab33d0b1`](https://github.com/stephenlclarke/container/commit/83cfab33d0b1ca5976ce979b3755761e58cc957a).
-> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 48 ahead** at [`4aff0ea2e7ff`](https://github.com/stephenlclarke/container-builder-shim/commit/4aff0ea2e7ff293544a4efac28b508da53aac3d6).
+> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 301 ahead** at [`b404e03bb914`](https://github.com/stephenlclarke/containerization/commit/b404e03bb914904107a6a9305ba1f0e44c79a59c).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 786 ahead** at [`a252482bbacb`](https://github.com/stephenlclarke/container/commit/a252482bbacbd15742845764893585131e2c4825).
+> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 53 ahead** at [`287f2ea3276e`](https://github.com/stephenlclarke/container-builder-shim/commit/287f2ea3276eca73cd3781ff59b4c9c82d5f3d32).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >
 > What looks like a local Compose change can therefore require coordinated conflict resolution, pin updates, builds, tests, packaging, and release validation across the entire stack. The pinned revisions must move together.
