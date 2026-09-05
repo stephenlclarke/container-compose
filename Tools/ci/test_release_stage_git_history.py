@@ -318,6 +318,25 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
             PIPELINE_MAKEFILE,
         )
 
+    def test_ci_keeps_handoff_only_changes_on_the_lightweight_path(self) -> None:
+        classifier = CI_WORKFLOW.split("      - name: Classify changed files", 1)[
+            1
+        ].split("  source_checks:", 1)[0]
+        handoff_case = classifier.split("docs/upstream/*)", 1)[1].split(";;", 1)[
+            0
+        ]
+        lightweight = CI_WORKFLOW.split("  validate-lightweight:", 1)[1]
+
+        self.assertIn("handoff: ${{ steps.filter.outputs.handoff }}", CI_WORKFLOW)
+        self.assertIn("handoff=true", handoff_case)
+        self.assertNotIn("heavy=true", handoff_case)
+        self.assertIn(
+            "HANDOFF_CHANGE: ${{ needs.changes.outputs.handoff }}",
+            lightweight,
+        )
+        self.assertIn("make upstream-handoff-registry-check", lightweight)
+        self.assertIn("if: needs.changes.outputs.heavy == 'true'", CI_WORKFLOW)
+
     def test_runtime_validation_uses_pinned_managed_macos_toolchain(
         self,
     ) -> None:
