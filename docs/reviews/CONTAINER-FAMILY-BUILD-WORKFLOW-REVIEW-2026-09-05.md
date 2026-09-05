@@ -88,6 +88,10 @@ source graph differed between commands.
   10.5 seconds and completed the parallel Swift lane in 5 minutes 59 seconds.
   The Go/tool lane stopped after 9 minutes 42 seconds on one stale
   wall-clock-sensitive test rather than hiding or retrying it.
+- The corrected exact implementation head completed the repository profile in
+  9 minutes 23 seconds. Source validation took 10.6 seconds, Swift validation
+  took 5 minutes 5 seconds, and the parallel Go/tool lane took 8 minutes 58
+  seconds. All three receipts and the final summary were complete.
 
 Hosted checks on the merged reviewed heads provide a second, reproducible
 timing set:
