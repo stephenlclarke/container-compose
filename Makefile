@@ -607,7 +607,7 @@ pipeline-help:
 		'' \
 		'Important selectors:' \
 		'  PIPELINE_PROFILE=focused|repository|stack|hosted-safe|release-hosted|benchmark-reconstruction' \
-		'  PIPELINE_STAGE_SELECTOR=compose-source,compose-swift-test,compose-go-test,compose-cli-smoke' \
+		'  PIPELINE_STAGE_SELECTOR=compose-source,compose-swift-validation,compose-go-validation' \
 		'  PIPELINE_ATTEMPT_ID=<safe-unique-id-for-a-known-evidence-directory>' \
 		'  PIPELINE_SESSION=<failed-session-uuid>' \
 		'  CONTAINER_FAMILY_SOURCE_ROOT=<directory-containing-sibling-repositories>' \

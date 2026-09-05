@@ -1,0 +1,153 @@
+# Container-family build workflow review — 5 September 2026
+
+## Purpose
+
+This record captures observed build defects, elapsed timings, and the first
+workflow consolidation pass. It is deliberately separate from release and
+benchmark evidence. The goal is to make a later build-system refinement use
+measured failures rather than repeat discovery.
+
+## Changes in this iteration
+
+The recoverable Nextflow stack graph previously used 12 isolated functional
+stages. It now uses eight. Each stage still receives an immutable source
+snapshot and keeps a durable receipt, but related build and test commands for
+one repository share the same checkout and compiler cache.
+
+- Compose Swift tests, the debug product build, and CLI smoke tests now run in
+  one stage. Compose Go tests and the stripped normalizer build run in one
+  parallel stage. This removes the third isolated Compose checkout that rebuilt
+  both languages only for smoke tests.
+- Builder coverage and its executable build now share one Go cache instead of
+  running in separate isolated stages.
+- Containerization tests and the signed host product build now share one Swift
+  cache instead of running in separate isolated stages.
+- Container now runs its unit suite before its product build. The previous
+  stack graph built Container but did not test it.
+- Engine API now runs the test bundle it builds before compiling the
+  performance fixture. The previous graph built tests without executing them.
+- Devcontainer now runs its unit suite before the product build. The previous
+  graph built it but did not test it.
+- Container Kubernetes tests, product build, and CLI smoke checks now share one
+  Swift cache instead of using two isolated stages.
+- Source stages use the already installed Hawkeye executable directly. They no
+  longer create a disposable `.local/bin` link in every snapshot.
+- Builder source validation now asks Go to load the vendored package graph so a
+  stale `vendor/modules.txt` fails before the expensive functional stage.
+
+This consolidation removes four whole task sandboxes and their duplicate
+dependency planning/build work while increasing functional coverage in three
+repositories.
+
+## Timings observed during the corrective work
+
+These are wall-clock measurements on the same Apple silicon host. They are
+diagnostic timings, not performance benchmarks: cache temperature and the
+source graph differed between commands.
+
+- Containerization `make check`: 3.27 seconds.
+- Containerization full `swift test`: 47.37 seconds wall time; 912 tests passed.
+- Containerization focused terminal test after the relevant build: 22.65
+  seconds; three tests passed.
+- SwiftNIO SSL first focused build: 49.13 seconds for a very small test subset.
+- SwiftNIO SSL full suite after compilation: 18.63 seconds wall time; 347 tests
+  passed.
+- SwiftNIO SSL exact parser regression after warm-up: 5.65 seconds.
+- Builder grouped tests with dependency preparation: 26.91 seconds.
+- Builder warm Go test run: 5.60 seconds.
+- Container first focused invocation compiled roughly 3,100 targets and spent
+  92.84 seconds to execute a millisecond-scale test.
+- Adding the vmnet test target invalidated the Container package test plan. The
+  first attempt compiled for 97.94 seconds before rejecting an availability
+  annotation; the corrected retry then compiled for 88.48 seconds and ran three
+  focused tests in 0.001 seconds. The second focused vmnet suite reused that
+  build and completed in 1.30 seconds.
+- Container's first broad direct `swift test` completed in 166.41 seconds but
+  reported 32 missing semantic-helper issues because the direct invocation had
+  bypassed the Make prerequisite. `make semantic-helper` took 5.21 seconds;
+  the no-rebuild rerun then passed 2,472 tests in 49.50 seconds wall time.
+
+The Nextflow trace, report, timeline, receipts, stdout, and stderr from every
+future pipeline execution remain under the marked pipeline state root. Those
+records provide stage-level timings suitable for comparing this eight-stage
+graph with later refinements.
+
+## Defects and reliability risks found
+
+### Fixed here
+
+- Functional stages used fresh task roots for test and build steps from the
+  same repository, forcing duplicate Swift and Go work.
+- The normal stack graph omitted Container and devcontainer unit execution and
+  omitted Engine API test execution.
+- Builder vendoring drift was discovered only after a functional command had
+  started.
+- Three Makefiles tried to bootstrap Hawkeye even when a verified executable
+  was already on `PATH`. The corresponding fork fixes now support direct reuse;
+  paths containing spaces are quoted.
+- Direct raw `swift test` for Container can bypass the semantic-helper producer.
+  The supported pipeline command now uses Make, which owns that prerequisite.
+
+### Still open for a later build-system iteration
+
+- The top-level plain `make` path is not the recoverable family pipeline. It
+  builds and packages Compose locally, but a failure requires manually deciding
+  what can be reused. The recoverable command remains `make pipeline-bootstrap`
+  followed by `PIPELINE_PROFILE=stack make pipeline`; a successful build can be
+  resumed with its exact session UUID.
+- The recoverable stack phase validates source, unit behavior, builds, and
+  smoke checks, but it does not yet publish a reusable local distribution
+  artifact. Artifact-producing packaging should become a downstream task that
+  consumes validated build outputs rather than rebuilding them.
+- Source and functional stages still use separate immutable snapshots. That is
+  a valuable fail-fast boundary, but Swift formatting/license checks and
+  dependency planning can both touch much of a large tree. Trace evidence is
+  needed before deciding whether any source work should be consolidated.
+- SwiftPM repeatedly warns about two dependency URLs with the
+  `swift-nio-ssl` package identity. A future SwiftPM release will turn this into
+  an error. The matched dependency graph needs one canonical URL.
+- SwiftPM emitted `maintenance.lock doesn't exist` warnings. Cache ownership
+  and cleanup should be audited before enabling more concurrent Swift stages.
+- Container's package graph makes genuinely focused tests expensive after any
+  manifest or test-target change. Target-specific build products or a smaller
+  test-support graph would give the largest cold-feedback improvement.
+- A direct macOS build of the Linux-only `vminitd` package fails on its
+  `FoundationEssentials` imports. The supported Containerization Make path
+  correctly builds it in Linux; the CLI should fail fast with an explanatory
+  message if someone invokes the unsupported host path.
+- Nextflow 26.04.6 reports that six `shell` blocks are deprecated. Migration to
+  `script` needs its own exact recovery proof because quoting and interpolation
+  are security-sensitive here.
+- Pipeline scheduling currently permits two repository stages but serializes
+  all Swift-labelled stages. This was a deliberate response to contention in
+  the 0.14 release. A later iteration should use trace CPU, memory-pressure, and
+  duration evidence to determine whether one small Swift stage can safely run
+  beside one large Swift stage.
+- Failure cleanup is marker-protected, but stale Swift build products outside
+  the Nextflow task roots are not centrally inventoried. A preflight should
+  distinguish reusable content-addressed caches from incompatible products and
+  quarantine only the latter, recording the producer and reason.
+- The ordinary Compose workflow builds the Go normalizer during `ci` and again
+  through `package-release`. Packaging should consume the already validated
+  normalizer rather than rebuild it.
+
+## Next refinement priorities
+
+1. Add a recoverable artifact-assembly stage that consumes validated Compose
+   Swift and Go outputs and produces the local plugin archive without compiling
+   either language again.
+2. Make the plain `make` experience select that recoverable repository graph,
+   while retaining explicit `make ci` and release commands for automation.
+3. Add a content-addressed compatibility manifest for Swift build products,
+   semantic-helper archives, Go vendoring, Xcode/SDK identity, and signing
+   inputs. Quarantine mismatches before compilation and identify their producer.
+4. Compare old and new Nextflow traces using cold and warm runs. Change
+   concurrency only where elapsed time improves without memory pressure,
+   approval dialogs, nondeterminism, or cache corruption.
+5. Migrate deprecated Nextflow syntax with the recovery self-test as the
+   acceptance gate.
+
+The intended end state is a single unattended command with fail-fast
+preflight, deterministic inputs, resumable checkpoints, no interactive
+credential or local-network prompts, one execution of each necessary test, and
+a usable local artifact at completion.
