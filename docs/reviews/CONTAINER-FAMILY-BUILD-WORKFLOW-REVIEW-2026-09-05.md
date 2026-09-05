@@ -66,6 +66,34 @@ source graph differed between commands.
   reported 32 missing semantic-helper issues because the direct invocation had
   bypassed the Make prerequisite. `make semantic-helper` took 5.21 seconds;
   the no-rebuild rerun then passed 2,472 tests in 49.50 seconds wall time.
+- After a manifest-only dependency update, Container's focused configuration
+  and release-version run spent 100.81 seconds building before 40 tests ran in
+  0.02 seconds. A later focused network run spent 96.11 seconds building before
+  30 tests ran in 0.005 seconds. This is the clearest measured target for
+  improving local edit-to-result latency.
+- Even after the package was warm, changing one small public runtime-client
+  method caused 66.43 seconds of planning, recompilation, and relinking before
+  four waiter tests ran in 0.001 seconds. The edit crossed target boundaries,
+  but the ratio still shows that invocation and link topology dominate focused
+  feedback.
+
+Hosted checks on the merged reviewed heads provide a second, reproducible
+timing set:
+
+- Containerization guest initfs: 7 minutes 29 seconds.
+- Containerization macOS build and test: 14 minutes.
+- Containerization Linux compile: 19 minutes 45 seconds.
+- Compose source validation: 2 minutes.
+- Compose tool tests (`ci` profile): 6 minutes 48 seconds.
+- Compose tool tests (`release` profile): 8 minutes 20 seconds.
+- Compose runtime validation: 12 minutes 27 seconds.
+
+One superseded Container workflow was cancelled as soon as exact-head review
+found defects. It had already spent about 9 minutes 12 seconds preparing
+protobuf before product compilation began. This confirms that review and
+dependency checks should gate the costly hosted build whenever the platform
+allows it, and that stale-head cancellation must be verified rather than
+assumed from the first cancellation request.
 
 The Nextflow trace, report, timeline, receipts, stdout, and stderr from every
 future pipeline execution remain under the marked pipeline state root. Those
@@ -130,6 +158,29 @@ graph with later refinements.
 - The ordinary Compose workflow builds the Go normalizer during `ci` and again
   through `package-release`. Packaging should consume the already validated
   normalizer rather than rebuild it.
+- Hosted workflows classify dependency-only changes as full product changes.
+  The final Container stack-pin update therefore paid the same protobuf and
+  broad-build setup cost as a runtime implementation change. Path and manifest
+  impact analysis should select a smaller dependency-contract gate, while the
+  merge queue retains one authoritative broad result for the final head.
+- Container's normal PR workflow serializes formatting, protobuf validation,
+  product build, package creation, unit tests, integration tests, and a second
+  coverage test pass in one macOS job. Packaging is not required to establish
+  most PR correctness, and coverage should consume the unit execution's raw
+  profile instead of executing the same tests again. Independent integration
+  and packaging lanes can start after one shared build artifact is accepted.
+- Exact-head review and broad Container CI currently start independently after
+  each push. Review findings repeatedly arrived while the expensive protobuf
+  producer was already running, so superseded heads consumed hosted minutes
+  before they could be force-cancelled. A reviewed-head promotion check should
+  dispatch the broad build only after the requested review reaches that exact
+  SHA with no open findings.
+- Cancellation is asynchronous. A superseded Container run continued to hold
+  its hosted macOS runner after two ordinary cancellation requests, delaying
+  its replacement until the GitHub force-cancel endpoint was used. The
+  controller should poll for terminal cancellation, force-cancel after a
+  bounded grace period, and report the occupied runner as a blocked resource
+  before dispatching the next expensive job.
 
 ## Next refinement priorities
 
