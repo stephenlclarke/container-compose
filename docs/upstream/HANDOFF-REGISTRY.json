@@ -431,6 +431,66 @@
       ]
     },
     {
+      "id": "apple-container-2126",
+      "owner": "apple/container",
+      "title": "fix(os): close directory watcher descriptors after failed startup",
+      "state": "submitted",
+      "lastVerified": "2026-09-05",
+      "commits": [
+        "6540619ba679e14fbf00a5d99638bb363f26c72f"
+      ],
+      "documents": [],
+      "upstream": "https://github.com/apple/container/pull/2126"
+    },
+    {
+      "id": "apple-container-2127",
+      "owner": "apple/container",
+      "title": "fix(persistence): preserve unloadable container bundles",
+      "state": "submitted",
+      "lastVerified": "2026-09-05",
+      "commits": [
+        "c8b4d767a77fd70e01b11129199222661a0f92c0"
+      ],
+      "documents": [],
+      "upstream": "https://github.com/apple/container/pull/2127"
+    },
+    {
+      "id": "apple-container-2128",
+      "owner": "apple/container",
+      "title": "fix(image): preserve active and infrastructure aliases",
+      "state": "submitted",
+      "lastVerified": "2026-09-05",
+      "commits": [
+        "7df71fcb0e11a0bf9422e05cda35008438e5bf4b"
+      ],
+      "documents": [],
+      "upstream": "https://github.com/apple/container/pull/2128"
+    },
+    {
+      "id": "apple-container-2129",
+      "owner": "apple/container",
+      "title": "fix(dns): avoid global resolver search domains",
+      "state": "closed",
+      "lastVerified": "2026-09-05",
+      "commits": [
+        "6404f2a1096942fcd04bada6856a87de7e788198"
+      ],
+      "documents": [],
+      "upstream": "https://github.com/apple/container/pull/2129"
+    },
+    {
+      "id": "apple-container-2130",
+      "owner": "apple/container",
+      "title": "fix(k8s): fall back to legacy iptables",
+      "state": "submitted",
+      "lastVerified": "2026-09-05",
+      "commits": [
+        "a496a3abba714baa510704b38339c8565418e07f"
+      ],
+      "documents": [],
+      "upstream": "https://github.com/apple/container/pull/2130"
+    },
+    {
       "id": "apple-container-730",
       "owner": "apple/container",
       "title": "cli: accept global flags after subcommands",
@@ -2431,8 +2491,8 @@
       "id": "apple-containerization-799",
       "owner": "apple/containerization",
       "title": "fix(copy): keep lifecycle usable after missing source",
-      "state": "submitted",
-      "lastVerified": "2026-08-03",
+      "state": "closed",
+      "lastVerified": "2026-09-05",
       "commits": [
         "9c5b9ee19796dc13f0d7d1b0687d780f0db04e29"
       ],
@@ -2473,8 +2533,8 @@
       "id": "apple-containerization-820",
       "owner": "apple/containerization",
       "title": "fix(archive): preserve special permission bits",
-      "state": "submitted",
-      "lastVerified": "2026-08-03",
+      "state": "closed",
+      "lastVerified": "2026-09-05",
       "commits": [
         "6e32963617b3ed8f4b63432dbcf834f94807342b"
       ],
@@ -2485,8 +2545,8 @@
       "id": "apple-containerization-821",
       "owner": "apple/containerization",
       "title": "fix(archive): restore permissions after ownership",
-      "state": "submitted",
-      "lastVerified": "2026-08-03",
+      "state": "closed",
+      "lastVerified": "2026-09-05",
       "commits": [
         "726e1ffdceada5cc62d32c8fc939aef30220e6ff"
       ],
@@ -2509,8 +2569,8 @@
       "id": "apple-containerization-823",
       "owner": "apple/containerization",
       "title": "Defer directory attributes without following symlinks",
-      "state": "submitted",
-      "lastVerified": "2026-08-03",
+      "state": "closed",
+      "lastVerified": "2026-09-05",
       "commits": [
         "3ed10bf1a0dda802cb46c1f0b55934c55a4bd395"
       ],
@@ -3223,6 +3283,18 @@
           "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-containerization/PR-vmnet-integration-exclusivity.md"
         }
       ]
+    },
+    {
+      "id": "apple-swift-nio-ssl-598",
+      "owner": "apple/swift-nio-ssl",
+      "title": "Avoid unconditional plaintext read buffer reallocations",
+      "state": "submitted",
+      "lastVerified": "2026-09-05",
+      "commits": [
+        "884b18fc96d8feae3ca63a7e662b8ea0eff31235"
+      ],
+      "documents": [],
+      "upstream": "https://github.com/apple/swift-nio-ssl/pull/598"
     },
     {
       "id": "apple-swift-nio-ssl-fluentd-tls-alert-control",
