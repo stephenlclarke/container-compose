@@ -53,6 +53,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       heavy: ${{ steps.filter.outputs.heavy }}
+      handoff: ${{ steps.filter.outputs.handoff }}
     steps:
       - name: Checkout for push diff
         if: github.event_name == 'push'
@@ -74,7 +75,7 @@ jobs:
           # validation transaction instead of inferring their scope from a
           # synthetic tag-push diff (whose before SHA is all zeroes).
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            printf 'heavy=true\n' >> "$GITHUB_OUTPUT"
+            printf 'heavy=true\nhandoff=false\n' >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -107,22 +108,22 @@ jobs:
                   --paginate \
                   --jq '.[].filename' > "$changed_files"
               else
-                printf 'heavy=true\n' >> "$GITHUB_OUTPUT"
+                printf 'heavy=true\nhandoff=false\n' >> "$GITHUB_OUTPUT"
                 exit 0
               fi
               ;;
             *)
-              printf 'heavy=true\n' >> "$GITHUB_OUTPUT"
+              printf 'heavy=true\nhandoff=false\n' >> "$GITHUB_OUTPUT"
               exit 0
               ;;
           esac
 
           heavy=false
+          handoff=false
           while IFS= read -r path; do
             case "$path" in
               docs/upstream/*)
-                heavy=true
-                break
+                handoff=true
                 ;;
               *.md|docs/*|Formula/*)
                 ;;
@@ -134,6 +135,7 @@ jobs:
           done < "$changed_files"
 
           printf 'heavy=%s\n' "$heavy" >> "$GITHUB_OUTPUT"
+          printf 'handoff=%s\n' "$handoff" >> "$GITHUB_OUTPUT"
 
   source_checks:
     name: Source Checks
@@ -944,6 +946,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.heavy != 'true'
     runs-on: ubuntu-24.04
+    env:
+      HANDOFF_CHANGE: ${{ needs.changes.outputs.handoff }}
     steps:
       - name: Checkout container-compose
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -963,4 +967,7 @@ jobs:
           fi
           if [[ -f Tools/release/container-compose.rb.in ]]; then
             ruby -c Tools/release/container-compose.rb.in
+          fi
+          if [[ "${HANDOFF_CHANGE}" == "true" ]]; then
+            make upstream-handoff-registry-check
           fi

@@ -2311,7 +2311,7 @@
       "id": "apple-container-xpc-unknown-error-code",
       "owner": "apple/container",
       "title": "Reject unknown XPC peer error codes without trapping",
-      "state": "active-draft",
+      "state": "merged",
       "lastVerified": "2026-08-01",
       "commits": [
         "ec60a81d3d47a76e8a356c2bc3e457807c38d10c"
@@ -8213,7 +8213,8 @@
       "state": "active-draft",
       "lastVerified": "2026-09-05",
       "commits": [
-        "bdfd9cef91399332040de31438eb47175859eef5"
+        "bdfd9cef91399332040de31438eb47175859eef5",
+        "03a387961ee92bbd985765e70ddab3264bc08c20"
       ],
       "documents": [
         {
