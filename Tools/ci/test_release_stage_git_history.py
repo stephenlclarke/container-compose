@@ -44,6 +44,15 @@ RECOVERY_PROOF = (
 class ReleaseStageGitHistoryTests(unittest.TestCase):
     """Keep history-sensitive validation on verified Git bundles."""
 
+    def test_stage_tools_include_nested_process_dependencies(self) -> None:
+        devcontainer_stage = PIPELINE_SOURCE.split(
+            "['devcontainer', 'devcontainer-source'", 1
+        )[1].split("['container-k8s'", 1)[0]
+        self.assertIn(
+            "'make,python3,ruby,swiftformat,swiftlint,shellcheck,markdownlint,actionlint'",
+            devcontainer_stage,
+        )
+
     def test_history_sensitive_release_stages_request_commit_metadata(self) -> None:
         expected_declarations = (
             "'make,go,hawkeye', '.', 'commit,describe'",
