@@ -121,7 +121,7 @@ def functionalStageSpecs() {
         ['container-compose', 'compose-swift-validation', 'test', params.functionalTimeoutSeconds as Integer,
             'CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=0 make --no-print-directory SWIFT=/usr/bin/swift PYTHON=python3 swift-test build cli-smoke-built',
             'make,apple-swift,go,python3,otool,codesign',
-            'Package.swift Package.resolved Sources Tests Tools scripts Makefile config.toml docs/project/STATUS.md examples/logging/compose.yml',
+            'Package.swift Package.resolved Sources Tests Tools scripts Makefile config.toml docs/project/STATUS.md docs/images/container-compose-icon-octopus.png examples/logging/compose.yml',
             'none'],
         ['container-compose', 'compose-go-validation', 'test', params.functionalTimeoutSeconds as Integer,
             'GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org make --no-print-directory GO=go go-test go-build',
