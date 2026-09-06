@@ -287,6 +287,7 @@ CONTAINER_COMPOSE_LIVE ?= 0
 PARITY_EVIDENCE_DIR ?=
 PARITY_REPETITIONS ?= 3
 PARITY_TIMEOUT_SECONDS ?= 300
+API_SOCKET_CLIENT_IMAGE ?= docker.io/library/docker:29.2.1-cli@sha256:cab69e2d0a1a2ea9a1ce1060252f439e83483ae41ec09317aecb33b08a0656a5
 ifeq ($(origin PARITY_SINK_BIND_ADDRESS),undefined)
 PARITY_SINK_BIND_ADDRESS := 127.0.0.1
 else
@@ -480,6 +481,7 @@ RELEASE_GATE_PARITY_INPUT_FINGERPRINT = $(shell { printf '%s\n' \
 	'targets=$(DOCKER_COMPOSE_PARITY_TARGETS)' \
 	'repetitions=$(PARITY_REPETITIONS)' \
 	'timeout=$(PARITY_TIMEOUT_SECONDS)' \
+	'api-socket-client-image='$(call PIPELINE_SHELL_QUOTE,$(API_SOCKET_CLIENT_IMAGE)) \
 	'timing-max-ratio=$(PARITY_TIMING_MAX_RATIO)' \
 	'timing-policy=$(PARITY_TIMING_POLICY)' \
 	'comparable-noise-pct=$(PARITY_COMPARABLE_NOISE_PCT)' \
@@ -586,6 +588,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 	docker-compose-state-status-parity \
 	docker-compose-rm-parity \
 	docker-compose-lifecycle-hooks-parity \
+	docker-compose-api-socket-client-parity \
 	docker-compose-signal-log-reliability-parity \
 	docker-compose-restart-policy-parity
 
@@ -606,7 +609,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-compose-phase4-parity
 .PHONY: docker-compose-format-template-actions-parity
 .PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity docker-compose-deploy-job-modes-parity
-.PHONY: docker-compose-up-exit-code-from-parity docker-compose-performance-matrix performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
+.PHONY: docker-compose-up-exit-code-from-parity docker-compose-api-socket-client-fixture docker-compose-api-socket-client-parity docker-compose-performance-matrix performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
 .PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle docker-rest-logging-oracle docker-rest-logging-candidate docker-rest-logging-parity docker-rest-discovery-oracle docker-rest-discovery-candidate docker-rest-discovery-parity docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate docker-rest-image-discovery-parity docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate docker-rest-image-mutation-parity
 .PHONY: pipeline-help pipeline-bootstrap pipeline-runtime-check pipeline-state-init pipeline-lint pipeline-plan pipeline-preflight pipeline pipeline-resume pipeline-status pipeline-self-test pipeline-execute pipeline-source-check pipeline-tool-validation
 
@@ -2299,6 +2302,39 @@ docker-rest-discovery-candidate:
 		--native-cli "$(CONTAINER_COMPOSE_CONTAINER)"
 
 docker-rest-discovery-parity: docker-rest-discovery-oracle docker-rest-discovery-candidate
+
+docker-compose-api-socket-client-fixture:
+	@local_execution_root="$${CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT:-}"; \
+	if [[ -z "$$local_execution_root" ]]; then \
+		local_execution_root=/private/tmp; \
+		if [[ ! -d "$$local_execution_root" || ! -w "$$local_execution_root" ]]; then \
+			local_execution_root=/tmp; \
+		fi; \
+	fi; \
+	case "$$local_execution_root" in /private/tmp|/tmp) ;; *) \
+		printf 'CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT must be /private/tmp or /tmp: %s\n' "$$local_execution_root" >&2; \
+		exit 2 ;; \
+	esac; \
+	if [[ ! -d "$$local_execution_root" || ! -w "$$local_execution_root" ]]; then \
+		printf 'local execution root is not writable: %s\n' "$$local_execution_root" >&2; \
+		exit 2; \
+	fi; \
+	container_binary="$(CONTAINER_COMPOSE_CONTAINER)"; \
+	case "$$container_binary" in /*) ;; */*) container_binary="$(CURDIR)/$$container_binary" ;; esac; \
+	cd "$$local_execution_root"; \
+	if ! DOCKER_AUTH_CONFIG='{"auths":{}}' $(PYTHON) "$(CURDIR)/Tools/ci/run-command-with-deadline.py" \
+		--seconds "$(PARITY_TIMEOUT_SECONDS)" --grace-seconds 5 -- \
+		"$$container_binary" image inspect "$(API_SOCKET_CLIENT_IMAGE)" >/dev/null 2>&1; then \
+		DOCKER_AUTH_CONFIG='{"auths":{}}' $(PYTHON) "$(CURDIR)/Tools/ci/run-command-with-deadline.py" \
+			--seconds "$(PARITY_TIMEOUT_SECONDS)" --grace-seconds 5 -- \
+			"$$container_binary" image pull --progress none "$(API_SOCKET_CLIENT_IMAGE)"; \
+	fi
+
+docker-compose-api-socket-client-parity: $(if $(strip $(CONTAINER_COMPOSE)),,build) docker-compose-api-socket-client-fixture
+	API_SOCKET_CLIENT_IMAGE="$(API_SOCKET_CLIENT_IMAGE)" \
+		CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
+		PARITY_TIMEOUT_SECONDS="$(PARITY_TIMEOUT_SECONDS)" \
+		./Tools/parity/check-compose-api-socket-client.sh --strict
 
 docker-rest-image-discovery-oracle:
 	./Tools/parity/check-docker-rest-image-discovery-contract.sh --strict --reference
