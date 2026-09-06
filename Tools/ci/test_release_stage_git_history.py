@@ -312,6 +312,7 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         self.assertIn('run: make "${TOOL_TEST_TARGET}"', tool_tests_section)
         self.assertIn("      - tool_tests", CI_WORKFLOW)
         self.assertIn("TOOL_TESTS_RESULT", CI_WORKFLOW)
+        self.assertIn("if: needs.changes.outputs.tools == 'true'", tool_tests_section)
         self.assertIn(
             "coverage-tools-test: coverage-python-tools-test "
             "release-tools-test ci-tools-test",
@@ -322,20 +323,50 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         classifier = CI_WORKFLOW.split("      - name: Classify changed files", 1)[
             1
         ].split("  source_checks:", 1)[0]
-        handoff_case = classifier.split("docs/upstream/*)", 1)[1].split(";;", 1)[
-            0
-        ]
         lightweight = CI_WORKFLOW.split("  validate-lightweight:", 1)[1]
 
         self.assertIn("handoff: ${{ steps.filter.outputs.handoff }}", CI_WORKFLOW)
-        self.assertIn("handoff=true", handoff_case)
-        self.assertNotIn("heavy=true", handoff_case)
+        self.assertIn("tools: ${{ steps.filter.outputs.tools }}", CI_WORKFLOW)
+        self.assertIn("runtime: ${{ steps.filter.outputs.runtime }}", CI_WORKFLOW)
+        self.assertIn(
+            'python3 Tools/ci/classify-ci-changes.py "$changed_files"',
+            classifier,
+        )
+        self.assertEqual(
+            classifier.count("(.previous_filename // empty)"),
+            2,
+        )
+        self.assertEqual(classifier.count("--no-renames"), 2)
         self.assertIn(
             "HANDOFF_CHANGE: ${{ needs.changes.outputs.handoff }}",
             lightweight,
         )
         self.assertIn("make upstream-handoff-registry-check", lightweight)
         self.assertIn("if: needs.changes.outputs.heavy == 'true'", CI_WORKFLOW)
+
+    def test_ci_skips_runtime_validation_for_controller_only_changes(self) -> None:
+        runtime_validation = CI_WORKFLOW.split("  validate_runtime:", 1)[1].split(
+            "  prebuilt_binaries:", 1
+        )[0]
+        canonical_main = CI_WORKFLOW.split("  resolve-canonical-main:", 1)[1].split(
+            "  validate:", 1
+        )[0]
+        aggregate = CI_WORKFLOW.split("  validate:", 1)[1].split(
+            "  validate-lightweight:", 1
+        )[0]
+
+        self.assertIn(
+            "needs.changes.outputs.runtime == 'true' || github.ref == 'refs/heads/main'",
+            runtime_validation,
+        )
+        self.assertIn(
+            "if: needs.changes.outputs.runtime == 'true' || github.ref == 'refs/heads/main'",
+            canonical_main,
+        )
+        self.assertIn("TOOLS_SELECTED", aggregate)
+        self.assertIn("RUNTIME_SELECTED", aggregate)
+        self.assertIn("github.ref == 'refs/heads/main'", aggregate)
+        self.assertIn("All selected validation scopes passed", aggregate)
 
     def test_runtime_validation_uses_pinned_managed_macos_toolchain(
         self,
