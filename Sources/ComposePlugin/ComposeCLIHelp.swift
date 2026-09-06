@@ -394,6 +394,7 @@ enum ComposeCLIHelp {
             "--output": .supported,
             "--templates": .supported,
             "--transformation": .supported,
+            "--yes": .supported,
         ],
         "bridge transformations": [
             "--dry-run": .supported,
@@ -1171,6 +1172,10 @@ enum ComposeCLIHelp {
           -t, --transformation stringArray   Transformation to apply to compose
                                              model (default:
                                              docker/compose-bridge-kubernetes)
+          -y, --yes                          Assume "yes" to the output directory
+                                             overwrite prompt. For scripts/CI,
+                                             where no interactive confirmation is
+                                             possible
         """,
         "bridge transformations": """
         Usage:  container compose bridge transformations [OPTIONS] COMMAND

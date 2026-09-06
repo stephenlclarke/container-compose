@@ -906,6 +906,8 @@ struct BridgeConvert: AsyncParsableCommand, ComposeProjectCommand {
     var templates: String?
     @Option(name: [.customShort("t"), .customLong("transformation")], parsing: .upToNextOption, help: "Transformation to apply to compose model.")
     var transformations: [String] = []
+    @Flag(name: [.customShort("y"), .customLong("yes")], help: "Assume yes to the output directory overwrite prompt.")
+    var yes = false
 
     /// Runs the selected Bridge transformer image or images.
     func run() async throws {
@@ -916,7 +918,8 @@ struct BridgeConvert: AsyncParsableCommand, ComposeProjectCommand {
             options: ComposeBridgeConvertOptions(
                 output: output,
                 templates: templates,
-                transformations: transformations
+                transformations: transformations,
+                assumeYes: yes,
             )
         )
     }

@@ -48,7 +48,7 @@ registry, terminal, TLS, EOF, and certificate parsing fixes below that runtime.
 ## At a Glance
 
 The current help surface contains 40 green commands, 6 partial commands, and 0
-unsupported commands. It contains 262 green documented long options, 1 partial
+unsupported commands. It contains 263 green documented long options, 1 partial
 long option, and 0 unsupported long options.
 
 The six partial commands are `attach`, `events`, `exec`, `logs`, `run`, and
@@ -373,7 +373,7 @@ the logging contract.
 `container compose --help` and `container compose COMMAND --help` are the
 authoritative option reference.
 
-All 262 documented long options are parsed and mapped for their current command
+All 263 documented long options are parsed and mapped for their current command
 behavior except `exec --privileged`, whose partial behavior is described above.
 Command parity remains a separate axis: a green flag does not override a deeper
 runtime boundary described by its command.
