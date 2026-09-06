@@ -144,6 +144,10 @@ Environment:
   CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS
       Override the default one-hour package workflow wait and 30-second poll.
 
+  CONTAINER_STACK_DOCUMENTATION_WAIT_SECONDS
+      Override the default two-hour wait for the four parallel, release-only
+      DocC sites and their GitHub Pages deployment.
+
   CONTAINER_STACK_RELEASE_CANDIDATE_STOP_TIMEOUT_SECONDS
       Override the default 30-second bound for stopping the exact candidate
       runtime namespace during local release-gate cleanup.
@@ -244,6 +248,7 @@ COMPOSE_REPO="container-compose"
 CONTAINER_REPO="container"
 COMPOSE_PACKAGE_WAIT_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS:-3600}"
 COMPOSE_PACKAGE_POLL_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS:-30}"
+DOCUMENTATION_WAIT_SECONDS="${CONTAINER_STACK_DOCUMENTATION_WAIT_SECONDS:-7200}"
 STABLE_RELEASE_GATE_WAIT_SECONDS="${CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS:-24000}"
 PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
 PROMOTION_POLL_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS:-30}"
@@ -654,7 +659,7 @@ validate_unpublished_release_commit() {
     IFS=',' read -r -a release_files <<<"${files}"
     for file in "${release_files[@]}"; do
       case "${file}" in
-        Makefile|Sources/ComposePlugin/ComposePlugin.swift|Tools/release/stack-refs.json) ;;
+        Makefile|Sources/ComposePlugin/ComposePlugin.swift|Tools/release/stack-refs.json|Tools/release/documentation-refs.json) ;;
         *)
           printf 'release preparation commit changes an unexpected file: %s %s\n' \
             "${commit}" "${file}" >&2
@@ -4341,6 +4346,51 @@ manifest.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding=
 PY
 }
 
+# Bind the only documentation-only repository to one published release. The
+# stable source tag then contains every ref needed to rebuild Pages exactly,
+# even after Actions run history expires.
+write_release_documentation_manifest() {
+  local path manifest authority k8s_release_tag k8s_ref
+  path="$(repo_path "${COMPOSE_REPO}")"
+  manifest="${path}/Tools/release/documentation-refs.json"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would update: %s with one exact published container-k8s ref\n' \
+      "${manifest}"
+    return 0
+  fi
+
+  need_command gh
+  authority="$(released_k8s_documentation_authority)"
+  k8s_release_tag="$(sed -n '1p' <<<"${authority}")"
+  k8s_ref="$(sed -n '2p' <<<"${authority}")"
+  if [[ ! "${k8s_release_tag}" =~ ^[A-Za-z0-9._-]+$ ]] || \
+    [[ ! "${k8s_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'published container-k8s documentation authority is malformed: %s at %s\n' \
+      "${k8s_release_tag:-missing}" "${k8s_ref:-missing}" >&2
+    return 1
+  fi
+
+  python3 - "${manifest}" "${k8s_release_tag}" "${k8s_ref}" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+manifest = Path(sys.argv[1])
+data = {
+    "schemaVersion": 1,
+    "sites": {
+        "k8s": {
+            "repository": "stephenlclarke/container-k8s",
+            "releaseTag": sys.argv[2],
+            "ref": sys.argv[3],
+        }
+    },
+}
+manifest.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
 remote_main_commit() {
   local repo="$1" path remote
   path="$(repo_path "${repo}")"
@@ -4991,6 +5041,45 @@ latest_stable_release_gate_dispatch_run() {
     --jq '.[0].databaseId // ""'
 }
 
+# Return the newest run for one immutable stable documentation manifest.
+latest_stable_documentation_dispatch() {
+  local version="$1" title
+  title="Documentation · ${version}"
+  github_cli run list \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --workflow Documentation \
+    --event workflow_dispatch \
+    --limit 100 \
+    --json databaseId,displayTitle,status,conclusion \
+    --jq "map(select(.displayTitle == \"${title}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
+}
+
+# Resolve the newest published (draft-free) container-k8s release tag and its
+# exact Git object. The pair is committed into the stable source candidate,
+# so documentation recovery never relies on retained workflow history.
+released_k8s_documentation_authority() {
+  local tag ref remote
+  remote="https://github.com/stephenlclarke/container-k8s.git"
+  tag="$(
+    github_cli api --paginate --slurp \
+      'repos/stephenlclarke/container-k8s/releases?per_page=100' \
+      | jq -r '[.[][] | select(.draft == false and .published_at != null)] | sort_by(.published_at) | last | .tag_name // ""'
+  )"
+  if [[ -z "${tag}" ]]; then
+    printf 'container-k8s has no published release for stable documentation\n' >&2
+    return 1
+  fi
+  ref="$(
+    git ls-remote --tags "${remote}" "refs/tags/${tag}" "refs/tags/${tag}^{}" \
+      | awk '$2 ~ /\^\{\}$/ { peeled = $1 } $2 !~ /\^\{\}$/ { direct = $1 } END { print peeled ? peeled : direct }'
+  )"
+  if [[ ! "${ref}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'could not resolve published container-k8s release %s\n' "${tag}" >&2
+    return 1
+  fi
+  printf '%s\n%s\n' "${tag}" "${ref}"
+}
+
 # Wait for a GitHub Actions run to complete successfully.
 wait_for_github_run_success() {
   local run_id="$1" label="$2" wait_seconds="${3:-${COMPOSE_PACKAGE_WAIT_SECONDS}}"
@@ -5530,6 +5619,70 @@ dispatch_stable_release_gate() {
   done
 }
 
+# Build and publish DocC only after the stable package, Homebrew pair, and all
+# earlier release gates have succeeded. A successful exact-input run is the
+# recovery checkpoint; every retry reads the same refs from the immutable
+# stable source tag.
+dispatch_stable_documentation() {
+  local version="$1" details previous_run run_id status conclusion deadline now
+  print_header "publish released documentation for ${version}"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would use the exact documentation refs committed in the stable source tag\n'
+    printf 'would run: gh workflow run docs.yml --repo %s --ref main -f ref=%s\n' \
+      "$(github_repo "${COMPOSE_REPO}")" "${version}"
+    printf 'would build the four DocC sites in parallel and deploy Pages as the final release operation\n'
+    return 0
+  fi
+
+  need_command gh
+  details="$(latest_stable_documentation_dispatch "${version}")"
+  IFS=$'\t' read -r previous_run status conclusion <<<"${details}"
+  if [[ -n "${previous_run}" && "${status}" == "completed" && \
+    "${conclusion}" == "success" ]]; then
+    printf 'stable documentation already passed for the exact released inputs: %s (run %s)\n' \
+      "${version}" "${previous_run}"
+    return 0
+  fi
+  if [[ -n "${previous_run}" && "${status}" != "completed" ]]; then
+    printf 'stable documentation is already running for the exact released inputs: %s\n' \
+      "${previous_run}"
+    wait_for_github_run_success \
+      "${previous_run}" "stable documentation and Pages deployment" \
+      "${DOCUMENTATION_WAIT_SECONDS}"
+    return 0
+  fi
+
+  run github_cli workflow run docs.yml \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --ref main \
+    -f "ref=${version}"
+
+  deadline=$((SECONDS + DOCUMENTATION_WAIT_SECONDS))
+  while true; do
+    details="$(latest_stable_documentation_dispatch "${version}")"
+    IFS=$'\t' read -r run_id status conclusion <<<"${details}"
+    if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
+      printf 'stable documentation started: %s\n' "${run_id}"
+      wait_for_github_run_success \
+        "${run_id}" "stable documentation and Pages deployment" \
+        "${DOCUMENTATION_WAIT_SECONDS}"
+      return 0
+    fi
+
+    now="${SECONDS}"
+    if (( now >= deadline )); then
+      printf 'timed out waiting for stable documentation dispatch for %s\n' \
+        "${version}" >&2
+      exit 1
+    fi
+
+    printf 'waiting for stable documentation dispatch for %s; next check in %ss\n' \
+      "${version}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
+    sleep "${COMPOSE_PACKAGE_POLL_SECONDS}"
+  done
+}
+
 # Print the verified boundary for a stable release or its formula-only recovery.
 print_stable_release_point() {
   local version="$1" generation="$2" latest label tap_update
@@ -5562,6 +5715,7 @@ publish_stable_release() {
   local version="$1"
   dispatch_stable_release_gate "${version}"
   dispatch_compose_stable_package "${version}"
+  dispatch_stable_documentation "${version}"
   print_stable_release_point "${version}" "container-compose stable package workflow dispatch"
 }
 
@@ -5584,6 +5738,7 @@ resume_stable_release() {
     if [[ "${promote_default_lane}" == "true" ]]; then
       ensure_latest_stable_retry "${version}"
       dispatch_compose_stable_tap_repair "${version}"
+      dispatch_stable_documentation "${version}"
       print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
     else
       authority_record="$(ensure_published_stable_recovery_authority "${version}")"
@@ -5595,6 +5750,7 @@ resume_stable_release() {
         "${stable_formula_identities_before}" "${authority_init_digest}"
       require_stable_init_image_authority_unchanged \
         "${version}" "${authority_object}" "${authority_init_digest}"
+      dispatch_stable_documentation "${version}"
       print_stable_release_point "${version}" "maintenance backfill asset recovery"
     fi
     return 0
@@ -5654,17 +5810,18 @@ release_current_stack() {
   sync_containerization_package_pins
   sync_container_package_pin
   write_release_stack_manifest
+  write_release_documentation_manifest
   prepare_stable_init_image_authority
 
   if [[ "${EXECUTE}" == "1" ]]; then
-    git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json
-    if ! git -C "${path}" diff --cached --quiet -- Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json; then
+    git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json Tools/release/documentation-refs.json
+    if ! git -C "${path}" diff --cached --quiet -- Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json Tools/release/documentation-refs.json; then
       run git -C "${path}" commit -S -m "chore(release): prepare ${version}"
     else
       printf 'release prep files already match %s\n' "${version}"
     fi
   else
-    run git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json
+    run git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json Tools/release/documentation-refs.json
     run git -C "${path}" commit -S -m "chore(release): prepare ${version}"
   fi
 

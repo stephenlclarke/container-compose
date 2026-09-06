@@ -1027,11 +1027,17 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
             workflow,
         )
 
-    def test_benchmark_report_only_change_skips_docc_builds(self) -> None:
+    def test_benchmark_report_changes_cannot_trigger_docc_builds(self) -> None:
         workflow = DOCUMENTATION_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Classify documented API and site inputs", workflow)
-        self.assertIn("classify-documentation-changes.py", workflow)
-        self.assertIn("needs.classify-changes.outputs.build_docc == 'true'", workflow)
+        triggers = workflow[
+            workflow.index("on:\n") : workflow.index("permissions:\n")
+        ]
+
+        self.assertIn("  workflow_dispatch:\n", triggers)
+        self.assertNotIn("  schedule:\n", triggers)
+        self.assertNotIn("  push:\n", triggers)
+        self.assertNotIn("  pull_request:\n", triggers)
+        self.assertNotIn("classify-documentation-changes.py", workflow)
 
     def test_documentation_pr_dispatches_only_lightweight_protected_checks(self) -> None:
         benchmark = WORKFLOW.read_text(encoding="utf-8")
