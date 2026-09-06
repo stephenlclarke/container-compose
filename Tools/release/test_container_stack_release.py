@@ -94,9 +94,38 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('verify_github_stable_tag_signature "${version}"', self.script)
         self.assertIn("GitHub did not verify stable tag", self.script)
 
-    def test_release_helper_supports_an_isolated_stack_root(self) -> None:
-        self.assertIn('ROOT="${CONTAINER_STACK_RELEASE_ROOT:-${HOME}/github}"', self.script)
-        self.assertIn("CONTAINER_STACK_RELEASE_ROOT", self.script)
+    def test_release_helper_owns_an_isolated_transaction_root(self) -> None:
+        self.assertIn("run_isolated_release() {", self.script)
+        self.assertIn("CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE=1", self.script)
+        self.assertIn("release transaction retained for exact recovery", self.script)
+        self.assertIn('RELEASE_BUILD_ROOT="${CONTAINER_STACK_RELEASE_BUILD_ROOT:', self.script)
+        self.assertIn('"${RELEASE_WORKSPACE_TOOL}" execute', self.script)
+        self.assertIn('child_pid=$!', self.script)
+        self.assertIn('wait "${child_pid}"', self.script)
+        self.assertIn('--pid "${child_pid}"', self.script)
+        self.assertNotIn('--pid "$$"', self.script)
+        self.assertNotIn("Local source checkout layout expected", self.script)
+        active = self.script.split(
+            'elif [[ "${CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE:-0}" == "1" ]]',
+            1,
+        )[1].split("      else", 1)[0]
+        self.assertLess(
+            active.index('"${RELEASE_WORKSPACE_TOOL}" verify'),
+            active.index("release_current_stack"),
+        )
+
+    def test_scheduled_release_delegates_checkout_ownership_to_controller(self) -> None:
+        workflow = SCHEDULED_STABLE_RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        release = workflow.split("  release:", 1)[1]
+
+        self.assertIn("path: release-controls/container-compose", release)
+        self.assertIn("gh auth setup-git", release)
+        self.assertIn("CONTAINER_STACK_RELEASE_BUILD_ROOT:", release)
+        self.assertNotIn("CONTAINER_STACK_RELEASE_ROOT:", release)
+        self.assertNotIn("Checkout builder-shim source", release)
+        self.assertNotIn("Checkout containerization source", release)
+        self.assertNotIn("Checkout container runtime source", release)
+        self.assertNotIn("Checkout Homebrew tap", release)
 
     def test_local_release_gate_uses_a_stable_noninteractive_path(self) -> None:
         completed = subprocess.run(
@@ -1054,6 +1083,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("documented milestone soak override", plan)
         self.assertIn("maintenance with --+", plan)
         self.assertIn("documented operational", plan)
+        self.assertIn('python3 "${RELEASE_WORKSPACE_TOOL}" plan', plan)
+        self.assertNotIn("prepare_all_main", plan)
 
     def test_internal_dependency_pins_do_not_become_release_highlights(self) -> None:
         pin_commit = self.script[
@@ -7154,21 +7185,23 @@ esac
             self.assertEqual(result.returncode, 2)
             self.assertIn("direct container-compose main promotion is retired", result.stderr)
 
-            prepare_marker = root / "prepare-called"
+            release_marker = root / "release-called"
             result = self.run_release_function(
                 root,
                 "main release --+ --execute",
                 shell_setup="\n".join(
                     [
                         "COMPOSE_MAIN_PROMOTION_MODE=direct",
-                        f"prepare_all_main() {{ : > {shlex.quote(str(prepare_marker))}; }}",
-                        "release_current_stack() { return 0; }",
+                        (
+                            "release_current_stack() { "
+                            f": > {shlex.quote(str(release_marker))}; }}"
+                        ),
                     ]
                 ),
             )
 
             self.assertEqual(result.returncode, 2)
-            self.assertFalse(prepare_marker.exists())
+            self.assertFalse(release_marker.exists())
 
             release_marker = root / "release-read-called"
             result = self.run_release_function(

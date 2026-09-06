@@ -148,51 +148,14 @@ jobs:
       - name: Checkout container-compose release controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          path: release-stack/container-compose
+          path: release-controls/container-compose
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Checkout builder-shim source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/container-builder-shim
-          ref: main
-          path: release-stack/container-builder-shim
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Checkout containerization source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/containerization
-          ref: main
-          path: release-stack/containerization
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Checkout container runtime source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/container
-          ref: main
-          path: release-stack/container
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Checkout Homebrew tap
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/homebrew-tap
-          ref: main
-          path: release-stack/homebrew-tap
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Configure isolated release stack
+      - name: Configure isolated release controller
         shell: bash
         run: |
           set -euo pipefail
-          release_root="${GITHUB_WORKSPACE}/release-stack"
           automation_token="$(
             unset GH_TOKEN GITHUB_TOKEN
             gh auth token
@@ -207,27 +170,7 @@ jobs:
             exit 1
           fi
 
-          own_url() {
-            local repository="$1"
-            printf 'https://x-access-token:%s@github.com/%s.git' "${automation_token}" "${repository}"
-          }
-          configure_apple_fork() {
-            local path="$1" fork_repository="$2" upstream_repository="$3"
-            git -C "${path}" remote rename origin fork
-            git -C "${path}" remote set-url fork "$(own_url "${fork_repository}")"
-            git -C "${path}" remote add origin "https://github.com/${upstream_repository}.git"
-            git -C "${path}" remote set-url --push origin no_push
-          }
-
-          configure_apple_fork "${release_root}/container-builder-shim" \
-            stephenlclarke/container-builder-shim apple/container-builder-shim
-          configure_apple_fork "${release_root}/container" \
-            stephenlclarke/container apple/container
-          git -C "${release_root}/containerization" remote set-url origin "$(own_url stephenlclarke/containerization)"
-          git -C "${release_root}/containerization" remote add upstream https://github.com/apple/containerization.git
-          git -C "${release_root}/containerization" remote set-url --push upstream no_push
-          git -C "${release_root}/container-compose" remote set-url origin "$(own_url stephenlclarke/container-compose)"
-          git -C "${release_root}/homebrew-tap" remote set-url origin "$(own_url stephenlclarke/homebrew-tap)"
+          gh auth setup-git
 
           for command_name in docker gh git go make node npm python3 swift; do
             command -v "${command_name}" >/dev/null 2>&1 || {
@@ -244,15 +187,12 @@ jobs:
           [[ -n "${signing_key}" && -r "${signing_key}" ]]
           signing_private_key="${signing_key%.pub}"
           ssh-keygen -y -P '' -f "${signing_private_key}" >/dev/null
-          git -C "${release_root}/container-compose" config gpg.format ssh
-          git -C "${release_root}/container-compose" config commit.gpgsign true
-          git -C "${release_root}/container-compose" config user.signingkey "${signing_key}"
 
       - name: Promote the selected stable release
         shell: bash
-        working-directory: release-stack/container-compose
+        working-directory: release-controls/container-compose
         env:
-          CONTAINER_STACK_RELEASE_ROOT: ${{ github.workspace }}/release-stack
+          CONTAINER_STACK_RELEASE_BUILD_ROOT: /Volumes/SSD/github/container-compose-release-transactions
           CONTAINER_STACK_RELEASE_INTENT: milestone
           VERSION_SELECTOR: ${{ needs.preflight.outputs.selector }}
         run: |
