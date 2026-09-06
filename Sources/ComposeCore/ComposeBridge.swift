@@ -35,15 +35,19 @@ public struct ComposeBridgeConvertOptions: Sendable, Equatable {
     public var templates: String?
     /// Transformer image references to apply.
     public var transformations: [String]
+    /// Whether an existing non-empty output directory may be replaced without prompting.
+    public var assumeYes: Bool
 
     public init(
         output: String = "out",
         templates: String? = nil,
         transformations: [String] = [],
+        assumeYes: Bool = false,
     ) {
         self.output = output
         self.templates = templates
         self.transformations = transformations
+        self.assumeYes = assumeYes
     }
 }
 
@@ -125,7 +129,7 @@ extension ComposeOrchestrator {
         defer { try? FileManager.default.removeItem(at: input) }
 
         if !convert.output.isEmpty {
-            try recreateBridgeOutputDirectory(output)
+            try await prepareBridgeOutputDirectory(output, assumeYes: convert.assumeYes)
         }
         for transformation in transformations {
             try await pullMissingImage(transformation, quiet: true)
@@ -139,6 +143,21 @@ extension ComposeOrchestrator {
                 inheritedIO: true,
             )
         }
+    }
+
+    private func prepareBridgeOutputDirectory(_ output: String, assumeYes: Bool) async throws {
+        try validateBridgeOutputDirectory(output)
+        if try bridgeOutputDirectoryNeedsConfirmation(output), !assumeYes {
+            let confirmed = try await options.confirm(
+                "Output directory '\(output)' is not empty, all its content will be permanently deleted. Continue? [yN] ",
+            )
+            guard confirmed else {
+                throw ComposeError.invalidProject(
+                    "deletion of output directory '\(output)' was not confirmed",
+                )
+            }
+        }
+        try recreateBridgeOutputDirectory(output)
     }
 
     /// Lists locally available Compose Bridge transformer images.
