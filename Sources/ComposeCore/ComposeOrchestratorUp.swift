@@ -237,6 +237,7 @@ extension ComposeOrchestrator {
             externalVolumeMounts: externalVolumeMounts,
             pullPolicy: up.pullPolicy,
         )
+        workingProject = try await projectByApplyingAPISocket(workingProject)
         try await ensureResources(
             project: projectBySelectingResources(project: workingProject, services: services)
         )

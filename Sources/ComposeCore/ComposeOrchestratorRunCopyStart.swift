@@ -76,6 +76,9 @@ extension ComposeOrchestrator {
         if run.remove {
             args.append("--rm")
         }
+        if service.useAPISocket == true {
+            args.append("--engine-api-socket")
+        }
 
         for label in try serviceLabels(
             project: project,
