@@ -13,6 +13,12 @@ include {
     RUN_REPOSITORY_STAGE as RUN_DOCUMENTATION_STAGE
 } from './build-pipeline/modules/repository-stage'
 
+def renderShellScript(String template, Map values) {
+    values.inject(template) { rendered, entry ->
+        rendered.replace("!{${entry.key}}", entry.value.toString())
+    }
+}
+
 params.pipelineProfile = 'repository'
 params.pipelineAction = 'run'
 params.stageSelector = ''
@@ -423,8 +429,8 @@ process PREFLIGHT_HOST {
     path 'host-ready.tsv', emit: ready
     path 'host-tools.tsv', emit: tools
 
-    shell:
-    '''
+    script:
+    renderShellScript('''
     exec </dev/null
     if IFS= read -r unexpected_input; then
         printf 'host preflight inherited readable standard input: %s\n' \
@@ -616,7 +622,18 @@ process PREFLIGHT_HOST {
         /bin/cat host-ready.tsv.pending
     } >host-ready.tsv
     /bin/rm host-ready.tsv.pending
-    '''
+    ''', [
+        deadlineRunner: deadlineRunner,
+        evidenceDirectoryBase64: evidenceDirectoryBase64,
+        executionPathBase64: executionPathBase64,
+        expectedLauncherSha256Base64: expectedLauncherSha256Base64,
+        expectedStateMarkerBase64: expectedStateMarkerBase64,
+        expectedVersionBase64: expectedVersionBase64,
+        launcher: launcher,
+        operatorHomeBase64: operatorHomeBase64,
+        pipelineProfile: pipelineProfile,
+        stateRootBase64: stateRootBase64,
+    ])
 }
 
 process PREFLIGHT_REPOSITORY {
@@ -634,8 +651,8 @@ process PREFLIGHT_REPOSITORY {
     tuple val(repositoryName), path("${repositoryName}.identity.tsv"),
         path("${repositoryName}.provenance.tsv"), emit: receipt
 
-    shell:
-    '''
+    script:
+    renderShellScript('''
     exec </dev/null
     decode_parameter() {
         printf '%s' "$1" | /usr/bin/base64 -D
@@ -813,7 +830,14 @@ process PREFLIGHT_REPOSITORY {
         printf 'xcrun-python3-sha256\t%s\n' "$xcrun_python_sha256"
         printf 'clean\ttrue\n'
     } >"${repository_name}.provenance.tsv"
-    '''
+    ''', [
+        deadlineRunner: deadlineRunner,
+        hostReady: hostReady,
+        metadataRequirements: metadataRequirements,
+        repositoryName: repositoryName,
+        sourceDirectoryBase64: sourceDirectoryBase64,
+        sourceReferenceBase64: sourceReferenceBase64,
+    ])
 }
 
 process CAPTURE_STAGE_SOURCE {
@@ -834,8 +858,8 @@ process CAPTURE_STAGE_SOURCE {
         val(sourcePaths), path("${stageName}.payload.*"),
         path("${stageName}.source.tsv"), emit: prepared
 
-    shell:
-    '''
+    script:
+    renderShellScript('''
     exec </dev/null
     repository_name="!{repositoryName}"
     stage_name="!{stageName}"
@@ -1052,7 +1076,16 @@ process CAPTURE_STAGE_SOURCE {
             esac
         done
     fi
-    '''
+    ''', [
+        deadlineRunner: deadlineRunner,
+        failureClass: failureClass,
+        metadataRequirements: metadataRequirements,
+        repositoryIdentity: repositoryIdentity,
+        repositoryName: repositoryName,
+        repositoryProvenance: repositoryProvenance,
+        sourcePaths: sourcePaths,
+        stageName: stageName,
+    ])
 }
 
 process PREFLIGHT_STAGE_TOOLS {
@@ -1072,8 +1105,8 @@ process PREFLIGHT_STAGE_TOOLS {
     output:
     tuple val(stageName), path("${stageName}.tools.tsv"), emit: manifest
 
-    shell:
-    '''
+    script:
+    renderShellScript('''
     exec </dev/null
     decode_parameter() {
         printf '%s' "$1" | /usr/bin/base64 -D
@@ -1394,7 +1427,13 @@ process PREFLIGHT_STAGE_TOOLS {
                 "$swift_target_sha256" >>"$manifest"
             ;;
     esac
-    '''
+    ''', [
+        deadlineRunner: deadlineRunner,
+        executionPathBase64: executionPathBase64,
+        hostReady: hostReady,
+        requiredTools: requiredTools,
+        stageName: stageName,
+    ])
 }
 
 workflow PREFLIGHT_GRAPH {
@@ -1444,13 +1483,11 @@ workflow PREPARE_STAGE_GRAPH {
     toolPreflightGate = PREFLIGHT_STAGE_TOOLS.out.manifest
         .collect()
         .map { true }
-    preparedInputs = CAPTURE_STAGE_SOURCE.out.prepared
+    emit:
+    CAPTURE_STAGE_SOURCE.out.prepared
         .join(PREFLIGHT_STAGE_TOOLS.out.manifest)
         .combine(toolPreflightGate)
         .map { item -> item[0..-2] }
-
-    emit:
-    prepared = preparedInputs
 }
 
 process PIPELINE_SUMMARY {
@@ -1470,8 +1507,8 @@ process PIPELINE_SUMMARY {
     output:
     path 'pipeline-summary.tsv', emit: summary
 
-    shell:
-    '''
+    script:
+    renderShellScript('''
     exec </dev/null
     decode_parameter() {
         printf '%s' "$1" | /usr/bin/base64 -D
@@ -1599,7 +1636,14 @@ process PIPELINE_SUMMARY {
         esac
     done
     printf 'complete\ttrue\n' >>pipeline-summary.tsv
-    '''
+    ''', [
+        expectedRepositoryNamesBase64: expectedRepositoryNamesBase64,
+        expectedStageNamesBase64: expectedStageNamesBase64,
+        hostTools: hostTools,
+        pipelineProfile: pipelineProfile,
+        repositoryReceipts: repositoryReceipts,
+        stageEvidence: stageEvidence,
+    ])
 }
 
 workflow PLAN {
@@ -1645,7 +1689,7 @@ workflow PREFLIGHT_ONLY {
     PREFLIGHT_GRAPH.out.repositories.view { item ->
         "repository preflight passed: ${item[0]} (${item[1]})"
     }
-    PREPARE_STAGE_GRAPH.out.prepared.view { item ->
+    PREPARE_STAGE_GRAPH.out.view { item ->
         "stage preflight passed: ${item[0]} (${item[9]})"
     }
 }
@@ -1672,7 +1716,7 @@ workflow PIPELINE {
 
     repositoryReceipts = PREFLIGHT_GRAPH.out.repositories
     sourceStageNames = selection.sourceStages.collect { stage -> stage[1] }
-    sourceInputs = PREPARE_STAGE_GRAPH.out.prepared
+    sourceInputs = PREPARE_STAGE_GRAPH.out
         .filter { item -> sourceStageNames.contains(item[0]) }
         .map { item -> item + [true] }
     stateRootBase64 = channel.value(encodeParameter(params.stateRoot))
@@ -1694,7 +1738,7 @@ workflow PIPELINE {
     validationStageNames = functionalStageNames.findAll { stageName ->
         !documentationStageNames.contains(stageName)
     }
-    functionalInputs = PREPARE_STAGE_GRAPH.out.prepared
+    functionalInputs = PREPARE_STAGE_GRAPH.out
         .filter { item -> functionalStageNames.contains(item[0]) }
         .map { item -> tuple(item[1], item[0], item[2], item[3], item[4],
             item[5], item[6], item[7], item[8], item[9]) }
