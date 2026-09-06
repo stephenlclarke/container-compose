@@ -580,7 +580,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 SWIFT_TEST_FLAGS ?=
 SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -F -Xswiftc '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' -Xlinker -rpath -Xlinker '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' $(if $(strip $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)),-Xlinker -rpath -Xlinker '$(SWIFT_TEST_RUNTIME_LIBRARY_PATH)'))
 
-.PHONY: all workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit
+.PHONY: all workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-test-direct swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit swift-style-tools swift-style-paths swift-style-check swift-style-format local-swift-stack-clean
 
 .PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint
 .PHONY: worktree-audit worktree-audit-strict
@@ -1161,28 +1161,35 @@ release-plan:
 	./scripts/CONTAINER_STACK_RELEASE.sh plan
 
 resolve:
-	$(SWIFT) package resolve
+	$(PYTHON) Tools/ci/run-with-local-swift-stack.py --swift "$(SWIFT)" -- \
+		$(SWIFT) package resolve
 
 build:
 	@if [[ -n "$(CONTAINER_PACKAGE_PATH)$(CONTAINERIZATION_PACKAGE_PATH)" ]]; then \
-		lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
-		cp Package.resolved "$$lock_backup"; \
-		restore_lock() { trap - EXIT HUP INT QUIT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
-		trap restore_lock EXIT HUP INT QUIT TERM; \
-		$(PARITY_ENV) $(SWIFT) build --product compose; \
+		$(PARITY_ENV) $(PYTHON) Tools/ci/run-with-local-swift-stack.py \
+			--swift "$(SWIFT)" \
+			--retain-edits \
+			--container "$(CONTAINER_PACKAGE_PATH)" \
+			--containerization "$(CONTAINERIZATION_PACKAGE_PATH)" \
+			--engine-api "$(CONTAINER_ENGINE_API_PACKAGE_PATH)" \
+			-- $(SWIFT) build --product compose; \
 	else \
-		$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --product compose; \
+		$(PYTHON) Tools/ci/run-with-local-swift-stack.py --swift "$(SWIFT)" -- \
+			$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --product compose; \
 	fi
 
 build-release:
 	@if [[ -n "$(CONTAINER_PACKAGE_PATH)$(CONTAINERIZATION_PACKAGE_PATH)" ]]; then \
-		lock_backup="$$(mktemp "$${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"; \
-		cp Package.resolved "$$lock_backup"; \
-		restore_lock() { trap - EXIT HUP INT QUIT TERM; cp "$$lock_backup" Package.resolved; rm -f "$$lock_backup"; }; \
-		trap restore_lock EXIT HUP INT QUIT TERM; \
-		$(PARITY_ENV) $(SWIFT) build -c release --product compose $(SWIFT_RELEASE_FLAGS); \
+		$(PARITY_ENV) $(PYTHON) Tools/ci/run-with-local-swift-stack.py \
+			--swift "$(SWIFT)" \
+			--retain-edits \
+			--container "$(CONTAINER_PACKAGE_PATH)" \
+			--containerization "$(CONTAINERIZATION_PACKAGE_PATH)" \
+			--engine-api "$(CONTAINER_ENGINE_API_PACKAGE_PATH)" \
+			-- $(SWIFT) build -c release --product compose $(SWIFT_RELEASE_FLAGS); \
 	else \
-		$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS); \
+		$(PYTHON) Tools/ci/run-with-local-swift-stack.py --swift "$(SWIFT)" -- \
+			$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS); \
 	fi
 
 .PHONY: release-parity-build-info
@@ -1209,7 +1216,26 @@ test: swift-test go-test
 swift-test-build:
 	$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) --build-tests --enable-code-coverage $(SWIFT_TEST_FLAGS)
 
-swift-test: swift-test-build
+swift-test:
+	@if [[ -n "$(CONTAINER_PACKAGE_PATH)$(CONTAINERIZATION_PACKAGE_PATH)" ]]; then \
+		$(PYTHON) Tools/ci/run-with-local-swift-stack.py \
+			--swift "$(SWIFT)" \
+			--retain-edits \
+			--container "$(CONTAINER_PACKAGE_PATH)" \
+			--containerization "$(CONTAINERIZATION_PACKAGE_PATH)" \
+			--engine-api "$(CONTAINER_ENGINE_API_PACKAGE_PATH)" \
+			-- $(MAKE) --no-print-directory swift-test-direct \
+				CONTAINER_PACKAGE_PATH= CONTAINERIZATION_PACKAGE_PATH= \
+				CONTAINER_ENGINE_API_PACKAGE_PATH=; \
+	else \
+		$(PYTHON) Tools/ci/run-with-local-swift-stack.py --swift "$(SWIFT)" -- \
+			$(MAKE) --no-print-directory swift-test-direct; \
+	fi
+
+local-swift-stack-clean:
+	$(PYTHON) Tools/ci/run-with-local-swift-stack.py --swift "$(SWIFT)" --cleanup
+
+swift-test-direct: swift-test-build
 	@mkdir -p .build
 	@env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER \
 		PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS="$(SWIFT_TEST_ATTEMPTS)" \
@@ -2785,6 +2811,18 @@ worktree-audit-strict:
 
 source-preflight: upstream-handoff-registry-check stack-consistency core-runtime-neutrality check-licenses
 
+swift-style-tools:
+	$(PYTHON) Tools/ci/swift-style.py install
+
+swift-style-paths:
+	$(PYTHON) Tools/ci/swift-style.py paths
+
+swift-style-check:
+	$(PYTHON) Tools/ci/swift-style.py lint
+
+swift-style-format:
+	$(PYTHON) Tools/ci/swift-style.py format
+
 check: source-preflight lint
 
 lint: lint-static coverage-tools-test performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
@@ -2811,7 +2849,7 @@ lint-static:
 
 fmt: format
 
-format: update-licenses
+format: update-licenses swift-style-format
 	cd Tools/compose-normalizer && $(GO) fmt ./...
 
 check-licenses:
@@ -2832,7 +2870,7 @@ pre-commit:
 	chmod +x "$(HOOKS_DIR)/pre-commit"
 	@./scripts/ensure-hawkeye-exists.sh
 
-clean:
+clean: local-swift-stack-clean
 	$(SWIFT) package clean
 	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" "$(DOCS_OUTPUT_DIR)" "$(DOCS_SERVER_DIR)" "$(DOCS_SCRATCH_PATH)" .scannerwork coverage*.lcov coverage.out coverage.report coverage*.xml
 	rm -f *.profraw Tools/compose-normalizer/coverage.out Tools/compose-normalizer/compose-normalizer
