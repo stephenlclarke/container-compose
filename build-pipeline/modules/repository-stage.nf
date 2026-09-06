@@ -1,3 +1,9 @@
+def renderShellScript(String template, Map values) {
+    values.inject(template) { rendered, entry ->
+        rendered.replace("!{${entry.key}}", entry.value.toString())
+    }
+}
+
 process RUN_REPOSITORY_STAGE {
     tag "${stageName}@${repositoryName}"
     label 'repository_stage'
@@ -22,8 +28,8 @@ process RUN_REPOSITORY_STAGE {
         path("${stageName}.artifacts.tar"),
         path("${stageName}.artifacts.tsv"), emit: receipt
 
-    shell:
-    '''
+    script:
+    renderShellScript('''
     exec </dev/null
     if IFS= read -r unexpected_input; then
         printf 'pipeline stage inherited readable standard input: %s\n' \
@@ -780,5 +786,20 @@ process RUN_REPOSITORY_STAGE {
         printf 'execution-volume\tinternal\n'
         printf 'exit\t0\n'
     } >"$success_receipt"
-    '''
+    ''', [
+        artifactPaths: artifactPaths,
+        deadlineRunner: deadlineRunner,
+        deadlineSeconds: deadlineSeconds,
+        failureClass: failureClass,
+        gateReady: gateReady,
+        repositoryName: repositoryName,
+        sessionIdentifier: sessionIdentifier,
+        sourceMetadata: sourceMetadata,
+        sourcePaths: sourcePaths,
+        sourcePayload: sourcePayload,
+        stageCommandBase64: stageCommandBase64,
+        stageName: stageName,
+        stageTools: stageTools,
+        stateRootBase64: stateRootBase64,
+    ])
 }
