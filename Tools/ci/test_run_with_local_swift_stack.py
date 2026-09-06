@@ -52,6 +52,20 @@ class LocalSwiftStackTests(unittest.TestCase):
         for name in STACK.OVERRIDE_ENVIRONMENT:
             self.assertNotIn(name, environment)
 
+    def test_authoritative_sources_match_the_resolved_graph(self) -> None:
+        resolved = json.loads(
+            (MODULE_PATH.parents[2] / "Package.resolved").read_text(
+                encoding="utf-8"
+            )
+        )
+        locations = {
+            pin["identity"]: pin["location"]
+            for pin in resolved["pins"]
+        }
+
+        for identity, source in STACK.AUTHORITATIVE_SOURCES.items():
+            self.assertEqual(source, locations[identity])
+
     def test_lockfile_is_not_rewritten_when_contents_match(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             lockfile = Path(temporary) / "Package.resolved"
@@ -103,6 +117,160 @@ class LocalSwiftStackTests(unittest.TestCase):
     def test_dependency_paths_must_be_absolute_packages(self) -> None:
         with self.assertRaisesRegex(SystemExit, "must be absolute"):
             STACK.validate_dependency("container", "../container")
+
+    def test_expected_object_requires_path_commit_and_tree(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "path is required"):
+            STACK.validate_dependency(
+                "container", None, "a" * 40, "b" * 40
+            )
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary)
+            (package / "Package.swift").write_text(
+                "// swift-tools-version: 6.2\n", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(SystemExit, "supplied together"):
+                STACK.validate_dependency(
+                    "container", str(package), "a" * 40, None
+                )
+
+    @staticmethod
+    def create_git_dependency(root: Path) -> tuple[Path, Path, str, str]:
+        authority = root / "authority"
+        checkout = root / "checkout"
+        authority.mkdir()
+        (authority / "Package.swift").write_text(
+            "// swift-tools-version: 6.2\n", encoding="utf-8"
+        )
+        subprocess.run(["git", "init", "-q", authority], check=True)
+        subprocess.run(
+            ["git", "-C", authority, "add", "Package.swift"], check=True
+        )
+        commit = [
+            "git",
+            "-C",
+            authority,
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-q",
+        ]
+        subprocess.run([*commit, "-m", "initial"], check=True)
+        subprocess.run(
+            ["git", "clone", "--no-local", "-q", authority, checkout], check=True
+        )
+        subprocess.run([*commit, "--allow-empty", "-m", "promoted"], check=True)
+        promoted = subprocess.run(
+            ["git", "-C", authority, "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        tree = subprocess.run(
+            ["git", "-C", authority, "rev-parse", "HEAD^{tree}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        return authority, checkout, promoted, tree
+
+    def test_present_expected_commit_does_not_fetch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            authority, checkout, promoted, tree = self.create_git_dependency(root)
+            subprocess.run(
+                ["git", "-C", checkout, "fetch", "-q", str(authority), promoted],
+                check=True,
+            )
+            dependency = STACK.Dependency("container", checkout, promoted, tree)
+
+            with mock.patch.object(STACK, "fetch_dependency_object") as fetch:
+                STACK.recover_dependency_object(dependency)
+
+            fetch.assert_not_called()
+
+    def test_missing_expected_commit_is_recovered_from_fixed_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            authority, checkout, promoted, tree = self.create_git_dependency(root)
+            dependency = STACK.Dependency("container", checkout, promoted, tree)
+
+            with mock.patch.dict(
+                STACK.AUTHORITATIVE_SOURCES, {"container": str(authority)}
+            ):
+                record = STACK.dependency_record(dependency)
+
+            self.assertEqual(record["tree"], tree)
+            self.assertTrue(
+                STACK.git_object_exists(checkout, f"{promoted}^{{commit}}")
+            )
+
+    def test_recovered_commit_with_wrong_tree_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            authority, checkout, promoted, _ = self.create_git_dependency(root)
+            dependency = STACK.Dependency("container", checkout, promoted, "0" * 40)
+
+            with mock.patch.dict(
+                STACK.AUTHORITATIVE_SOURCES, {"container": str(authority)}
+            ):
+                with self.assertRaisesRegex(SystemExit, "expected 0000"):
+                    STACK.recover_dependency_object(dependency)
+
+    def test_unavailable_expected_commit_fails_without_prompting(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            authority, checkout, _, tree = self.create_git_dependency(root)
+            unavailable = "f" * 40
+            dependency = STACK.Dependency("container", checkout, unavailable, tree)
+
+            with mock.patch.dict(
+                STACK.AUTHORITATIVE_SOURCES, {"container": str(authority)}
+            ):
+                with self.assertRaisesRegex(SystemExit, "could not recover"):
+                    STACK.recover_dependency_object(dependency)
+
+    def test_expected_commit_fetch_has_a_bounded_failure(self) -> None:
+        dependency = STACK.Dependency(
+            "container", Path("/tmp/container"), "f" * 40, "e" * 40
+        )
+
+        with mock.patch.object(STACK, "git_object_exists", return_value=False):
+            with mock.patch.object(
+                STACK,
+                "fetch_dependency_object",
+                side_effect=subprocess.TimeoutExpired("git fetch", 60),
+            ):
+                with self.assertRaisesRegex(SystemExit, "timed out recovering"):
+                    STACK.recover_dependency_object(dependency)
+
+    def test_configured_clone_remote_cannot_replace_fixed_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            authority, checkout, promoted, tree = self.create_git_dependency(root)
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    checkout,
+                    "remote",
+                    "set-url",
+                    "origin",
+                    str(root / "untrusted"),
+                ],
+                check=True,
+            )
+            dependency = STACK.Dependency("container", checkout, promoted, tree)
+
+            with mock.patch.dict(
+                STACK.AUTHORITATIVE_SOURCES, {"container": str(authority)}
+            ):
+                STACK.recover_dependency_object(dependency)
+
+            self.assertTrue(
+                STACK.git_object_exists(checkout, f"{promoted}^{{commit}}")
+            )
 
     def test_session_resumes_when_commit_changes_but_tree_does_not(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -37,12 +37,16 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
             container = temporary_root / "container"
             containerization = temporary_root / "containerization"
             engine_api = temporary_root / "container-engine-api"
+            container_commit = "a" * 40
+            container_tree = "b" * 40
 
             result = subprocess.run(
                 [
                     "make",
                     "-n",
                     f"CONTAINER_PACKAGE_PATH={container}",
+                    f"CONTAINER_PACKAGE_COMMIT={container_commit}",
+                    f"CONTAINER_PACKAGE_TREE={container_tree}",
                     f"CONTAINERIZATION_PACKAGE_PATH={containerization}",
                     f"CONTAINER_ENGINE_API_PACKAGE_PATH={engine_api}",
                     "build-release",
@@ -54,6 +58,10 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(f'--container "{container}"', result.stdout)
+            self.assertIn(
+                f'--container-commit "{container_commit}"', result.stdout
+            )
+            self.assertIn(f'--container-tree "{container_tree}"', result.stdout)
             self.assertIn(
                 f'--containerization "{containerization}"', result.stdout
             )

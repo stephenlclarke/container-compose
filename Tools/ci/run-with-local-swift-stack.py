@@ -37,11 +37,22 @@ OVERRIDE_ENVIRONMENT = (
     "CONTAINER_ENGINE_API_PACKAGE_PATH",
 )
 
+AUTHORITATIVE_SOURCES = {
+    "container": "https://github.com/stephenlclarke/container.git",
+    "containerization": "https://github.com/stephenlclarke/containerization.git",
+    "container-engine-api": (
+        "https://github.com/stephenlclarke/container-engine-api.git"
+    ),
+}
+GIT_FETCH_TIMEOUT_SECONDS = 60
+
 
 @dataclass(frozen=True)
 class Dependency:
     identity: str
     path: Path
+    commit: str | None = None
+    tree: str | None = None
 
 
 def clean_environment() -> dict[str, str]:
@@ -79,15 +90,45 @@ def active_edit_paths(workspace_state: Path) -> dict[str, Path]:
         raise SystemExit(f"could not inspect SwiftPM workspace state: {error}") from error
 
 
-def validate_dependency(identity: str, value: str | None) -> Dependency | None:
+def validate_object_id(name: str, value: str | None) -> str | None:
     if not value:
+        return None
+    if len(value) != 40 or any(
+        character not in "0123456789abcdef" for character in value
+    ):
+        raise SystemExit(f"{name} must be a lowercase SHA-1 object ID: {value}")
+    return value
+
+
+def validate_dependency(
+    identity: str,
+    value: str | None,
+    commit: str | None = None,
+    tree: str | None = None,
+) -> Dependency | None:
+    if not value:
+        if commit or tree:
+            raise SystemExit(
+                f"{identity} package path is required with its commit and tree"
+            )
         return None
     path = Path(value)
     if not path.is_absolute():
         raise SystemExit(f"{identity} package path must be absolute: {path}")
     if path.is_symlink() or not (path / "Package.swift").is_file():
         raise SystemExit(f"{identity} package path is invalid: {path}")
-    return Dependency(identity=identity, path=path.resolve())
+    commit = validate_object_id(f"{identity} package commit", commit)
+    tree = validate_object_id(f"{identity} package tree", tree)
+    if (commit is None) != (tree is None):
+        raise SystemExit(
+            f"{identity} package commit and tree must be supplied together"
+        )
+    return Dependency(
+        identity=identity,
+        path=path.resolve(),
+        commit=commit,
+        tree=tree,
+    )
 
 
 def git_output(path: Path, *arguments: str) -> str:
@@ -105,15 +146,97 @@ def git_output(path: Path, *arguments: str) -> str:
     return result.stdout
 
 
+def git_object_exists(path: Path, object_name: str) -> bool:
+    return subprocess.run(
+        ["/usr/bin/git", "-C", str(path), "cat-file", "-e", object_name],
+        check=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
+def fetch_dependency_object(
+    dependency: Dependency, authority: str
+) -> subprocess.CompletedProcess[str]:
+    assert dependency.commit is not None
+    environment = clean_environment()
+    environment.update(
+        {
+            "GCM_INTERACTIVE": "never",
+            "GIT_ASKPASS": "/usr/bin/false",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+    )
+    return subprocess.run(
+        [
+            "/usr/bin/git",
+            "-C",
+            str(dependency.path),
+            "fetch",
+            "--no-tags",
+            "--no-write-fetch-head",
+            authority,
+            dependency.commit,
+        ],
+        check=False,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=GIT_FETCH_TIMEOUT_SECONDS,
+    )
+
+
+def recover_dependency_object(dependency: Dependency) -> None:
+    if dependency.commit is None or dependency.tree is None:
+        return
+    commit_object = f"{dependency.commit}^{{commit}}"
+    if not git_object_exists(dependency.path, commit_object):
+        authority = AUTHORITATIVE_SOURCES[dependency.identity]
+        try:
+            result = fetch_dependency_object(dependency, authority)
+        except subprocess.TimeoutExpired as error:
+            raise SystemExit(
+                f"timed out recovering {dependency.identity} package commit "
+                f"{dependency.commit} from {authority}"
+            ) from error
+        if result.returncode != 0 or not git_object_exists(
+            dependency.path, commit_object
+        ):
+            diagnostic = result.stderr.strip() or f"exit {result.returncode}"
+            raise SystemExit(
+                f"could not recover {dependency.identity} package commit "
+                f"{dependency.commit} from {authority}: {diagnostic}"
+            )
+    recovered_tree = git_output(
+        dependency.path, "rev-parse", f"{dependency.commit}^{{tree}}"
+    ).strip()
+    if recovered_tree != dependency.tree:
+        raise SystemExit(
+            f"{dependency.identity} package commit {dependency.commit} has tree "
+            f"{recovered_tree}, expected {dependency.tree}"
+        )
+
+
 def dependency_record(dependency: Dependency) -> dict[str, str]:
     if git_output(dependency.path, "status", "--porcelain"):
         raise SystemExit(
             f"{dependency.identity} package must be clean: {dependency.path}"
         )
+    recover_dependency_object(dependency)
     tree = git_output(dependency.path, "rev-parse", "HEAD^{tree}").strip()
-    if len(tree) != 40 or any(character not in "0123456789abcdef" for character in tree):
+    if len(tree) != 40 or any(
+        character not in "0123456789abcdef" for character in tree
+    ):
         raise SystemExit(
             f"{dependency.identity} package has an invalid Git tree: {tree}"
+        )
+    if dependency.tree is not None and tree != dependency.tree:
+        raise SystemExit(
+            f"{dependency.identity} package checkout has tree {tree}, "
+            f"expected {dependency.tree}"
         )
     return {
         "identity": dependency.identity,
@@ -332,9 +455,24 @@ def run(arguments: argparse.Namespace) -> int:
     dependencies = tuple(
         dependency
         for dependency in (
-            validate_dependency("container", arguments.container),
-            validate_dependency("containerization", arguments.containerization),
-            validate_dependency("container-engine-api", arguments.engine_api),
+            validate_dependency(
+                "container",
+                arguments.container,
+                arguments.container_commit,
+                arguments.container_tree,
+            ),
+            validate_dependency(
+                "containerization",
+                arguments.containerization,
+                arguments.containerization_commit,
+                arguments.containerization_tree,
+            ),
+            validate_dependency(
+                "container-engine-api",
+                arguments.engine_api,
+                arguments.engine_api_commit,
+                arguments.engine_api_tree,
+            ),
         )
         if dependency is not None
     )
@@ -479,8 +617,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--swift", default="swift")
     parser.add_argument("--container")
+    parser.add_argument("--container-commit")
+    parser.add_argument("--container-tree")
     parser.add_argument("--containerization")
+    parser.add_argument("--containerization-commit")
+    parser.add_argument("--containerization-tree")
     parser.add_argument("--engine-api")
+    parser.add_argument("--engine-api-commit")
+    parser.add_argument("--engine-api-tree")
     parser.add_argument("--retain-edits", action="store_true")
     parser.add_argument("--cleanup", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
