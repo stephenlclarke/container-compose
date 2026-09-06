@@ -732,7 +732,7 @@ validate_unpublished_release_commit() {
 }
 
 recover_unpublished_release_candidate() {
-  local version="$1" path remote local_head remote_head local_tree remote_tree commit commits
+  local version="$1" path remote local_head remote_head local_tree remote_tree current_head promotion_parent commit commits
   RECOVERED_UNPUBLISHED_RELEASE_BASE=""
   path="$(repo_path "${COMPOSE_REPO}")"
   remote="$(push_remote "${COMPOSE_REPO}")"
@@ -762,6 +762,30 @@ recover_unpublished_release_candidate() {
     remote_tree="$(git -C "${path}" rev-parse "${remote_head}^{tree}")"
     if git -C "${path}" merge-base --is-ancestor "${local_head}" "${remote_head}" &&
       [[ "${local_tree}" == "${remote_tree}" ]]; then
+      promotion_parent="$(git -C "${path}" rev-parse --verify -q "${remote_head}^1" || true)"
+      if [[ -z "${promotion_parent}" ]] ||
+        ! git -C "${path}" merge-base --is-ancestor "${promotion_parent}" "${local_head}" ||
+        ! git -C "${path}" rev-parse "${remote_head}^@" | grep -Fxq "${local_head}"; then
+        printf 'promoted container-compose candidate is not the reviewed direct merge parent\n' >&2
+        exit 1
+      fi
+      current_head="$(git -C "${path}" rev-parse --verify -q 'refs/tags/current^{}' || true)"
+      if [[ "${current_head}" != "${promotion_parent}" &&
+        "${current_head}" != "${remote_head}" ]]; then
+        printf 'current does not identify the exact pre-promotion container-compose main\n' >&2
+        exit 1
+      fi
+      commits="$(git -C "${path}" rev-list --reverse "${promotion_parent}..${local_head}")"
+      if [[ -z "${commits}" ]]; then
+        printf 'promoted container-compose candidate has no unpublished commits after current\n' >&2
+        exit 1
+      fi
+      while IFS= read -r commit; do
+        validate_unpublished_release_commit "${path}" "${commit}" "${version}" || exit 1
+      done <<<"${commits}"
+      if [[ "${current_head}" == "${promotion_parent}" ]]; then
+        RECOVERED_UNPUBLISHED_RELEASE_BASE="${promotion_parent}"
+      fi
       align_equivalent_compose_main "${path}" "${remote}" "${remote_head}" "${local_tree}"
       return 0
     fi

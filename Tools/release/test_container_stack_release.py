@@ -6790,13 +6790,111 @@ esac
 
             result = self.run_release_function(
                 root / "github",
-                "recover_unpublished_release_candidate 0.6.71",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "ensure_current_release_source_identity",
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("already promoted", result.stdout)
+            self.assertIn("current tag targets published parent", result.stdout)
             self.assertEqual(self.git(local, "rev-parse", "main"), promoted_head)
             self.assertEqual(self.git(local, "rev-parse", "main^{tree}"), candidate_tree)
+            self.assertEqual(self.git(local, "status", "--short"), "")
+            self.assertNotEqual(candidate_head, promoted_head)
+
+    def test_release_helper_rejects_stale_current_before_promotion_merge(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, local = self.create_compose_checkout(root)
+            stale_current = self.git(local, "rev-parse", "main")
+            self.run_command(
+                "git", "-C", str(local), "tag", "--no-sign", "current", stale_current
+            )
+            self.run_command("git", "-C", str(local), "push", "origin", "current")
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"Package.resolved": "published dependency pin\n"},
+                "chore(deps): pin container stack 123456789abc abcdef123456",
+            )
+            published_parent = self.git(local, "rev-parse", "main")
+            self.run_command("git", "-C", str(local), "push", "origin", "main")
+            self.commit_signed_files(
+                local,
+                {"Makefile": "COMPOSE_VERSION ?= 0.6.71\n"},
+                "chore(release): prepare 0.6.71",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+            candidate_tree = self.git(local, "rev-parse", "main^{tree}")
+            self.run_command(
+                "git",
+                "-C",
+                str(local),
+                "push",
+                "origin",
+                "main:refs/heads/release/candidate",
+            )
+
+            promotion = root / "promotion"
+            self.run_command(
+                "git", "clone", "--branch", "main", str(remote), str(promotion)
+            )
+            self.configure_repo(promotion)
+            self.run_command(
+                "git",
+                "-C",
+                str(promotion),
+                "merge",
+                "--no-ff",
+                "origin/release/candidate",
+                "-m",
+                "chore: merge reviewed release candidate",
+            )
+            self.run_command("git", "-C", str(promotion), "push", "origin", "main")
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "ensure_current_release_source_identity",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("exact pre-promotion", result.stderr)
+            self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
+            self.assertEqual(self.git(local, "rev-parse", "main^{tree}"), candidate_tree)
+            self.assertNotEqual(stale_current, published_parent)
+            self.assertEqual(self.git(local, "status", "--short"), "")
+
+    def test_release_helper_recovers_after_current_publishes_promotion(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local, candidate_head, candidate_tree, promoted_head = (
+                self.create_promotion_merge(root)
+            )
+            self.run_command("git", "-C", str(local), "fetch", "origin", "main")
+            self.run_command(
+                "git", "-C", str(local), "tag", "--force", "current", promoted_head
+            )
+            self.run_command(
+                "git", "-C", str(local), "push", "--force", "origin", "current"
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "ensure_current_release_source_identity",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("already promoted", result.stdout)
+            self.assertNotIn("current tag targets published parent", result.stdout)
+            self.assertEqual(self.git(local, "rev-parse", "main"), promoted_head)
+            self.assertEqual(self.git(local, "rev-parse", "main^{tree}"), candidate_tree)
+            self.assertEqual(self.git(local, "rev-parse", "current"), promoted_head)
             self.assertEqual(self.git(local, "status", "--short"), "")
             self.assertNotEqual(candidate_head, promoted_head)
 
@@ -7859,6 +7957,11 @@ exit 64
         change_promoted_tree: bool = False,
     ) -> tuple[Path, str, str, str]:
         remote, local = self.create_compose_checkout(root)
+        published_head = self.git(local, "rev-parse", "main")
+        self.run_command(
+            "git", "-C", str(local), "tag", "--no-sign", "current", published_head
+        )
+        self.run_command("git", "-C", str(local), "push", "origin", "current")
         self.enable_ssh_signing(root, local)
         self.commit_signed_files(
             local,
