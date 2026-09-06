@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-09-05",
+  "generatedAt": "2026-09-07",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -8299,6 +8299,30 @@
         }
       ],
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/489"
+    },
+    {
+      "id": "container-compose-533",
+      "owner": "stephenlclarke/container-compose",
+      "title": "chore(release): refresh 0.14.3 upstream authority",
+      "state": "active-draft",
+      "lastVerified": "2026-09-07",
+      "commits": [
+        "228897171d71975988ccdc690f1982e7433952af",
+        "40ab92d74a02bbd6b7436a50d47c38898a4bc294",
+        "847655d373a27b8b8d0c3a9747f04f16b5de1206",
+        "f9d57ad1c80944c43bec6fc74afe1bfac3956480"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-533.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-534.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/534"
     },
     {
       "id": "process-list-compose-top-process-list",
