@@ -33,7 +33,7 @@ RETENTION_END = "<!-- container-release-retention:end -->"
 LEGACY_PIN_HIGHLIGHT = re.compile(
     r"(?m)^- Release automation pins .+ by exact SwiftPM revision [0-9a-f]{12}\.\n?"
 )
-STABLE_BENCHMARK_ASSETS = frozenset(
+STABLE_RETAINED_ASSETS = frozenset(
     {
         "container-release-arm64.tar.gz",
         "container-release-arm64.tar.gz.sha256",
@@ -41,6 +41,8 @@ STABLE_BENCHMARK_ASSETS = frozenset(
         "container-compose-plugin-release-arm64.tar.gz.sha256",
         "container-vminit-arm64.oci.tar",
         "container-vminit-arm64.oci.tar.sha256",
+        "stable-release-authority.tar.gz",
+        "stable-release-authority.tar.gz.sha256",
     }
 )
 
@@ -204,9 +206,9 @@ def historical_source_note(
             "",
             (
                 "This release is retained as source history. Its tap-backed package "
-                "and non-benchmark release assets have been retired; any immutable "
-                "runtime, plugin, and guest assets required for a reproducible "
-                "published-version benchmark remain attached."
+                "and non-reproducibility release assets have been retired; immutable "
+                "runtime, plugin, guest, and release-authority assets required for a "
+                "reproducible published-version benchmark or release proof remain attached."
             ),
             "The public Homebrew formula intentionally follows only the newest release in each lane, so it cannot select this historical tag.",
             "Use Homebrew to bootstrap the build tools, then build this exact source tag:",
@@ -270,7 +272,7 @@ def list_releases(repo: str) -> list[dict]:
 
 
 def historical_assets_to_retire(release: dict) -> list[dict]:
-    """Return assets not needed to benchmark a historical stable release."""
+    """Return assets not needed to reproduce a historical stable release."""
 
     assets = list(release.get("assets", []))
     if release.get("prerelease"):
@@ -278,7 +280,7 @@ def historical_assets_to_retire(release: dict) -> list[dict]:
     return [
         asset
         for asset in assets
-        if asset.get("name") not in STABLE_BENCHMARK_ASSETS
+        if asset.get("name") not in STABLE_RETAINED_ASSETS
     ]
 
 

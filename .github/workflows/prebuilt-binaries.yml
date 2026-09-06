@@ -846,6 +846,7 @@ jobs:
           fi
 
       - name: Require the hosted release authority
+        id: stable-authority
         env:
           GH_TOKEN: ${{ github.token }}
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
@@ -875,16 +876,18 @@ jobs:
               ;;
             tag)
               authority_name="Stable Release Authority (${PUBLISH_REF_NAME})"
-              authority_filter=".check_runs[] | select(.name == \"${authority_name}\""
+              authority_filter="[.[].check_runs[] | select(.name == \"${authority_name}\""
               authority_filter+=' and .status == "completed"'
               authority_filter+=' and .conclusion == "success"'
-              authority_filter+=' and .app.slug == "github-actions")'
-              authority_filter+=' | .external_id'
-              authority_run_id="$(
-                gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${PUBLISH_SHA}/check-runs?per_page=100" \
-                  --jq "${authority_filter}" \
-                  | tail -n 1
+              authority_filter+=' and .app.slug == "github-actions")]'
+              authority_filter+=' | sort_by(.completed_at) | last'
+              authority_filter+=' | [.external_id, .output.summary] | @tsv'
+              authority_record="$(
+                gh api --paginate --slurp \
+                  "repos/${GITHUB_REPOSITORY}/commits/${PUBLISH_SHA}/check-runs?per_page=100" \
+                  --jq "${authority_filter}"
               )"
+              IFS=$'\t' read -r authority_run_id authority_summary <<< "${authority_record}"
               if [[ ! "${authority_run_id}" =~ ^[0-9]+$ ]]; then
                 printf 'refusing to package %s without candidate-bound Stable Release Authority %s\n' \
                   "${PUBLISH_SHA}" "${authority_name}" >&2
@@ -900,12 +903,117 @@ jobs:
                   "${PUBLISH_SHA}" >&2
                 exit 1
               fi
+              receipt_sha256="$(
+                sed -nE 's/.* Authority receipt SHA-256: ([0-9a-f]{64})[.].*/\1/p' \
+                  <<< "${authority_summary}"
+              )"
+              artifact_id="$(
+                sed -nE 's/.* Authority artifact ID: ([0-9]+)[.].*/\1/p' \
+                  <<< "${authority_summary}"
+              )"
+              artifact_digest="$(
+                sed -nE 's/.* Authority artifact digest: ([0-9a-f]{64})[.].*/\1/p' \
+                  <<< "${authority_summary}"
+              )"
+              if [[ ! "${receipt_sha256}" =~ ^[0-9a-f]{64}$ ]] ||
+                [[ ! "${artifact_id}" =~ ^[0-9]+$ ]] ||
+                [[ ! "${artifact_digest}" =~ ^[0-9a-f]{64}$ ]]; then
+                printf 'stable release authority has no valid receipt binding\n' >&2
+                exit 1
+              fi
+              {
+                printf 'run_id=%s\n' "${authority_run_id}"
+                printf 'receipt_sha256=%s\n' "${receipt_sha256}"
+                printf 'artifact_id=%s\n' "${artifact_id}"
+                printf 'artifact_digest=%s\n' "${artifact_digest}"
+              } >> "${GITHUB_OUTPUT}"
               ;;
             *)
               printf 'unsupported publish ref type: %s\n' "${PUBLISH_REF_TYPE}" >&2
               exit 1
               ;;
           esac
+
+      - name: Verify candidate-bound authority receipt
+        id: authority-bundle
+        if: needs.resolve-publish-context.outputs.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_REF_NAME: ${{ needs.resolve-publish-context.outputs.ref_name }}
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+          BUILDER_REF: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
+          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
+          CONTAINER_REF: ${{ steps.stack-refs.outputs.container_ref }}
+          AUTHORITY_RUN_ID: ${{ steps.stable-authority.outputs.run_id }}
+          AUTHORITY_RECEIPT_SHA256: ${{ steps.stable-authority.outputs.receipt_sha256 }}
+          AUTHORITY_ARTIFACT_ID: ${{ steps.stable-authority.outputs.artifact_id }}
+          AUTHORITY_ARTIFACT_DIGEST: ${{ steps.stable-authority.outputs.artifact_digest }}
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          authority_root="${RUNNER_TEMP}/stable-release-authority-${PUBLISH_REF_NAME}"
+          mkdir "${authority_root}"
+          artifact_json="${authority_root}/artifact.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${AUTHORITY_ARTIFACT_ID}" \
+            > "${artifact_json}"
+          expected_name="stable-release-authority-${PUBLISH_REF_NAME}-${PUBLISH_SHA}"
+          if [[ "$(jq -r '.expired' "${artifact_json}")" != "false" ]] ||
+            [[ "$(jq -r '.name' "${artifact_json}")" != "${expected_name}" ]] ||
+            [[ "$(jq -r '.digest' "${artifact_json}")" != "sha256:${AUTHORITY_ARTIFACT_DIGEST}" ]] ||
+            [[ "$(jq -r '.workflow_run.id' "${artifact_json}")" != "${AUTHORITY_RUN_ID}" ]]; then
+            printf 'stable release authority artifact does not match its check run\n' >&2
+            exit 1
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${AUTHORITY_ARTIFACT_ID}/zip" \
+            > "${authority_root}/artifact.zip"
+          mkdir "${authority_root}/bundle"
+          /usr/bin/ditto -x -k "${authority_root}/artifact.zip" \
+            "${authority_root}/bundle"
+          receipt="${authority_root}/bundle/stable-release-authority.json"
+          if [[ "$(shasum -a 256 "${receipt}" | awk '{print $1}')" != \
+            "${AUTHORITY_RECEIPT_SHA256}" ]]; then
+            printf 'stable release authority receipt digest changed\n' >&2
+            exit 1
+          fi
+          init_authority_object="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/stable-init-image-authority/${PUBLISH_REF_NAME}" \
+              --jq '.object.sha'
+          )"
+          init_authority="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/tags/${init_authority_object}"
+          )"
+          if [[ "$(jq -r '.verification.verified' <<< "${init_authority}")" != "true" ]] ||
+            [[ "$(jq -r '.object.sha' <<< "${init_authority}")" != "${PUBLISH_SHA}" ]]; then
+            printf 'stable init-image authority no longer verifies the package source\n' >&2
+            exit 1
+          fi
+          init_image_sha256="$(
+            jq -r '.message' <<< "${init_authority}" |
+              sed -nE 's/^Guest init image SHA-256: ([0-9a-f]{64})[.]$/\1/p'
+          )"
+          homebrew_tap_ref="$(
+            git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git \
+              refs/heads/main | awk '{print $1}' | tail -n 1
+          )"
+          python3 container-compose/Tools/release/stable-release-authority.py verify \
+            --evidence-dir "${authority_root}/bundle" \
+            --receipt "${receipt}" \
+            --release-tag "${PUBLISH_REF_NAME}" \
+            --candidate-sha "${PUBLISH_SHA}" \
+            --builder-ref "${BUILDER_REF}" \
+            --containerization-ref "${CONTAINERIZATION_REF}" \
+            --container-ref "${CONTAINER_REF}" \
+            --homebrew-tap-ref "${homebrew_tap_ref}" \
+            --init-image-sha256 "${init_image_sha256}" >/dev/null
+          authority_asset="stable-release-authority.tar.gz"
+          /usr/bin/tar -C "${authority_root}/bundle" -czf \
+            "${RUNNER_TEMP}/${authority_asset}" .
+          python3 container-compose/Tools/release/write-sha256-sidecar.py \
+            "${RUNNER_TEMP}/${authority_asset}"
+          {
+            printf 'asset=%s\n' "${authority_asset}"
+            printf 'local_asset=%s\n' "${RUNNER_TEMP}/${authority_asset}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Install Developer ID application certificate
         env:
@@ -1276,6 +1384,12 @@ jobs:
         with:
           subject-path: ${{ steps.current-init-image.outputs.local_asset }}
 
+      - name: Attest stable release authority
+        if: needs.resolve-publish-context.outputs.ref_type == 'tag'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.authority-bundle.outputs.local_asset }}
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1371,6 +1485,12 @@ jobs:
           printf '%s\n%s\n' \
             "${{ steps.runtime-package.outputs.local_asset }}" \
             "${{ steps.runtime-package.outputs.local_asset }}.sha256" > "${extra_assets}"
+          if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
+            printf '%s\n%s\n' \
+              "${{ steps.authority-bundle.outputs.local_asset }}" \
+              "${{ steps.authority-bundle.outputs.local_asset }}.sha256" \
+              >> "${extra_assets}"
+          fi
           if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
             printf '%s\n%s\n' \
               "${{ steps.current-init-image.outputs.local_asset }}" \
