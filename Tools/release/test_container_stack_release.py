@@ -3037,8 +3037,22 @@ github_cli() {{
         self.assertIn("workflowName", tag_authority)
         self.assertIn("Stable Release Gate", tag_authority)
         self.assertIn("workflow_dispatch", tag_authority)
+        self.assertIn(".output.summary", tag_authority)
+        self.assertIn("Authority receipt SHA-256", tag_authority)
+        self.assertIn("Authority artifact ID", tag_authority)
+        self.assertIn("Authority artifact digest", tag_authority)
         self.assertNotIn('workflow="stable-release-gate.yml"', tag_authority)
         self.assertNotIn('--commit "${PUBLISH_SHA}"', tag_authority)
+
+        receipt = authority[
+            authority.index("- name: Verify candidate-bound authority receipt") :
+        ]
+        self.assertIn("actions/artifacts/${AUTHORITY_ARTIFACT_ID}", receipt)
+        self.assertIn(".workflow_run.id", receipt)
+        self.assertIn('"sha256:${AUTHORITY_ARTIFACT_DIGEST}"', receipt)
+        self.assertIn("stable-release-authority.py verify", receipt)
+        self.assertIn("--candidate-sha \"${PUBLISH_SHA}\"", receipt)
+        self.assertIn("stable-release-authority.tar.gz", receipt)
 
     def test_stable_gate_records_the_candidate_bound_guest_digest(self) -> None:
         workflow = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
@@ -3063,6 +3077,20 @@ github_cli() {{
         )
         self.assertIn(
             'summary+=" Guest init image SHA-256: ${INIT_IMAGE_SHA256}."',
+            workflow,
+        )
+        self.assertIn("Create candidate-bound authority receipt", workflow)
+        self.assertIn("Upload candidate-bound authority receipt", workflow)
+        self.assertIn(
+            'summary+=" Authority receipt SHA-256: ${AUTHORITY_RECEIPT_SHA256}."',
+            workflow,
+        )
+        self.assertIn(
+            'summary+=" Authority artifact ID: ${AUTHORITY_ARTIFACT_ID}."',
+            workflow,
+        )
+        self.assertIn(
+            'summary+=" Authority artifact digest: ${AUTHORITY_ARTIFACT_DIGEST}."',
             workflow,
         )
         self.assertIn(
@@ -3259,6 +3287,24 @@ github_cli() {{
         self.assertTrue(
             (ROOT / "Tools" / "release" / "verify-developer-id-archive.sh").is_file()
         )
+
+    def test_stable_authority_is_attested_published_and_retained(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        retention = (
+            ROOT / "Tools" / "release" / "retain-release-assets.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("- name: Attest stable release authority", workflow)
+        self.assertIn(
+            "subject-path: ${{ steps.authority-bundle.outputs.local_asset }}",
+            workflow,
+        )
+        self.assertIn(
+            '"${{ steps.authority-bundle.outputs.local_asset }}.sha256"',
+            workflow,
+        )
+        self.assertIn('"stable-release-authority.tar.gz"', retention)
+        self.assertIn('"stable-release-authority.tar.gz.sha256"', retention)
 
     def test_package_authority_requires_a_successful_candidate_bound_gate(self) -> None:
         accepted = self.run_package_authority_step("tag", "0.6.70", "29288195238", "success")
@@ -7703,7 +7749,7 @@ exit 64
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         authority = workflow[
             workflow.index("- name: Require the hosted release authority") : workflow.index(
-                "- name: Install Developer ID application certificate"
+                "- name: Verify candidate-bound authority receipt"
             )
         ]
         run_marker = "        run: |\n"
@@ -7712,8 +7758,9 @@ exit 64
         fake_gh = """\
 gh() {
   case "$1:$2" in
-    api:*) printf '%s\\n' "${TEST_AUTHORITY_RUN_ID}" ;;
-    run:*) printf '%s\\n' "${TEST_GATE_CONCLUSION}" ;;
+    api:*) printf '%s\\t%s\\n' "${TEST_AUTHORITY_RUN_ID}" "${TEST_AUTHORITY_SUMMARY}" ;;
+    run:list) printf '%s\\n' "${TEST_GATE_CONCLUSION}" ;;
+    run:view) printf '%s\\n' "${TEST_GATE_CONCLUSION}" ;;
     *) exit 64 ;;
   esac
 }
@@ -7727,7 +7774,14 @@ gh() {
                 "GITHUB_REPOSITORY": "stephenlclarke/container-compose",
                 "GH_TOKEN": "test",
                 "TEST_AUTHORITY_RUN_ID": authority_run_id,
+                "TEST_AUTHORITY_SUMMARY": (
+                    "Hosted Stable Release Gate passed. "
+                    f"Authority receipt SHA-256: {'a' * 64}. "
+                    "Authority artifact ID: 12345. "
+                    f"Authority artifact digest: {'b' * 64}."
+                ),
                 "TEST_GATE_CONCLUSION": gate_conclusion,
+                "GITHUB_OUTPUT": os.devnull,
             }
         )
         return subprocess.run(

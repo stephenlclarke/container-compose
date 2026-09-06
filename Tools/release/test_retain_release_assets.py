@@ -155,7 +155,7 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
                 {"id": index, "name": name}
                 for index, name in enumerate(
                     [
-                        *sorted(module.STABLE_BENCHMARK_ASSETS),
+                        *sorted(module.STABLE_RETAINED_ASSETS),
                         "release-highlights.md",
                         "quality-snapshot.svg",
                     ],

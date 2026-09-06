@@ -278,6 +278,10 @@ jobs:
     needs: resolve-candidate
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 120
+    outputs:
+      authority_artifact_digest: ${{ steps.upload-authority.outputs.artifact-digest }}
+      authority_artifact_id: ${{ steps.upload-authority.outputs.artifact-id }}
+      authority_receipt_sha256: ${{ steps.authority-receipt.outputs.sha256 }}
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     steps:
@@ -444,6 +448,7 @@ jobs:
           pipeline_environment=(
             "PIPELINE_PROFILE=release-hosted"
             "PIPELINE_STATE_ROOT=${RELEASE_PIPELINE_STATE_ROOT}"
+            "PIPELINE_ATTEMPT_ID=stable-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
             "PIPELINE_EXECUTION_PATH=${GITHUB_WORKSPACE}/container-compose/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
             "PIPELINE_COMPOSE_REPO=${GITHUB_WORKSPACE}/container-compose"
             "PIPELINE_COMPOSE_REF=${CANDIDATE_SHA}"
@@ -469,6 +474,55 @@ jobs:
             env "${pipeline_environment[@]}" make -C release-tools pipeline
           fi
 
+      - name: Create candidate-bound authority receipt
+        id: authority-receipt
+        env:
+          RELEASE_TAG: ${{ inputs.ref }}
+          CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
+          BUILDER_REF: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
+          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
+          CONTAINER_REF: ${{ steps.stack-refs.outputs.container_ref }}
+          HOMEBREW_TAP_REF: ${{ needs.resolve-candidate.outputs.homebrew_tap_ref }}
+          INIT_IMAGE_SHA256: ${{ needs.resolve-candidate.outputs.init_image_sha256 }}
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          attempt_id="stable-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          evidence="${RELEASE_PIPELINE_STATE_ROOT}/evidence/${attempt_id}"
+          bundle="${RUNNER_TEMP}/stable-release-authority"
+          if [[ -e "${bundle}" || -L "${bundle}" ]]; then
+            printf 'stable release authority bundle already exists: %s\n' "${bundle}" >&2
+            exit 2
+          fi
+          mkdir "${bundle}"
+          cp "${evidence}/pipeline-summary.tsv" "${bundle}/"
+          cp "${evidence}/attempt.tsv" "${bundle}/"
+          cp "${evidence}/session.uuid" "${bundle}/"
+          cp -R "${evidence}/preflight" "${bundle}/preflight"
+          receipt_sha256="$(
+            python3 release-tools/Tools/release/stable-release-authority.py create \
+              --evidence-dir "${bundle}" \
+              --receipt "${bundle}/stable-release-authority.json" \
+              --release-tag "${RELEASE_TAG}" \
+              --candidate-sha "${CANDIDATE_SHA}" \
+              --builder-ref "${BUILDER_REF}" \
+              --containerization-ref "${CONTAINERIZATION_REF}" \
+              --container-ref "${CONTAINER_REF}" \
+              --homebrew-tap-ref "${HOMEBREW_TAP_REF}" \
+              --init-image-sha256 "${INIT_IMAGE_SHA256}"
+          )"
+          [[ "${receipt_sha256}" =~ ^[0-9a-f]{64}$ ]]
+          printf 'sha256=%s\n' "${receipt_sha256}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload candidate-bound authority receipt
+        id: upload-authority
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: stable-release-authority-${{ inputs.ref }}-${{ needs.resolve-candidate.outputs.sha }}
+          path: ${{ runner.temp }}/stable-release-authority
+          if-no-files-found: error
+          retention-days: 90
+
   record-release-authority:
     name: Record Stable Release Authority
     needs: [resolve-candidate, release-gate]
@@ -488,6 +542,9 @@ jobs:
           AUTHORITY_REF: ${{ needs.resolve-candidate.outputs.authority_ref }}
           INIT_IMAGE_SHA256: ${{ needs.resolve-candidate.outputs.init_image_sha256 }}
           INIT_IMAGE_AUTHORITY_OBJECT: ${{ needs.resolve-candidate.outputs.init_image_authority_object }}
+          AUTHORITY_ARTIFACT_DIGEST: ${{ needs.release-gate.outputs.authority_artifact_digest }}
+          AUTHORITY_ARTIFACT_ID: ${{ needs.release-gate.outputs.authority_artifact_id }}
+          AUTHORITY_RECEIPT_SHA256: ${{ needs.release-gate.outputs.authority_receipt_sha256 }}
         shell: bash
         run: |
           set -euo pipefail
@@ -540,11 +597,20 @@ jobs:
             printf 'stable init-image authority digest changed after validation\n' >&2
             exit 75
           fi
+          if [[ ! "${AUTHORITY_ARTIFACT_ID}" =~ ^[0-9]+$ ]] ||
+            [[ ! "${AUTHORITY_ARTIFACT_DIGEST}" =~ ^[0-9a-f]{64}$ ]] ||
+            [[ ! "${AUTHORITY_RECEIPT_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+            printf 'stable release authority receipt outputs are invalid\n' >&2
+            exit 75
+          fi
           authority_name="Stable Release Authority (${RELEASE_TAG})"
           details_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           summary="Hosted Stable Release Gate passed for immutable source"
           summary+=" ${CANDIDATE_SHA}."
           summary+=" Guest init image SHA-256: ${INIT_IMAGE_SHA256}."
+          summary+=" Authority receipt SHA-256: ${AUTHORITY_RECEIPT_SHA256}."
+          summary+=" Authority artifact ID: ${AUTHORITY_ARTIFACT_ID}."
+          summary+=" Authority artifact digest: ${AUTHORITY_ARTIFACT_DIGEST}."
           gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" \
             -f "name=${authority_name}" \
             -f "head_sha=${CANDIDATE_SHA}" \
