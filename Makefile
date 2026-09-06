@@ -244,6 +244,22 @@ CONTAINER_ENGINE_API_STACK_REPO ?= $(abspath ../container-engine-api)
 CONTAINER_PACKAGE_PATH ?= $(if $(wildcard $(CONTAINER_STACK_REPO)/Package.swift),$(CONTAINER_STACK_REPO),)
 CONTAINERIZATION_PACKAGE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_REPO)/Package.swift),$(CONTAINERIZATION_STACK_REPO),)
 CONTAINER_ENGINE_API_PACKAGE_PATH ?= $(if $(wildcard $(CONTAINER_ENGINE_API_STACK_REPO)/Package.swift),$(CONTAINER_ENGINE_API_STACK_REPO),)
+CONTAINER_PACKAGE_COMMIT ?=
+CONTAINER_PACKAGE_TREE ?=
+CONTAINERIZATION_PACKAGE_COMMIT ?=
+CONTAINERIZATION_PACKAGE_TREE ?=
+CONTAINER_ENGINE_API_PACKAGE_COMMIT ?=
+CONTAINER_ENGINE_API_PACKAGE_TREE ?=
+LOCAL_SWIFT_STACK_DEPENDENCY_ARGS = \
+	--container "$(CONTAINER_PACKAGE_PATH)" \
+	--container-commit "$(CONTAINER_PACKAGE_COMMIT)" \
+	--container-tree "$(CONTAINER_PACKAGE_TREE)" \
+	--containerization "$(CONTAINERIZATION_PACKAGE_PATH)" \
+	--containerization-commit "$(CONTAINERIZATION_PACKAGE_COMMIT)" \
+	--containerization-tree "$(CONTAINERIZATION_PACKAGE_TREE)" \
+	--engine-api "$(CONTAINER_ENGINE_API_PACKAGE_PATH)" \
+	--engine-api-commit "$(CONTAINER_ENGINE_API_PACKAGE_COMMIT)" \
+	--engine-api-tree "$(CONTAINER_ENGINE_API_PACKAGE_TREE)"
 PARITY_CONTAINER_REF ?= $(if $(CONTAINER_PACKAGE_PATH),$(shell git -C "$(CONTAINER_PACKAGE_PATH)" rev-parse HEAD 2>/dev/null),$(CONTAINER_REF))
 PARITY_CONTAINERIZATION_REF ?= $(if $(CONTAINERIZATION_PACKAGE_PATH),$(shell git -C "$(CONTAINERIZATION_PACKAGE_PATH)" rev-parse HEAD 2>/dev/null),$(CONTAINERIZATION_REF))
 PARITY_CONTAINER_ENGINE_API_REF ?= $(if $(CONTAINER_ENGINE_API_PACKAGE_PATH),$(shell git -C "$(CONTAINER_ENGINE_API_PACKAGE_PATH)" rev-parse HEAD 2>/dev/null),unspecified)
@@ -1169,9 +1185,7 @@ build:
 		$(PARITY_ENV) $(PYTHON) Tools/ci/run-with-local-swift-stack.py \
 			--swift "$(SWIFT)" \
 			--retain-edits \
-			--container "$(CONTAINER_PACKAGE_PATH)" \
-			--containerization "$(CONTAINERIZATION_PACKAGE_PATH)" \
-			--engine-api "$(CONTAINER_ENGINE_API_PACKAGE_PATH)" \
+			$(LOCAL_SWIFT_STACK_DEPENDENCY_ARGS) \
 			-- $(SWIFT) build --product compose; \
 	else \
 		$(PYTHON) Tools/ci/run-with-local-swift-stack.py --swift "$(SWIFT)" -- \
@@ -1183,9 +1197,7 @@ build-release:
 		$(PARITY_ENV) $(PYTHON) Tools/ci/run-with-local-swift-stack.py \
 			--swift "$(SWIFT)" \
 			--retain-edits \
-			--container "$(CONTAINER_PACKAGE_PATH)" \
-			--containerization "$(CONTAINERIZATION_PACKAGE_PATH)" \
-			--engine-api "$(CONTAINER_ENGINE_API_PACKAGE_PATH)" \
+			$(LOCAL_SWIFT_STACK_DEPENDENCY_ARGS) \
 			-- $(SWIFT) build -c release --product compose $(SWIFT_RELEASE_FLAGS); \
 	else \
 		$(PYTHON) Tools/ci/run-with-local-swift-stack.py --swift "$(SWIFT)" -- \
@@ -1221,9 +1233,7 @@ swift-test:
 		$(PYTHON) Tools/ci/run-with-local-swift-stack.py \
 			--swift "$(SWIFT)" \
 			--retain-edits \
-			--container "$(CONTAINER_PACKAGE_PATH)" \
-			--containerization "$(CONTAINERIZATION_PACKAGE_PATH)" \
-			--engine-api "$(CONTAINER_ENGINE_API_PACKAGE_PATH)" \
+			$(LOCAL_SWIFT_STACK_DEPENDENCY_ARGS) \
 			-- $(MAKE) --no-print-directory swift-test-direct \
 				CONTAINER_PACKAGE_PATH= CONTAINERIZATION_PACKAGE_PATH= \
 				CONTAINER_ENGINE_API_PACKAGE_PATH=; \
