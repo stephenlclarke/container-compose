@@ -44,7 +44,7 @@ struct ComposeDockerTemplateJSONTests {
             try renderDockerTemplate(
                 #"{{json (truncate "aéz" 2)}}"#,
                 values: values,
-            ) == #""a\ufffd""#,
+            ) == #""a\#(replacementCharacter)""#,
         )
         #expect(
             try renderDockerTemplate(

@@ -190,7 +190,7 @@ private func structuredTemplateJSONString(bytes: [UInt8]) throws -> String {
             valid.unicodeScalars.append(scalar)
         case .error:
             content += try structuredTemplateJSONString(valid).dropQuotes
-            content += #"\ufffd"#
+            content.append("\u{FFFD}")
             valid = ""
         case .emptyInput:
             content += try structuredTemplateJSONString(valid).dropQuotes
