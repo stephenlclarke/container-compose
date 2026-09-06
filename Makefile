@@ -279,7 +279,7 @@ CONTAINERIZATION_INIT_SOURCE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_RE
 # their scripts verbatim, so selecting it here keeps every documented `make
 # docker-compose-…-parity` invocation runnable on either installation layout.
 DOCKER_COMPOSE_REFERENCE ?= $(shell if docker compose version >/dev/null 2>&1; then printf '%s' 'docker compose'; elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then printf '%s' docker-compose; else printf '%s' 'docker compose'; fi)
-DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.4.0
+DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.5.1
 DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff
 DOCKER_TERMINAL_CANDIDATE_SOCKET ?= /tmp/container-engine-$(shell id -u)/docker.sock
 DOCKER_REST_LOGGING_CANDIDATE_SOCKET ?= $(DOCKER_TERMINAL_CANDIDATE_SOCKET)
@@ -2407,7 +2407,8 @@ docker-compose-reference:
 docker-compose-e2e-fixtures:
 	DOCKER_COMPOSE_E2E_REF="$(DOCKER_COMPOSE_E2E_REF)" ./Tools/parity/sync-docker-compose-e2e-fixtures.sh --strict
 
-docker-compose-parity: build-release release-parity-build-info container-stack-build-if-needed docker-compose-reference
+docker-compose-parity: docker-compose-reference
+	$(MAKE) --no-print-directory build-release release-parity-build-info container-stack-build-if-needed
 	container_binary="$(CONTAINER_COMPOSE_CONTAINER)"; \
 	if [[ "$$container_binary" == "container" ]]; then \
 		for candidate in "$(LOCAL_CONTAINER_BINARY)" "$(LOCAL_CONTAINER_PACKAGE_BINARY)"; do \

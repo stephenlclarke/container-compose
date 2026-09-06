@@ -3562,11 +3562,7 @@ github_cli() {{
         for stage in ("sibling-stack", "compose-ci", "swift-runtime", "compose-parity"):
             self.assertIn(f"--stage {stage}", makefile)
         self.assertIn("docker-compose-parity-stages:", makefile)
-        self.assertIn(
-            "docker-compose-parity: build-release release-parity-build-info "
-            "container-stack-build-if-needed docker-compose-reference",
-            makefile,
-        )
+        self.assertIn("docker-compose-parity: docker-compose-reference", makefile)
         self.assertIn(
             "swift-runtime-test: container-stack-build-if-needed build "
             "swift-runtime-test-build",
@@ -3644,11 +3640,24 @@ github_cli() {{
             makefile.count("env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER"),
             2,
         )
-        self.assertIn("DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.4.0", makefile)
+        self.assertIn("DOCKER_COMPOSE_REFERENCE_VERSION ?= 5.5.1", makefile)
         self.assertIn(
-            'REQUIRED_VERSION="${DOCKER_COMPOSE_REFERENCE_VERSION:-5.4.0}"',
+            'REQUIRED_VERSION="${DOCKER_COMPOSE_REFERENCE_VERSION:-5.5.1}"',
             reference_check,
         )
+        parity_target = makefile.index(
+            "docker-compose-parity: docker-compose-reference"
+        )
+        parity_build = makefile.index(
+            "$(MAKE) --no-print-directory build-release "
+            "release-parity-build-info container-stack-build-if-needed",
+            parity_target,
+        )
+        parity_runtime = makefile.index(
+            'container_binary="$(CONTAINER_COMPOSE_CONTAINER)"', parity_build
+        )
+        self.assertLess(parity_target, parity_build)
+        self.assertLess(parity_build, parity_runtime)
         self.assertIn("DOCKER_COMPOSE_E2E_REF ?= f32009d4a2c687dd405398cc7975d12dccaf8dff", makefile)
         self.assertNotIn("repackage-release", makefile)
 

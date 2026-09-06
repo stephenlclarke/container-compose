@@ -122,10 +122,12 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
         ]
 
         self.assertTrue(
-            parity.startswith(
-                "docker-compose-parity: build-release release-parity-build-info "
-                "container-stack-build-if-needed docker-compose-reference"
-            ),
+            parity.startswith("docker-compose-parity: docker-compose-reference"),
+            parity,
+        )
+        self.assertIn(
+            "$(MAKE) --no-print-directory build-release "
+            "release-parity-build-info container-stack-build-if-needed",
             parity,
         )
         self.assertIn(
