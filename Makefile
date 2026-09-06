@@ -2434,6 +2434,8 @@ docker-compose-parity: docker-compose-reference
 docker-compose-parity-stages:
 	@set -e; \
 	for target in $(DOCKER_COMPOSE_PARITY_TARGETS); do \
+		RELEASE_GATE_PARITY_STAGE="$$target" \
+		RELEASE_GATE_PARITY_COMPOSE_BINARY="$(RELEASE_PARITY_COMPOSE_BINARY)" \
 		RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py \
 			--checkpoint-dir "$(PARITY_GATE_CHECKPOINT_DIR)" \
 			--stage "$$target" \
