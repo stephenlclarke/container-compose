@@ -6779,6 +6779,44 @@ esac
             self.assertNotEqual(candidate_head, remote_head)
             self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "")
 
+    def test_release_helper_recovers_after_promotion_merge_before_alignment(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local, candidate_head, candidate_tree, promoted_head = (
+                self.create_promotion_merge(root)
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("already promoted", result.stdout)
+            self.assertEqual(self.git(local, "rev-parse", "main"), promoted_head)
+            self.assertEqual(self.git(local, "rev-parse", "main^{tree}"), candidate_tree)
+            self.assertEqual(self.git(local, "status", "--short"), "")
+            self.assertNotEqual(candidate_head, promoted_head)
+
+    def test_release_helper_rejects_changed_tree_after_promotion_merge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local, candidate_head, _candidate_tree, _promoted_head = (
+                self.create_promotion_merge(root, change_promoted_tree=True)
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("refusing to recover", result.stderr)
+            self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
+            self.assertEqual(self.git(local, "status", "--short"), "")
+
     def test_release_helper_retains_the_symlinked_coverage_gate_repair(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -7813,6 +7851,56 @@ exit 64
         self.commit_file(local, "README.md", "base\n", "chore: initial stack")
         self.run_command("git", "-C", str(local), "push", "-u", "origin", "main")
         return remote, local
+
+    def create_promotion_merge(
+        self,
+        root: Path,
+        *,
+        change_promoted_tree: bool = False,
+    ) -> tuple[Path, str, str, str]:
+        remote, local = self.create_compose_checkout(root)
+        self.enable_ssh_signing(root, local)
+        self.commit_signed_files(
+            local,
+            {"Makefile": "COMPOSE_VERSION ?= 0.6.71\n"},
+            "chore(release): prepare 0.6.71",
+        )
+        candidate_head = self.git(local, "rev-parse", "main")
+        candidate_tree = self.git(local, "rev-parse", "main^{tree}")
+        self.run_command(
+            "git",
+            "-C",
+            str(local),
+            "push",
+            "origin",
+            "main:refs/heads/release/candidate",
+        )
+
+        promotion = root / "promotion"
+        self.run_command(
+            "git", "clone", "--branch", "main", str(remote), str(promotion)
+        )
+        self.configure_repo(promotion)
+        self.run_command(
+            "git",
+            "-C",
+            str(promotion),
+            "merge",
+            "--no-ff",
+            "origin/release/candidate",
+            "-m",
+            "chore: merge reviewed release candidate",
+        )
+        if change_promoted_tree:
+            self.commit_file(
+                promotion,
+                "unexpected.txt",
+                "changed\n",
+                "fix: change promoted tree",
+            )
+        self.run_command("git", "-C", str(promotion), "push", "origin", "main")
+        promoted_head = self.git(promotion, "rev-parse", "main")
+        return local, candidate_head, candidate_tree, promoted_head
 
     def create_equivalent_squash(self, root: Path) -> tuple[Path, Path, str, str]:
         remote, local = self.create_compose_checkout(root)

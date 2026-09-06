@@ -732,7 +732,7 @@ validate_unpublished_release_commit() {
 }
 
 recover_unpublished_release_candidate() {
-  local version="$1" path remote local_head remote_head commit commits
+  local version="$1" path remote local_head remote_head local_tree remote_tree commit commits
   RECOVERED_UNPUBLISHED_RELEASE_BASE=""
   path="$(repo_path "${COMPOSE_REPO}")"
   remote="$(push_remote "${COMPOSE_REPO}")"
@@ -746,12 +746,26 @@ recover_unpublished_release_candidate() {
     printf 'cannot recover an unpublished release candidate without %s/main\n' "${remote}" >&2
     exit 1
   fi
-  if ! git -C "${path}" merge-base --is-ancestor "${remote_head}" "${local_head}"; then
-    printf 'container-compose main is not based on %s/main; refusing to recover a release candidate\n' "${remote}" >&2
-    exit 1
-  fi
   if [[ -n "$(git -C "${path}" status --short)" ]]; then
     printf 'dirty worktree blocks recovery of an unpublished release candidate for container-compose\n' >&2
+    exit 1
+  fi
+  if ! git -C "${path}" merge-base --is-ancestor "${remote_head}" "${local_head}"; then
+    fetch_release_remote "${COMPOSE_REPO}"
+    remote_head="$(remote_main_commit "${COMPOSE_REPO}")"
+    if [[ -z "${remote_head}" ]] ||
+      ! git -C "${path}" cat-file -e "${remote_head}^{commit}" 2>/dev/null; then
+      printf 'cannot inspect promoted container-compose main on %s\n' "${remote}" >&2
+      exit 1
+    fi
+    local_tree="$(git -C "${path}" rev-parse "${local_head}^{tree}")"
+    remote_tree="$(git -C "${path}" rev-parse "${remote_head}^{tree}")"
+    if git -C "${path}" merge-base --is-ancestor "${local_head}" "${remote_head}" &&
+      [[ "${local_tree}" == "${remote_tree}" ]]; then
+      align_equivalent_compose_main "${path}" "${remote}" "${remote_head}" "${local_tree}"
+      return 0
+    fi
+    printf 'container-compose main is not based on %s/main; refusing to recover a release candidate\n' "${remote}" >&2
     exit 1
   fi
 
