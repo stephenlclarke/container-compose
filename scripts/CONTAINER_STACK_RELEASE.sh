@@ -24,6 +24,7 @@ readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compo
 readonly HOMEBREW_PREFLIGHT_TOOL="${SELF_DIRECTORY}/../Tools/release/homebrew-preflight.py"
 readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
 readonly RELEASE_COMMAND_DEADLINE_RUNNER="${SELF_DIRECTORY}/../Tools/ci/run-command-with-deadline.py"
+readonly RELEASE_WORKSPACE_TOOL="${SELF_DIRECTORY}/../Tools/release/release-workspace.py"
 readonly STABLE_RELEASE_LANE_CLASSIFIER="${SELF_DIRECTORY}/../Tools/release/stable-release-default-lane.py"
 # shellcheck disable=SC1091
 source "${SELF_DIRECTORY}/../Tools/ci/container-runtime-lock.sh"
@@ -38,13 +39,14 @@ Usage:
   ${SCRIPT_USAGE} release VERSION_SELECTOR [--execute]
 
 Purpose:
-  Coordinate releases for the four local stephenlclarke source repositories
-  and the Homebrew tap without touching Apple upstream repositories.
+  Coordinate releases for the four stephenlclarke source repositories and the
+  Homebrew tap without touching Apple upstream repositories or primary local
+  checkouts.
 
 Modes:
   plan
-      Inspect the four local source main branches and print the next release
-      plan, including the Homebrew tap workflow boundary.
+      Inspect the four canonical remote main branches and print the next
+      release plan, including the Homebrew tap workflow boundary.
       This mode never mutates repositories.
 
   release VERSION_SELECTOR
@@ -77,16 +79,17 @@ Options:
   --execute
       Run mutating git commands. Without this flag the script is a dry run.
 
-Local source checkout layout expected:
-  ~/github/container-builder-shim
-  ~/github/containerization
-  ~/github/container
-  ~/github/container-compose
+Release checkout layout:
+  Exact release transactions are created below
+  /Volumes/SSD/github/container-compose-release-transactions by default.
+  Failed or interrupted transactions are retained and resumed in place.
+  Successful transactions are removed after publication completes.
 
 Rules enforced:
   - Apple remotes are read-only and must not be push targets.
   - stephenlclarke-owned remotes are the only push targets.
-  - Worktrees must be clean before release changes.
+  - Primary developer checkouts are never inspected or changed.
+  - Fresh release workspaces start at exact canonical remote main revisions.
   - Stable container-compose release tags are SSH-signed and point at the validated main commit.
   - GitHub must verify each stable tag signature before the release gate starts.
   - The hosted Stable Release Gate runs after the signed tag and before stable package publication.
@@ -190,9 +193,12 @@ Environment:
       registry or host login.
 
   CONTAINER_STACK_RELEASE_ROOT
-      Override the parent directory containing the four source checkouts and
-      the Homebrew tap. Defaults to ~/github. Use an isolated stack root for
-      release validation without touching another local workspace.
+      Internal path of an active marker-protected release transaction. Normal
+      callers must not set this; the controller sets it for its child process.
+
+  CONTAINER_STACK_RELEASE_BUILD_ROOT
+      Override the marker-protected transaction parent. Defaults to
+      /Volumes/SSD/github/container-compose-release-transactions.
 USAGE
 }
 
@@ -244,6 +250,7 @@ parse_arguments() {
 }
 
 ROOT="${CONTAINER_STACK_RELEASE_ROOT:-${HOME}/github}"
+RELEASE_BUILD_ROOT="${CONTAINER_STACK_RELEASE_BUILD_ROOT:-/Volumes/SSD/github/container-compose-release-transactions}"
 COMPOSE_REPO="container-compose"
 CONTAINER_REPO="container"
 COMPOSE_PACKAGE_WAIT_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS:-3600}"
@@ -1233,16 +1240,6 @@ PY
 # Emit a visible section header.
 print_header() {
   printf '\n== %s ==\n' "$1"
-}
-
-# Verify that a checkout exists.
-ensure_repo_exists() {
-  local repo="$1" path
-  path="$(repo_path "${repo}")"
-  if [[ ! -d "${path}/.git" ]]; then
-    printf 'missing checkout: %s\n' "${path}" >&2
-    exit 1
-  fi
 }
 
 # Refuse to operate on dirty working trees.
@@ -3292,28 +3289,6 @@ ensure_push_boundary() {
       exit 1
     fi
   fi
-}
-
-# Fetch and align the local main branch.
-prepare_repo_main() {
-  local repo="$1" path remote
-  path="$(repo_path "${repo}")"
-  remote="$(push_remote "${repo}")"
-  ensure_repo_exists "${repo}"
-  ensure_clean "${repo}"
-  ensure_push_boundary "${repo}"
-  fetch_release_remote "${repo}"
-  run git -C "${path}" switch main
-  run git -C "${path}" pull --rebase --autostash "${remote}" main
-  ensure_clean "${repo}"
-}
-
-# Prepare every stack participant in release order.
-prepare_all_main() {
-  local repo
-  for repo in "${REPOS[@]}"; do
-    prepare_repo_main "${repo}"
-  done
 }
 
 # Read the compose plugin version from the Makefile.
@@ -5862,32 +5837,10 @@ PY
 
 # Print current stack release status.
 plan() {
-  local repo current latest next_patch next_minor next_major changed
-  prepare_all_main
-  current="$(current_compose_version)"
-  latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
-  if [[ -z "${latest}" ]]; then
-    latest="${current}"
-  fi
-  next_patch="$(resolve_version_selector '--+' "${latest}")"
-  next_minor="$(resolve_version_selector '-+-' "${latest}")"
-  next_major="$(resolve_version_selector '+--' "${latest}")"
-
   print_header "simplified stack release plan"
-  printf 'current COMPOSE_VERSION: %s\n' "${current}"
-  printf 'latest semantic tag:     %s\n' "${latest}"
-  printf 'next patch release:      %s\n' "${next_patch}"
-  printf 'next minor release:      %s\n' "${next_minor}"
-  printf 'next major release:      %s\n\n' "${next_major}"
+  python3 "${RELEASE_WORKSPACE_TOOL}" plan
+  printf '\n'
   printf 'stable release intent:   %s\n\n' "${RELEASE_INTENT:-required for release}"
-  printf '%-26s %-40s %-18s\n' "component" "main-sha" "changed-since-tag"
-  for repo in "${REPOS[@]}"; do
-    changed="yes"
-    if ! repo_changed_since_latest_tag "${repo}"; then
-      changed="no"
-    fi
-    printf '%-26s %-40s %-18s\n' "${repo}" "$(git -C "$(repo_path "${repo}")" rev-parse main)" "${changed}"
-  done
 
   cat <<'EOF'
 
@@ -5907,6 +5860,49 @@ Process:
 EOF
 }
 
+# Run a stable release only inside the exact marker-protected transaction
+# created by the release workspace controller. A failed child is retained for
+# the next invocation; only a completely successful publication is removed.
+run_isolated_release() {
+  local workspace child child_pid status claim_status
+  if [[ "${EXECUTE}" != "1" ]]; then
+    python3 "${RELEASE_WORKSPACE_TOOL}" plan
+    printf 'would materialize and retain an exact isolated release workspace for %s\n' \
+      "${VERSION_SELECTOR}"
+    return 0
+  fi
+
+  workspace="$(python3 "${RELEASE_WORKSPACE_TOOL}" materialize \
+    --build-root "${RELEASE_BUILD_ROOT}" -- "${VERSION_SELECTOR}")"
+  child="${workspace}/container-compose/scripts/${SCRIPT_NAME}"
+  if [[ ! -f "${child}" || -L "${child}" ]]; then
+    printf 'isolated release controller is missing or unsafe: %s\n' "${child}" >&2
+    return 1
+  fi
+  status=0
+  CONTAINER_STACK_RELEASE_ROOT="${workspace}" \
+  CONTAINER_STACK_RELEASE_BUILD_ROOT="${RELEASE_BUILD_ROOT}" \
+  CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE=1 \
+    python3 "${RELEASE_WORKSPACE_TOOL}" execute \
+      --build-root "${RELEASE_BUILD_ROOT}" "${workspace}" \
+      /bin/bash "${child}" release "${VERSION_SELECTOR}" --execute &
+  child_pid=$!
+  wait "${child_pid}" || status=$?
+  claim_status=0
+  python3 "${RELEASE_WORKSPACE_TOOL}" release-claim \
+    --build-root "${RELEASE_BUILD_ROOT}" --pid "${child_pid}" "${workspace}" || claim_status=$?
+  if ((claim_status != 0)); then
+    printf 'release transaction lease could not be cleared: %s\n' "${workspace}" >&2
+    return "${claim_status}"
+  fi
+  if ((status != 0)); then
+    printf 'release transaction retained for exact recovery: %s\n' "${workspace}" >&2
+    return "${status}"
+  fi
+  python3 "${RELEASE_WORKSPACE_TOOL}" cleanup \
+    --build-root "${RELEASE_BUILD_ROOT}" "${workspace}"
+}
+
 main() {
   parse_arguments "$@"
   case "${MODE}" in
@@ -5916,8 +5912,18 @@ main() {
     release)
       trap cleanup_current_init_image_authority EXIT
       ensure_compose_promotion_mode
-      prepare_all_main
-      release_current_stack
+      if [[ "${CONTAINER_STACK_RELEASE_LIBRARY:-0}" == "1" ]]; then
+        release_current_stack
+      elif [[ "${CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE:-0}" == "1" ]]; then
+        python3 "${RELEASE_WORKSPACE_TOOL}" verify \
+          --build-root "${RELEASE_BUILD_ROOT}" "${ROOT}" >/dev/null
+        for repo in "${REPOS[@]}"; do
+          ensure_push_boundary "${repo}"
+        done
+        release_current_stack
+      else
+        run_isolated_release
+      fi
       CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=1
       ;;
   esac
