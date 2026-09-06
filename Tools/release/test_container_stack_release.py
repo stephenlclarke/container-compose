@@ -2012,6 +2012,124 @@ github_cli() {{
         self.assertIn("--json databaseId,displayTitle", self.script)
         self.assertIn('latest_compose_package_dispatch_run "${version}"', self.script)
 
+    def test_release_helper_runs_released_docc_last_from_a_durable_manifest(
+        self,
+    ) -> None:
+        publish = self.script[
+            self.script.index("publish_stable_release() {") : self.script.index(
+                "tag_stable_version() {"
+            )
+        ]
+        self.assertLess(
+            publish.index('dispatch_stable_release_gate "${version}"'),
+            publish.index('dispatch_compose_stable_package "${version}"'),
+        )
+        self.assertLess(
+            publish.index('dispatch_compose_stable_package "${version}"'),
+            publish.index('dispatch_stable_documentation "${version}"'),
+        )
+        self.assertIn("write_release_documentation_manifest", self.script)
+        self.assertIn("Tools/release/documentation-refs.json", self.script)
+        self.assertIn("released_k8s_documentation_authority", self.script)
+        self.assertIn("repos/stephenlclarke/container-k8s/releases", self.script)
+        self.assertIn("workflow run docs.yml", self.script)
+        self.assertNotIn('-f "k8s_ref=', self.script)
+        self.assertIn(
+            "stable documentation already passed for the exact released inputs",
+            self.script,
+        )
+
+    def test_release_helper_recovers_from_an_exact_successful_docc_checkpoint(
+        self,
+    ) -> None:
+        completed = self.run_release_function(
+            Path("/tmp/unused-release-root"),
+            "dispatch_stable_documentation 0.15.0",
+            shell_setup="\n".join(
+                [
+                    (
+                        "latest_stable_documentation_dispatch() { "
+                        "printf '731\\tcompleted\\tsuccess\\n'; }"
+                    ),
+                    "github_cli() { exit 99; }",
+                ]
+            ),
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn(
+            "stable documentation already passed for the exact released inputs: "
+            "0.15.0 (run 731)",
+            completed.stdout,
+        )
+
+    def test_release_helper_waits_for_an_active_exact_docc_checkpoint(self) -> None:
+        active = self.run_release_function(
+            Path("/tmp/unused-release-root"),
+            "dispatch_stable_documentation 0.15.0",
+            shell_setup="\n".join(
+                [
+                    (
+                        "latest_stable_documentation_dispatch() { "
+                        "printf '812\\tin_progress\\t\\n'; }"
+                    ),
+                    (
+                        "wait_for_github_run_success() { "
+                        "printf 'wait %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }"
+                    ),
+                    "github_cli() { exit 99; }",
+                ]
+            ),
+        )
+
+        self.assertEqual(active.returncode, 0, active.stderr)
+        self.assertIn("stable documentation is already running", active.stdout)
+        self.assertIn("wait 812 stable documentation and Pages deployment", active.stdout)
+
+    def test_release_helper_writes_the_published_k8s_documentation_authority(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "container-compose" / "Tools" / "release").mkdir(
+                parents=True
+            )
+            k8s_ref = "b" * 40
+            written = self.run_release_function(
+                root,
+                "write_release_documentation_manifest",
+                shell_setup="\n".join(
+                    [
+                        "need_command() { :; }",
+                        (
+                            "released_k8s_documentation_authority() { "
+                            "printf '%s\\n%s\\n' homebrew-main-19-deadbeef "
+                            f"{k8s_ref}; }}"
+                        ),
+                    ]
+                ),
+            )
+
+            self.assertEqual(written.returncode, 0, written.stderr)
+            manifest = json.loads(
+                (
+                    root
+                    / "container-compose"
+                    / "Tools"
+                    / "release"
+                    / "documentation-refs.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["schemaVersion"], 1)
+            self.assertEqual(
+                manifest["sites"]["k8s"],
+                {
+                    "ref": k8s_ref,
+                    "releaseTag": "homebrew-main-19-deadbeef",
+                    "repository": "stephenlclarke/container-k8s",
+                },
+            )
+
     def test_current_formulae_use_the_matched_runtime_in_the_single_prerelease(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('runtime_asset="container-current-${PUBLISH_SHA:0:12}-arm64.tar.gz"', workflow)
@@ -2500,15 +2618,39 @@ github_cli() {{
     def test_documentation_sites_build_in_parallel_before_pages_assembly(self) -> None:
         workflow = DOCS_WORKFLOW.read_text(encoding="utf-8")
 
+        self.assertIn(
+            "run-name: Documentation · ${{ inputs.ref }}",
+            workflow,
+        )
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertNotIn("\n  schedule:", workflow)
+        self.assertNotIn("\n  push:", workflow)
+        self.assertNotIn("\n  pull_request:", workflow)
+        self.assertIn(
+            'ref:\n        description: "Published stable semantic tag"', workflow
+        )
+        trigger = workflow[workflow.index("\non:") : workflow.index("\npermissions:")]
+        self.assertNotIn("k8s_ref:", trigger)
         concurrency = workflow[
             workflow.index("concurrency:") : workflow.index("\njobs:")
         ]
         self.assertIn(
-            "group: documentation-${{ github.workflow }}-${{ github.ref }}-"
-            "${{ github.event_name }}",
+            "group: documentation-${{ inputs.ref }}",
             concurrency,
         )
-        self.assertIn("cancel-in-progress: true", concurrency)
+        self.assertIn("cancel-in-progress: false", concurrency)
+        self.assertIn("name: Resolve Released Documentation Inputs", workflow)
+        self.assertIn("stable release ref must be a bare semantic tag", workflow)
+        self.assertIn(
+            "container-k8s ref is not attached to a published release", workflow
+        )
+        self.assertIn("Tools/release/stack-refs.json", workflow)
+        self.assertIn("Tools/release/documentation-refs.json", workflow)
+        self.assertIn("ref: ${{ matrix.ref }}", workflow)
+        self.assertIn(
+            '[[ "$(git -C source rev-parse HEAD)" == "${EXPECTED_REF}" ]]',
+            workflow,
+        )
         self.assertIn("strategy:", workflow)
         self.assertIn("fail-fast: true", workflow)
         self.assertEqual(workflow.count("- site:"), 4)
@@ -2517,11 +2659,7 @@ github_cli() {{
         self.assertIn("downloads/compose.tgz", workflow)
         self.assertIn('downloads/${site}.tgz', workflow)
         self.assertIn("name: Build ${{ matrix.site }} DocC Site", workflow)
-        self.assertIn(
-            "if: github.event_name != 'pull_request' && "
-            "needs.classify-changes.outputs.build_docc == 'true'",
-            workflow,
-        )
+        self.assertIn("DOCS_SOURCE_REFERENCE: ${{ matrix.ref }}", workflow)
         self.assertIn("runs-on: macos-26", workflow)
         self.assertIn("needs: build-sites", workflow)
         self.assertIn("merge-multiple: true", workflow)
@@ -7175,6 +7313,7 @@ esac
                         "stable_release_is_published() { return 0; }",
                         "ensure_stable_release_is_unpublished() { exit 71; }",
                         "dispatch_compose_stable_tap_repair() { printf 'repair %s\\n' \"$1\"; }",
+                        "dispatch_stable_documentation() { printf 'docs %s\\n' \"$1\"; }",
                         "publish_stable_release() { exit 72; }",
                         "print_stable_release_point() { printf 'point %s %s\\n' \"$1\" \"$2\"; }",
                     ]
@@ -7182,6 +7321,7 @@ esac
             )
             self.assertEqual(published.returncode, 0, published.stderr)
             self.assertIn("repair 0.6.70", published.stdout)
+            self.assertIn("docs 0.6.70", published.stdout)
             self.assertIn("formula-only recovery from immutable release assets", published.stdout)
 
             unpublished = self.run_release_function(
@@ -7225,6 +7365,7 @@ esac
                         "homebrew_stable_formula_identities() { printf '%s\\n' formulae-before; }",
                         "prepare_stable_init_image_authority() { exit 76; }",
                         "dispatch_compose_stable_tap_repair() { exit 71; }",
+                        "dispatch_stable_documentation() { printf 'docs %s\\n' \"$1\"; }",
                         "publish_stable_init_image_asset() { printf 'init %s %s\\n' \"$1\" \"$2\"; }",
                         "verify_compose_stable_package() { printf 'verify %s %s %s %s\\n' \"$1\" \"$2\" \"$3\" \"$4\"; }",
                         "require_stable_init_image_authority_unchanged() { printf 'authority %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }",
@@ -7235,6 +7376,7 @@ esac
 
             self.assertEqual(recovered.returncode, 0, recovered.stderr)
             self.assertIn(f"init 0.13.1 {'a' * 64}", recovered.stdout)
+            self.assertIn("docs 0.13.1", recovered.stdout)
             self.assertIn(
                 f"verify 0.13.1 false formulae-before {'a' * 64}",
                 recovered.stdout,

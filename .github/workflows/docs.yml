@@ -15,100 +15,163 @@
 #===----------------------------------------------------------------------===#
 
 name: Documentation
+run-name: Documentation · ${{ inputs.ref }}
 
 on:
-  schedule:
-    - cron: '17 3 * * *'
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/docs.yml
-      - Tools/ci/classify-documentation-changes.py
-      - docs/**
-      - Package.resolved
-      - Package.swift
-      - README.md
-      - Sources/**
-      - scripts/make-docs.sh
-  pull_request:
-    branches: [main]
-    paths:
-      - .github/workflows/docs.yml
-      - Tools/ci/classify-documentation-changes.py
-      - docs/**
-      - Package.resolved
-      - Package.swift
-      - README.md
-      - Sources/**
-      - scripts/make-docs.sh
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Published stable semantic tag"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: documentation-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  group: documentation-${{ inputs.ref }}
+  cancel-in-progress: false
 
 jobs:
-  classify-changes:
-    name: Classify Documentation Changes
+  resolve-release:
+    name: Resolve Released Documentation Inputs
+    if: github.repository == 'stephenlclarke/container-compose'
     runs-on: ubuntu-24.04
     outputs:
-      build_docc: ${{ steps.classify.outputs.build_docc }}
+      compose_ref: ${{ steps.release.outputs.compose_ref }}
+      container_ref: ${{ steps.stack.outputs.container_ref }}
+      containerization_ref: ${{ steps.stack.outputs.containerization_ref }}
+      k8s_ref: ${{ steps.stack.outputs.k8s_ref }}
     steps:
-      - name: Checkout documentation controls
+      - name: Require exact published release inputs
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.ref }}
+        shell: bash
+        run: |
+          # shellcheck disable=SC2016 # awk programs intentionally use single quotes.
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+            printf 'stable release ref must be a bare semantic tag: %s\n' \
+              "${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          compose_remote="https://github.com/${GITHUB_REPOSITORY}.git"
+          compose_ref="$(
+            git ls-remote --tags "${compose_remote}" \
+              "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" \
+              | awk '$2 ~ /\^\{\}$/ { peeled = $1 } $2 !~ /\^\{\}$/ { direct = $1 } END { print peeled ? peeled : direct }'
+          )"
+          if [[ ! "${compose_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'could not resolve published stable tag %s\n' "${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]] || \
+            [[ ! "${GITHUB_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'documentation control must be dispatched from an immutable main revision, got %s at %s\n' \
+              "${GITHUB_SHA}" "${GITHUB_REF}" >&2
+            exit 1
+          fi
+          release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")"
+          if [[ "$(jq -r '.draft or .prerelease' <<<"${release}")" != "false" ]]; then
+            printf 'documentation requires a published stable release: %s\n' \
+              "${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          printf 'compose_ref=%s\n' "${compose_ref}" >> "${GITHUB_OUTPUT}"
+          printf 'Released documentation input: %s at %s.\n' \
+            "${RELEASE_TAG}" "${compose_ref}" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Checkout tagged container-compose source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          path: release-source
+          ref: ${{ steps.release.outputs.compose_ref }}
 
-      - name: Classify documented API and site inputs
-        id: classify
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      - name: Resolve exact released stack refs
+        id: stack
+        working-directory: release-source
         shell: bash
         run: |
           set -euo pipefail
-          case "${EVENT_NAME}" in
-            pull_request)
-              base="${PR_BASE_SHA}"
-              head="${PR_HEAD_SHA}"
-              ;;
-            push)
-              base="${BEFORE_SHA}"
-              head="${HEAD_SHA}"
-              if [[ "${base}" == 0000000000000000000000000000000000000000 ]]; then
-                printf 'build_docc=true\n' >> "${GITHUB_OUTPUT}"
-                exit 0
-              fi
-              ;;
-            *)
-              printf 'build_docc=true\n' >> "${GITHUB_OUTPUT}"
-              exit 0
-              ;;
-          esac
-          classification="$(
-            python3 Tools/ci/classify-documentation-changes.py \
-              --repository . \
-              --base "${base}" \
-              --head "${head}" \
-              --github-output "${GITHUB_OUTPUT}"
+          python3 - <<'PY' >> "${GITHUB_OUTPUT}"
+          import json
+          import re
+          from pathlib import Path
+
+          manifest = json.loads(
+              Path("Tools/release/stack-refs.json").read_text(encoding="utf-8")
+          )
+          if manifest.get("schemaVersion") != 1:
+              raise SystemExit("unsupported released stack manifest")
+          components = manifest.get("components", {})
+          expected = {
+              "container": "stephenlclarke/container",
+              "containerization": "stephenlclarke/containerization",
+          }
+          for name, repository in expected.items():
+              component = components.get(name, {})
+              ref = component.get("ref", "")
+              if component.get("repository") != repository:
+                  raise SystemExit(f"released {name} repository changed")
+              if re.fullmatch(r"[0-9a-f]{40}", ref) is None:
+                  raise SystemExit(f"released {name} ref is not immutable: {ref}")
+              print(f"{name}_ref={ref}")
+
+          documentation = json.loads(
+              Path("Tools/release/documentation-refs.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          if documentation.get("schemaVersion") != 1:
+              raise SystemExit("unsupported released documentation manifest")
+          k8s = documentation.get("sites", {}).get("k8s", {})
+          k8s_ref = k8s.get("ref", "")
+          k8s_release_tag = k8s.get("releaseTag", "")
+          if k8s.get("repository") != "stephenlclarke/container-k8s":
+              raise SystemExit("released container-k8s repository changed")
+          if re.fullmatch(r"[0-9a-f]{40}", k8s_ref) is None:
+              raise SystemExit(
+                  f"released container-k8s ref is not immutable: {k8s_ref}"
+              )
+          if not k8s_release_tag:
+              raise SystemExit("released container-k8s tag is missing")
+          print(f"k8s_ref={k8s_ref}")
+          print(f"k8s_release_tag={k8s_release_tag}")
+          PY
+
+      - name: Verify released container-k8s authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          K8S_REF: ${{ steps.stack.outputs.k8s_ref }}
+          K8S_RELEASE_TAG: ${{ steps.stack.outputs.k8s_release_tag }}
+        shell: bash
+        run: |
+          # shellcheck disable=SC2016 # awk programs intentionally use single quotes.
+          set -euo pipefail
+          k8s_remote="https://github.com/stephenlclarke/container-k8s.git"
+          k8s_tag_ref="$(
+            git ls-remote --tags "${k8s_remote}" \
+              "refs/tags/${K8S_RELEASE_TAG}" \
+              "refs/tags/${K8S_RELEASE_TAG}^{}" \
+              | awk '$2 ~ /\^\{\}$/ { peeled = $1 } $2 !~ /\^\{\}$/ { direct = $1 } END { print peeled ? peeled : direct }'
           )"
-          reason="$(jq -r .reason <<<"${classification}")"
-          build_docc="$(jq -r .build_docc <<<"${classification}")"
-          printf "DocC build: \`%s\` — %s.\n" "${build_docc}" "${reason}" \
-            >> "${GITHUB_STEP_SUMMARY}"
+          k8s_release="$(
+            gh api \
+              "repos/stephenlclarke/container-k8s/releases/tags/${K8S_RELEASE_TAG}"
+          )"
+          if [[ "$(jq -r '.draft' <<<"${k8s_release}")" != "false" ]] || \
+            [[ "${k8s_tag_ref}" != "${K8S_REF}" ]]; then
+            printf 'container-k8s ref is not attached to a published release: %s at %s\n' \
+              "${K8S_RELEASE_TAG}" "${K8S_REF}" >&2
+            exit 1
+          fi
 
   build-sites:
     name: Build ${{ matrix.site }} DocC Site
-    needs: classify-changes
-    # Pull requests validate documentation classification and workflow syntax,
-    # but product documentation is generated only by the post-merge authority.
-    if: github.event_name != 'pull_request' && needs.classify-changes.outputs.build_docc == 'true'
+    needs: resolve-release
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
@@ -117,22 +180,35 @@ jobs:
         include:
           - site: compose
             repository: stephenlclarke/container-compose
+            ref: ${{ needs.resolve-release.outputs.compose_ref }}
           - site: container
             repository: stephenlclarke/container
+            ref: ${{ needs.resolve-release.outputs.container_ref }}
           - site: containerization
             repository: stephenlclarke/containerization
+            ref: ${{ needs.resolve-release.outputs.containerization_ref }}
           - site: k8s
             repository: stephenlclarke/container-k8s
+            ref: ${{ needs.resolve-release.outputs.k8s_ref }}
     steps:
       - name: Checkout ${{ matrix.site }} source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ${{ matrix.repository }}
-          ref: ${{ matrix.site == 'compose' && github.sha || 'main' }}
+          ref: ${{ matrix.ref }}
           path: source
+
+      - name: Verify exact documentation source
+        env:
+          EXPECTED_REF: ${{ matrix.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C source rev-parse HEAD)" == "${EXPECTED_REF}" ]]
 
       - name: Build static API documentation
         env:
+          DOCS_SOURCE_REFERENCE: ${{ matrix.ref }}
           SITE: ${{ matrix.site }}
         shell: bash
         run: |
@@ -167,7 +243,7 @@ jobs:
                   --enable-experimental-combined-documentation \
                   --hosting-base-path container-compose/k8s \
                   --source-service github \
-                  --source-service-base-url https://github.com/stephenlclarke/container-k8s/blob/main \
+                  --source-service-base-url "https://github.com/stephenlclarke/container-k8s/blob/${DOCS_SOURCE_REFERENCE}" \
                   --checkout-path "$GITHUB_WORKSPACE/source"
               )
               printf '{}\n' > "${output}/theme-settings.json"
@@ -192,23 +268,20 @@ jobs:
           esac
 
       - name: Archive DocC site
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
         env:
           SITE: ${{ matrix.site }}
         run: tar -czf "${SITE}.tgz" -C _site .
 
       - name: Save DocC site
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: api-docs-${{ matrix.site }}
+          name: api-docs-${{ inputs.ref }}-${{ matrix.site }}-${{ matrix.ref }}
           path: ${{ matrix.site }}.tgz
-          retention-days: 1
+          retention-days: 30
 
   upload-pages-artifact:
     name: Assemble and Upload GitHub Pages Artifact
     needs: build-sites
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
     runs-on: ubuntu-24.04
     permissions:
       pages: write
@@ -219,7 +292,7 @@ jobs:
       - name: Download DocC sites
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          pattern: api-docs-*
+          pattern: api-docs-${{ inputs.ref }}-*
           path: downloads
           merge-multiple: true
 
@@ -241,7 +314,6 @@ jobs:
   deploy:
     name: Deploy GitHub Pages
     needs: upload-pages-artifact
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.repository == 'stephenlclarke/container-compose'
     runs-on: ubuntu-24.04
     permissions:
       id-token: write

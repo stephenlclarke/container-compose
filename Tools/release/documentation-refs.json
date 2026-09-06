@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "sites": {
+    "k8s": {
+      "ref": "21b4325d2d169aab4c4ff9090720f2f141e99860",
+      "releaseTag": "homebrew-main-17-21b4325d2d16",
+      "repository": "stephenlclarke/container-k8s"
+    }
+  }
+}
