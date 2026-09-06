@@ -219,17 +219,34 @@ import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 source = sys.argv[2]
-secret_path = pathlib.Path(sys.argv[3]).as_posix()
+secret_path = pathlib.Path(sys.argv[3])
 target = doc.get("target", {}).get("api")
 if not isinstance(target, dict):
     raise SystemExit(f"{source} did not render an api target")
 secrets = target.get("secret")
-want = [f"id=runtime_secret,type=file,src={secret_path}"]
-if secrets != want:
-    raise SystemExit(f"{source} rendered bake secrets {secrets!r}, want {want!r}")
-for entry in secrets:
-    if "uid=" in entry or "gid=" in entry or "mode=" in entry:
-        raise SystemExit(f"{source} leaked ignored build secret metadata into bake JSON: {entry!r}")
+if not isinstance(secrets, list) or len(secrets) != 1 or not isinstance(secrets[0], str):
+    raise SystemExit(f"{source} rendered bake secrets {secrets!r}")
+
+fields = {}
+for field in secrets[0].split(","):
+    key, separator, value = field.partition("=")
+    if not separator or not key or not value or key in fields:
+        raise SystemExit(f"{source} rendered malformed bake secret {secrets[0]!r}")
+    fields[key] = value
+
+want_fields = {"id", "type", "src"}
+if set(fields) != want_fields or fields["id"] != "runtime_secret" or fields["type"] != "file":
+    raise SystemExit(
+        f"{source} rendered bake secret fields {fields!r}, "
+        "want id=runtime_secret,type=file,src=<secret path>"
+    )
+
+rendered_path = pathlib.Path(fields["src"])
+if rendered_path.resolve() != secret_path.resolve():
+    raise SystemExit(
+        f"{source} rendered bake secret path {rendered_path.as_posix()!r}, "
+        f"want {secret_path.as_posix()!r}"
+    )
 PY
 }
 
