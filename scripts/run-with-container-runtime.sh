@@ -77,7 +77,7 @@ runtime_local_user_root=
 runtime_managed_candidate_root=${CONTAINER_RUNTIME_STAGED_CANDIDATE_ROOT:-}
 runtime_managed_package_sha256=${CONTAINER_RUNTIME_PACKAGE_SHA256:-}
 runtime_app_root_localized=false
-runtime_anonymous_registry_hosts=${CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS-ghcr.io}
+runtime_anonymous_registry_hosts=${CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS-ghcr.io,docker.io,registry-1.docker.io,index.docker.io}
 runtime_launchctl=${CONTAINER_RUNTIME_LAUNCHCTL:-/bin/launchctl}
 
 if [[ -z "$runtime_local_execution_root" ]]; then
@@ -464,6 +464,27 @@ validate_runtime_start_deadline_seconds() {
             "$runtime_start_deadline_seconds" >&2
         exit 2
     fi
+}
+
+# Keep the public-host policy unambiguous before it reaches launchd-managed
+# image services. The service accepts a comma-separated list; whitespace used
+# as a separator silently turns the complete value into one unmatched host and
+# can block an unattended build on a Keychain query.
+validate_runtime_anonymous_registry_hosts() {
+    [[ -n "$runtime_anonymous_registry_hosts" ]] || return 0
+
+    local hosts=()
+    local host
+    IFS=',' read -r -a hosts <<<"$runtime_anonymous_registry_hosts"
+    for host in "${hosts[@]}"; do
+        host="${host#"${host%%[![:space:]]*}"}"
+        host="${host%"${host##*[![:space:]]}"}"
+        if [[ -z "$host" || "$host" =~ [[:space:]] ]]; then
+            printf 'CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS must be a comma-separated host list: %s\n' \
+                "$runtime_anonymous_registry_hosts" >&2
+            exit 2
+        fi
+    done
 }
 
 # Validate the privacy-protection controls before inspecting caller paths.
@@ -1910,6 +1931,7 @@ install_matched_init_image() {
 }
 
 validate_runtime_start_deadline_seconds
+validate_runtime_anonymous_registry_hosts
 validate_runtime_localization_modes
 assert_no_competing_container_launch_agents
 runtime_local_user_root="$runtime_local_execution_root/container-compose-runtime-$(id -u)"
