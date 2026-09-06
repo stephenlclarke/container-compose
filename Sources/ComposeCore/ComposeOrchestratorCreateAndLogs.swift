@@ -34,7 +34,7 @@ public extension ComposeOrchestrator {
         let selectedServiceReferences = try create.noDeps && !create.services.isEmpty
             ? selectedServices(project: project, selected: create.services)
             : orderedServices(project: project, selected: create.services)
-        let workingProject = try projectByValidatingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
+        var workingProject = try projectByValidatingLinks(project: project, activeServiceNames: Set(selectedServiceReferences.map(\.name)))
         let services = try selectedServiceReferences.map { service in
             guard let activeService = workingProject.services[service.name] else {
                 throw ComposeError.invalidProject("unknown service '\(service.name)'")
@@ -66,6 +66,7 @@ public extension ComposeOrchestrator {
             pullPolicy: create.pullPolicy,
         )
 
+        workingProject = try await projectByApplyingAPISocket(workingProject)
         try await ensureResources(
             project: projectBySelectingResources(project: workingProject, services: services)
         )

@@ -2831,33 +2831,6 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("run rejects unsupported API socket mounting before creating resources")
-    func runRejectsUnsupportedAPISocketBeforeCreatingResources() async throws {
-        let runner = RecordingRunner()
-        let project = composeProject(
-            name: "demo",
-            services: [
-                "job": composeService(name: "job", image: "alpine") {
-                    $0.useAPISocket = true
-                    $0.volumes = [ComposeMount(type: "volume", source: "cache", target: "/cache")]
-                },
-            ]
-        ) {
-            $0.volumes = ["cache": ComposeVolume(name: "cache")]
-        }
-
-        do {
-            try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", command: ["true"], remove: true)
-            Issue.record("Expected unsupported API socket error")
-        } catch let error as ComposeError {
-            #expect(error == .unsupported("service 'job' uses use_api_socket; Docker-compatible API socket and credential handoff need an apple/container runtime boundary"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
-        }
-
-        #expect(runner.commands.isEmpty)
-    }
-
     @Test("run maps service MAC address to single network attachment")
     func runMapsServiceMACAddressToSingleNetworkAttachment() async throws {
         let runner = RecordingRunner(responses: [
