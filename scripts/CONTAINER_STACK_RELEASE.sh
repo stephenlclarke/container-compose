@@ -706,7 +706,7 @@ validate_unpublished_release_commit() {
     IFS=',' read -r -a release_files <<<"${files}"
     for file in "${release_files[@]}"; do
       case "${file}" in
-        README.md|docs/*.md) ;;
+        README.md|docs/*.md|docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json) ;;
         *)
           printf 'release documentation repair changes an unexpected file: %s %s\n' \
             "${commit}" "${file}" >&2
