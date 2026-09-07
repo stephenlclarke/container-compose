@@ -909,6 +909,8 @@ stage_local_validation_checkout() {
   local staged_path="$2"
   local checkout_kind="${3:-containerization}"
   local source_commit source_tree staged_tree kernel kernel_count hawkeye_path
+  local source_history_count staged_history_count
+  local fetch_source source_origin normalized_origin
   local source_hawkeye_digest staged_hawkeye_digest
   local -a isolated_git=(
     env
@@ -948,16 +950,31 @@ stage_local_validation_checkout() {
   if ! source_commit="$("${isolated_git[@]}" -C "${source_path}" \
     rev-parse --verify HEAD)" || \
     ! source_tree="$("${isolated_git[@]}" -C "${source_path}" \
-      rev-parse --verify 'HEAD^{tree}')"; then
+      rev-parse --verify 'HEAD^{tree}')" || \
+    ! source_history_count="$("${isolated_git[@]}" -C "${source_path}" \
+      rev-list --count "${source_commit}")"; then
     printf 'failed to resolve release validation source identity: %s\n' \
       "${source_path}" >&2
     return 1
   fi
+  # Release workspaces may deliberately be partial clones. Fetching their full
+  # history through a local file transport disables lazy object retrieval and
+  # can fail mid-pack. Prefer the checkout's authoritative origin when it is
+  # available, while retaining local-only support for focused fixtures.
+  fetch_source="${source_path}"
+  source_origin="$("${isolated_git[@]}" -C "${source_path}" \
+    config --get remote.origin.url 2>/dev/null || true)"
+  if [[ -n "${source_origin}" ]]; then
+    fetch_source="${source_origin}"
+    if normalized_origin="$(stephen_https_url "${source_origin}" 2>/dev/null)"; then
+      fetch_source="${normalized_origin}"
+    fi
+  fi
   if ! "${isolated_git[@]}" init --quiet "${staged_path}" || \
     ! "${isolated_git[@]}" -C "${staged_path}" remote add origin \
-      "${source_path}" || \
+      "${fetch_source}" || \
     ! "${isolated_git[@]}" -C "${staged_path}" fetch --quiet --no-tags \
-      --depth=1 origin "${source_commit}"; then
+      origin "${source_commit}"; then
     printf 'failed to stage release validation checkout locally: %s\n' \
       "${source_path}" >&2
     return 1
@@ -989,7 +1006,9 @@ stage_local_validation_checkout() {
     return 1
   fi
   if ! staged_tree="$("${isolated_git[@]}" -C "${staged_path}" \
-    rev-parse --verify 'HEAD^{tree}')"; then
+    rev-parse --verify 'HEAD^{tree}')" || \
+    ! staged_history_count="$("${isolated_git[@]}" -C "${staged_path}" \
+      rev-list --count "${source_commit}")"; then
     printf 'failed to resolve staged release validation tree: %s\n' \
       "${staged_path}" >&2
     return 1
@@ -998,6 +1017,15 @@ stage_local_validation_checkout() {
     ! "${isolated_git[@]}" -C "${staged_path}" diff --quiet HEAD --; then
     printf 'staged release validation checkout does not match source tree %s: %s\n' \
       "${source_tree}" "${staged_path}" >&2
+    return 1
+  fi
+  # Hawkeye derives the expected licence year range from Git history. A
+  # depth-one staging fetch preserves the source tree but makes every tracked
+  # file look newly created, which invalidates otherwise-correct headers. Keep
+  # the complete history available to the source-policy checks that run here.
+  if [[ "${staged_history_count}" != "${source_history_count}" ]]; then
+    printf 'staged release validation checkout does not preserve source history (%s != %s): %s\n' \
+      "${staged_history_count}" "${source_history_count}" "${staged_path}" >&2
     return 1
   fi
   if [[ -f "${staged_path}/.git/objects/info/alternates" ]]; then
@@ -3084,7 +3112,7 @@ retained_stable_init_image_gate_digest() {
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   (
-  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_containerization_path stable_container_path stable_containerization_path release_gate_path release_gate_make release_gate_tar release_hawkeye
+  local path repository container_path container_source_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_containerization_path stable_container_path stable_containerization_path release_gate_path release_gate_make release_gate_tar release_hawkeye
   local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest candidate_sha init_image_digest_before init_image_digest_after container_validation_suffix container_validation_app_root container_validation_namespace
   local -a RELEASE_QUIESCED_LABELS=()
   local -a RELEASE_QUIESCED_PLISTS=()
@@ -3095,6 +3123,7 @@ run_local_release_gate() {
   path="$(repo_path "${COMPOSE_REPO}")"
   candidate_sha="$(git -C "${path}" rev-parse HEAD)"
   container_path="$(repo_path "${CONTAINER_REPO}")"
+  container_source_path="${container_path}"
   containerization_path="$(repo_path "containerization")"
   if [[ ! -f "${HOMEBREW_TAP_REPO}/Formula/container-compose.rb" ]]; then
     printf 'Homebrew tap checkout is required at %s\n' "${HOMEBREW_TAP_REPO}" >&2
@@ -3113,6 +3142,12 @@ run_local_release_gate() {
   release_gate_path="$(release_gate_execution_path)"
   require_release_gate_gnu_tar "${release_gate_path}"
   release_gate_tar="$(PATH="${release_gate_path}" command -v tar)"
+  release_gate_make="$(PATH="${release_gate_path}" command -v make || true)"
+  if [[ "${release_gate_make}" != /* || ! -x "${release_gate_make}" ]]; then
+    printf 'sealed release-gate PATH has no executable make: %s\n' \
+      "${release_gate_path}" >&2
+    return 1
+  fi
   for repository in "${path}" \
     "$(repo_path "container-builder-shim")" \
     "$(repo_path "containerization")" \
@@ -3175,8 +3210,14 @@ PY
 
   evidence_root="$(resolve_release_evidence_root "${path}" \
     "${PARITY_EVIDENCE_DIR:-.build/release-evidence}")"
-  stage_container_runtime_candidate "${container_path}" "${evidence_root}"
+  container_binary=""
   runtime_parent=""
+  runtime_app_root=""
+  runtime_service_namespace=""
+  stable_containerization_path=""
+  stable_container_path=""
+  container_validation_app_root=""
+  container_validation_namespace=""
   # shellcheck disable=SC2329
   cleanup_local_release_gate_roots() {
     local trapped_status=$?
@@ -3200,7 +3241,6 @@ PY
     return "${cleanup_status}"
   }
   trap cleanup_local_release_gate_roots EXIT
-  container_binary="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container"
   runtime_parent_base=/private/tmp
   if [[ ! -d "${runtime_parent_base}" || ! -w "${runtime_parent_base}" ]]; then
     runtime_parent_base=/tmp
@@ -3232,6 +3272,24 @@ PY
     "${stable_container_path}" container)"; then
     return 1
   fi
+  # Both repositories derive expected licence years from Git history. Prove
+  # the system-volume checkouts retain that policy input before spending time
+  # packaging or starting the runtime. The stack gate will still checkpoint
+  # its own source target; this cheap check protects the expensive prefix.
+  if ! "${release_gate_make}" -C "${containerization_path}" \
+    "HAWKEYE=${release_hawkeye}" check-licenses; then
+    printf 'staged Containerization licence preflight failed before runtime packaging: %s\n' \
+      "${containerization_path}" >&2
+    return 1
+  fi
+  if ! "${release_gate_make}" -C "${container_path}" \
+    "HAWKEYE=${release_hawkeye}" check-licenses; then
+    printf 'staged Container licence preflight failed before runtime packaging: %s\n' \
+      "${container_path}" >&2
+    return 1
+  fi
+  stage_container_runtime_candidate "${container_source_path}" "${evidence_root}"
+  container_binary="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container"
   container_validation_suffix="$(git -C "${container_path}" rev-parse --verify HEAD \
     | tr -cd '[:alnum:]' | cut -c1-12)"
   container_validation_app_root="${runtime_parent}/i/stack-release-app-root"
@@ -3264,12 +3322,6 @@ PY
     >"${runtime_parent}/.container-compose-release-runtime-identity"
   profile_root="${runtime_parent}/profiles"
   mkdir -p "${profile_root}"
-  release_gate_make="$(PATH="${release_gate_path}" command -v make || true)"
-  if [[ "${release_gate_make}" != /* || ! -x "${release_gate_make}" ]]; then
-    printf 'sealed release-gate PATH has no executable make: %s\n' \
-      "${release_gate_path}" >&2
-    return 1
-  fi
   status=0
   run_local_release_gate_command env -u TAR -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
     -u CONTAINER_RUNTIME_SERVICE_NAMESPACE -u CONTAINER_RUNTIME_RUN_ID \

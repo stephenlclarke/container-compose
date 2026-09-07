@@ -303,7 +303,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
         self.assertIn("stage_local_validation_checkout() {", self.script)
         self.assertIn("fetch --quiet --no-tags", self.script)
-        self.assertIn('--depth=1 origin "${source_commit}"', self.script)
+        self.assertNotIn('--depth=1 origin "${source_commit}"', self.script)
+        self.assertIn('rev-list --count "${source_commit}"', self.script)
+        self.assertIn(
+            "staged release validation checkout does not preserve source history",
+            self.script,
+        )
         self.assertIn("remote remove origin", self.script)
         self.assertIn("objects/info/alternates", self.script)
         self.assertIn(staging, local_gate)
@@ -418,6 +423,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             (source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
             self.run_command("git", "-C", str(source), "add", "tracked.txt")
             self.run_command(
+                "env",
+                "GIT_AUTHOR_DATE=2025-01-02T03:04:05+0000",
+                "GIT_COMMITTER_DATE=2025-01-02T03:04:05+0000",
                 "git",
                 "-C",
                 str(source),
@@ -430,7 +438,27 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "commit",
                 "--quiet",
                 "-m",
-                "fixture",
+                "create tracked source",
+            )
+            (source / "tracked.txt").write_text("tracked update\n", encoding="utf-8")
+            self.run_command("git", "-C", str(source), "add", "tracked.txt")
+            self.run_command(
+                "env",
+                "GIT_AUTHOR_DATE=2026-01-02T03:04:05+0000",
+                "GIT_COMMITTER_DATE=2026-01-02T03:04:05+0000",
+                "git",
+                "-C",
+                str(source),
+                "-c",
+                "user.name=Release Test",
+                "-c",
+                "user.email=release-test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "update tracked source",
             )
             (source / "bin").mkdir()
             (source / "bin" / "vmlinux-arm64").write_bytes(b"kernel")
@@ -455,6 +483,34 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(result.stdout.strip(), str(staged))
             self.assertEqual(source_tree, self.git(staged, "rev-parse", "HEAD^{tree}"))
+            self.assertEqual(
+                self.git(source, "rev-list", "--count", "HEAD"),
+                self.git(staged, "rev-list", "--count", "HEAD"),
+            )
+            self.assertEqual(
+                self.git(
+                    source,
+                    "log",
+                    "--follow",
+                    "--format=%ad",
+                    "--date=format:%Y",
+                    "--",
+                    "tracked.txt",
+                ),
+                "2026\n2025",
+            )
+            self.assertEqual(
+                self.git(
+                    staged,
+                    "log",
+                    "--follow",
+                    "--format=%ad",
+                    "--date=format:%Y",
+                    "--",
+                    "tracked.txt",
+                ),
+                "2026\n2025",
+            )
             self.assertEqual((staged / "bin" / "vmlinux-arm64").read_bytes(), b"kernel")
             staged_hawkeye = staged / ".local" / "bin" / "hawkeye"
             self.assertEqual(staged_hawkeye.read_bytes(), source_hawkeye.read_bytes())
@@ -471,6 +527,35 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "--strict",
                 "--no-dangling",
             )
+
+    def test_staged_license_preflight_runs_before_runtime_packaging(self) -> None:
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "# Verify that Apple remotes cannot be pushed"
+            )
+        ]
+        containerization_preflight = (
+            "staged Containerization licence preflight failed before runtime packaging"
+        )
+        container_preflight = (
+            "staged Container licence preflight failed before runtime packaging"
+        )
+        runtime_packaging = (
+            'stage_container_runtime_candidate "${container_source_path}" '
+            '"${evidence_root}"'
+        )
+
+        self.assertIn(containerization_preflight, local_gate)
+        self.assertIn(container_preflight, local_gate)
+        self.assertIn(runtime_packaging, local_gate)
+        self.assertLess(
+            local_gate.index(containerization_preflight),
+            local_gate.index(runtime_packaging),
+        )
+        self.assertLess(
+            local_gate.index(container_preflight),
+            local_gate.index(runtime_packaging),
+        )
 
     def test_local_validation_checkout_ignores_unrelated_missing_objects(
         self,
@@ -6074,7 +6159,9 @@ esac
         self.assertIn("resolve_release_evidence_root", local_gate)
         self.assertLess(
             local_gate.index('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${init_image_archive}"'),
-            local_gate.index('stage_container_runtime_candidate "${container_path}"'),
+            local_gate.index(
+                'stage_container_runtime_candidate "${container_source_path}"'
+            ),
         )
         self.assertLess(
             local_gate.index('profile_root="${runtime_parent}/profiles"'),
