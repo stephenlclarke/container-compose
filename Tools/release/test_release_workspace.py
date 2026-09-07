@@ -384,6 +384,54 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             current,
         )
 
+    def test_resume_replaces_a_checkpoint_after_fetched_main_advances_again(
+        self,
+    ) -> None:
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        compose = release_root / "container-compose"
+        source = self.root / "sources" / "container-compose"
+        (source / "first.txt").write_text("first\n", encoding="utf-8")
+        self.git("add", "first.txt", cwd=source)
+        self.git("commit", "-m", "first advance", cwd=source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/main",
+            cwd=source,
+        )
+        self.git("fetch", "--prune", "--tags", "origin", cwd=compose)
+        fetched = self.git("rev-parse", "origin/main", cwd=compose).strip()
+
+        (source / "second.txt").write_text("second\n", encoding="utf-8")
+        self.git("add", "second.txt", cwd=source)
+        self.git("commit", "-m", "second advance", cwd=source)
+        current = self.git("rev-parse", "HEAD", cwd=source).strip()
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/main",
+            cwd=source,
+        )
+        self.assertNotEqual(fetched, current)
+        self.assertEqual(
+            self.git("rev-parse", "origin/main", cwd=compose).strip(),
+            fetched,
+        )
+
+        resumed = WORKSPACE.materialize(self.build_root, "-+-", self.remote_root)
+
+        self.assertEqual(resumed, release_root)
+        self.assertEqual(
+            self.git("rev-parse", "HEAD", cwd=resumed / "container-compose").strip(),
+            current,
+        )
+        self.assertEqual(
+            WORKSPACE.workspace_marker(resumed)["mainRefs"]["container-compose"],
+            current,
+        )
+
     def test_checkpoint_rejects_an_unadvertised_remote_tracking_alias(self) -> None:
         release_root = WORKSPACE.materialize(
             self.build_root, "-+-", self.remote_root
