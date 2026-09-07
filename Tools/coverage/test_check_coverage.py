@@ -164,6 +164,78 @@ class CoverageCheckTests(unittest.TestCase):
                 result.stderr,
             )
 
+    def test_swift_scope_does_not_require_a_go_report(self) -> None:
+        """The recoverable Swift lane owns only the Swift coverage floor."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            covered = root / "covered.xml"
+            covered.write_text(
+                '<coverage version="1"><lineToCover covered="true" /></coverage>',
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("check-coverage.py")),
+                    "--scope",
+                    "swift",
+                    "--swift-core",
+                    str(covered),
+                    "--swift-runtime-spi",
+                    str(covered),
+                    "--swift-provider",
+                    str(covered),
+                    "--swift-plugin",
+                    str(covered),
+                    "--swift-aggregate",
+                    str(covered),
+                    "--go",
+                    str(root / "missing-go.out"),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("Go coverage", result.stdout)
+
+    def test_go_scope_does_not_require_swift_reports(self) -> None:
+        """The recoverable Go lane owns only the Go coverage floor."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            go_coverage = root / "coverage.out"
+            go_coverage.write_text(
+                "mode: atomic\nmain.go:1.1,2.1 1 1\n", encoding="utf-8"
+            )
+            missing_swift = root / "missing-swift.xml"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("check-coverage.py")),
+                    "--scope",
+                    "go",
+                    "--swift-core",
+                    str(missing_swift),
+                    "--swift-runtime-spi",
+                    str(missing_swift),
+                    "--swift-provider",
+                    str(missing_swift),
+                    "--swift-plugin",
+                    str(missing_swift),
+                    "--swift-aggregate",
+                    str(missing_swift),
+                    "--go",
+                    str(go_coverage),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("ComposeCore coverage", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

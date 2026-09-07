@@ -30,6 +30,12 @@ PIPELINE_MAKEFILE = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
 REPOSITORY_STAGE = (
     REPOSITORY_ROOT / "build-pipeline/modules/repository-stage.nf"
 ).read_text(encoding="utf-8")
+PACKAGE_DEPENDENCY_STAGE = (
+    REPOSITORY_ROOT / "build-pipeline/modules/compose-package-dependencies.nf"
+).read_text(encoding="utf-8")
+PACKAGE_DEPENDENCY_COLLECTOR = (
+    REPOSITORY_ROOT / "Tools/ci/collect-compose-package-dependencies.sh"
+).read_text(encoding="utf-8")
 STABLE_RELEASE_WORKFLOW = (
     REPOSITORY_ROOT / ".github/workflows/stable-release-gate.yml"
 ).read_text(encoding="utf-8")
@@ -43,6 +49,115 @@ RECOVERY_PROOF = (
 
 class ReleaseStageGitHistoryTests(unittest.TestCase):
     """Keep history-sensitive validation on verified Git bundles."""
+
+    def test_default_make_uses_the_recoverable_repository_graph(self) -> None:
+        """The normal CLI entry point must use one durable build graph."""
+        self.assertIn("all: pipeline", PIPELINE_MAKEFILE)
+        self.assertIn("workflow: ci package", PIPELINE_MAKEFILE)
+
+    def test_nextflow_runtime_is_immutable_and_not_homebrew_versioned(self) -> None:
+        """A brew upgrade cannot move the orchestration runtime underneath a run."""
+        self.assertNotIn("/opt/homebrew/Cellar", PIPELINE_MAKEFILE)
+        self.assertIn("NEXTFLOW_JAVA_ARCHIVE_SHA256", PIPELINE_MAKEFILE)
+        self.assertIn("NEXTFLOW_JAVA_TREE_SHA256", PIPELINE_MAKEFILE)
+        self.assertIn("verify-java", PIPELINE_MAKEFILE)
+        self.assertIn("bootstrap-nextflow-runtime.py", PIPELINE_MAKEFILE)
+        self.assertIn("tools/temurin/$(NEXTFLOW_JAVA_RELEASE)", PIPELINE_MAKEFILE)
+        self.assertIn("PIPELINE_HAWKEYE_VERSION := 6.5.1", PIPELINE_MAKEFILE)
+        self.assertIn("PIPELINE_HAWKEYE_SHA256 :=", PIPELINE_MAKEFILE)
+        self.assertIn(
+            "tools/hawkeye/$(PIPELINE_HAWKEYE_VERSION)", PIPELINE_MAKEFILE
+        )
+        self.assertIn(
+            '--hawkeye-installer "$(CURDIR)/scripts/install-hawkeye.sh"',
+            PIPELINE_MAKEFILE,
+        )
+
+    def test_compose_package_consumes_verified_compiler_products(self) -> None:
+        """Packaging must not rebuild products that the graph already proved."""
+        package_stage = PIPELINE_SOURCE.split(
+            "['container-compose', 'compose-package'", 1
+        )[1].split("def releaseHostedSourceStageSpecs", 1)[0]
+        self.assertIn("package-built", package_stage)
+        self.assertNotIn("build-release", package_stage)
+        self.assertNotIn("go-build", package_stage)
+        self.assertIn("compose-release-build", PIPELINE_SOURCE)
+        self.assertIn("compose-go-validation", PIPELINE_SOURCE)
+        self.assertIn("COLLECT_COMPOSE_PACKAGE_DEPENDENCIES", PIPELINE_SOURCE)
+        self.assertIn('/bin/bash -p ${collector}', PACKAGE_DEPENDENCY_STAGE)
+        self.assertNotIn('!{collector}', PACKAGE_DEPENDENCY_STAGE)
+        self.assertIn("install-pipeline-dependencies.py", PIPELINE_SOURCE)
+        self.assertIn("noDependencyInstaller", PIPELINE_SOURCE)
+        self.assertEqual(
+            PIPELINE_SOURCE.count("        noDependencyInstaller,"), 4
+        )
+        self.assertEqual(PIPELINE_SOURCE.count("        dependencyInstaller,"), 1)
+        self.assertIn("source-commit", REPOSITORY_STAGE)
+        self.assertIn("dependency-count", REPOSITORY_STAGE)
+        self.assertIn("PIPELINE_PACKAGE_MATERIALIZER", PIPELINE_MAKEFILE)
+        pipeline_execute = PIPELINE_MAKEFILE.split("pipeline-execute:", 1)[1]
+        recovery = pipeline_execute.index("--recover-only --destination")
+        nextflow_run = pipeline_execute.index('"$${NEXTFLOW_BIN}" -log')
+        self.assertLess(recovery, nextflow_run)
+        self.assertEqual(
+            pipeline_execute.count(
+                '/usr/bin/lockf -t 30 "$$materialization_lock"'
+            ),
+            2,
+        )
+        release_build_stage = PIPELINE_SOURCE.split(
+            "['container-compose', 'compose-release-build'", 1
+        )[1].split("['container-builder-shim'", 1)[0]
+        self.assertIn(
+            "'Package.swift Package.resolved Sources Tests ",
+            release_build_stage,
+        )
+        self.assertTrue(release_build_stage.rstrip().endswith("'none'],"))
+        go_build_stage = PIPELINE_SOURCE.split(
+            "['container-compose', 'compose-go-validation'", 1
+        )[1].split("['container-compose', 'compose-tool-validation'", 1)[0]
+        self.assertTrue(go_build_stage.rstrip().endswith("'none'],"))
+        self.assertIn("source-payload-sha256", PACKAGE_DEPENDENCY_COLLECTOR)
+        self.assertNotIn("source-commit", PACKAGE_DEPENDENCY_COLLECTOR)
+        self.assertIn(
+            "Tools/release/runtime-capabilities.json", package_stage
+        )
+
+    def test_nextflow_dependency_links_resolve_only_inside_pipeline_state(self) -> None:
+        """Nextflow path staging must not defeat dependency-root validation."""
+        self.assertIn(
+            '"${params.stateRoot}/empty-dependencies"', PIPELINE_SOURCE
+        )
+        self.assertNotIn(
+            '"${projectDir}/build-pipeline/empty-stage-dependencies"',
+            PIPELINE_SOURCE,
+        )
+        self.assertIn("caches empty-dependencies", PIPELINE_MAKEFILE)
+        self.assertIn(
+            'require_managed_directory empty-dependencies', REPOSITORY_STAGE
+        )
+        self.assertIn(
+            'canonical_dependencies="$(cd "$dependencies_root" && pwd -P)"',
+            REPOSITORY_STAGE,
+        )
+        self.assertIn('"$state_root/work/"*', REPOSITORY_STAGE)
+        self.assertIn(
+            'stage dependency root escaped pipeline state', REPOSITORY_STAGE
+        )
+
+    def test_parallel_compose_lanes_each_enforce_their_coverage_floor(self) -> None:
+        """Moving to the graph must preserve coverage without rerunning tests."""
+        swift_stage = PIPELINE_SOURCE.split(
+            "['container-compose', 'compose-swift-validation'", 1
+        )[1].split("['container-compose', 'compose-go-validation'", 1)[0]
+        go_stage = PIPELINE_SOURCE.split(
+            "['container-compose', 'compose-go-validation'", 1
+        )[1].split("['container-compose', 'compose-tool-validation'", 1)[0]
+        self.assertIn("swift-coverage swift-coverage-check", swift_stage)
+        self.assertNotIn("swift-test ", swift_stage)
+        self.assertIn("go-test go-coverage-check go-build", go_stage)
+        self.assertEqual(PIPELINE_SOURCE.count("swift-coverage "), 1)
+        self.assertEqual(PIPELINE_SOURCE.count("go-test "), 1)
 
     def test_stage_tools_include_nested_process_dependencies(self) -> None:
         devcontainer_stage = PIPELINE_SOURCE.split(
@@ -59,12 +174,17 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         )[1].split("['container-builder-shim'", 1)[0]
         compose_go = PIPELINE_SOURCE.split(
             "['container-compose', 'compose-go-validation'", 1
-        )[1].split("['container-builder-shim'", 1)[0]
+        )[1].split("['container-compose', 'compose-tool-validation'", 1)[0]
+        compose_tools = PIPELINE_SOURCE.split(
+            "['container-compose', 'compose-tool-validation'", 1
+        )[1].split("['container-compose', 'compose-release-build'", 1)[0]
 
         self.assertIn("pipeline-source-check", compose_source)
         self.assertNotIn(" coverage-tools-test", compose_source)
-        self.assertIn("-j4", compose_go)
-        self.assertIn("pipeline-tool-validation go-test go-build", compose_go)
+        self.assertIn("-j4", compose_tools)
+        self.assertIn("go-test go-coverage-check go-build", compose_go)
+        self.assertNotIn("pipeline-tool-validation", compose_go)
+        self.assertIn("pipeline-tool-validation", compose_tools)
         self.assertIn(
             "pipeline-source-check: source-preflight lint-static",
             PIPELINE_MAKEFILE,

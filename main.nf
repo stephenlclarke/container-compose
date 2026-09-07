@@ -12,6 +12,12 @@ include {
 include {
     RUN_REPOSITORY_STAGE as RUN_DOCUMENTATION_STAGE
 } from './build-pipeline/modules/repository-stage'
+include {
+    RUN_REPOSITORY_STAGE as RUN_PACKAGE_STAGE
+} from './build-pipeline/modules/repository-stage'
+include {
+    COLLECT_COMPOSE_PACKAGE_DEPENDENCIES
+} from './build-pipeline/modules/compose-package-dependencies'
 
 def renderShellScript(String template, Map values) {
     values.inject(template) { rendered, entry ->
@@ -125,14 +131,23 @@ def sourceStageSpecs() {
 def functionalStageSpecs() {
     [
         ['container-compose', 'compose-swift-validation', 'test', params.functionalTimeoutSeconds as Integer,
-            'CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=0 make --no-print-directory SWIFT=/usr/bin/swift PYTHON=python3 swift-test build cli-smoke-built',
+            'CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=0 make --no-print-directory SWIFT=/usr/bin/swift PYTHON=python3 swift-coverage swift-coverage-check build cli-smoke-built',
             'make,apple-swift,go,python3,otool,codesign',
             'Package.swift Package.resolved Sources Tests Tools scripts Makefile config.toml docs/project/STATUS.md docs/images/container-compose-icon-octopus.png examples/logging/compose.yml',
             'none'],
         ['container-compose', 'compose-go-validation', 'test', params.functionalTimeoutSeconds as Integer,
-            'HAWKEYE_AUTO_INSTALL=0 GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org make --no-print-directory -j4 PYTHON=python3 SWIFT=/usr/bin/swift GO=go MARKDOWNLINT=markdownlint HAWKEYE=hawkeye pipeline-tool-validation go-test go-build',
-            'make,apple-swift,go,gofmt,python3,ruby,markdownlint,hawkeye,otool',
-            '.', 'commit'],
+            'GOTOOLCHAIN=local GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org make --no-print-directory PYTHON=python3 GO=go go-test go-coverage-check go-build',
+            'make,go,python3,otool',
+            'Tools/compose-normalizer Tools/coverage/check-coverage.py Makefile', 'none'],
+        ['container-compose', 'compose-tool-validation', 'test', params.functionalTimeoutSeconds as Integer,
+            'HAWKEYE_AUTO_INSTALL=0 make --no-print-directory -j4 PYTHON=python3 SWIFT=/usr/bin/swift GO=go MARKDOWNLINT=markdownlint HAWKEYE=hawkeye pipeline-tool-validation',
+            'make,apple-swift,go,gofmt,python3,ruby,markdownlint,hawkeye',
+            'Tools Makefile', 'none'],
+        ['container-compose', 'compose-release-build', 'build', params.functionalTimeoutSeconds as Integer,
+            'make --no-print-directory SWIFT=/usr/bin/swift PYTHON=python3 build-release',
+            'make,apple-swift,python3',
+            'Package.swift Package.resolved Sources Tests Tools/ci/run-with-local-swift-stack.py Makefile',
+            'none'],
         ['container-builder-shim', 'builder-validation', 'test', params.functionalTimeoutSeconds as Integer,
             'GOTOOLCHAIN=local GIT_TAG="$PIPELINE_ORIGINAL_DESCRIBE" make --no-print-directory GO=go coverage build',
             'make,go',
@@ -163,6 +178,16 @@ def functionalStageSpecs() {
             'make,apple-swift',
             'Package.swift Package.resolved Sources Tests Makefile APPLE_CONTAINER_REF',
             'none'],
+    ]
+}
+
+def packageStageSpecs() {
+    [
+        ['container-compose', 'compose-package', 'build', params.functionalTimeoutSeconds as Integer,
+            'compose_source="$PIPELINE_ORIGINAL_ORIGIN"; compose_source="${compose_source#https://github.com/}"; compose_source="${compose_source#git@github.com:}"; compose_source="${compose_source%.git}"; CONTAINER_COMPOSE_SOURCE="$compose_source" CONTAINER_COMPOSE_BRANCH="$PIPELINE_ORIGINAL_BRANCH" CONTAINER_COMPOSE_COMMIT="$PIPELINE_ORIGINAL_COMMIT" make --no-print-directory PYTHON=python3 GO=go CODESIGN=/usr/bin/codesign package-built PACKAGE_BUILD_CONFIGURATION=release',
+            'make,go,python3,codesign,otool',
+            'Makefile Package.swift Package.resolved config.toml docs/images/container-compose-icon-octopus.png Tools/compose-normalizer/go.mod Tools/release/go-module-version.py Tools/release/resolve-container-ref.py Tools/release/resolve-containerization-pin.py Tools/release/runtime-capabilities.json Tools/release/write-build-info.py Tools/release/write-sha256-sidecar.py',
+            'branch,commit,origin'],
     ]
 }
 
@@ -239,6 +264,9 @@ def benchmarkReconstructionFunctionalStageSpecs() {
 def stageArtifactPaths(stageName) {
     [
         'containerization-benchmark-cctl': 'bin/cctl',
+        'compose-release-build': '.build/release/compose',
+        'compose-go-validation': 'Tools/compose-normalizer/compose-normalizer',
+        'compose-package': 'dist/compose/bin/compose dist/compose/config.toml dist/compose/resources/compose-normalizer dist/compose/resources/container-compose-icon.png dist/compose/resources/build-info.json container-compose-plugin-release-arm64.tar.gz container-compose-plugin-release-arm64.tar.gz.sha256',
     ].get(stageName.toString(), 'none')
 }
 
@@ -262,6 +290,9 @@ def pipelineSelection() {
     def selectedFunctionals = functionalStages.findAll { stage ->
         profileRepositoryNames.contains(stage[0])
     }
+    def packageStages = packageStageSpecs()
+    def selectedPackages = params.pipelineProfile == 'repository' ?
+        packageStages : []
 
     if (params.pipelineProfile == 'focused' ||
         params.stageSelector.toString().trim()) {
@@ -270,16 +301,25 @@ def pipelineSelection() {
                 .collect { stageName -> stageName.trim() }
                 .findAll { stageName -> stageName } :
             ['compose-source', 'compose-swift-validation',
-                'compose-go-validation']
-        def knownStages = (sourceStages + functionalStages).collect { stage -> stage[1] }
+                'compose-go-validation', 'compose-tool-validation']
+        def knownStages = (sourceStages + functionalStages + packageStages)
+            .collect { stage -> stage[1] }
         def unknownStages = requestedStages.findAll { stageName ->
             !knownStages.contains(stageName)
         }
         if (unknownStages) {
             error "Unknown focused stage(s): ${unknownStages.join(', ')}"
         }
+        if (requestedStages.contains('compose-package')) {
+            requestedStages = (requestedStages + [
+                'compose-release-build', 'compose-go-validation',
+            ]).unique()
+        }
         selectedSources = sourceStages.findAll { stage -> requestedStages.contains(stage[1]) }
         selectedFunctionals = functionalStages.findAll { stage ->
+            requestedStages.contains(stage[1])
+        }
+        selectedPackages = packageStages.findAll { stage ->
             requestedStages.contains(stage[1])
         }
         def functionalRepositoryNames = selectedFunctionals
@@ -291,7 +331,8 @@ def pipelineSelection() {
         }
     }
 
-    def selectedRepositoryNames = (selectedSources + selectedFunctionals)
+    def selectedRepositoryNames = (selectedSources + selectedFunctionals +
+        selectedPackages)
         .collect { stage -> stage[0] }
         .unique()
     def selectedRepositories = repositories.findAll { repository ->
@@ -301,11 +342,13 @@ def pipelineSelection() {
         repositories: selectedRepositories,
         sourceStages: selectedSources,
         functionalStages: selectedFunctionals,
+        packageStages: selectedPackages,
     ]
 }
 
 def repositoryInputSpecs(selection) {
-    def selectedStages = selection.sourceStages + selection.functionalStages
+    def selectedStages = selection.sourceStages + selection.functionalStages +
+        selection.packageStages
     selection.repositories.collect { repository ->
         def requirements = selectedStages
             .findAll { stage -> stage[0] == repository[0] }
@@ -324,7 +367,8 @@ def repositoryInputSpecs(selection) {
 }
 
 def encodedStageInputSpecs(selection) {
-    (selection.sourceStages + selection.functionalStages).collect { stage ->
+    (selection.sourceStages + selection.functionalStages +
+        selection.packageStages).collect { stage ->
         [
             stage[0], stage[1], stage[2], stage[3],
             encodeParameter(stage[4]),
@@ -1662,6 +1706,8 @@ workflow PLAN {
         ${selection.sourceStages.collect { stage -> stage[1] }.join('\n        ')}
       functional stages:
         ${selection.functionalStages.collect { stage -> stage[1] }.join('\n        ')}
+      package stages:
+        ${selection.packageStages.collect { stage -> stage[1] }.join('\n        ')}
       runtime/parity/release mutation: disabled in this migration phase
     """.stripIndent()
 }
@@ -1700,6 +1746,14 @@ workflow PIPELINE {
     persistSessionReceipt(params.evidenceDir, workflow.sessionId)
     launcher = channel.value(file(params.launcherPath, checkIfExists: true))
     deadlineRunner = channel.value(file(params.deadlineRunner, checkIfExists: true))
+    dependencyInstaller = channel.value(file(
+        "${projectDir}/Tools/ci/install-pipeline-dependencies.py",
+        checkIfExists: true,
+    ))
+    noDependencyInstaller = channel.value(file(
+        '/usr/bin/false',
+        checkIfExists: true,
+    ))
     repositories = channel.fromList(repositoryInputSpecs(selection))
     stages = channel.fromList(encodedStageInputSpecs(selection))
     PREFLIGHT_GRAPH(
@@ -1721,9 +1775,15 @@ workflow PIPELINE {
         .map { item -> item + [true] }
     stateRootBase64 = channel.value(encodeParameter(params.stateRoot))
     sessionIdentifier = channel.value(workflow.sessionId.toString())
+    emptyDependencies = channel.value(file(
+        "${params.stateRoot}/empty-dependencies",
+        checkIfExists: true,
+    ))
     RUN_SOURCE_STAGE(
         sourceInputs,
+        emptyDependencies,
         deadlineRunner,
+        noDependencyInstaller,
         stateRootBase64,
         sessionIdentifier,
     )
@@ -1761,13 +1821,17 @@ workflow PIPELINE {
     }
     RUN_SWIFT_STAGE(
         swiftFunctionalInputs,
+        emptyDependencies,
         deadlineRunner,
+        noDependencyInstaller,
         stateRootBase64,
         sessionIdentifier,
     )
     RUN_LIGHTWEIGHT_STAGE(
         lightweightFunctionalInputs,
+        emptyDependencies,
         deadlineRunner,
+        noDependencyInstaller,
         stateRootBase64,
         sessionIdentifier,
     )
@@ -1788,10 +1852,48 @@ workflow PIPELINE {
             item[10] && item[11]) }
     RUN_DOCUMENTATION_STAGE(
         documentationInputs,
+        emptyDependencies,
         deadlineRunner,
+        noDependencyInstaller,
         stateRootBase64,
         sessionIdentifier,
     )
+
+    packageStageEvidence = channel.empty()
+    if (selection.packageStages) {
+        packageStageNames = selection.packageStages.collect { stage -> stage[1] }
+        packageInputs = PREPARE_STAGE_GRAPH.out
+            .filter { item -> packageStageNames.contains(item[0]) }
+            .map { item -> tuple(item[1], item[0], item[2], item[3], item[4],
+                item[5], item[6], item[7], item[8], item[9]) }
+            .combine(repositorySourceGates, by: 0)
+            .map { item -> tuple(item[1], item[0], item[2], item[3], item[4],
+                item[5], item[6], item[7], item[8], item[9], item[10]) }
+        packageBuildEvidence = RUN_SWIFT_STAGE.out.receipt
+            .concat(RUN_LIGHTWEIGHT_STAGE.out.receipt)
+            .filter { item -> item[1] in [
+                'compose-release-build', 'compose-go-validation',
+            ] }
+            .flatMap { item -> [item[2], item[5], item[6]] }
+            .collect()
+        COLLECT_COMPOSE_PACKAGE_DEPENDENCIES(
+            packageBuildEvidence,
+            validationCompletionGate,
+            channel.value(file(
+                "${projectDir}/Tools/ci/collect-compose-package-dependencies.sh",
+                checkIfExists: true,
+            )),
+        )
+        RUN_PACKAGE_STAGE(
+            packageInputs,
+            COLLECT_COMPOSE_PACKAGE_DEPENDENCIES.out.prepared,
+            deadlineRunner,
+            dependencyInstaller,
+            stateRootBase64,
+            sessionIdentifier,
+        )
+        packageStageEvidence = RUN_PACKAGE_STAGE.out.receipt
+    }
 
     allStageEvidence = RUN_SOURCE_STAGE.out.receipt
         .flatMap { item -> [item[2], item[3], item[4], item[5], item[6]] }
@@ -1801,6 +1903,8 @@ workflow PIPELINE {
             .flatMap { item -> [item[2], item[3], item[4], item[5], item[6]] })
         .concat(RUN_DOCUMENTATION_STAGE.out.receipt
             .flatMap { item -> [item[2], item[3], item[4], item[5], item[6]] })
+        .concat(packageStageEvidence
+            .flatMap { item -> [item[2], item[3], item[4], item[5], item[6]] })
         .collect()
     allRepositoryReceipts = repositoryReceipts
         .flatMap { item -> [item[1], item[2]] }
@@ -1808,7 +1912,8 @@ workflow PIPELINE {
     PIPELINE_SUMMARY(
         channel.value(params.pipelineProfile.toString()),
         channel.value(encodeParameter(
-            (selection.sourceStages + selection.functionalStages)
+            (selection.sourceStages + selection.functionalStages +
+                selection.packageStages)
                 .collect { stage -> stage[1] }
                 .join(','),
         )),
