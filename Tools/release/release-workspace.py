@@ -30,6 +30,7 @@ import subprocess
 import tempfile
 import urllib.error
 import urllib.request
+import uuid
 from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -43,6 +44,10 @@ BUILD_MARKER = ".container-compose-release-root.json"
 WORKSPACE_MARKER = ".container-compose-release-workspace.json"
 BUILD_LOCK = ".container-compose-release.lock"
 DEFAULT_GIT_TIMEOUT_SECONDS = 300
+MUTABLE_TAGS_BY_COMPONENT = {
+    "container": frozenset({"homebrew-main"}),
+    "container-compose": frozenset({"current"}),
+}
 
 
 @dataclass(frozen=True)
@@ -138,6 +143,127 @@ def resolve_remote(component: Component, remote_root: Path | None = None) -> str
     return str(remote_root / f"{component.name}.git")
 
 
+def parse_remote_semantic_tags(output: str) -> dict[str, str]:
+    component_tags: dict[str, str] = {}
+    for line in output.splitlines():
+        reference_sha, reference = line.split(maxsplit=1)
+        name = reference.removeprefix("refs/tags/")
+        if SEMVER.fullmatch(name):
+            component_tags[name] = reference_sha
+    return component_tags
+
+
+def remote_semantic_tags(url: str) -> dict[str, str]:
+    return parse_remote_semantic_tags(run_git("ls-remote", "--tags", url))
+
+
+def mutable_tags(component_name: str) -> frozenset[str]:
+    return MUTABLE_TAGS_BY_COMPONENT.get(component_name, frozenset())
+
+
+def remote_immutable_tag_refs(url: str, component_name: str) -> dict[str, str]:
+    refs: dict[str, str] = {}
+    for line in run_git("ls-remote", "--tags", "--refs", url).splitlines():
+        reference_sha, reference = line.split(maxsplit=1)
+        name = reference.removeprefix("refs/tags/")
+        if name not in mutable_tags(component_name):
+            refs[name] = reference_sha
+    return refs
+
+
+def local_immutable_tag_refs(path: Path, component_name: str) -> dict[str, str]:
+    refs: dict[str, str] = {}
+    lines = run_git(
+        "for-each-ref",
+        "--format=%(refname:strip=2) %(objectname)",
+        "refs/tags",
+        cwd=path,
+    ).splitlines()
+    for line in lines:
+        fields = line.split()
+        if len(fields) != 2 or not SHA.fullmatch(fields[1]):
+            raise WorkspaceError(f"could not inspect tags in {path}")
+        if fields[0] not in mutable_tags(component_name):
+            refs[fields[0]] = fields[1]
+    return refs
+
+
+def local_semantic_tag_targets(path: Path) -> dict[str, str]:
+    targets: dict[str, str] = {}
+    for name in run_git(
+        "tag", "--list", "[0-9]*.[0-9]*.[0-9]*", cwd=path
+    ).splitlines():
+        if not SEMVER.fullmatch(name):
+            continue
+        target = run_git("rev-parse", f"refs/tags/{name}", cwd=path).strip()
+        if not SHA.fullmatch(target):
+            raise WorkspaceError(f"could not inspect semantic tag {name} in {path}")
+        targets[name] = target
+    return targets
+
+
+def local_remote_tracking_refs(path: Path) -> dict[str, str]:
+    refs: dict[str, str] = {}
+    lines = run_git(
+        "for-each-ref",
+        "--format=%(refname) %(objectname)",
+        "refs/remotes",
+        cwd=path,
+    ).splitlines()
+    for line in lines:
+        fields = line.split()
+        if (
+            len(fields) != 2
+            or not fields[0].startswith("refs/remotes/")
+            or not SHA.fullmatch(fields[1])
+        ):
+            raise WorkspaceError(f"could not inspect remote refs in {path}")
+        refs[fields[0]] = fields[1]
+    return refs
+
+
+def local_recovery_objects(path: Path) -> list[str]:
+    """Return objects protected by reflogs or Git recovery pseudorefs."""
+
+    objects = {
+        value
+        for value in run_git("reflog", "show", "--all", "--format=%H", cwd=path)
+        .splitlines()
+        if value
+    }
+    git_directory = Path(run_git("rev-parse", "--absolute-git-dir", cwd=path).strip())
+    fetch_head = git_directory / "FETCH_HEAD"
+    if fetch_head.is_symlink():
+        raise WorkspaceError(f"Git recovery state is unsafe in {path}")
+    if fetch_head.is_file():
+        for line in fetch_head.read_text(encoding="utf-8").splitlines():
+            fields = line.split(maxsplit=1)
+            if not fields or not SHA.fullmatch(fields[0]):
+                raise WorkspaceError(f"could not inspect Git recovery state in {path}")
+            objects.add(fields[0])
+    for name in ("AUTO_MERGE", "BISECT_HEAD", "MERGE_AUTOSTASH", "ORIG_HEAD"):
+        pseudoref = git_directory / name
+        if pseudoref.is_symlink():
+            raise WorkspaceError(f"Git recovery state is unsafe in {path}")
+        if not pseudoref.is_file():
+            continue
+        value = pseudoref.read_text(encoding="utf-8").strip()
+        if not SHA.fullmatch(value):
+            raise WorkspaceError(f"could not inspect Git recovery state in {path}")
+        objects.add(value)
+    return sorted(objects)
+
+
+def remote_reachable_objects(url: str) -> set[str]:
+    objects: set[str] = set()
+    for line in run_git("ls-remote", url).splitlines():
+        fields = line.split()
+        if len(fields) != 2 or not SHA.fullmatch(fields[0]):
+            raise WorkspaceError(f"could not inspect remote refs at {url}")
+        objects.add(fields[0])
+    return objects
+
+
 def remote_snapshot(
     remote_root: Path | None = None,
 ) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
@@ -150,19 +276,7 @@ def remote_snapshot(
         if len(main_lines) != 1 or not SHA.fullmatch(main_lines[0][0]):
             raise WorkspaceError(f"could not resolve {component.name} main")
 
-        tag_output = run_git("ls-remote", "--tags", url)
-        component_tags: dict[str, str] = {}
-        peeled: dict[str, str] = {}
-        for line in tag_output.splitlines():
-            reference_sha, reference = line.split(maxsplit=1)
-            name = reference.removeprefix("refs/tags/")
-            if name.endswith("^{}"):
-                peeled[name[:-3]] = reference_sha
-            elif SEMVER.fullmatch(name):
-                component_tags[name] = reference_sha
-        component_tags.update(
-            {name: value for name, value in peeled.items() if SEMVER.fullmatch(name)}
-        )
+        component_tags = remote_semantic_tags(url)
         return component.name, main_lines[0][0], component_tags
 
     main_refs: dict[str, str] = {}
@@ -327,6 +441,10 @@ def verify_workspace(root: Path, build_root: Path) -> dict[str, object]:
     version = marker.get("version")
     refs = marker.get("mainRefs")
     remotes = marker.get("remoteUrls")
+    immutable_tags = marker.get("immutableTagRefs")
+    remote_refs = marker.get("remoteTrackingRefs")
+    recovery_objects = marker.get("recoveryObjects")
+    semantic_tags = marker.get("semanticTagTargets")
     if not isinstance(version, str) or not SEMVER.fullmatch(version):
         raise WorkspaceError("release workspace version is invalid")
     if resolved.name != version:
@@ -335,6 +453,60 @@ def verify_workspace(root: Path, build_root: Path) -> dict[str, object]:
         raise WorkspaceError("release workspace refs are invalid")
     if not isinstance(remotes, dict):
         raise WorkspaceError("release workspace remotes are invalid")
+    if immutable_tags is not None:
+        if not isinstance(immutable_tags, dict) or set(immutable_tags) != {
+            component.name for component in COMPONENTS
+        }:
+            raise WorkspaceError("release workspace tag refs are invalid")
+        for component_name, component_tags in immutable_tags.items():
+            if not isinstance(component_tags, dict) or any(
+                not isinstance(name, str)
+                or not name
+                or name in mutable_tags(component_name)
+                or not isinstance(value, str)
+                or not SHA.fullmatch(value)
+                for name, value in component_tags.items()
+            ):
+                raise WorkspaceError("release workspace tag refs are invalid")
+    if remote_refs is not None:
+        if not isinstance(remote_refs, dict) or set(remote_refs) != {
+            component.name for component in COMPONENTS
+        }:
+            raise WorkspaceError("release workspace remote refs are invalid")
+        for component_refs in remote_refs.values():
+            if not isinstance(component_refs, dict) or any(
+                not isinstance(name, str)
+                or not name.startswith("refs/remotes/")
+                or not isinstance(value, str)
+                or not SHA.fullmatch(value)
+                for name, value in component_refs.items()
+            ):
+                raise WorkspaceError("release workspace remote refs are invalid")
+    if recovery_objects is not None:
+        if not isinstance(recovery_objects, dict) or set(recovery_objects) != {
+            component.name for component in COMPONENTS
+        }:
+            raise WorkspaceError("release workspace recovery objects are invalid")
+        for component_objects in recovery_objects.values():
+            if not isinstance(component_objects, list) or any(
+                not isinstance(value, str) or not SHA.fullmatch(value)
+                for value in component_objects
+            ) or component_objects != sorted(set(component_objects)):
+                raise WorkspaceError("release workspace recovery objects are invalid")
+    if semantic_tags is not None:
+        if not isinstance(semantic_tags, dict) or set(semantic_tags) != {
+            component.name for component in COMPONENTS
+        }:
+            raise WorkspaceError("release workspace semantic tags are invalid")
+        for component_tags in semantic_tags.values():
+            if not isinstance(component_tags, dict) or any(
+                not isinstance(name, str)
+                or not SEMVER.fullmatch(name)
+                or not isinstance(value, str)
+                or not SHA.fullmatch(value)
+                for name, value in component_tags.items()
+            ):
+                raise WorkspaceError("release workspace semantic tags are invalid")
 
     for component in COMPONENTS:
         path = resolved / component.name
@@ -425,6 +597,7 @@ def refresh_mutable_current_tag(root: Path) -> None:
         raise WorkspaceError("could not resolve container-compose current tag")
     run_git(
         "fetch",
+        "--no-write-fetch-head",
         "origin",
         "+refs/tags/current:refs/tags/current",
         cwd=compose,
@@ -432,6 +605,176 @@ def refresh_mutable_current_tag(root: Path) -> None:
     local_current = run_git("rev-parse", "refs/tags/current", cwd=compose).strip()
     if local_current != fields[0]:
         raise WorkspaceError("container-compose current tag changed while refreshing")
+
+
+def workspace_matches_initial_checkpoint(
+    root: Path,
+    marker: dict[str, object],
+) -> bool:
+    """Return whether a retained transaction is still safe to replace."""
+
+    refs = marker["mainRefs"]
+    remotes = marker["remoteUrls"]
+    recorded_tags = marker.get("immutableTagRefs")
+    recorded_remote_refs = marker.get("remoteTrackingRefs")
+    recorded_recovery_objects = marker.get("recoveryObjects")
+    assert isinstance(refs, dict)
+    assert isinstance(remotes, dict)
+    assert recorded_tags is None or isinstance(recorded_tags, dict)
+    assert recorded_remote_refs is None or isinstance(recorded_remote_refs, dict)
+    assert recorded_recovery_objects is None or isinstance(
+        recorded_recovery_objects, dict
+    )
+    for component in COMPONENTS:
+        path = root / component.name
+        expected = refs[component.name]
+        if run_git("branch", "--show-current", cwd=path).strip() != "main":
+            return False
+        if run_git("rev-parse", "HEAD", cwd=path).strip() != expected:
+            return False
+        worktrees = run_git(
+            "worktree", "list", "--porcelain", "-z", cwd=path
+        ).split("\0")
+        if sum(field.startswith("worktree ") for field in worktrees) != 1:
+            return False
+        index_entries = run_git("ls-files", "-v", cwd=path).splitlines()
+        if any(
+            entry.startswith("S ") or (entry and entry[0].islower())
+            for entry in index_entries
+        ):
+            return False
+        local_remote_refs = local_remote_tracking_refs(path)
+        if recorded_remote_refs is not None:
+            initial_remote_refs = recorded_remote_refs[component.name]
+            assert isinstance(initial_remote_refs, dict)
+            if local_remote_refs != initial_remote_refs:
+                return False
+        else:
+            recoverable = remote_reachable_objects(str(remotes[component.name]))
+            recoverable.add(str(expected))
+            if any(value not in recoverable for value in local_remote_refs.values()):
+                return False
+        recovery_objects = set(local_recovery_objects(path))
+        if recorded_recovery_objects is not None:
+            initial_recovery_objects = recorded_recovery_objects[component.name]
+            assert isinstance(initial_recovery_objects, list)
+            new_recovery_objects = recovery_objects - set(initial_recovery_objects)
+        else:
+            new_recovery_objects = recovery_objects
+        if new_recovery_objects:
+            recoverable = remote_reachable_objects(str(remotes[component.name]))
+            recoverable.add(str(expected))
+            if new_recovery_objects - recoverable:
+                return False
+        repository_refs = run_git(
+            "for-each-ref", "--format=%(refname)", cwd=path
+        ).splitlines()
+        if any(
+            ref != "refs/heads/main"
+            and not ref.startswith("refs/remotes/")
+            and not ref.startswith("refs/tags/")
+            for ref in repository_refs
+        ):
+            return False
+        local_tags = local_immutable_tag_refs(path, component.name)
+        if recorded_tags is not None:
+            initial_tags = recorded_tags[component.name]
+            assert isinstance(initial_tags, dict)
+            if local_tags != initial_tags:
+                return False
+        else:
+            remote_tags = remote_immutable_tag_refs(
+                str(remotes[component.name]), component.name
+            )
+            if any(
+                remote_tags.get(name) != value for name, value in local_tags.items()
+            ):
+                return False
+        git_state_paths = (
+            "BISECT_START",
+            "CHERRY_PICK_HEAD",
+            "MERGE_HEAD",
+            "REVERT_HEAD",
+            "rebase-apply",
+            "rebase-merge",
+            "sequencer",
+        )
+        git_directory = Path(
+            run_git("rev-parse", "--absolute-git-dir", cwd=path).strip()
+        )
+        if any(
+            (git_directory / state_name).exists()
+            or (git_directory / state_name).is_symlink()
+            for state_name in git_state_paths
+        ):
+            return False
+        release_evidence = path / ".build" / "release-evidence"
+        if release_evidence.exists() or release_evidence.is_symlink():
+            return False
+        if run_git(
+            "status",
+            "--porcelain=v1",
+            "--untracked-files=all",
+            cwd=path,
+        ).strip():
+            return False
+    return True
+
+
+def workspace_semantic_tag_targets(
+    root: Path, marker: dict[str, object]
+) -> dict[str, dict[str, str]]:
+    recorded = marker.get("semanticTagTargets")
+    if recorded is not None:
+        assert isinstance(recorded, dict)
+        return recorded
+    return {
+        component.name: local_semantic_tag_targets(root / component.name)
+        for component in COMPONENTS
+    }
+
+
+def workspace_baseline_state(root: Path) -> dict[str, object]:
+    """Capture the local Git state recorded by a fresh checkpoint."""
+
+    return {
+        "immutableTagRefs": {
+            component.name: local_immutable_tag_refs(
+                root / component.name, component.name
+            )
+            for component in COMPONENTS
+        },
+        "remoteTrackingRefs": {
+            component.name: local_remote_tracking_refs(root / component.name)
+            for component in COMPONENTS
+        },
+        "recoveryObjects": {
+            component.name: local_recovery_objects(root / component.name)
+            for component in COMPONENTS
+        },
+    }
+
+
+def update_workspace_tag_state(
+    root: Path,
+    marker: dict[str, object],
+    semantic_tags: dict[str, dict[str, str]],
+    baseline: dict[str, object] | None = None,
+) -> None:
+    marker.update(baseline if baseline is not None else workspace_baseline_state(root))
+    marker["semanticTagTargets"] = semantic_tags
+    atomic_json(root / WORKSPACE_MARKER, marker)
+
+
+def selected_version(
+    selector: str,
+    refs: dict[str, str],
+    tags: dict[str, dict[str, str]],
+    remote_root: Path | None,
+) -> str:
+    latest = latest_tag(tags["container-compose"])
+    base = latest or compose_version(refs["container-compose"], remote_root)
+    return resolve_selector(selector, base)
 
 
 def configure_remotes(path: Path, component: Component) -> None:
@@ -524,6 +867,240 @@ def cleanup_incomplete_stages(build_root: Path) -> None:
             fsync_directory(build_root)
 
 
+def cleanup_orphaned_ready_stages(build_root: Path) -> None:
+    """Remove completed clone stages that were never journaled for handover."""
+
+    referenced: set[str] = set()
+    for item in build_root.iterdir():
+        if not item.is_dir() or item.is_symlink():
+            continue
+        marker_path = item / WORKSPACE_MARKER
+        if not marker_path.is_file() or marker_path.is_symlink():
+            continue
+        replacement = read_json(marker_path).get("replacement")
+        stage = replacement.get("stage") if isinstance(replacement, dict) else None
+        if isinstance(stage, str):
+            referenced.add(stage)
+
+    for item in build_root.iterdir():
+        if (
+            not item.name.startswith(".")
+            or ".replaced." in item.name
+            or item.name in referenced
+            or not item.is_dir()
+            or item.is_symlink()
+        ):
+            continue
+        marker_path = item / WORKSPACE_MARKER
+        if not marker_path.is_file() or marker_path.is_symlink():
+            continue
+        marker = read_json(marker_path)
+        version = marker.get("version")
+        if (
+            marker.get("owner") == "container-compose"
+            and marker.get("schemaVersion") == 1
+            and marker.get("state") == "ready"
+            and isinstance(version, str)
+            and SEMVER.fullmatch(version)
+            and item.name.startswith(f".{version}.")
+        ):
+            shutil.rmtree(item)
+            fsync_directory(build_root)
+
+
+def replacement_path(build_root: Path, value: object, label: str) -> Path:
+    if not isinstance(value, str) or Path(value).name != value or value in {".", ".."}:
+        raise WorkspaceError(f"release replacement {label} is invalid")
+    return build_root / value
+
+
+def remove_replacement_stage(stage: Path | None, version: str) -> None:
+    if stage is None:
+        return
+    if not stage.exists():
+        return
+    if stage.is_symlink() or not stage.is_dir():
+        raise WorkspaceError(f"release replacement stage is unsafe: {stage}")
+    marker = workspace_marker(stage)
+    if marker.get("state") not in {"cloning", "ready"} or marker.get("version") != version:
+        raise WorkspaceError(f"release replacement stage marker is invalid: {stage}")
+    shutil.rmtree(stage)
+
+
+def retired_workspace_path(build_root: Path, version: object) -> Path:
+    """Choose a durable, process-independent name for a retired checkpoint."""
+
+    if not isinstance(version, str) or not SEMVER.fullmatch(version):
+        raise WorkspaceError(f"release workspace version is invalid: {version}")
+    return build_root / f".{version}.replaced.{uuid.uuid4().hex}"
+
+
+def retire_workspace(
+    source: Path,
+    backup: Path,
+    marker: dict[str, object],
+    build_root: Path,
+) -> Path:
+    """Atomically hide and revalidate a checkpoint before retiring it."""
+
+    if backup.exists():
+        raise WorkspaceError(f"release workspace backup already exists: {backup}")
+    os.replace(source, backup)
+    fsync_directory(build_root)
+    if workspace_matches_initial_checkpoint(backup, marker):
+        return backup
+    if source.exists():
+        raise WorkspaceError(
+            f"release workspace changed while being retired; preserved at {backup}"
+        )
+    os.replace(backup, source)
+    fsync_directory(build_root)
+    restored = marker.copy()
+    restored.pop("replacement", None)
+    atomic_json(source / WORKSPACE_MARKER, restored)
+    raise WorkspaceError(f"release workspace changed while being retired: {source}")
+
+
+def finalize_retired_workspace(path: Path, build_root: Path) -> None:
+    """Retain a superseded checkpoint without leaving an active handover journal."""
+
+    marker = workspace_marker(path)
+    marker.pop("replacement", None)
+    marker["state"] = "retired"
+    atomic_json(path / WORKSPACE_MARKER, marker)
+    fsync_directory(build_root)
+
+
+def recover_interrupted_replacements(build_root: Path) -> None:
+    """Finish or roll back marker-journaled checkpoint handovers."""
+
+    for item in list(build_root.iterdir()):
+        if not item.is_dir() or item.is_symlink():
+            continue
+        marker_path = item / WORKSPACE_MARKER
+        if not marker_path.is_file() or marker_path.is_symlink():
+            continue
+        marker = read_json(marker_path)
+        replacement = marker.get("replacement")
+        if replacement is None:
+            continue
+        if (
+            marker.get("owner") != "container-compose"
+            or marker.get("schemaVersion") != 1
+            or marker.get("state") != "ready"
+            or not isinstance(replacement, dict)
+        ):
+            raise WorkspaceError(f"release replacement marker is invalid: {item}")
+        version = replacement.get("version")
+        selector = replacement.get("selector")
+        refs = replacement.get("mainRefs")
+        semantic_tags = replacement.get("semanticTagTargets")
+        if (
+            not isinstance(version, str)
+            or not SEMVER.fullmatch(version)
+            or not isinstance(selector, str)
+            or not isinstance(refs, dict)
+            or set(refs) != {component.name for component in COMPONENTS}
+            or any(
+                not isinstance(value, str) or not SHA.fullmatch(value)
+                for value in refs.values()
+            )
+            or not isinstance(semantic_tags, dict)
+            or set(semantic_tags) != {component.name for component in COMPONENTS}
+            or any(
+                not isinstance(component_tags, dict)
+                or any(
+                    not isinstance(name, str)
+                    or not SEMVER.fullmatch(name)
+                    or not isinstance(value, str)
+                    or not SHA.fullmatch(value)
+                    for name, value in component_tags.items()
+                )
+                for component_tags in semantic_tags.values()
+            )
+        ):
+            raise WorkspaceError(f"release replacement record is invalid: {item}")
+        destination = replacement_path(
+            build_root, replacement.get("destination"), "destination"
+        )
+        source_value = replacement.get("source", marker.get("version"))
+        source = replacement_path(build_root, source_value, "source")
+        stage_value = replacement.get("stage")
+        stage = (
+            replacement_path(build_root, stage_value, "stage")
+            if stage_value is not None
+            else None
+        )
+        if (
+            destination.name != version
+            or source.name != marker.get("version")
+            or (
+                stage is not None
+                and not stage.name.startswith(f".{version}.")
+            )
+        ):
+            raise WorkspaceError(f"release replacement paths are inconsistent: {item}")
+        ensure_workspace_is_idle(marker)
+
+        installed = False
+        if destination.exists() and destination != item:
+            destination_marker = verify_workspace(destination, build_root)
+            ensure_workspace_is_idle(destination_marker)
+            destination_matches = (
+                destination_marker.get("version") == version
+                and destination_marker.get("mainRefs") == refs
+                and destination_marker.get("semanticTagTargets") == semantic_tags
+            )
+            if destination_matches:
+                installed = True
+
+        if installed:
+            if not item.name.startswith("."):
+                if item != source:
+                    raise WorkspaceError(
+                        f"release replacement source path is inconsistent: {item}"
+                    )
+                if not workspace_matches_initial_checkpoint(item, marker):
+                    if destination_marker.get("selector") != version:
+                        destination_marker["selector"] = version
+                        atomic_json(
+                            destination / WORKSPACE_MARKER, destination_marker
+                        )
+                    restored = marker.copy()
+                    restored.pop("replacement")
+                    atomic_json(item / WORKSPACE_MARKER, restored)
+                    remove_replacement_stage(stage, version)
+                    fsync_directory(build_root)
+                    continue
+                backup = retired_workspace_path(build_root, marker["version"])
+                item = retire_workspace(item, backup, marker, build_root)
+            if destination_marker.get("selector") != selector:
+                destination_marker["selector"] = selector
+                atomic_json(destination / WORKSPACE_MARKER, destination_marker)
+            finalize_retired_workspace(item, build_root)
+            remove_replacement_stage(stage, version)
+            fsync_directory(build_root)
+            continue
+
+        if item.name.startswith("."):
+            if source.exists():
+                raise WorkspaceError(
+                    f"release replacement rollback source exists: {source}"
+                )
+            os.replace(item, source)
+            fsync_directory(build_root)
+            item = source
+        elif item != source:
+            raise WorkspaceError(
+                f"release replacement source path is inconsistent: {item}"
+            )
+        restored = marker.copy()
+        restored.pop("replacement")
+        atomic_json(item / WORKSPACE_MARKER, restored)
+        remove_replacement_stage(stage, version)
+        fsync_directory(build_root)
+
+
 def process_is_alive(pid: int) -> bool:
     if pid < 1:
         return False
@@ -542,23 +1119,130 @@ def _materialize_locked(
     remote_root: Path | None = None,
 ) -> Path:
     cleanup_incomplete_stages(safe_root)
+    recover_interrupted_replacements(safe_root)
+    cleanup_orphaned_ready_stages(safe_root)
+    snapshot: tuple[dict[str, str], dict[str, dict[str, str]]] | None = None
+    stale_retained: Path | None = None
     retained = retained_workspace(safe_root, selector)
     if retained is not None:
         marker = verify_workspace(retained, safe_root)
         ensure_workspace_is_idle(marker)
-        refresh_mutable_current_tag(retained)
-        return retained
+        retained_needs_baseline = any(
+            marker.get(field) is None
+            for field in (
+                "immutableTagRefs",
+                "recoveryObjects",
+                "remoteTrackingRefs",
+                "semanticTagTargets",
+            )
+        )
+        retained_baseline = (
+            workspace_baseline_state(retained) if retained_needs_baseline else None
+        )
+        if workspace_matches_initial_checkpoint(retained, marker):
+            snapshot = remote_snapshot(remote_root)
+            refs, tags = snapshot
+            if (
+                refs != marker["mainRefs"]
+                or workspace_semantic_tag_targets(retained, marker) != tags
+                or selected_version(selector, refs, tags, remote_root)
+                != marker["version"]
+            ):
+                stale_retained = retained
+            else:
+                refresh_mutable_current_tag(retained)
+                if retained_baseline is not None and (
+                    workspace_baseline_state(retained) == retained_baseline
+                    and workspace_matches_initial_checkpoint(retained, marker)
+                ):
+                    update_workspace_tag_state(
+                        retained, marker, tags, retained_baseline
+                    )
+                return retained
+        else:
+            refresh_mutable_current_tag(retained)
+            return retained
 
-    refs, tags = remote_snapshot(remote_root)
-    latest = latest_tag(tags["container-compose"])
-    base = latest or compose_version(refs["container-compose"], remote_root)
-    version = resolve_selector(selector, base)
+    if snapshot is None:
+        snapshot = remote_snapshot(remote_root)
+    refs, tags = snapshot
+    version = selected_version(selector, refs, tags, remote_root)
     destination = safe_root / version
+    stale_destination: Path | None = None
     if destination.exists():
         marker = verify_workspace(destination, safe_root)
         ensure_workspace_is_idle(marker)
-        refresh_mutable_current_tag(destination)
-        return destination
+        destination_needs_baseline = any(
+            marker.get(field) is None
+            for field in (
+                "immutableTagRefs",
+                "recoveryObjects",
+                "remoteTrackingRefs",
+                "semanticTagTargets",
+            )
+        )
+        destination_baseline = (
+            workspace_baseline_state(destination)
+            if destination_needs_baseline
+            else None
+        )
+        destination_matches_initial = workspace_matches_initial_checkpoint(
+            destination, marker
+        )
+        if (
+            destination_matches_initial
+            and (
+                marker["mainRefs"] != refs
+                or marker["version"] != version
+                or workspace_semantic_tag_targets(destination, marker) != tags
+            )
+        ):
+            stale_destination = destination
+        elif destination != stale_retained:
+            refresh_mutable_current_tag(destination)
+            destination_tags = workspace_semantic_tag_targets(destination, marker)
+            retired: Path | None = None
+            if stale_retained is not None:
+                stale_marker = verify_workspace(stale_retained, safe_root)
+                ensure_workspace_is_idle(stale_marker)
+                if not workspace_matches_initial_checkpoint(
+                    stale_retained, stale_marker
+                ):
+                    raise WorkspaceError(
+                        "release workspace changed before destination reuse"
+                    )
+                backup = retired_workspace_path(safe_root, stale_retained.name)
+                replacement = {
+                    "destination": destination.name,
+                    "mainRefs": marker["mainRefs"],
+                    "selector": selector,
+                    "semanticTagTargets": destination_tags,
+                    "source": stale_retained.name,
+                    "stage": None,
+                    "version": marker["version"],
+                }
+                stale_marker["replacement"] = replacement
+                atomic_json(stale_retained / WORKSPACE_MARKER, stale_marker)
+                retired = retire_workspace(
+                    stale_retained, backup, stale_marker, safe_root
+                )
+            marker = workspace_marker(destination)
+            marker["selector"] = selector
+            if (
+                destination_baseline is not None
+                and workspace_baseline_state(destination) == destination_baseline
+                and workspace_matches_initial_checkpoint(destination, marker)
+            ):
+                update_workspace_tag_state(
+                    destination, marker, tags, destination_baseline
+                )
+            else:
+                atomic_json(destination / WORKSPACE_MARKER, marker)
+            if retired is not None:
+                finalize_retired_workspace(retired, safe_root)
+            return destination
+        else:
+            stale_destination = destination
 
     stage = Path(tempfile.mkdtemp(prefix=f".{version}.", dir=safe_root))
     try:
@@ -572,6 +1256,7 @@ def _materialize_locked(
             "remoteUrls": remote_urls,
             "schemaVersion": 1,
             "selector": selector,
+            "semanticTagTargets": tags,
             "stageHost": socket.gethostname(),
             "stagePid": os.getpid(),
             "state": "cloning",
@@ -579,16 +1264,61 @@ def _materialize_locked(
         }
         atomic_json(stage / WORKSPACE_MARKER, marker)
         clone_workspace(stage, refs, remote_root)
+        marker.update(workspace_baseline_state(stage))
         fresh_refs, fresh_tags = remote_snapshot(remote_root)
         if fresh_refs != refs or fresh_tags != tags:
             raise WorkspaceError(
                 "a component main or semantic tag moved while the workspace was cloned"
             )
+        stale_workspaces: list[Path] = []
+        for path in (stale_destination, stale_retained):
+            if path is not None and path not in stale_workspaces:
+                stale_workspaces.append(path)
+        for stale in stale_workspaces:
+            stale_marker = verify_workspace(stale, safe_root)
+            ensure_workspace_is_idle(stale_marker)
+            if not workspace_matches_initial_checkpoint(stale, stale_marker):
+                raise WorkspaceError(
+                    f"release workspace changed while its replacement was cloned: {stale}"
+                )
         marker["state"] = "ready"
         marker.pop("stageHost")
         marker.pop("stagePid")
         atomic_json(stage / WORKSPACE_MARKER, marker)
-        os.replace(stage, destination)
+        replacement = {
+            "destination": destination.name,
+            "mainRefs": refs,
+            "selector": selector,
+            "semanticTagTargets": tags,
+            "stage": stage.name,
+            "version": version,
+        }
+        for stale in stale_workspaces:
+            stale_marker = workspace_marker(stale)
+            stale_replacement = replacement.copy()
+            stale_replacement["source"] = stale.name
+            stale_marker["replacement"] = stale_replacement
+            atomic_json(stale / WORKSPACE_MARKER, stale_marker)
+        retired_workspaces: list[Path] = []
+        try:
+            for stale in stale_workspaces:
+                backup_path = retired_workspace_path(safe_root, stale.name)
+                stale_marker = workspace_marker(stale)
+                retired_workspaces.append(
+                    retire_workspace(
+                        stale,
+                        backup_path,
+                        stale_marker,
+                        safe_root,
+                    )
+                )
+            os.replace(stage, destination)
+            fsync_directory(safe_root)
+        except BaseException:
+            recover_interrupted_replacements(safe_root)
+            raise
+        for retired in retired_workspaces:
+            finalize_retired_workspace(retired, safe_root)
         fsync_directory(safe_root)
     except BaseException:
         shutil.rmtree(stage, ignore_errors=True)
