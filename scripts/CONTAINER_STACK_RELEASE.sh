@@ -1845,6 +1845,7 @@ force_bootout_stable_container_validation_namespace() {
   local service_namespace="$1"
   local stable_container_path="$2"
   local manager domain label active_pids="" launchctl_output=""
+  local index=0
   local -a labels=()
 
   if [[ ! "${service_namespace}" =~ ^io\.github\.container\.stack-validation\.[A-Za-z0-9]+$ ]] || \
@@ -1872,7 +1873,8 @@ force_bootout_stable_container_validation_namespace() {
     [[ -n "${label}" ]] && labels+=("${label}")
   done < <(/usr/bin/awk -v prefix="${service_namespace}." \
     'index($3, prefix) == 1 { print $3 }' <<<"${launchctl_output}")
-  for label in "${labels[@]}"; do
+  for ((index = 0; index < ${#labels[@]}; index++)); do
+    label="${labels[index]}"
     if ! "${RELEASE_COMMAND_DEADLINE_RUNNER}" \
       --seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" --grace-seconds 0 -- \
       "${RELEASE_LAUNCHCTL}" bootout "${domain}/${label}"; then
@@ -2802,6 +2804,7 @@ release_local_release_gate_host_state() {
 # loaded set is restored by the caller's EXIT path even when validation fails.
 quiesce_local_release_workers() {
   local attempt=0
+  local index=0
   local label=""
   local listed_labels=""
   local plist=""
@@ -2849,7 +2852,8 @@ quiesce_local_release_workers() {
     [[ -n "${label}" ]] && labels+=("${label}")
   done <<<"${listed_labels}"
 
-  for label in "${labels[@]}"; do
+  for ((index = 0; index < ${#labels[@]}; index++)); do
+    label="${labels[index]}"
     if ! [[ "${label}" =~ ^[A-Za-z0-9._-]+$ ]]; then
       printf 'refusing unsafe release launch-agent label: %s\n' "${label}" >&2
       restore_quiesced_release_launch_agents || true
@@ -2908,7 +2912,8 @@ quiesce_local_release_workers() {
 
   for ((attempt = 1; attempt <= RELEASE_QUIESCE_WAIT_ATTEMPTS; attempt++)); do
     local workers_stopped=1
-    for label in "${RELEASE_QUIESCED_LABELS[@]}"; do
+    for ((index = 0; index < ${#RELEASE_QUIESCED_LABELS[@]}; index++)); do
+      label="${RELEASE_QUIESCED_LABELS[index]}"
       loaded_status=0
       release_launch_agent_is_loaded "${label}" || loaded_status=$?
       case "${loaded_status}" in

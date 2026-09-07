@@ -1191,6 +1191,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "stop_stable_container_validation_runtime "
                 f"{shlex.quote(str(stable))} {shlex.quote(str(app_root))} "
                 f"{shlex.quote(namespace)}",
+                shell="/bin/bash",
                 shell_setup=f"export STOP_LOG={shlex.quote(str(stop_log))}",
                 environment_overrides={
                     "CONTAINER_STACK_RELEASE_LAUNCHCTL": str(launchctl)
@@ -5235,6 +5236,37 @@ esac
                     "RELEASE_QUIESCED_DEADLINES=()\n"
                     "RELEASE_QUIESCED_RESTARTED_UNREADY=()\n"
                     "RELEASE_SUSPENDED_RUNNER_PGIDS=()"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_quiesce_accepts_an_empty_worker_set_under_system_bash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                "#!/bin/bash\n"
+                '[[ "${1:-}" == "list" ]] || exit 64\n',
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "quiesce_local_release_workers; "
+                "test ${#RELEASE_QUIESCED_LABELS[@]} -eq 0",
+                shell="/bin/bash",
+                shell_setup=(
+                    f"HOME={shlex.quote(str(root))}\n"
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    "RELEASE_QUIESCED_LABELS=()\n"
+                    "RELEASE_QUIESCED_PLISTS=()\n"
+                    "RELEASE_QUIESCED_ACTION_STARTED=()\n"
+                    "RELEASE_QUIESCED_DEADLINES=()\n"
+                    "RELEASE_QUIESCED_RESTARTED_UNREADY=()\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                    "RELEASE_QUIESCE_WAIT_ATTEMPTS=1"
                 ),
             )
 
