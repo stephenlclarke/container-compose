@@ -8347,6 +8347,30 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/545"
     },
     {
+      "id": "container-compose-557",
+      "owner": "stephenlclarke/container-compose",
+      "title": "chore(release): refresh corrected builder classification authority",
+      "state": "active-draft",
+      "lastVerified": "2026-09-07",
+      "commits": [
+        "25399784a692d5d5933ab3db67d385e0e82b5fad",
+        "8538b2e7931f41a831af66dc65381f7acc46cc64",
+        "d8ccda0fd6f3c24ecfb399f40b50850ce2fa136a",
+        "f99e66b8940242d6ea8bed448619ba61f3f6f1a5"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-557.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-558.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/558"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
