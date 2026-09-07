@@ -2513,7 +2513,10 @@ resume_suspended_release_runner_groups() {
       fi
     fi
   done
-  RELEASE_SUSPENDED_RUNNER_PGIDS=("${failed_groups[@]}")
+  RELEASE_SUSPENDED_RUNNER_PGIDS=()
+  if ((resume_status != 0)); then
+    RELEASE_SUSPENDED_RUNNER_PGIDS=("${failed_groups[@]}")
+  fi
   return "${resume_status}"
 }
 
