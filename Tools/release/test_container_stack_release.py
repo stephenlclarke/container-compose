@@ -5752,6 +5752,62 @@ printf '%s\n' "$*" >> "${FAKE_SIGNAL_LOG:?}"
                 ["-STOP -4242", "-CONT -4242"],
             )
 
+    def test_empty_suspended_runner_set_resumes_under_system_bash(self) -> None:
+        result = self.run_release_function(
+            ROOT,
+            "resume_suspended_release_runner_groups; printf 'resumed\\n'",
+            shell_setup=(
+                "RELEASE_SUSPENDED_RUNNER_PGIDS=()\n"
+                "RELEASE_KILL=/usr/bin/false"
+            ),
+            shell="/bin/bash",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "resumed\n")
+
+    def test_failed_runner_resume_is_retained_under_system_bash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            log = root / "signals.log"
+            signaler = root / "kill"
+            signaler.write_text(
+                """#!/bin/bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${FAKE_SIGNAL_LOG:?}"
+case "$*" in
+  '-CONT -4242') exit 1 ;;
+  '-0 -4242') exit 0 ;;
+  *) exit 0 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            signaler.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "status=0; resume_suspended_release_runner_groups || status=$?; "
+                "printf '%s|%s\\n' \"$status\" "
+                '"${RELEASE_SUSPENDED_RUNNER_PGIDS[*]}"; '
+                "test \"$status\" -eq 1",
+                shell_setup=(
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=(4242 4343)\n"
+                    f"RELEASE_KILL={shlex.quote(str(signaler))}\n"
+                    f"export FAKE_SIGNAL_LOG={shlex.quote(str(log))}"
+                ),
+                shell="/bin/bash",
+            )
+
+            self.assertEqual(
+                result.returncode, 0, result.stdout + result.stderr
+            )
+            self.assertEqual(result.stdout, "1|4242\n")
+            self.assertEqual(
+                log.read_text(encoding="utf-8").splitlines(),
+                ["-CONT -4343", "-CONT -4242", "-0 -4242"],
+            )
+
     def test_local_release_gate_rejects_a_worker_that_does_not_stop(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
