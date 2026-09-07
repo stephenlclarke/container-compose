@@ -264,6 +264,29 @@ def remote_reachable_objects(url: str) -> set[str]:
     return objects
 
 
+def object_reachable_from_advertised_refs(
+    path: Path, candidate: str, advertised: set[str]
+) -> bool:
+    """Return whether an object is named by, or is history of, a remote ref."""
+
+    if candidate in advertised:
+        return True
+    try:
+        containing_refs = run_git(
+            "for-each-ref",
+            "--contains",
+            candidate,
+            "--format=%(objectname)",
+            "refs/heads",
+            "refs/remotes",
+            "refs/tags",
+            cwd=path,
+        ).splitlines()
+    except WorkspaceError:
+        return False
+    return any(tip in advertised for tip in containing_refs)
+
+
 def expected_fetch_remotes(component: Component, clone_url: str) -> dict[str, str]:
     """Return the exact, controller-owned fetch remotes for a component."""
 
@@ -673,6 +696,12 @@ def workspace_matches_initial_checkpoint(
             for entry in index_entries
         ):
             return False
+        git_directory = Path(
+            run_git("rev-parse", "--absolute-git-dir", cwd=path).strip()
+        )
+        grafts = git_directory / "info" / "grafts"
+        if grafts.exists() or grafts.is_symlink():
+            return False
         local_remote_refs = local_remote_tracking_refs(path)
         if recorded_remote_refs is not None:
             initial_remote_refs = recorded_remote_refs[component.name]
@@ -703,13 +732,26 @@ def workspace_matches_initial_checkpoint(
         else:
             new_recovery_objects = recovery_objects
         if new_recovery_objects:
-            recoverable = set(advertised_objects(clone_url))
-            recoverable.add(str(expected))
-            missing = new_recovery_objects - recoverable
+            advertised = set(advertised_objects(clone_url))
+            advertised.add(str(expected))
+            missing = {
+                value
+                for value in new_recovery_objects
+                if not object_reachable_from_advertised_refs(
+                    path, value, advertised
+                )
+            }
             for name, url in expected_remotes.items():
                 if not missing or name == component.clone_remote:
                     continue
-                missing -= advertised_objects(url)
+                remote_advertised = advertised_objects(url)
+                missing = {
+                    value
+                    for value in missing
+                    if not object_reachable_from_advertised_refs(
+                        path, value, remote_advertised
+                    )
+                }
             if missing:
                 return False
         repository_refs = run_git(
@@ -744,9 +786,6 @@ def workspace_matches_initial_checkpoint(
             "rebase-apply",
             "rebase-merge",
             "sequencer",
-        )
-        git_directory = Path(
-            run_git("rev-parse", "--absolute-git-dir", cwd=path).strip()
         )
         if any(
             (git_directory / state_name).exists()
