@@ -480,6 +480,29 @@ jobs:
           fetch-depth: 1
           ref: ${{ github.sha }}
 
+      - name: Require Current stack pins to match fork mains
+        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: container-compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          for component in container-builder-shim containerization container; do
+            repository="$(jq -er --arg component "${component}" \
+              '.components[$component].repository' Tools/release/stack-refs.json)"
+            pinned_ref="$(jq -er --arg component "${component}" \
+              '.components[$component].ref' Tools/release/stack-refs.json)"
+            main_ref="$(gh api "repos/${repository}/commits/main" --jq '.sha')"
+            if [[ ! "${pinned_ref}" =~ ^[0-9a-f]{40}$ ||
+                  ! "${main_ref}" =~ ^[0-9a-f]{40}$ ||
+                  "${pinned_ref}" != "${main_ref}" ]]; then
+              printf 'Current stack uses %s %s, but fork main is %s; update the stack pin before packaging\n' \
+                "${component}" "${pinned_ref:-missing}" "${main_ref:-missing}" >&2
+              exit 1
+            fi
+          done
+
       - name: Require a writable Homebrew promotion token
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -1435,6 +1458,25 @@ jobs:
                 "${PUBLISH_SHA}" "${current_main:-missing}"
               publish=false
             fi
+            for component in container-builder-shim containerization container; do
+              repository="$(jq -er --arg component "${component}" \
+                '.components[$component].repository' \
+                container-compose/Tools/release/stack-refs.json)"
+              pinned_ref="$(jq -er --arg component "${component}" \
+                '.components[$component].ref' \
+                container-compose/Tools/release/stack-refs.json)"
+              main_ref="$(
+                git ls-remote --heads "https://github.com/${repository}.git" refs/heads/main \
+                  | awk '{ print $1 }' \
+                  | tail -n 1
+              )"
+              if [[ "${pinned_ref}" != "${main_ref}" ]]; then
+                printf 'Skipping stale Current stack: %s uses %s, but fork main is now %s.\n' \
+                  "${component}" "${pinned_ref:-missing}" "${main_ref:-missing}"
+                publish=false
+                break
+              fi
+            done
           fi
           printf 'publish=%s\n' "${publish}" >> "$GITHUB_OUTPUT"
 
