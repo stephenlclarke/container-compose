@@ -414,6 +414,138 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             current,
         )
 
+    def test_legacy_checkpoint_accepts_an_earlier_fetched_main_ancestor(
+        self,
+    ) -> None:
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        checkpoint = WORKSPACE.workspace_marker(release_root)
+        for field in (
+            "immutableTagRefs",
+            "recoveryObjects",
+            "remoteTrackingRefs",
+            "semanticTagTargets",
+        ):
+            checkpoint.pop(field)
+        WORKSPACE.atomic_json(release_root / WORKSPACE.WORKSPACE_MARKER, checkpoint)
+
+        source = self.root / "sources" / "container-compose"
+        compose = release_root / "container-compose"
+        (source / "first.txt").write_text("first\n", encoding="utf-8")
+        self.git("add", "first.txt", cwd=source)
+        self.git("commit", "-m", "first advance", cwd=source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/main",
+            cwd=source,
+        )
+        self.git("fetch", "origin", "main", cwd=compose)
+        earlier = self.git("rev-parse", "origin/main", cwd=compose).strip()
+
+        (source / "second.txt").write_text("second\n", encoding="utf-8")
+        self.git("add", "second.txt", cwd=source)
+        self.git("commit", "-m", "second advance", cwd=source)
+        current = self.git("rev-parse", "HEAD", cwd=source).strip()
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/main",
+            cwd=source,
+        )
+        self.git("fetch", "origin", "main", cwd=compose)
+
+        self.assertIn(earlier, WORKSPACE.local_recovery_objects(compose))
+        self.assertNotIn(
+            earlier,
+            WORKSPACE.remote_reachable_objects(
+                str(self.remote_root / "container-compose.git")
+            ),
+        )
+
+        resumed = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+
+        self.assertEqual(resumed, release_root)
+        self.assertEqual(
+            WORKSPACE.workspace_marker(resumed)["mainRefs"]["container-compose"],
+            current,
+        )
+
+    def test_legacy_checkpoint_does_not_query_unneeded_secondary_remotes(
+        self,
+    ) -> None:
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        checkpoint = WORKSPACE.workspace_marker(release_root)
+        for field in (
+            "immutableTagRefs",
+            "recoveryObjects",
+            "remoteTrackingRefs",
+            "semanticTagTargets",
+        ):
+            checkpoint.pop(field)
+        WORKSPACE.atomic_json(release_root / WORKSPACE.WORKSPACE_MARKER, checkpoint)
+
+        reachable = WORKSPACE.remote_reachable_objects
+
+        def clone_remotes_only(url: str) -> set[str]:
+            if url.startswith("https://github.com/apple/"):
+                raise AssertionError(f"unexpected secondary remote query: {url}")
+            return reachable(url)
+
+        with mock.patch.object(
+            WORKSPACE,
+            "remote_reachable_objects",
+            side_effect=clone_remotes_only,
+        ):
+            self.assertTrue(
+                WORKSPACE.workspace_matches_initial_checkpoint(
+                    release_root,
+                    checkpoint,
+                )
+            )
+
+    def test_legacy_checkpoint_rejects_grafted_recovery_history(self) -> None:
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        checkpoint = WORKSPACE.workspace_marker(release_root)
+        for field in (
+            "immutableTagRefs",
+            "recoveryObjects",
+            "remoteTrackingRefs",
+            "semanticTagTargets",
+        ):
+            checkpoint.pop(field)
+        WORKSPACE.atomic_json(release_root / WORKSPACE.WORKSPACE_MARKER, checkpoint)
+
+        compose = release_root / "container-compose"
+        head = self.git("rev-parse", "HEAD", cwd=compose).strip()
+        tree = self.git("rev-parse", "HEAD^{tree}", cwd=compose).strip()
+        unadvertised = self.git(
+            "commit-tree", tree, "-m", "unadvertised recovery object", cwd=compose
+        ).strip()
+        git_directory = Path(
+            self.git("rev-parse", "--absolute-git-dir", cwd=compose).strip()
+        )
+        (git_directory / "ORIG_HEAD").write_text(
+            f"{unadvertised}\n", encoding="utf-8"
+        )
+        (git_directory / "info" / "grafts").write_text(
+            f"{head} {unadvertised}\n", encoding="utf-8"
+        )
+
+        self.assertFalse(
+            WORKSPACE.workspace_matches_initial_checkpoint(
+                release_root,
+                checkpoint,
+            )
+        )
+
     def test_resume_preserves_an_additional_remote_when_main_moves(self) -> None:
         release_root = WORKSPACE.materialize(
             self.build_root, "-+-", self.remote_root
