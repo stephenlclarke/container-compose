@@ -222,6 +222,28 @@ def local_remote_tracking_refs(path: Path) -> dict[str, str]:
     return refs
 
 
+def local_remote_symbolic_refs(path: Path) -> dict[str, str]:
+    refs: dict[str, str] = {}
+    lines = run_git(
+        "for-each-ref",
+        "--format=%(refname) %(symref)",
+        "refs/remotes",
+        cwd=path,
+    ).splitlines()
+    for line in lines:
+        fields = line.split()
+        if len(fields) == 1:
+            continue
+        if (
+            len(fields) != 2
+            or not fields[0].startswith("refs/remotes/")
+            or not fields[1].startswith("refs/remotes/")
+        ):
+            raise WorkspaceError(f"could not inspect remote symbolic refs in {path}")
+        refs[fields[0]] = fields[1]
+    return refs
+
+
 def local_recovery_objects(path: Path) -> list[str]:
     """Return objects protected by reflogs or Git recovery pseudorefs."""
 
@@ -479,6 +501,7 @@ def verify_workspace(root: Path, build_root: Path) -> dict[str, object]:
     remotes = marker.get("remoteUrls")
     immutable_tags = marker.get("immutableTagRefs")
     remote_refs = marker.get("remoteTrackingRefs")
+    remote_symbolic_refs = marker.get("remoteSymbolicRefs")
     recovery_objects = marker.get("recoveryObjects")
     semantic_tags = marker.get("semanticTagTargets")
     if not isinstance(version, str) or not SEMVER.fullmatch(version):
@@ -518,6 +541,24 @@ def verify_workspace(root: Path, build_root: Path) -> dict[str, object]:
                 for name, value in component_refs.items()
             ):
                 raise WorkspaceError("release workspace remote refs are invalid")
+    if remote_symbolic_refs is not None:
+        if not isinstance(remote_symbolic_refs, dict) or set(
+            remote_symbolic_refs
+        ) != {component.name for component in COMPONENTS}:
+            raise WorkspaceError(
+                "release workspace remote symbolic refs are invalid"
+            )
+        for component_refs in remote_symbolic_refs.values():
+            if not isinstance(component_refs, dict) or any(
+                not isinstance(name, str)
+                or not name.startswith("refs/remotes/")
+                or not isinstance(target, str)
+                or not target.startswith("refs/remotes/")
+                for name, target in component_refs.items()
+            ):
+                raise WorkspaceError(
+                    "release workspace remote symbolic refs are invalid"
+                )
     if recovery_objects is not None:
         if not isinstance(recovery_objects, dict) or set(recovery_objects) != {
             component.name for component in COMPONENTS
@@ -653,11 +694,15 @@ def workspace_matches_initial_checkpoint(
     remotes = marker["remoteUrls"]
     recorded_tags = marker.get("immutableTagRefs")
     recorded_remote_refs = marker.get("remoteTrackingRefs")
+    recorded_remote_symbolic_refs = marker.get("remoteSymbolicRefs")
     recorded_recovery_objects = marker.get("recoveryObjects")
     assert isinstance(refs, dict)
     assert isinstance(remotes, dict)
     assert recorded_tags is None or isinstance(recorded_tags, dict)
     assert recorded_remote_refs is None or isinstance(recorded_remote_refs, dict)
+    assert recorded_remote_symbolic_refs is None or isinstance(
+        recorded_remote_symbolic_refs, dict
+    )
     assert recorded_recovery_objects is None or isinstance(
         recorded_recovery_objects, dict
     )
@@ -692,6 +737,54 @@ def workspace_matches_initial_checkpoint(
             return None
         advertised_ref = "HEAD" if remote_ref == "HEAD" else f"refs/heads/{remote_ref}"
         return expected_remotes[remote_name], advertised_ref
+
+    def tracked_ref_was_fetched(
+        path: Path,
+        git_directory: Path,
+        ref: str,
+        value: str,
+        target: tuple[str, str],
+    ) -> bool:
+        remote_url, advertised_ref = target
+        if not advertised_ref.startswith("refs/heads/"):
+            return False
+        remote_name = ref.removeprefix("refs/remotes/").partition("/")[0]
+        reflog_path = git_directory / "logs" / ref
+        if reflog_path.is_symlink() or not reflog_path.is_file():
+            return False
+        reflog = run_git(
+            "reflog",
+            "show",
+            "-1",
+            "--format=%H%x00%gs",
+            ref,
+            cwd=path,
+        ).rstrip("\n")
+        if "\0" not in reflog:
+            return False
+        reflog_value, message = reflog.split("\0", maxsplit=1)
+        action, separator, _outcome = message.partition(":")
+        if (
+            reflog_value != value
+            or not separator
+            or not action.startswith("fetch ")
+            or remote_name not in action.split()[1:]
+        ):
+            return False
+
+        fetch_head = git_directory / "FETCH_HEAD"
+        if fetch_head.is_symlink() or not fetch_head.is_file():
+            return False
+        branch = advertised_ref.removeprefix("refs/heads/")
+        expected_notes = {
+            f"branch '{branch}' of {url}"
+            for url in (remote_url, remote_url.removesuffix(".git"))
+        }
+        for line in fetch_head.read_text(encoding="utf-8").splitlines():
+            fields = line.split("\t", maxsplit=2)
+            if len(fields) == 3 and fields[0] == value and fields[2] in expected_notes:
+                return True
+        return False
 
     for component in COMPONENTS:
         path = root / component.name
@@ -728,18 +821,39 @@ def workspace_matches_initial_checkpoint(
         if grafts.exists() or grafts.is_symlink():
             return False
         local_remote_refs = local_remote_tracking_refs(path)
+        local_symbolic_refs = local_remote_symbolic_refs(path)
+        trusted_fetched_objects: set[str] = set()
         if recorded_remote_refs is not None:
             initial_remote_refs = recorded_remote_refs[component.name]
             assert isinstance(initial_remote_refs, dict)
+            if recorded_remote_symbolic_refs is not None:
+                initial_remote_symbolic_refs = recorded_remote_symbolic_refs[
+                    component.name
+                ]
+                assert isinstance(initial_remote_symbolic_refs, dict)
+                if local_symbolic_refs != initial_remote_symbolic_refs:
+                    return False
             # A failed child may already have fetched before it stopped. Treat
             # only the exact tracking-ref value currently advertised by that
-            # configured remote as disposable controller state.
+            # configured remote, or an exact value its last recorded fetch
+            # obtained there, as disposable controller state.
             for name, value in local_remote_refs.items():
                 if initial_remote_refs.get(name) == value:
                     continue
+                if name in local_symbolic_refs:
+                    if recorded_remote_symbolic_refs is None:
+                        return False
+                    continue
                 target = tracked_ref_target(name, expected_remotes)
-                if target is None or advertised_refs(target[0]).get(target[1]) != value:
+                if target is None:
                     return False
+                if advertised_refs(target[0]).get(target[1]) == value:
+                    continue
+                if not tracked_ref_was_fetched(
+                    path, git_directory, name, value, target
+                ):
+                    return False
+                trusted_fetched_objects.add(value)
             for name in initial_remote_refs.keys() - local_remote_refs.keys():
                 target = tracked_ref_target(name, expected_remotes)
                 if target is None or target[1] in advertised_refs(target[0]):
@@ -773,9 +887,8 @@ def workspace_matches_initial_checkpoint(
             missing = {
                 value
                 for value in new_recovery_objects
-                if not object_reachable_from_advertised_refs(
-                    path, value, advertised
-                )
+                if value not in trusted_fetched_objects
+                and not object_reachable_from_advertised_refs(path, value, advertised)
             }
             for name, url in expected_remotes.items():
                 if not missing or name == component.clone_remote:
@@ -867,6 +980,10 @@ def workspace_baseline_state(root: Path) -> dict[str, object]:
         },
         "remoteTrackingRefs": {
             component.name: local_remote_tracking_refs(root / component.name)
+            for component in COMPONENTS
+        },
+        "remoteSymbolicRefs": {
+            component.name: local_remote_symbolic_refs(root / component.name)
             for component in COMPONENTS
         },
         "recoveryObjects": {
@@ -1254,6 +1371,7 @@ def _materialize_locked(
                 "immutableTagRefs",
                 "recoveryObjects",
                 "remoteTrackingRefs",
+                "remoteSymbolicRefs",
                 "semanticTagTargets",
             )
         )
@@ -1299,6 +1417,7 @@ def _materialize_locked(
                 "immutableTagRefs",
                 "recoveryObjects",
                 "remoteTrackingRefs",
+                "remoteSymbolicRefs",
                 "semanticTagTargets",
             )
         )

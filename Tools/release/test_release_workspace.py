@@ -322,6 +322,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         original = checkpoint["mainRefs"]
         checkpoint.pop("immutableTagRefs")
         checkpoint.pop("remoteTrackingRefs")
+        checkpoint.pop("remoteSymbolicRefs")
         checkpoint.pop("recoveryObjects")
         checkpoint.pop("semanticTagTargets")
         WORKSPACE.atomic_json(release_root / WORKSPACE.WORKSPACE_MARKER, checkpoint)
@@ -384,6 +385,54 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             current,
         )
 
+    def test_resume_replaces_a_checkpoint_after_fetched_main_advances_again(
+        self,
+    ) -> None:
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        compose = release_root / "container-compose"
+        source = self.root / "sources" / "container-compose"
+        (source / "first.txt").write_text("first\n", encoding="utf-8")
+        self.git("add", "first.txt", cwd=source)
+        self.git("commit", "-m", "first advance", cwd=source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/main",
+            cwd=source,
+        )
+        self.git("fetch", "--prune", "--tags", "origin", cwd=compose)
+        fetched = self.git("rev-parse", "origin/main", cwd=compose).strip()
+
+        (source / "second.txt").write_text("second\n", encoding="utf-8")
+        self.git("add", "second.txt", cwd=source)
+        self.git("commit", "-m", "second advance", cwd=source)
+        current = self.git("rev-parse", "HEAD", cwd=source).strip()
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/main",
+            cwd=source,
+        )
+        self.assertNotEqual(fetched, current)
+        self.assertEqual(
+            self.git("rev-parse", "origin/main", cwd=compose).strip(),
+            fetched,
+        )
+
+        resumed = WORKSPACE.materialize(self.build_root, "-+-", self.remote_root)
+
+        self.assertEqual(resumed, release_root)
+        self.assertEqual(
+            self.git("rev-parse", "HEAD", cwd=resumed / "container-compose").strip(),
+            current,
+        )
+        self.assertEqual(
+            WORKSPACE.workspace_marker(resumed)["mainRefs"]["container-compose"],
+            current,
+        )
+
     def test_checkpoint_rejects_an_unadvertised_remote_tracking_alias(self) -> None:
         release_root = WORKSPACE.materialize(
             self.build_root, "-+-", self.remote_root
@@ -404,6 +453,61 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             )
         )
 
+    def test_resume_preserves_a_retargeted_remote_head(self) -> None:
+        source = self.root / "sources" / "container-compose"
+        self.git("branch", "release", cwd=source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "release:refs/heads/release",
+            cwd=source,
+        )
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        checkpoint = WORKSPACE.workspace_marker(release_root)
+        compose = release_root / "container-compose"
+        self.assertEqual(
+            checkpoint["remoteSymbolicRefs"]["container-compose"][
+                "refs/remotes/origin/HEAD"
+            ],
+            "refs/remotes/origin/main",
+        )
+
+        self.git("switch", "release", cwd=source)
+        (source / "release.txt").write_text("release\n", encoding="utf-8")
+        self.git("add", "release.txt", cwd=source)
+        self.git("commit", "-m", "advance release", cwd=source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/release",
+            cwd=source,
+        )
+        self.git(
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/release",
+            cwd=compose,
+        )
+        self.git("fetch", "origin", "release", cwd=compose)
+
+        resumed = WORKSPACE.materialize(self.build_root, "-+-", self.remote_root)
+
+        self.assertEqual(resumed, release_root)
+        self.assertEqual(
+            self.git(
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                cwd=resumed / "container-compose",
+            ).strip(),
+            "refs/remotes/origin/release",
+        )
+        self.assertEqual(
+            WORKSPACE.workspace_marker(resumed)["mainRefs"],
+            checkpoint["mainRefs"],
+        )
+
     def test_legacy_checkpoint_accepts_state_advertised_by_its_own_remote(
         self,
     ) -> None:
@@ -415,6 +519,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             "immutableTagRefs",
             "recoveryObjects",
             "remoteTrackingRefs",
+            "remoteSymbolicRefs",
             "semanticTagTargets",
         ):
             checkpoint.pop(field)
@@ -480,6 +585,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             "immutableTagRefs",
             "recoveryObjects",
             "remoteTrackingRefs",
+            "remoteSymbolicRefs",
             "semanticTagTargets",
         ):
             checkpoint.pop(field)
@@ -540,6 +646,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             "immutableTagRefs",
             "recoveryObjects",
             "remoteTrackingRefs",
+            "remoteSymbolicRefs",
             "semanticTagTargets",
         ):
             checkpoint.pop(field)
@@ -573,6 +680,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             "immutableTagRefs",
             "recoveryObjects",
             "remoteTrackingRefs",
+            "remoteSymbolicRefs",
             "semanticTagTargets",
         ):
             checkpoint.pop(field)
@@ -635,6 +743,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             "immutableTagRefs",
             "recoveryObjects",
             "remoteTrackingRefs",
+            "remoteSymbolicRefs",
             "semanticTagTargets",
         ):
             checkpoint.pop(field)
@@ -659,6 +768,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         self.assertNotIn("immutableTagRefs", marker)
         self.assertNotIn("recoveryObjects", marker)
         self.assertNotIn("remoteTrackingRefs", marker)
+        self.assertNotIn("remoteSymbolicRefs", marker)
         self.assertNotIn("semanticTagTargets", marker)
         self.assertEqual(
             self.git(
@@ -1344,6 +1454,93 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         self.assertEqual(resumed_again, existing)
         self.assertEqual(retained.read_text(encoding="utf-8"), "operator work\n")
 
+    def test_reused_legacy_destination_preserves_a_retargeted_remote_head(
+        self,
+    ) -> None:
+        compose_source = self.root / "sources" / "container-compose"
+        self.git("branch", "release", cwd=compose_source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "release:refs/heads/release",
+            cwd=compose_source,
+        )
+        old_symbolic = WORKSPACE.materialize(
+            self.build_root, "--+", self.remote_root
+        )
+        self.git("tag", "0.14.3", cwd=compose_source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "refs/tags/0.14.3",
+            cwd=compose_source,
+        )
+        existing = WORKSPACE.materialize(
+            self.build_root, "0.14.4", self.remote_root
+        )
+        marker_path = existing / WORKSPACE.WORKSPACE_MARKER
+        marker = WORKSPACE.workspace_marker(existing)
+        marker.pop("remoteSymbolicRefs")
+        WORKSPACE.atomic_json(marker_path, marker)
+
+        resumed = WORKSPACE.materialize(self.build_root, "--+", self.remote_root)
+
+        self.assertEqual(resumed, existing)
+        self.assertFalse(old_symbolic.exists())
+        self.assertEqual(
+            WORKSPACE.workspace_marker(resumed)["remoteSymbolicRefs"][
+                "container-compose"
+            ]["refs/remotes/origin/HEAD"],
+            "refs/remotes/origin/main",
+        )
+
+        compose = resumed / "container-compose"
+        self.git("switch", "release", cwd=compose_source)
+        (compose_source / "release.txt").write_text(
+            "release\n", encoding="utf-8"
+        )
+        self.git("add", "release.txt", cwd=compose_source)
+        self.git("commit", "-m", "advance release", cwd=compose_source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/release",
+            cwd=compose_source,
+        )
+        self.git(
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/release",
+            cwd=compose,
+        )
+        self.git("fetch", "origin", "release", cwd=compose)
+        dependency = self.root / "sources" / "containerization"
+        (dependency / "new-runtime.txt").write_text(
+            "new runtime\n", encoding="utf-8"
+        )
+        self.git("add", "new-runtime.txt", cwd=dependency)
+        self.git("commit", "-m", "advance main", cwd=dependency)
+        self.git(
+            "push",
+            str(self.remote_root / "containerization.git"),
+            "HEAD:refs/heads/main",
+            cwd=dependency,
+        )
+
+        resumed_again = WORKSPACE.materialize(
+            self.build_root, "--+", self.remote_root
+        )
+
+        self.assertEqual(resumed_again, existing)
+        self.assertEqual(
+            self.git(
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                cwd=resumed_again / "container-compose",
+            ).strip(),
+            "refs/remotes/origin/release",
+        )
+
     def test_reused_destination_does_not_rebaseline_an_unpushed_tag(self) -> None:
         old_symbolic = WORKSPACE.materialize(
             self.build_root, "--+", self.remote_root
@@ -1975,6 +2172,48 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         marker_path.write_text(json.dumps(marker), encoding="utf-8")
         WORKSPACE.cleanup(release_root, self.build_root)
         self.assertFalse(release_root.exists())
+
+    def test_malformed_remote_symbolic_ref_baselines_are_rejected(self) -> None:
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        marker_path = release_root / WORKSPACE.WORKSPACE_MARKER
+        marker = WORKSPACE.workspace_marker(release_root)
+        components = [component.name for component in WORKSPACE.COMPONENTS]
+        valid = {component: {} for component in components}
+        malformed = {
+            "non-object": [],
+            "missing-component": {
+                component: {} for component in components[1:]
+            },
+            "non-object-component": {
+                **valid,
+                components[0]: [],
+            },
+            "invalid-ref-name": {
+                **valid,
+                components[0]: {"origin/HEAD": "refs/remotes/origin/main"},
+            },
+            "invalid-symbolic-target": {
+                **valid,
+                components[0]: {
+                    "refs/remotes/origin/HEAD": "refs/heads/main"
+                },
+            },
+        }
+
+        for name, remote_symbolic_refs in malformed.items():
+            with self.subTest(name=name):
+                damaged = dict(marker)
+                damaged["remoteSymbolicRefs"] = remote_symbolic_refs
+                WORKSPACE.atomic_json(marker_path, damaged)
+                with self.assertRaisesRegex(
+                    WORKSPACE.WorkspaceError,
+                    "remote symbolic refs are invalid",
+                ):
+                    WORKSPACE.verify_workspace(release_root, self.build_root)
+
+        WORKSPACE.atomic_json(marker_path, marker)
 
     def test_live_claim_blocks_concurrent_release_and_can_be_cleared(self) -> None:
         release_root = WORKSPACE.materialize(
