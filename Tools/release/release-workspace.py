@@ -1417,6 +1417,7 @@ def _materialize_locked(
                 "immutableTagRefs",
                 "recoveryObjects",
                 "remoteTrackingRefs",
+                "remoteSymbolicRefs",
                 "semanticTagTargets",
             )
         )

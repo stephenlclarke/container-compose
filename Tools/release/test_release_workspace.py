@@ -1454,6 +1454,93 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         self.assertEqual(resumed_again, existing)
         self.assertEqual(retained.read_text(encoding="utf-8"), "operator work\n")
 
+    def test_reused_legacy_destination_preserves_a_retargeted_remote_head(
+        self,
+    ) -> None:
+        compose_source = self.root / "sources" / "container-compose"
+        self.git("branch", "release", cwd=compose_source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "release:refs/heads/release",
+            cwd=compose_source,
+        )
+        old_symbolic = WORKSPACE.materialize(
+            self.build_root, "--+", self.remote_root
+        )
+        self.git("tag", "0.14.3", cwd=compose_source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "refs/tags/0.14.3",
+            cwd=compose_source,
+        )
+        existing = WORKSPACE.materialize(
+            self.build_root, "0.14.4", self.remote_root
+        )
+        marker_path = existing / WORKSPACE.WORKSPACE_MARKER
+        marker = WORKSPACE.workspace_marker(existing)
+        marker.pop("remoteSymbolicRefs")
+        WORKSPACE.atomic_json(marker_path, marker)
+
+        resumed = WORKSPACE.materialize(self.build_root, "--+", self.remote_root)
+
+        self.assertEqual(resumed, existing)
+        self.assertFalse(old_symbolic.exists())
+        self.assertEqual(
+            WORKSPACE.workspace_marker(resumed)["remoteSymbolicRefs"][
+                "container-compose"
+            ]["refs/remotes/origin/HEAD"],
+            "refs/remotes/origin/main",
+        )
+
+        compose = resumed / "container-compose"
+        self.git("switch", "release", cwd=compose_source)
+        (compose_source / "release.txt").write_text(
+            "release\n", encoding="utf-8"
+        )
+        self.git("add", "release.txt", cwd=compose_source)
+        self.git("commit", "-m", "advance release", cwd=compose_source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/release",
+            cwd=compose_source,
+        )
+        self.git(
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/release",
+            cwd=compose,
+        )
+        self.git("fetch", "origin", "release", cwd=compose)
+        dependency = self.root / "sources" / "containerization"
+        (dependency / "new-runtime.txt").write_text(
+            "new runtime\n", encoding="utf-8"
+        )
+        self.git("add", "new-runtime.txt", cwd=dependency)
+        self.git("commit", "-m", "advance main", cwd=dependency)
+        self.git(
+            "push",
+            str(self.remote_root / "containerization.git"),
+            "HEAD:refs/heads/main",
+            cwd=dependency,
+        )
+
+        resumed_again = WORKSPACE.materialize(
+            self.build_root, "--+", self.remote_root
+        )
+
+        self.assertEqual(resumed_again, existing)
+        self.assertEqual(
+            self.git(
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                cwd=resumed_again / "container-compose",
+            ).strip(),
+            "refs/remotes/origin/release",
+        )
+
     def test_reused_destination_does_not_rebaseline_an_unpushed_tag(self) -> None:
         old_symbolic = WORKSPACE.materialize(
             self.build_root, "--+", self.remote_root
