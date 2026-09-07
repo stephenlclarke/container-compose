@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `eee7ad097079cc3b02d5309ec10160143f2d0c6a` | `d8ccda0fd6f3c24ecfb399f40b50850ce2fa136a` | 0 | 792 | 667 |
+| `container` | `eee7ad097079cc3b02d5309ec10160143f2d0c6a` | `24c4726d104859149f9227007822dd79edbfa88d` | 0 | 795 | 669 |
 | `containerization` | `847655d373a27b8b8d0c3a9747f04f16b5de1206` | `f9d57ad1c80944c43bec6fc74afe1bfac3956480` | 0 | 303 | 239 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `f99e66b8940242d6ea8bed448619ba61f3f6f1a5` | 0 | 55 | 45 |
-| **Total** | | | **0** | **1150** | **951** |
+| **Total** | | | **0** | **1153** | **953** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,7 +32,7 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 695 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `support-maintenance` | 697 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
 | `generic-runtime-primitive` | 231 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
@@ -305,3 +305,10 @@ pin at `25399784a692` and the builder shim's module-derived Go toolchain fix at
 `8538b2e7931f` are support maintenance. They make the matched build
 reproducible without adding runtime behaviour or changing any temporary port,
 generic primitive, or rejected Compose-policy disposition.
+
+The machine-runtime release repair advances Container through
+`24c4726d1048`. Numeric user resolution at `8372b65b66f1` and serialized
+completed-exec cleanup at `7601ceca01d4` are independently reviewed bug fixes,
+so both are support maintenance. They restore existing runtime behaviour
+without adding a generic primitive or changing any temporary port or rejected
+Compose-policy disposition.
