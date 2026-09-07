@@ -264,6 +264,19 @@ def remote_reachable_objects(url: str) -> set[str]:
     return objects
 
 
+def expected_fetch_remotes(component: Component, clone_url: str) -> dict[str, str]:
+    """Return the exact, controller-owned fetch remotes for a component."""
+
+    remotes = {component.clone_remote: clone_url}
+    if component.upstream is None:
+        return remotes
+    upstream_url = f"https://github.com/{component.upstream}.git"
+    remotes["upstream"] = upstream_url
+    if component.clone_remote == "fork":
+        remotes["origin"] = upstream_url
+    return remotes
+
+
 def remote_snapshot(
     remote_root: Path | None = None,
 ) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
@@ -625,9 +638,26 @@ def workspace_matches_initial_checkpoint(
     assert recorded_recovery_objects is None or isinstance(
         recorded_recovery_objects, dict
     )
+    advertised_by_url: dict[str, set[str]] = {}
+
+    def advertised_objects(url: str) -> set[str]:
+        if url not in advertised_by_url:
+            advertised_by_url[url] = remote_reachable_objects(url)
+        return advertised_by_url[url]
+
     for component in COMPONENTS:
         path = root / component.name
         expected = refs[component.name]
+        clone_url = str(remotes[component.name])
+        expected_remotes = expected_fetch_remotes(component, clone_url)
+        actual_remotes = set(run_git("remote", cwd=path).splitlines())
+        if actual_remotes != set(expected_remotes):
+            return False
+        if any(
+            run_git("remote", "get-url", name, cwd=path).strip() != url
+            for name, url in expected_remotes.items()
+        ):
+            return False
         if run_git("branch", "--show-current", cwd=path).strip() != "main":
             return False
         if run_git("rev-parse", "HEAD", cwd=path).strip() != expected:
@@ -650,10 +680,21 @@ def workspace_matches_initial_checkpoint(
             if local_remote_refs != initial_remote_refs:
                 return False
         else:
-            recoverable = remote_reachable_objects(str(remotes[component.name]))
-            recoverable.add(str(expected))
-            if any(value not in recoverable for value in local_remote_refs.values()):
-                return False
+            for name, value in local_remote_refs.items():
+                suffix = name.removeprefix("refs/remotes/")
+                remote_name, separator, _ = suffix.partition("/")
+                if (
+                    not separator
+                    or remote_name not in expected_remotes
+                    or (
+                        value not in advertised_objects(expected_remotes[remote_name])
+                        and not (
+                            remote_name == component.clone_remote
+                            and value == expected
+                        )
+                    )
+                ):
+                    return False
         recovery_objects = set(local_recovery_objects(path))
         if recorded_recovery_objects is not None:
             initial_recovery_objects = recorded_recovery_objects[component.name]
@@ -662,9 +703,14 @@ def workspace_matches_initial_checkpoint(
         else:
             new_recovery_objects = recovery_objects
         if new_recovery_objects:
-            recoverable = remote_reachable_objects(str(remotes[component.name]))
+            recoverable = set(advertised_objects(clone_url))
             recoverable.add(str(expected))
-            if new_recovery_objects - recoverable:
+            missing = new_recovery_objects - recoverable
+            for name, url in expected_remotes.items():
+                if not missing or name == component.clone_remote:
+                    continue
+                missing -= advertised_objects(url)
+            if missing:
                 return False
         repository_refs = run_git(
             "for-each-ref", "--format=%(refname)", cwd=path
