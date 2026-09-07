@@ -19,7 +19,7 @@ import PackageDescription
 
 let containerDependency: Package.Dependency = .package(
     url: "https://github.com/stephenlclarke/container.git",
-    revision: "d8ccda0fd6f3c24ecfb399f40b50850ce2fa136a",
+    revision: "24c4726d104859149f9227007822dd79edbfa88d",
 )
 
 let containerizationDependency: Package.Dependency = .package(
