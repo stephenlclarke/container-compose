@@ -349,6 +349,61 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         )
         self.assertTrue((resumed / "containerization" / "new-runtime.txt").is_file())
 
+    def test_resume_replaces_a_checkpoint_after_its_fetch_advances_main(self) -> None:
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        checkpoint = WORKSPACE.workspace_marker(release_root)
+        compose = release_root / "container-compose"
+        source = self.root / "sources" / "container-compose"
+        (source / "new-compose.txt").write_text("new compose\n", encoding="utf-8")
+        self.git("add", "new-compose.txt", cwd=source)
+        self.git("commit", "-m", "advance main", cwd=source)
+        current = self.git("rev-parse", "HEAD", cwd=source).strip()
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/main",
+            cwd=source,
+        )
+        self.git("fetch", "origin", "main", cwd=compose)
+        self.assertNotEqual(
+            WORKSPACE.local_remote_tracking_refs(compose),
+            checkpoint["remoteTrackingRefs"]["container-compose"],
+        )
+
+        resumed = WORKSPACE.materialize(self.build_root, "-+-", self.remote_root)
+
+        self.assertEqual(resumed, release_root)
+        self.assertEqual(
+            self.git("rev-parse", "HEAD", cwd=resumed / "container-compose").strip(),
+            current,
+        )
+        self.assertEqual(
+            WORKSPACE.workspace_marker(resumed)["mainRefs"]["container-compose"],
+            current,
+        )
+
+    def test_checkpoint_rejects_an_unadvertised_remote_tracking_alias(self) -> None:
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        checkpoint = WORKSPACE.workspace_marker(release_root)
+        compose = release_root / "container-compose"
+        self.git(
+            "update-ref",
+            "refs/remotes/origin/operator-work",
+            "origin/main",
+            cwd=compose,
+        )
+
+        self.assertFalse(
+            WORKSPACE.workspace_matches_initial_checkpoint(
+                release_root,
+                checkpoint,
+            )
+        )
+
     def test_legacy_checkpoint_accepts_state_advertised_by_its_own_remote(
         self,
     ) -> None:

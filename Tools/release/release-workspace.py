@@ -662,11 +662,36 @@ def workspace_matches_initial_checkpoint(
         recorded_recovery_objects, dict
     )
     advertised_by_url: dict[str, set[str]] = {}
+    advertised_refs_by_url: dict[str, dict[str, str]] = {}
 
     def advertised_objects(url: str) -> set[str]:
+        if url in advertised_refs_by_url:
+            return set(advertised_refs_by_url[url].values())
         if url not in advertised_by_url:
             advertised_by_url[url] = remote_reachable_objects(url)
         return advertised_by_url[url]
+
+    def advertised_refs(url: str) -> dict[str, str]:
+        if url not in advertised_refs_by_url:
+            refs: dict[str, str] = {}
+            for line in run_git("ls-remote", url).splitlines():
+                fields = line.split()
+                if len(fields) != 2 or not SHA.fullmatch(fields[0]):
+                    raise WorkspaceError(f"could not inspect remote refs at {url}")
+                refs[fields[1]] = fields[0]
+            advertised_refs_by_url[url] = refs
+            advertised_by_url[url] = set(refs.values())
+        return advertised_refs_by_url[url]
+
+    def tracked_ref_target(
+        ref: str, expected_remotes: dict[str, str]
+    ) -> tuple[str, str] | None:
+        suffix = ref.removeprefix("refs/remotes/")
+        remote_name, separator, remote_ref = suffix.partition("/")
+        if not separator or remote_name not in expected_remotes:
+            return None
+        advertised_ref = "HEAD" if remote_ref == "HEAD" else f"refs/heads/{remote_ref}"
+        return expected_remotes[remote_name], advertised_ref
 
     for component in COMPONENTS:
         path = root / component.name
@@ -706,8 +731,19 @@ def workspace_matches_initial_checkpoint(
         if recorded_remote_refs is not None:
             initial_remote_refs = recorded_remote_refs[component.name]
             assert isinstance(initial_remote_refs, dict)
-            if local_remote_refs != initial_remote_refs:
-                return False
+            # A failed child may already have fetched before it stopped. Treat
+            # only the exact tracking-ref value currently advertised by that
+            # configured remote as disposable controller state.
+            for name, value in local_remote_refs.items():
+                if initial_remote_refs.get(name) == value:
+                    continue
+                target = tracked_ref_target(name, expected_remotes)
+                if target is None or advertised_refs(target[0]).get(target[1]) != value:
+                    return False
+            for name in initial_remote_refs.keys() - local_remote_refs.keys():
+                target = tracked_ref_target(name, expected_remotes)
+                if target is None or target[1] in advertised_refs(target[0]):
+                    return False
         else:
             for name, value in local_remote_refs.items():
                 suffix = name.removeprefix("refs/remotes/")
