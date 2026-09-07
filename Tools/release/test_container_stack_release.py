@@ -1998,6 +1998,20 @@ github_cli() {{
         self.assertIn("name: Fail-Fast Release Configuration", workflow)
         self.assertIn("name: Checkout immutable release control tools", fail_fast)
         self.assertIn("ref: ${{ github.sha }}", fail_fast)
+        self.assertIn("name: Require Current stack pins to match fork mains", fail_fast)
+        self.assertIn(
+            "for component in container-builder-shim containerization container",
+            fail_fast,
+        )
+        self.assertIn('gh api "repos/${repository}/commits/main"', fail_fast)
+        self.assertIn(
+            "update the stack pin before packaging",
+            fail_fast,
+        )
+        self.assertLess(
+            fail_fast.index("name: Require Current stack pins to match fork mains"),
+            fail_fast.index("name: Require a writable Homebrew promotion token"),
+        )
         self.assertIn(
             "python3 release-tools/Tools/release/homebrew-preflight.py", fail_fast
         )
@@ -2012,6 +2026,18 @@ github_cli() {{
             workflow.index("name: CodeQL"),
         )
         self.assertLess(workflow.index("name: CodeQL"), workflow.index("name: Package"))
+        freshness = workflow[
+            workflow.index("- name: Verify current source is still latest") : workflow.index(
+                "- name: Checkout immutable release control tools",
+                workflow.index("- name: Verify current source is still latest"),
+            )
+        ]
+        self.assertIn(
+            "for component in container-builder-shim containerization container",
+            freshness,
+        )
+        self.assertIn("Skipping stale Current stack", freshness)
+        self.assertIn("publish=false", freshness)
         local_gate = self.script[
             self.script.index("run_local_release_gate() {") : self.script.index(
                 "sync_containerization_package_pins() {"
