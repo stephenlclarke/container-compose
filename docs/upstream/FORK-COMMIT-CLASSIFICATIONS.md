@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `eee7ad097079cc3b02d5309ec10160143f2d0c6a` | `40ab92d74a02bbd6b7436a50d47c38898a4bc294` | 0 | 788 | 665 |
+| `container` | `eee7ad097079cc3b02d5309ec10160143f2d0c6a` | `aaacb3ed973f9e47434fc14335f87a4a42a1f2ad` | 0 | 790 | 666 |
 | `containerization` | `847655d373a27b8b8d0c3a9747f04f16b5de1206` | `f9d57ad1c80944c43bec6fc74afe1bfac3956480` | 0 | 303 | 239 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `287f2ea3276eca73cd3781ff59b4c9c82d5f3d32` | 0 | 53 | 44 |
-| **Total** | | | **0** | **1144** | **948** |
+| **Total** | | | **0** | **1146** | **949** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,7 +32,7 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 692 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `support-maintenance` | 693 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
 | `generic-runtime-primitive` | 231 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
@@ -293,3 +293,8 @@ socket grant is a generic runtime primitive consumed by Compose
 `use_api_socket`. Apple's Pi agent support is upstream history after the
 reviewed synchronization merge, so it adds no fork-only classification. No
 temporary port or rejected Compose-policy disposition changed.
+
+The final 7 September 2026 release refresh advances Container through
+`aaacb3ed973f`. Its exact Containerization dependency pin at `09acdc2f1df2`
+is support maintenance and adds no new runtime behaviour. No generic runtime
+primitive, temporary port, or rejected Compose-policy disposition changed.
