@@ -349,6 +349,96 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         )
         self.assertTrue((resumed / "containerization" / "new-runtime.txt").is_file())
 
+    def test_legacy_checkpoint_accepts_state_advertised_by_its_own_remote(
+        self,
+    ) -> None:
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        checkpoint = WORKSPACE.workspace_marker(release_root)
+        for field in (
+            "immutableTagRefs",
+            "recoveryObjects",
+            "remoteTrackingRefs",
+            "semanticTagTargets",
+        ):
+            checkpoint.pop(field)
+        WORKSPACE.atomic_json(release_root / WORKSPACE.WORKSPACE_MARKER, checkpoint)
+        containerization = release_root / "containerization"
+        initial = self.git("rev-parse", "HEAD", cwd=containerization).strip()
+        (containerization / "upstream.txt").write_text(
+            "upstream work\n", encoding="utf-8"
+        )
+        self.git("add", "upstream.txt", cwd=containerization)
+        self.git("commit", "-m", "upstream work", cwd=containerization)
+        upstream_commit = self.git(
+            "rev-parse", "HEAD", cwd=containerization
+        ).strip()
+        self.git("reset", "--hard", initial, cwd=containerization)
+        self.git(
+            "update-ref",
+            "refs/remotes/upstream/main",
+            upstream_commit,
+            cwd=containerization,
+        )
+        source = self.root / "sources" / "container-compose"
+        (source / "new-compose.txt").write_text("new compose\n", encoding="utf-8")
+        self.git("add", "new-compose.txt", cwd=source)
+        self.git("commit", "-m", "advance main", cwd=source)
+        current = self.git("rev-parse", "HEAD", cwd=source).strip()
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/main",
+            cwd=source,
+        )
+        reachable = WORKSPACE.remote_reachable_objects
+
+        def configured_remote_objects(url: str) -> set[str]:
+            if url == "https://github.com/apple/containerization.git":
+                return {upstream_commit}
+            return reachable(url)
+
+        with mock.patch.object(
+            WORKSPACE,
+            "remote_reachable_objects",
+            side_effect=configured_remote_objects,
+        ):
+            resumed = WORKSPACE.materialize(
+                self.build_root, "-+-", self.remote_root
+            )
+
+        self.assertEqual(resumed, release_root)
+        self.assertEqual(
+            WORKSPACE.workspace_marker(resumed)["mainRefs"]["container-compose"],
+            current,
+        )
+
+    def test_resume_preserves_an_additional_remote_when_main_moves(self) -> None:
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        compose = release_root / "container-compose"
+        scratch = str(self.remote_root / "container-compose.git")
+        self.git("remote", "add", "scratch", scratch, cwd=compose)
+        source = self.root / "sources" / "containerization"
+        (source / "new-runtime.txt").write_text("new runtime\n", encoding="utf-8")
+        self.git("add", "new-runtime.txt", cwd=source)
+        self.git("commit", "-m", "advance main", cwd=source)
+        self.git(
+            "push",
+            str(self.remote_root / "containerization.git"),
+            "HEAD:refs/heads/main",
+            cwd=source,
+        )
+
+        resumed = WORKSPACE.materialize(self.build_root, "-+-", self.remote_root)
+
+        self.assertEqual(resumed, release_root)
+        self.assertEqual(
+            self.git("remote", "get-url", "scratch", cwd=compose).strip(), scratch
+        )
+
     def test_legacy_baseline_upgrade_does_not_capture_concurrent_state(self) -> None:
         release_root = WORKSPACE.materialize(
             self.build_root, "-+-", self.remote_root
