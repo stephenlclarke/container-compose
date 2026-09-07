@@ -322,6 +322,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         original = checkpoint["mainRefs"]
         checkpoint.pop("immutableTagRefs")
         checkpoint.pop("remoteTrackingRefs")
+        checkpoint.pop("remoteSymbolicRefs")
         checkpoint.pop("recoveryObjects")
         checkpoint.pop("semanticTagTargets")
         WORKSPACE.atomic_json(release_root / WORKSPACE.WORKSPACE_MARKER, checkpoint)
@@ -452,6 +453,61 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             )
         )
 
+    def test_resume_preserves_a_retargeted_remote_head(self) -> None:
+        source = self.root / "sources" / "container-compose"
+        self.git("branch", "release", cwd=source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "release:refs/heads/release",
+            cwd=source,
+        )
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        checkpoint = WORKSPACE.workspace_marker(release_root)
+        compose = release_root / "container-compose"
+        self.assertEqual(
+            checkpoint["remoteSymbolicRefs"]["container-compose"][
+                "refs/remotes/origin/HEAD"
+            ],
+            "refs/remotes/origin/main",
+        )
+
+        self.git("switch", "release", cwd=source)
+        (source / "release.txt").write_text("release\n", encoding="utf-8")
+        self.git("add", "release.txt", cwd=source)
+        self.git("commit", "-m", "advance release", cwd=source)
+        self.git(
+            "push",
+            str(self.remote_root / "container-compose.git"),
+            "HEAD:refs/heads/release",
+            cwd=source,
+        )
+        self.git(
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/release",
+            cwd=compose,
+        )
+        self.git("fetch", "origin", "release", cwd=compose)
+
+        resumed = WORKSPACE.materialize(self.build_root, "-+-", self.remote_root)
+
+        self.assertEqual(resumed, release_root)
+        self.assertEqual(
+            self.git(
+                "symbolic-ref",
+                "refs/remotes/origin/HEAD",
+                cwd=resumed / "container-compose",
+            ).strip(),
+            "refs/remotes/origin/release",
+        )
+        self.assertEqual(
+            WORKSPACE.workspace_marker(resumed)["mainRefs"],
+            checkpoint["mainRefs"],
+        )
+
     def test_legacy_checkpoint_accepts_state_advertised_by_its_own_remote(
         self,
     ) -> None:
@@ -463,6 +519,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             "immutableTagRefs",
             "recoveryObjects",
             "remoteTrackingRefs",
+            "remoteSymbolicRefs",
             "semanticTagTargets",
         ):
             checkpoint.pop(field)
@@ -528,6 +585,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             "immutableTagRefs",
             "recoveryObjects",
             "remoteTrackingRefs",
+            "remoteSymbolicRefs",
             "semanticTagTargets",
         ):
             checkpoint.pop(field)
@@ -588,6 +646,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             "immutableTagRefs",
             "recoveryObjects",
             "remoteTrackingRefs",
+            "remoteSymbolicRefs",
             "semanticTagTargets",
         ):
             checkpoint.pop(field)
@@ -621,6 +680,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             "immutableTagRefs",
             "recoveryObjects",
             "remoteTrackingRefs",
+            "remoteSymbolicRefs",
             "semanticTagTargets",
         ):
             checkpoint.pop(field)
@@ -683,6 +743,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             "immutableTagRefs",
             "recoveryObjects",
             "remoteTrackingRefs",
+            "remoteSymbolicRefs",
             "semanticTagTargets",
         ):
             checkpoint.pop(field)
@@ -707,6 +768,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         self.assertNotIn("immutableTagRefs", marker)
         self.assertNotIn("recoveryObjects", marker)
         self.assertNotIn("remoteTrackingRefs", marker)
+        self.assertNotIn("remoteSymbolicRefs", marker)
         self.assertNotIn("semanticTagTargets", marker)
         self.assertEqual(
             self.git(

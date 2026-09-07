@@ -222,6 +222,28 @@ def local_remote_tracking_refs(path: Path) -> dict[str, str]:
     return refs
 
 
+def local_remote_symbolic_refs(path: Path) -> dict[str, str]:
+    refs: dict[str, str] = {}
+    lines = run_git(
+        "for-each-ref",
+        "--format=%(refname) %(symref)",
+        "refs/remotes",
+        cwd=path,
+    ).splitlines()
+    for line in lines:
+        fields = line.split()
+        if len(fields) == 1:
+            continue
+        if (
+            len(fields) != 2
+            or not fields[0].startswith("refs/remotes/")
+            or not fields[1].startswith("refs/remotes/")
+        ):
+            raise WorkspaceError(f"could not inspect remote symbolic refs in {path}")
+        refs[fields[0]] = fields[1]
+    return refs
+
+
 def local_recovery_objects(path: Path) -> list[str]:
     """Return objects protected by reflogs or Git recovery pseudorefs."""
 
@@ -653,11 +675,15 @@ def workspace_matches_initial_checkpoint(
     remotes = marker["remoteUrls"]
     recorded_tags = marker.get("immutableTagRefs")
     recorded_remote_refs = marker.get("remoteTrackingRefs")
+    recorded_remote_symbolic_refs = marker.get("remoteSymbolicRefs")
     recorded_recovery_objects = marker.get("recoveryObjects")
     assert isinstance(refs, dict)
     assert isinstance(remotes, dict)
     assert recorded_tags is None or isinstance(recorded_tags, dict)
     assert recorded_remote_refs is None or isinstance(recorded_remote_refs, dict)
+    assert recorded_remote_symbolic_refs is None or isinstance(
+        recorded_remote_symbolic_refs, dict
+    )
     assert recorded_recovery_objects is None or isinstance(
         recorded_recovery_objects, dict
     )
@@ -776,10 +802,18 @@ def workspace_matches_initial_checkpoint(
         if grafts.exists() or grafts.is_symlink():
             return False
         local_remote_refs = local_remote_tracking_refs(path)
+        local_symbolic_refs = local_remote_symbolic_refs(path)
         trusted_fetched_objects: set[str] = set()
         if recorded_remote_refs is not None:
             initial_remote_refs = recorded_remote_refs[component.name]
             assert isinstance(initial_remote_refs, dict)
+            if recorded_remote_symbolic_refs is not None:
+                initial_remote_symbolic_refs = recorded_remote_symbolic_refs[
+                    component.name
+                ]
+                assert isinstance(initial_remote_symbolic_refs, dict)
+                if local_symbolic_refs != initial_remote_symbolic_refs:
+                    return False
             # A failed child may already have fetched before it stopped. Treat
             # only the exact tracking-ref value currently advertised by that
             # configured remote, or an exact value its last recorded fetch
@@ -787,18 +821,8 @@ def workspace_matches_initial_checkpoint(
             for name, value in local_remote_refs.items():
                 if initial_remote_refs.get(name) == value:
                     continue
-                symbolic_target = run_git(
-                    "for-each-ref",
-                    "--format=%(symref)",
-                    name,
-                    cwd=path,
-                ).strip()
-                if symbolic_target:
-                    if (
-                        local_remote_refs.get(symbolic_target) != value
-                        or initial_remote_refs.get(symbolic_target)
-                        != initial_remote_refs.get(name)
-                    ):
+                if name in local_symbolic_refs:
+                    if recorded_remote_symbolic_refs is None:
                         return False
                     continue
                 target = tracked_ref_target(name, expected_remotes)
@@ -937,6 +961,10 @@ def workspace_baseline_state(root: Path) -> dict[str, object]:
         },
         "remoteTrackingRefs": {
             component.name: local_remote_tracking_refs(root / component.name)
+            for component in COMPONENTS
+        },
+        "remoteSymbolicRefs": {
+            component.name: local_remote_symbolic_refs(root / component.name)
             for component in COMPONENTS
         },
         "recoveryObjects": {
@@ -1324,6 +1352,7 @@ def _materialize_locked(
                 "immutableTagRefs",
                 "recoveryObjects",
                 "remoteTrackingRefs",
+                "remoteSymbolicRefs",
                 "semanticTagTargets",
             )
         )
