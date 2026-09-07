@@ -238,7 +238,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         stack_source = '"CONTAINERIZATION_STACK_REPO=${containerization_path}"'
 
         self.assertIn("stage_local_validation_checkout() {", self.script)
-        self.assertIn("clone --no-local --no-checkout --quiet", self.script)
+        self.assertIn("fetch --quiet --no-tags", self.script)
+        self.assertIn('--depth=1 origin "${source_commit}"', self.script)
         self.assertIn("remote remove origin", self.script)
         self.assertIn("objects/info/alternates", self.script)
         self.assertIn(staging, local_gate)
@@ -405,6 +406,69 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "--full",
                 "--strict",
                 "--no-dangling",
+            )
+
+    def test_local_validation_checkout_ignores_unrelated_missing_objects(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            staged = root / "staged"
+            source.mkdir()
+            self.run_command("git", "-C", str(source), "init", "-b", "main", "--quiet")
+            self.configure_repo(source)
+            (source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+            self.run_command("git", "-C", str(source), "add", "tracked.txt")
+            self.run_command("git", "-C", str(source), "commit", "--quiet", "-m", "main")
+            source_commit = self.git(source, "rev-parse", "HEAD")
+
+            self.run_command("git", "-C", str(source), "checkout", "-b", "unrelated", "--quiet")
+            unrelated = source / "unrelated.txt"
+            unrelated.write_text("unrelated historical object\n", encoding="utf-8")
+            self.run_command("git", "-C", str(source), "add", "unrelated.txt")
+            self.run_command(
+                "git", "-C", str(source), "commit", "--quiet", "-m", "unrelated"
+            )
+            unrelated_blob = self.git(source, "rev-parse", "HEAD:unrelated.txt")
+            self.run_command("git", "-C", str(source), "checkout", "main", "--quiet")
+            object_path = source / ".git" / "objects" / unrelated_blob[:2] / unrelated_blob[2:]
+            object_path.unlink()
+            self.run_command(
+                "git", "-C", str(source), "config", "remote.origin.promisor", "true"
+            )
+            self.run_command(
+                "git", "-C", str(source), "config", "remote.origin.partialclonefilter", "blob:none"
+            )
+
+            (source / "bin").mkdir()
+            (source / "bin" / "vmlinux-arm64").write_bytes(b"kernel")
+            (source / ".local" / "bin").mkdir(parents=True)
+            source_hawkeye = source / ".local" / "bin" / "hawkeye"
+            source_hawkeye.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            source_hawkeye.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                (
+                    "stage_local_validation_checkout "
+                    f"{shlex.quote(str(source))} {shlex.quote(str(staged))}"
+                ),
+                shell="/bin/bash",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(self.git(staged, "rev-parse", "HEAD"), source_commit)
+            self.assertEqual(self.git(staged, "remote"), "")
+            self.run_command(
+                "git",
+                "-C",
+                str(staged),
+                "fsck",
+                "--full",
+                "--strict",
+                "--no-dangling",
+                source_commit,
             )
 
     def test_stable_containerization_checkout_is_marked_and_git_clean(self) -> None:
@@ -5003,6 +5067,29 @@ esac
                 log.read_text(encoding="utf-8").splitlines(),
                 [f"kickstart {label}"],
             )
+
+    def test_restore_accepts_an_empty_runner_set_under_system_bash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.run_release_function(
+                Path(directory),
+                "restore_quiesced_release_launch_agents; "
+                "test ${#RELEASE_QUIESCED_LABELS[@]} -eq 0; "
+                "test ${#RELEASE_QUIESCED_PLISTS[@]} -eq 0; "
+                "test ${#RELEASE_QUIESCED_ACTION_STARTED[@]} -eq 0; "
+                "test ${#RELEASE_QUIESCED_DEADLINES[@]} -eq 0; "
+                "test ${#RELEASE_QUIESCED_RESTARTED_UNREADY[@]} -eq 0",
+                shell="/bin/bash",
+                shell_setup=(
+                    "RELEASE_QUIESCED_LABELS=()\n"
+                    "RELEASE_QUIESCED_PLISTS=()\n"
+                    "RELEASE_QUIESCED_ACTION_STARTED=()\n"
+                    "RELEASE_QUIESCED_DEADLINES=()\n"
+                    "RELEASE_QUIESCED_RESTARTED_UNREADY=()\n"
+                    "RELEASE_SUSPENDED_RUNNER_PGIDS=()"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_runner_restore_requires_online_registration(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

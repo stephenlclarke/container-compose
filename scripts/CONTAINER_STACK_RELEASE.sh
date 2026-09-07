@@ -953,8 +953,11 @@ stage_local_validation_checkout() {
       "${source_path}" >&2
     return 1
   fi
-  if ! "${isolated_git[@]}" clone --no-local --no-checkout --quiet \
-    "${source_path}" "${staged_path}"; then
+  if ! "${isolated_git[@]}" init --quiet "${staged_path}" || \
+    ! "${isolated_git[@]}" -C "${staged_path}" remote add origin \
+      "${source_path}" || \
+    ! "${isolated_git[@]}" -C "${staged_path}" fetch --quiet --no-tags \
+      --depth=1 origin "${source_commit}"; then
     printf 'failed to stage release validation checkout locally: %s\n' \
       "${source_path}" >&2
     return 1
@@ -2707,11 +2710,18 @@ restore_quiesced_release_launch_agents() {
     fi
   done
 
-  RELEASE_QUIESCED_LABELS=("${failed_labels[@]}")
-  RELEASE_QUIESCED_PLISTS=("${failed_plists[@]}")
-  RELEASE_QUIESCED_ACTION_STARTED=("${failed_action_started[@]}")
-  RELEASE_QUIESCED_DEADLINES=("${failed_deadlines[@]}")
-  RELEASE_QUIESCED_RESTARTED_UNREADY=("${failed_restarted_unready[@]}")
+  RELEASE_QUIESCED_LABELS=()
+  RELEASE_QUIESCED_PLISTS=()
+  RELEASE_QUIESCED_ACTION_STARTED=()
+  RELEASE_QUIESCED_DEADLINES=()
+  RELEASE_QUIESCED_RESTARTED_UNREADY=()
+  if ((${#failed_labels[@]} > 0)); then
+    RELEASE_QUIESCED_LABELS=("${failed_labels[@]}")
+    RELEASE_QUIESCED_PLISTS=("${failed_plists[@]}")
+    RELEASE_QUIESCED_ACTION_STARTED=("${failed_action_started[@]}")
+    RELEASE_QUIESCED_DEADLINES=("${failed_deadlines[@]}")
+    RELEASE_QUIESCED_RESTARTED_UNREADY=("${failed_restarted_unready[@]}")
+  fi
   return "${restore_status}"
 }
 
