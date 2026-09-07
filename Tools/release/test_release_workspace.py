@@ -2086,6 +2086,48 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         WORKSPACE.cleanup(release_root, self.build_root)
         self.assertFalse(release_root.exists())
 
+    def test_malformed_remote_symbolic_ref_baselines_are_rejected(self) -> None:
+        release_root = WORKSPACE.materialize(
+            self.build_root, "-+-", self.remote_root
+        )
+        marker_path = release_root / WORKSPACE.WORKSPACE_MARKER
+        marker = WORKSPACE.workspace_marker(release_root)
+        components = [component.name for component in WORKSPACE.COMPONENTS]
+        valid = {component: {} for component in components}
+        malformed = {
+            "non-object": [],
+            "missing-component": {
+                component: {} for component in components[1:]
+            },
+            "non-object-component": {
+                **valid,
+                components[0]: [],
+            },
+            "invalid-ref-name": {
+                **valid,
+                components[0]: {"origin/HEAD": "refs/remotes/origin/main"},
+            },
+            "invalid-symbolic-target": {
+                **valid,
+                components[0]: {
+                    "refs/remotes/origin/HEAD": "refs/heads/main"
+                },
+            },
+        }
+
+        for name, remote_symbolic_refs in malformed.items():
+            with self.subTest(name=name):
+                damaged = dict(marker)
+                damaged["remoteSymbolicRefs"] = remote_symbolic_refs
+                WORKSPACE.atomic_json(marker_path, damaged)
+                with self.assertRaisesRegex(
+                    WORKSPACE.WorkspaceError,
+                    "remote symbolic refs are invalid",
+                ):
+                    WORKSPACE.verify_workspace(release_root, self.build_root)
+
+        WORKSPACE.atomic_json(marker_path, marker)
+
     def test_live_claim_blocks_concurrent_release_and_can_be_cleared(self) -> None:
         release_root = WORKSPACE.materialize(
             self.build_root, "-+-", self.remote_root

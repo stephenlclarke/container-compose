@@ -501,6 +501,7 @@ def verify_workspace(root: Path, build_root: Path) -> dict[str, object]:
     remotes = marker.get("remoteUrls")
     immutable_tags = marker.get("immutableTagRefs")
     remote_refs = marker.get("remoteTrackingRefs")
+    remote_symbolic_refs = marker.get("remoteSymbolicRefs")
     recovery_objects = marker.get("recoveryObjects")
     semantic_tags = marker.get("semanticTagTargets")
     if not isinstance(version, str) or not SEMVER.fullmatch(version):
@@ -540,6 +541,24 @@ def verify_workspace(root: Path, build_root: Path) -> dict[str, object]:
                 for name, value in component_refs.items()
             ):
                 raise WorkspaceError("release workspace remote refs are invalid")
+    if remote_symbolic_refs is not None:
+        if not isinstance(remote_symbolic_refs, dict) or set(
+            remote_symbolic_refs
+        ) != {component.name for component in COMPONENTS}:
+            raise WorkspaceError(
+                "release workspace remote symbolic refs are invalid"
+            )
+        for component_refs in remote_symbolic_refs.values():
+            if not isinstance(component_refs, dict) or any(
+                not isinstance(name, str)
+                or not name.startswith("refs/remotes/")
+                or not isinstance(target, str)
+                or not target.startswith("refs/remotes/")
+                for name, target in component_refs.items()
+            ):
+                raise WorkspaceError(
+                    "release workspace remote symbolic refs are invalid"
+                )
     if recovery_objects is not None:
         if not isinstance(recovery_objects, dict) or set(recovery_objects) != {
             component.name for component in COMPONENTS
