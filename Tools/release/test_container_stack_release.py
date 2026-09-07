@@ -60,6 +60,7 @@ STABLE_RELEASE_LANE_CLASSIFIER = (
 RUNNER_INSTALLER = ROOT / "scripts" / "install-scheduled-release-runner.sh"
 HAWKEYE_INSTALLER = ROOT / "scripts" / "install-hawkeye.sh"
 PIPELINE_MAIN = ROOT / "main.nf"
+HOST_STATE_TOOL = ROOT / "Tools" / "release" / "release-host-state.py"
 
 
 class ContainerStackReleasePolicyTests(unittest.TestCase):
@@ -111,6 +112,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         )[1].split("      else", 1)[0]
         self.assertLess(
             active.index('"${RELEASE_WORKSPACE_TOOL}" verify'),
+            active.index("recover_release_host_state_on_startup"),
+        )
+        self.assertLess(
+            active.index("recover_release_host_state_on_startup"),
             active.index("release_current_stack"),
         )
 
@@ -229,7 +234,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
 
-    def test_local_release_gate_pins_hawkeye_before_runtime_work(self) -> None:
+    def test_local_release_gate_fails_fast_before_pinning_hawkeye(self) -> None:
         local_gate = self.script[
             self.script.index("run_local_release_gate() {") : self.script.index(
                 "# Verify that Apple remotes cannot be pushed"
@@ -243,7 +248,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('"HAWKEYE=${release_hawkeye}"', local_gate)
         self.assertLess(local_gate.index(selected), local_gate.index(preflight))
         self.assertLess(
-            local_gate.index(preflight), local_gate.index("require_local_virtualization")
+            local_gate.index("require_local_virtualization"), local_gate.index(selected)
         )
         self.assertLess(
             local_gate.index(preflight),
@@ -4954,6 +4959,10 @@ github_cli() {{
 
         self.assertLess(
             local_gate.index("acquire_container_runtime_lock"),
+            local_gate.index("recover_retained_release_launch_agents"),
+        )
+        self.assertLess(
+            local_gate.index("recover_retained_release_launch_agents"),
             local_gate.index("quiesce_local_release_workers"),
         )
         self.assertLess(
@@ -4974,6 +4983,390 @@ github_cli() {{
             cleanup.index("trap '' HUP INT QUIT TERM"),
             cleanup.index("cleanup_local_release_gate_resources"),
         )
+
+    def test_release_gate_validates_init_authority_before_host_mutation(self) -> None:
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "# Verify that Apple remotes cannot be pushed"
+            )
+        ]
+
+        self.assertLess(
+            local_gate.index('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${init_image_archive}"'),
+            local_gate.index("acquire_container_runtime_lock"),
+        )
+        self.assertLess(
+            local_gate.index('--root "${RELEASE_HOST_STATE_ROOT}" list'),
+            local_gate.index('for repository in "${path}"'),
+        )
+        self.assertLess(
+            local_gate.index("require_local_virtualization"),
+            local_gate.index('for repository in "${path}"'),
+        )
+        self.assertLess(
+            local_gate.index('run make -C "${containerization_path}" fetch-default-kernel'),
+            local_gate.index("acquire_container_runtime_lock"),
+        )
+
+    def test_release_recovers_host_state_before_workspace_materialization(self) -> None:
+        main = self.script[self.script.rindex("\nmain() {") :]
+        release = main[main.index("    release)") :]
+
+        self.assertLess(
+            release.index("recover_release_host_state_on_startup"),
+            release.index("run_isolated_release"),
+        )
+
+    def test_quiescence_is_journaled_before_runner_drain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            launch_agents = home / "Library" / "LaunchAgents"
+            launch_agents.mkdir(parents=True)
+            label = "actions.runner.owner-container-compose.release-host"
+            plist = launch_agents / f"{label}.plist"
+            plist.write_text("fixture\n", encoding="utf-8")
+            observed = root / "observed"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                "#!/bin/bash\n"
+                '[[ "${1:-}" == "list" ]] || exit 64\n'
+                f"printf '123 0 %s\\n' {shlex.quote(label)}\n",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "if quiesce_local_release_workers; then exit 99; fi; "
+                f"test -f {shlex.quote(str(observed))}; "
+                'test -z "$(python3 "${RELEASE_HOST_STATE_TOOL}" '
+                '--root "${RELEASE_HOST_STATE_ROOT}" list)"',
+                shell="/bin/bash",
+                shell_setup=(
+                    f"HOME={shlex.quote(str(home))}\n"
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    "RELEASE_QUIESCE_WAIT_ATTEMPTS=1\n"
+                    "RELEASE_QUIESCE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=1\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=1\n"
+                    "prepare_competing_release_runner_for_bootout() {\n"
+                    '  python3 "${RELEASE_HOST_STATE_TOOL}" '
+                    '--root "${RELEASE_HOST_STATE_ROOT}" list '
+                    f"| grep -F {shlex.quote(label)} >/dev/null\n"
+                    f"  printf 'observed\\n' > {shlex.quote(str(observed))}\n"
+                    "  return 3\n"
+                    "}\n"
+                    "release_launch_agent_is_healthy() { return 0; }"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_next_invocation_recovers_retained_launch_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            label = "homebrew.mxcl.devcontainer"
+            plist = root / f"{label}.plist"
+            plist.write_text("fixture\n", encoding="utf-8")
+            state_root = root / "host-state"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(HOST_STATE_TOOL),
+                    "--root",
+                    str(state_root),
+                    "record",
+                    "--label",
+                    label,
+                    "--plist",
+                    str(plist),
+                ],
+                check=True,
+            )
+            state = root / "loaded"
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/bin/bash
+set -euo pipefail
+case "${1:-}" in
+  list)
+    if [[ -s "${FAKE_LAUNCHCTL_STATE:?}" ]]; then
+      awk '{ print "123 0 " $0 }' "${FAKE_LAUNCHCTL_STATE}"
+    fi
+    ;;
+  bootstrap)
+    label="$(basename "${3}" .plist)"
+    printf 'bootstrap %s\n' "${label}" >> "${FAKE_LAUNCHCTL_LOG:?}"
+    printf '%s\n' "${label}" > "${FAKE_LAUNCHCTL_STATE}"
+    ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "recover_release_host_state_on_startup; "
+                'test -z "${RELEASE_QUIESCED_LABELS[*]:-}"; '
+                'test -z "$(python3 "${RELEASE_HOST_STATE_TOOL}" '
+                '--root "${RELEASE_HOST_STATE_ROOT}" list)"',
+                shell="/bin/bash",
+                shell_setup=(
+                    f"RELEASE_HOST_STATE_ROOT={shlex.quote(str(state_root))}\n"
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=2\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=1\n"
+                    "release_devcontainer_engine_is_ready() { return 0; }\n"
+                    "acquire_container_runtime_lock() { :; }\n"
+                    "release_container_runtime_lock() { :; }\n"
+                    f"export FAKE_LAUNCHCTL_STATE={shlex.quote(str(state))}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(log.read_text(encoding="utf-8"), f"bootstrap {label}\n")
+
+    def test_malformed_retained_state_fails_before_launchctl_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state_root = root / "host-state"
+            subprocess.run(
+                [sys.executable, str(HOST_STATE_TOOL), "--root", str(state_root), "list"],
+                check=True,
+            )
+            journal = state_root / "quiesced-launch-agents.json"
+            journal.write_text('{"schema":1}\n', encoding="utf-8")
+            journal.chmod(0o600)
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                "#!/bin/bash\n"
+                f"printf '%s\\n' \"$*\" >> {shlex.quote(str(log))}\n",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "if recover_release_host_state_on_startup; then exit 99; fi; "
+                f"test ! -e {shlex.quote(str(log))}",
+                shell="/bin/bash",
+                shell_setup=(
+                    f"RELEASE_HOST_STATE_ROOT={shlex.quote(str(state_root))}\n"
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    "acquire_container_runtime_lock() { :; }\n"
+                    "release_container_runtime_lock() { :; }"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_next_invocation_resumes_a_retained_stopped_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            label = "actions.runner.owner-container-compose.release-host"
+            plist = root / f"{label}.plist"
+            plist.write_text("fixture\n", encoding="utf-8")
+            state_root = root / "host-state"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(HOST_STATE_TOOL),
+                    "--root",
+                    str(state_root),
+                    "record",
+                    "--label",
+                    label,
+                    "--plist",
+                    str(plist),
+                ],
+                check=True,
+            )
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/bin/bash
+set -euo pipefail
+case "${1:-}" in
+  list) printf '4242 0 %s\n' "${FAKE_LABEL:?}" ;;
+  print) printf 'pid = 4242\n' ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+            process_inspector = root / "ps"
+            process_inspector.write_text(
+                f"""#!/bin/bash
+set -euo pipefail
+case "$*" in
+  '-o uid= -p 4242') printf '%s\n' '{os.getuid()}' ;;
+  '-o pgid= -p 4242') printf '4242\n' ;;
+  '-axo pgid=,state=,command=') printf '4242 T /runner/bin/Runner.Listener run\n' ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            process_inspector.chmod(0o755)
+            log = root / "signals.log"
+            signaler = root / "kill"
+            signaler.write_text(
+                "#!/bin/bash\n"
+                f"printf '%s\\n' \"$*\" >> {shlex.quote(str(log))}\n",
+                encoding="utf-8",
+            )
+            signaler.chmod(0o755)
+
+            result = self.run_release_function(
+                root,
+                "recover_release_host_state_on_startup; "
+                'test -z "$(python3 "${RELEASE_HOST_STATE_TOOL}" '
+                '--root "${RELEASE_HOST_STATE_ROOT}" list)"',
+                shell="/bin/bash",
+                shell_setup=(
+                    f"RELEASE_HOST_STATE_ROOT={shlex.quote(str(state_root))}\n"
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    f"RELEASE_PS={shlex.quote(str(process_inspector))}\n"
+                    f"RELEASE_KILL={shlex.quote(str(signaler))}\n"
+                    "release_launch_agent_is_healthy() { return 0; }\n"
+                    f"export FAKE_LABEL={shlex.quote(label)}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(log.read_text(encoding="utf-8"), "-CONT -4242\n")
+
+    def test_sigkill_during_runner_drain_is_recovered_by_next_invocation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "home"
+            launch_agents = home / "Library" / "LaunchAgents"
+            launch_agents.mkdir(parents=True)
+            label = "actions.runner.owner-container-compose.release-host"
+            plist = launch_agents / f"{label}.plist"
+            plist.write_text("fixture\n", encoding="utf-8")
+            state_root = root / "host-state"
+            state = root / "loaded"
+            state.write_text(f"{label}\n", encoding="utf-8")
+            ready = root / "journaled"
+            log = root / "launchctl.log"
+            launchctl = root / "launchctl"
+            launchctl.write_text(
+                """#!/bin/bash
+set -euo pipefail
+case "${1:-}" in
+  list)
+    if [[ -s "${FAKE_LAUNCHCTL_STATE:?}" ]]; then
+      awk '{ print "123 0 " $0 }' "${FAKE_LAUNCHCTL_STATE}"
+    fi
+    ;;
+  bootstrap)
+    label="$(basename "${3}" .plist)"
+    printf 'bootstrap %s\n' "${label}" >> "${FAKE_LAUNCHCTL_LOG:?}"
+    printf '%s\n' "${label}" > "${FAKE_LAUNCHCTL_STATE}"
+    ;;
+  *) exit 2 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            launchctl.chmod(0o755)
+            lines = [
+                "set -euo pipefail",
+                "export CONTAINER_STACK_RELEASE_LIBRARY=1",
+                f"source {shlex.quote(str(SCRIPT))}",
+                f"HOME={shlex.quote(str(home))}",
+                f"RELEASE_HOST_STATE_ROOT={shlex.quote(str(state_root))}",
+                f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}",
+                "RELEASE_QUIESCE_WAIT_ATTEMPTS=1",
+                "RELEASE_QUIESCE_POLL_SECONDS=0",
+                "prepare_competing_release_runner_for_bootout() {",
+                '  python3 "${RELEASE_HOST_STATE_TOOL}" '
+                '--root "${RELEASE_HOST_STATE_ROOT}" list '
+                f"| grep -F {shlex.quote(label)} >/dev/null",
+                f"  printf 'journaled\\n' > {shlex.quote(str(ready))}",
+                "  while :; do :; done",
+                "}",
+                "quiesce_local_release_workers",
+            ]
+            environment = self.non_interactive_environment()
+            environment.update(
+                {
+                    "FAKE_LAUNCHCTL_STATE": str(state),
+                    "FAKE_LAUNCHCTL_LOG": str(log),
+                }
+            )
+            process = subprocess.Popen(
+                ["/bin/bash", "-c", "\n".join(lines)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=environment,
+            )
+            for _ in range(100):
+                if ready.exists() or process.poll() is not None:
+                    break
+                time.sleep(0.02)
+            if not ready.exists():
+                if process.poll() is None:
+                    process.kill()
+                _, error = process.communicate(timeout=5)
+                self.fail(error or "runner drain did not reach the journaled boundary")
+            process.kill()
+            process.communicate(timeout=5)
+            self.assertEqual(process.returncode, -signal.SIGKILL)
+
+            retained = subprocess.run(
+                [
+                    sys.executable,
+                    str(HOST_STATE_TOOL),
+                    "--root",
+                    str(state_root),
+                    "list",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn(label, retained.stdout)
+            state.write_text("", encoding="utf-8")
+            recovered = self.run_release_function(
+                root,
+                "recover_retained_release_launch_agents; "
+                'test -z "$(python3 "${RELEASE_HOST_STATE_TOOL}" '
+                '--root "${RELEASE_HOST_STATE_ROOT}" list)"',
+                shell="/bin/bash",
+                shell_setup=(
+                    f"HOME={shlex.quote(str(home))}\n"
+                    f"RELEASE_HOST_STATE_ROOT={shlex.quote(str(state_root))}\n"
+                    f"RELEASE_LAUNCHCTL={shlex.quote(str(launchctl))}\n"
+                    "RELEASE_RESTORE_WAIT_ATTEMPTS=2\n"
+                    "RELEASE_RESTORE_POLL_SECONDS=0\n"
+                    "RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS=1\n"
+                    "competing_release_runner_is_online() { return 0; }\n"
+                    "acquire_container_runtime_lock() { :; }\n"
+                    "release_container_runtime_lock() { :; }\n"
+                    f"export FAKE_LAUNCHCTL_STATE={shlex.quote(str(state))}\n"
+                    f"export FAKE_LAUNCHCTL_LOG={shlex.quote(str(log))}"
+                ),
+            )
+
+            self.assertEqual(
+                recovered.returncode,
+                0,
+                recovered.stdout + recovered.stderr,
+            )
+            self.assertEqual(log.read_text(encoding="utf-8"), f"bootstrap {label}\n")
 
     def test_local_release_gate_retains_runtime_lock_until_restore_retry_succeeds(
         self,
@@ -8565,6 +8958,7 @@ gh() {
             "export CONTAINER_STACK_RELEASE_LIBRARY=1",
             f"source {shlex.quote(str(SCRIPT))}",
             f"ROOT={shlex.quote(str(root))}",
+            f"RELEASE_HOST_STATE_ROOT={shlex.quote(str(root / 'host-state'))}",
             "EXECUTE=1",
             "COMPOSE_MAIN_PROMOTION_MODE=pr",
             "COMPOSE_MAIN_MERGE_MODE=checked-admin",

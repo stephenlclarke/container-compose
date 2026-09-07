@@ -24,6 +24,7 @@ readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compo
 readonly HOMEBREW_PREFLIGHT_TOOL="${SELF_DIRECTORY}/../Tools/release/homebrew-preflight.py"
 readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
 readonly RELEASE_COMMAND_DEADLINE_RUNNER="${SELF_DIRECTORY}/../Tools/ci/run-command-with-deadline.py"
+readonly RELEASE_HOST_STATE_TOOL="${SELF_DIRECTORY}/../Tools/release/release-host-state.py"
 readonly RELEASE_WORKSPACE_TOOL="${SELF_DIRECTORY}/../Tools/release/release-workspace.py"
 readonly STABLE_RELEASE_LANE_CLASSIFIER="${SELF_DIRECTORY}/../Tools/release/stable-release-default-lane.py"
 # shellcheck disable=SC1091
@@ -178,6 +179,11 @@ Environment:
       deadline and the default 10-observation grace before one restart of a
       live but definitively unready service.
 
+  CONTAINER_STACK_RELEASE_HOST_STATE_ROOT
+      Override the private, marker-protected local restoration journal used by
+      focused tests. Production defaults to /private/tmp and records every
+      launch agent before the release controller can suspend or stop it.
+
   CONTAINER_STACK_RELEASE_DEVCONTAINER_CLI
   CONTAINER_STACK_RELEASE_CURL
   CONTAINER_STACK_RELEASE_GITHUB_CLI
@@ -267,12 +273,14 @@ RELEASE_SUSPENDED_RUNNER_PGIDS=()
 RELEASE_QUIESCED_ACTION_STARTED=()
 RELEASE_QUIESCED_DEADLINES=()
 RELEASE_QUIESCED_RESTARTED_UNREADY=()
+RELEASE_QUIESCED_RETAINED=()
 RELEASE_QUIESCE_WAIT_ATTEMPTS="${CONTAINER_STACK_RELEASE_QUIESCE_WAIT_ATTEMPTS:-30}"
 RELEASE_QUIESCE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_QUIESCE_POLL_SECONDS:-1}"
 RELEASE_RESTORE_WAIT_ATTEMPTS="${CONTAINER_STACK_RELEASE_RESTORE_WAIT_ATTEMPTS:-60}"
 RELEASE_RESTORE_TIMEOUT_SECONDS="${CONTAINER_STACK_RELEASE_RESTORE_TIMEOUT_SECONDS:-60}"
 RELEASE_RESTORE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_RESTORE_POLL_SECONDS:-1}"
 RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS="${CONTAINER_STACK_RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS:-10}"
+RELEASE_HOST_STATE_ROOT="${CONTAINER_STACK_RELEASE_HOST_STATE_ROOT:-/private/tmp/container-compose-release-host-state-$(id -u)}"
 RELEASE_DEVCONTAINER_CLI="${CONTAINER_STACK_RELEASE_DEVCONTAINER_CLI:-$(command -v devcontainer || true)}"
 RELEASE_CURL="${CONTAINER_STACK_RELEASE_CURL:-/usr/bin/curl}"
 RELEASE_GITHUB_CLI="${CONTAINER_STACK_RELEASE_GITHUB_CLI:-$(command -v gh || true)}"
@@ -2651,7 +2659,132 @@ prepare_competing_release_runner_for_bootout() {
   return 0
 }
 
+# Persist restoration authority before this process can suspend or stop a
+# launch agent. The journal is the cross-process source of truth; the arrays
+# below are only the current process's retry state.
+record_release_launch_agent_restoration() {
+  python3 "${RELEASE_HOST_STATE_TOOL}" --root "${RELEASE_HOST_STATE_ROOT}" \
+    record --label "$1" --plist "$2"
+}
+
+# Discard durable authority only after the exact service has passed its health
+# probe. Removal is idempotent so legacy in-memory-only fixtures remain valid.
+remove_release_launch_agent_restoration() {
+  python3 "${RELEASE_HOST_STATE_TOOL}" --root "${RELEASE_HOST_STATE_ROOT}" \
+    remove --label "$1" --plist "$2"
+}
+
+# Recover a previous controller's journal into this process. A malformed or
+# untrusted journal fails before launchctl can mutate the host.
+load_retained_release_launch_agents() {
+  local extra=""
+  local label=""
+  local plist=""
+  local retained=""
+
+  if [[ -n "${RELEASE_QUIESCED_LABELS[*]:-}" || \
+    -n "${RELEASE_QUIESCED_PLISTS[*]:-}" ]]; then
+    printf 'cannot load retained release host state over active restoration state\n' >&2
+    return 2
+  fi
+  if ! retained="$(python3 "${RELEASE_HOST_STATE_TOOL}" \
+    --root "${RELEASE_HOST_STATE_ROOT}" list)"; then
+    printf 'cannot load retained release host state: %s\n' \
+      "${RELEASE_HOST_STATE_ROOT}" >&2
+    return 1
+  fi
+  [[ -z "${retained}" ]] && return 0
+
+  while IFS=$'\t' read -r label plist extra; do
+    if [[ -z "${label}" || -z "${plist}" || -n "${extra}" ]]; then
+      printf 'invalid retained release launch-agent record\n' >&2
+      return 1
+    fi
+    RELEASE_QUIESCED_LABELS+=("${label}")
+    RELEASE_QUIESCED_PLISTS+=("${plist}")
+    RELEASE_QUIESCED_ACTION_STARTED+=(0)
+    RELEASE_QUIESCED_DEADLINES+=("")
+    RELEASE_QUIESCED_RESTARTED_UNREADY+=(0)
+    RELEASE_QUIESCED_RETAINED+=(1)
+  done <<<"${retained}"
+}
+
+# A killed controller can leave an Actions listener in SIGSTOP before bootout.
+# Resume that exact retained process group before its online registration is
+# accepted as recovery evidence.
+resume_retained_release_runner() {
+  local label="$1"
+  local live_status=0
+  local process_group=""
+  local stopped_status=0
+
+  release_launch_agent_has_live_process "${label}" || live_status=$?
+  case "${live_status}" in
+    0)
+      ;;
+    1)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+  process_group="$(release_runner_service_process_group "${label}")" || return 1
+  release_runner_process_group_is_stopped "${process_group}" || stopped_status=$?
+  case "${stopped_status}" in
+    0)
+      if ! "${RELEASE_KILL}" -CONT "-${process_group}" 2>/dev/null; then
+        if "${RELEASE_KILL}" -0 "-${process_group}" 2>/dev/null; then
+          printf 'failed to resume retained release runner process group: %s\n' \
+            "${process_group}" >&2
+          return 1
+        fi
+      fi
+      ;;
+    1)
+      ;;
+    *)
+      printf 'cannot establish retained release runner process state: %s\n' \
+        "${label}" >&2
+      return 1
+      ;;
+  esac
+}
+
+recover_retained_release_launch_agents() {
+  load_retained_release_launch_agents || return
+  if [[ -z "${RELEASE_QUIESCED_LABELS[*]:-}" ]]; then
+    return 0
+  fi
+  printf 'recovering retained release host state: %s\n' \
+    "${RELEASE_QUIESCED_LABELS[*]}"
+  restore_quiesced_release_launch_agents
+}
+
+# Recover host state before an outer release invocation clones, builds, or
+# waits for remote authority. The runtime lock serializes this journal with a
+# local gate that may still be exiting.
+recover_release_host_state_on_startup() {
+  [[ "${EXECUTE}" == "1" ]] || return 0
+  (
+    # These dynamic-scope arrays intentionally belong only to the recovery
+    # subshell; restore_quiesced_release_launch_agents consumes them there.
+    # shellcheck disable=SC2030
+    local -a RELEASE_QUIESCED_LABELS=() RELEASE_QUIESCED_PLISTS=() \
+      RELEASE_QUIESCED_ACTION_STARTED=() RELEASE_QUIESCED_DEADLINES=() \
+      RELEASE_QUIESCED_RESTARTED_UNREADY=() RELEASE_QUIESCED_RETAINED=() \
+      RELEASE_SUSPENDED_RUNNER_PGIDS=()
+
+    trap release_local_release_gate_host_state EXIT
+    acquire_container_runtime_lock || return
+    recover_retained_release_launch_agents || return
+    release_local_release_gate_host_state || return
+    trap - EXIT
+  )
+}
+
 # Restore only the launch agents this release invocation successfully stopped.
+# shellcheck disable=SC2031 # Dynamic-scope arrays are supplied by each caller.
 restore_quiesced_release_launch_agents() {
   local attempt=0
   local deadline=0
@@ -2665,6 +2798,7 @@ restore_quiesced_release_launch_agents() {
   local restore_action_started=0
   local restored=0
   local restarted_unready_service=0
+  local retained_entry=0
   local sleep_seconds=0
   local unready_live_attempts=0
   local user_domain=""
@@ -2673,6 +2807,7 @@ restore_quiesced_release_launch_agents() {
   local -a failed_labels=()
   local -a failed_plists=()
   local -a failed_restarted_unready=()
+  local -a failed_retained=()
   user_domain="gui/$(id -u)"
 
   if ! resume_suspended_release_runner_groups; then
@@ -2698,13 +2833,40 @@ restore_quiesced_release_launch_agents() {
       "${restarted_unready_service}" != 1 ]]; then
       restarted_unready_service=0
     fi
+    retained_entry="${RELEASE_QUIESCED_RETAINED[index]:-0}"
+    if [[ "${retained_entry}" != 0 && "${retained_entry}" != 1 ]]; then
+      retained_entry=1
+    fi
+    if ((retained_entry == 1)); then
+      case "${label}" in
+        actions.runner.*)
+          if ! resume_retained_release_runner "${label}"; then
+            printf 'failed to resume retained release runner %s\n' \
+              "${label}" >&2
+            failed_labels+=("${label}")
+            failed_plists+=("${plist}")
+            failed_action_started+=("${restore_action_started}")
+            failed_deadlines+=("${deadline}")
+            failed_restarted_unready+=("${restarted_unready_service}")
+            failed_retained+=(1)
+            restore_status=1
+            continue
+          fi
+          ;;
+      esac
+    fi
     unready_live_attempts=0
     for ((attempt = 1; attempt <= RELEASE_RESTORE_WAIT_ATTEMPTS; attempt++)); do
       health_status=0
       release_launch_agent_is_healthy "${label}" "${deadline}" || \
         health_status=$?
       if ((health_status == 0)); then
-        restored=1
+        if remove_release_launch_agent_restoration "${label}" "${plist}"; then
+          restored=1
+        else
+          printf 'failed to clear restored release launch-agent authority: %s\n' \
+            "${label}" >&2
+        fi
         break
       fi
       if ((health_status == 1)); then
@@ -2764,6 +2926,7 @@ restore_quiesced_release_launch_agents() {
       failed_action_started+=("${restore_action_started}")
       failed_deadlines+=("${deadline}")
       failed_restarted_unready+=("${restarted_unready_service}")
+      failed_retained+=("${retained_entry}")
       restore_status=1
     fi
   done
@@ -2773,12 +2936,14 @@ restore_quiesced_release_launch_agents() {
   RELEASE_QUIESCED_ACTION_STARTED=()
   RELEASE_QUIESCED_DEADLINES=()
   RELEASE_QUIESCED_RESTARTED_UNREADY=()
+  RELEASE_QUIESCED_RETAINED=()
   if ((${#failed_labels[@]} > 0)); then
     RELEASE_QUIESCED_LABELS=("${failed_labels[@]}")
     RELEASE_QUIESCED_PLISTS=("${failed_plists[@]}")
     RELEASE_QUIESCED_ACTION_STARTED=("${failed_action_started[@]}")
     RELEASE_QUIESCED_DEADLINES=("${failed_deadlines[@]}")
     RELEASE_QUIESCED_RESTARTED_UNREADY=("${failed_restarted_unready[@]}")
+    RELEASE_QUIESCED_RETAINED=("${failed_retained[@]}")
   fi
   return "${restore_status}"
 }
@@ -2868,6 +3033,16 @@ quiesce_local_release_workers() {
     fi
     case "${label}" in
       actions.runner.*)
+        if ! record_release_launch_agent_restoration "${label}" "${plist}"; then
+          restore_quiesced_release_launch_agents || true
+          return 1
+        fi
+        RELEASE_QUIESCED_LABELS+=("${label}")
+        RELEASE_QUIESCED_PLISTS+=("${plist}")
+        RELEASE_QUIESCED_ACTION_STARTED+=(0)
+        RELEASE_QUIESCED_DEADLINES+=("")
+        RELEASE_QUIESCED_RESTARTED_UNREADY+=(0)
+        RELEASE_QUIESCED_RETAINED+=(0)
         runner_status=0
         prepare_competing_release_runner_for_bootout "${label}" || runner_status=$?
         case "${runner_status}" in
@@ -2885,14 +3060,19 @@ quiesce_local_release_workers() {
             ;;
         esac
         ;;
+      *)
+        if ! record_release_launch_agent_restoration "${label}" "${plist}"; then
+          restore_quiesced_release_launch_agents || true
+          return 1
+        fi
+        RELEASE_QUIESCED_LABELS+=("${label}")
+        RELEASE_QUIESCED_PLISTS+=("${plist}")
+        RELEASE_QUIESCED_ACTION_STARTED+=(0)
+        RELEASE_QUIESCED_DEADLINES+=("")
+        RELEASE_QUIESCED_RESTARTED_UNREADY+=(0)
+        RELEASE_QUIESCED_RETAINED+=(0)
+        ;;
     esac
-    # Record recovery authority before mutation so an asynchronous exit cannot
-    # strand a successfully booted-out worker in the instruction boundary.
-    RELEASE_QUIESCED_LABELS+=("${label}")
-    RELEASE_QUIESCED_PLISTS+=("${plist}")
-    RELEASE_QUIESCED_ACTION_STARTED+=(0)
-    RELEASE_QUIESCED_DEADLINES+=("")
-    RELEASE_QUIESCED_RESTARTED_UNREADY+=(0)
     if ! "${RELEASE_LAUNCHCTL}" bootout "${user_domain}/${label}"; then
       resume_suspended_release_runner_groups || true
       loaded_status=0
@@ -3124,6 +3304,7 @@ run_local_release_gate() {
   local -a RELEASE_QUIESCED_ACTION_STARTED=()
   local -a RELEASE_QUIESCED_DEADLINES=()
   local -a RELEASE_QUIESCED_RESTARTED_UNREADY=()
+  local -a RELEASE_QUIESCED_RETAINED=()
   local -a RELEASE_SUSPENDED_RUNNER_PGIDS=()
   path="$(repo_path "${COMPOSE_REPO}")"
   candidate_sha="$(git -C "${path}" rev-parse HEAD)"
@@ -3144,6 +3325,38 @@ run_local_release_gate() {
     --tap "${HOMEBREW_TAP_REPO}" \
     --compose-repository "${path}" \
     --container-repository "${container_path}"
+  if [[ "${EXECUTE}" == "1" ]]; then
+    init_image_archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
+    if [[ "${init_image_archive}" != /* || ! -f "${init_image_archive}" ]]; then
+      printf 'local release gate requires an absolute retained OCI init-image archive via CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE: %s\n' \
+        "${init_image_archive:-unset}" >&2
+      return 2
+    fi
+    init_image_archive="$(cd "$(dirname "${init_image_archive}")" && pwd -P)/$(basename "${init_image_archive}")"
+    containerization_reference="$(python3 - "${path}/Tools/release/stack-refs.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(manifest["components"]["containerization"]["ref"])
+PY
+)"
+    required_init_references="vminit:container-compose ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
+    "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${init_image_archive}" \
+      vminit:container-compose \
+      "ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
+    if [[ ! -f "${RELEASE_HOST_STATE_TOOL}" || -L "${RELEASE_HOST_STATE_TOOL}" ]]; then
+      printf 'release host-state tool is not a regular source file: %s\n' \
+        "${RELEASE_HOST_STATE_TOOL}" >&2
+      return 2
+    fi
+    python3 "${RELEASE_HOST_STATE_TOOL}" \
+      --root "${RELEASE_HOST_STATE_ROOT}" list >/dev/null
+  else
+    printf '%s\n' \
+      'would validate the retained OCI init-image authority before host mutation'
+  fi
   release_gate_path="$(release_gate_execution_path)"
   require_release_gate_gnu_tar "${release_gate_path}"
   release_gate_tar="$(PATH="${release_gate_path}" command -v tar)"
@@ -3153,6 +3366,7 @@ run_local_release_gate() {
       "${release_gate_path}" >&2
     return 1
   fi
+  require_local_virtualization
   for repository in "${path}" \
     "$(repo_path "container-builder-shim")" \
     "$(repo_path "containerization")" \
@@ -3176,42 +3390,20 @@ run_local_release_gate() {
   else
     printf 'would validate and pin release Hawkeye at %s\n' "${release_hawkeye}"
   fi
-  require_local_virtualization
+  run make -C "${containerization_path}" fetch-default-kernel
   if [[ "${EXECUTE}" == "1" ]]; then
     trap release_local_release_gate_host_state EXIT
     acquire_container_runtime_lock
+    recover_retained_release_launch_agents
     quiesce_local_release_workers
   else
     printf '%s\n' \
       'would quiesce and restore competing Container-family release workers'
   fi
-  run make -C "${containerization_path}" fetch-default-kernel
   if [[ "${EXECUTE}" != "1" ]]; then
     printf 'would package an immutable Container runtime candidate and run the complete local gate inside one fresh marker-protected runtime lifecycle\n'
     return 0
   fi
-
-  init_image_archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
-  if [[ "${init_image_archive}" != /* || ! -f "${init_image_archive}" ]]; then
-    printf 'local release gate requires an absolute retained OCI init-image archive via CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE: %s\n' \
-      "${init_image_archive:-unset}" >&2
-    return 2
-  fi
-  init_image_archive="$(cd "$(dirname "${init_image_archive}")" && pwd -P)/$(basename "${init_image_archive}")"
-
-  containerization_reference="$(python3 - "${path}/Tools/release/stack-refs.json" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-print(manifest["components"]["containerization"]["ref"])
-PY
-)"
-  required_init_references="vminit:container-compose ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
-  "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${init_image_archive}" \
-    vminit:container-compose \
-    "ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
 
   evidence_root="$(resolve_release_evidence_root "${path}" \
     "${PARITY_EVIDENCE_DIR:-.build/release-evidence}")"
@@ -6056,15 +6248,20 @@ main() {
       trap cleanup_current_init_image_authority EXIT
       ensure_compose_promotion_mode
       if [[ "${CONTAINER_STACK_RELEASE_LIBRARY:-0}" == "1" ]]; then
+        recover_release_host_state_on_startup
         release_current_stack
       elif [[ "${CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE:-0}" == "1" ]]; then
+        # An active child is untrusted until its marker-protected workspace is
+        # verified. Do not let an unmarked checkout reach host recovery.
         python3 "${RELEASE_WORKSPACE_TOOL}" verify \
           --build-root "${RELEASE_BUILD_ROOT}" "${ROOT}" >/dev/null
+        recover_release_host_state_on_startup
         for repo in "${REPOS[@]}"; do
           ensure_push_boundary "${repo}"
         done
         release_current_stack
       else
+        recover_release_host_state_on_startup
         run_isolated_release
       fi
       CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=1
