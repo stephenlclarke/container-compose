@@ -190,6 +190,70 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
 
+    def test_release_hawkeye_preflight_rejects_an_incompatible_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            hawkeye = root / "hawkeye"
+            hawkeye.write_text(
+                "#!/bin/sh\n"
+                "case \"${1:-}:${2:-}\" in\n"
+                "  check:--help) printf '%s\\n' '--fail-on-unknown' ;;\n"
+                "  format:--help) printf '%s\\n' '--fail-on-change' ;;\n"
+                "  *) exit 64 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            hawkeye.chmod(0o755)
+
+            rejected = self.run_release_function(
+                root,
+                f"require_release_hawkeye_cli {shlex.quote(str(hawkeye))}",
+                shell="/bin/bash",
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("does not support check --fail-if-unknown", rejected.stderr)
+
+            hawkeye.write_text(
+                "#!/bin/sh\n"
+                "case \"${1:-}:${2:-}\" in\n"
+                "  check:--help) printf '%s\\n' '--fail-if-unknown' ;;\n"
+                "  format:--help) printf '%s\\n' '--fail-if-updated' ;;\n"
+                "  *) exit 64 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            accepted = self.run_release_function(
+                root,
+                f"require_release_hawkeye_cli {shlex.quote(str(hawkeye))}",
+                shell="/bin/bash",
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+    def test_local_release_gate_pins_hawkeye_before_runtime_work(self) -> None:
+        local_gate = self.script[
+            self.script.index("run_local_release_gate() {") : self.script.index(
+                "# Verify that Apple remotes cannot be pushed"
+            )
+        ]
+        selected = 'release_hawkeye="${path}/.local/bin/hawkeye"'
+        preflight = 'require_release_hawkeye_cli "${release_hawkeye}"'
+
+        self.assertIn(selected, local_gate)
+        self.assertIn(preflight, local_gate)
+        self.assertIn('"HAWKEYE=${release_hawkeye}"', local_gate)
+        self.assertLess(local_gate.index(selected), local_gate.index(preflight))
+        self.assertLess(
+            local_gate.index(preflight), local_gate.index("require_local_virtualization")
+        )
+        self.assertLess(
+            local_gate.index(preflight),
+            local_gate.index("acquire_container_runtime_lock"),
+        )
+        self.assertLess(
+            local_gate.index(preflight),
+            local_gate.index("stage_container_runtime_candidate"),
+        )
+
     def test_local_release_gate_stages_the_init_archive_on_the_system_volume(self) -> None:
         staging = 'staged_init_image_archive="${runtime_parent}/vminit.oci.tar"'
         copy = 'cp "${init_image_archive}" "${staged_init_image_archive}"'

@@ -1369,6 +1369,34 @@ require_release_gate_gnu_tar() {
   fi
 }
 
+# Prove the repository-pinned Hawkeye binary supports the CLI consumed by every
+# stack Makefile. The release controller passes this exact executable through
+# the complete gate so an incompatible Homebrew installation cannot take over.
+require_release_hawkeye_cli() {
+  local executable="${1:-}"
+  local check_help=""
+  local format_help=""
+
+  if [[ "${executable}" != /* || ! -f "${executable}" ||
+    ! -x "${executable}" || -L "${executable}" ]]; then
+    printf 'release Hawkeye must be an absolute, regular executable: %s\n' \
+      "${executable:-unset}" >&2
+    return 1
+  fi
+  if ! check_help="$("${executable}" check --help 2>&1)" ||
+    [[ "${check_help}" != *"--fail-if-unknown"* ]]; then
+    printf 'release Hawkeye does not support check --fail-if-unknown: %s\n' \
+      "${executable}" >&2
+    return 1
+  fi
+  if ! format_help="$("${executable}" format --help 2>&1)" ||
+    [[ "${format_help}" != *"--fail-if-updated"* ]]; then
+    printf 'release Hawkeye does not support format --fail-if-updated: %s\n' \
+      "${executable}" >&2
+    return 1
+  fi
+}
+
 # Build one packaged Container runtime for the exact source head, then unpack
 # it into a fresh read-only root for this gate. Keep the reusable archive and
 # its evidence on the configured artifact volume, but stage launchd-managed
@@ -3056,7 +3084,7 @@ retained_stable_init_image_gate_digest() {
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   (
-  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_containerization_path stable_container_path stable_containerization_path release_gate_path release_gate_make release_gate_tar
+  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_containerization_path stable_container_path stable_containerization_path release_gate_path release_gate_make release_gate_tar release_hawkeye
   local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest candidate_sha init_image_digest_before init_image_digest_after container_validation_suffix container_validation_app_root container_validation_namespace
   local -a RELEASE_QUIESCED_LABELS=()
   local -a RELEASE_QUIESCED_PLISTS=()
@@ -3085,15 +3113,6 @@ run_local_release_gate() {
   release_gate_path="$(release_gate_execution_path)"
   require_release_gate_gnu_tar "${release_gate_path}"
   release_gate_tar="$(PATH="${release_gate_path}" command -v tar)"
-  require_local_virtualization
-  if [[ "${EXECUTE}" == "1" ]]; then
-    trap release_local_release_gate_host_state EXIT
-    acquire_container_runtime_lock
-    quiesce_local_release_workers
-  else
-    printf '%s\n' \
-      'would quiesce and restore competing Container-family release workers'
-  fi
   for repository in "${path}" \
     "$(repo_path "container-builder-shim")" \
     "$(repo_path "containerization")" \
@@ -3111,6 +3130,21 @@ run_local_release_gate() {
       fi
     )
   done
+  release_hawkeye="${path}/.local/bin/hawkeye"
+  if [[ "${EXECUTE}" == "1" ]]; then
+    require_release_hawkeye_cli "${release_hawkeye}"
+  else
+    printf 'would validate and pin release Hawkeye at %s\n' "${release_hawkeye}"
+  fi
+  require_local_virtualization
+  if [[ "${EXECUTE}" == "1" ]]; then
+    trap release_local_release_gate_host_state EXIT
+    acquire_container_runtime_lock
+    quiesce_local_release_workers
+  else
+    printf '%s\n' \
+      'would quiesce and restore competing Container-family release workers'
+  fi
   run make -C "${containerization_path}" fetch-default-kernel
   if [[ "${EXECUTE}" != "1" ]]; then
     printf 'would package an immutable Container runtime candidate and run the complete local gate inside one fresh marker-protected runtime lifecycle\n'
@@ -3257,6 +3291,7 @@ PY
     "${path}/scripts/run-with-container-runtime.sh" "${container_binary}" \
     "${release_gate_make}" -C "${path}" release-gate \
     "TAR=${release_gate_tar}" \
+    "HAWKEYE=${release_hawkeye}" \
     "CONTAINER_BUILDER_SHIM_STACK_REPO=$(repo_path "container-builder-shim")" \
     "CONTAINERIZATION_STACK_REPO=${containerization_path}" \
     "CONTAINER_STACK_REPO=${container_path}" \
