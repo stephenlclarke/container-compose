@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-09-07",
+  "generatedAt": "2026-09-09",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -8388,6 +8388,28 @@
         }
       ],
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/572"
+    },
+    {
+      "id": "container-compose-593",
+      "owner": "stephenlclarke/container-compose",
+      "title": "[Build] Replace Nextflow with a recoverable native graph",
+      "state": "active-draft",
+      "lastVerified": "2026-09-09",
+      "commits": [
+        "89f9f7944b587d805143b6b193796608c2a6d3b7",
+        "44f4895d88a7d23cec8b92c695265343fd7b30da"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-593.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-594.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/594"
     },
     {
       "id": "process-list-compose-top-process-list",
