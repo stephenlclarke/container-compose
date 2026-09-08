@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -119,7 +120,7 @@ printf 'artifact:%s\n' "${product}" > "${bin_path}/${product}"
                 f"STACK_SWIFT={self.swift}",
                 f"STACK_SWIFT_CONTRACT={'a' * 64}",
                 "STACK_LOCK_HELD=1",
-                "PYTHON=/opt/homebrew/bin/python3.12",
+                f"PYTHON={sys.executable}",
                 f"CONTAINERIZATION_STACK_REPO={self.containerization}",
                 f"CONTAINER_ENGINE_API_STACK_REPO={self.engine}",
                 f"CONTAINER_STACK_REPO={self.container}",
