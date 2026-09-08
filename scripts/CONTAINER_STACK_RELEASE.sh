@@ -654,8 +654,123 @@ PY
 # Retain a helper-created candidate after a local release gate fails before
 # promotion. Recommitting an identical tree changes the reviewed candidate
 # identity on every retry and makes evidence impossible to bind reliably.
+validate_unpublished_release_refresh_commit() {
+  local path="$1" commit="$2" version="$3" current_remote_head="$4"
+  local subject parents first_parent main_parent extra_parent
+  local expected_tree_output expected_tree actual_tree
+
+  subject="$(git -C "${path}" show -s --format=%s "${commit}")"
+  if [[ "${subject}" != "chore(release): refresh ${version} candidate from main" ]]; then
+    return 1
+  fi
+
+  parents="$(git -C "${path}" show -s --format=%P "${commit}")"
+  read -r first_parent main_parent extra_parent <<<"${parents}"
+  if [[
+    ! "${first_parent}" =~ ^[0-9a-f]{40}$
+    || ! "${main_parent}" =~ ^[0-9a-f]{40}$
+    || -n "${extra_parent}"
+  ]]; then
+    printf 'release candidate refresh has unexpected parents: %s\n' "${commit}" >&2
+    return 1
+  fi
+  if ! git -C "${path}" merge-base --is-ancestor \
+    "${main_parent}" "${current_remote_head}"; then
+    printf 'release candidate refresh does not contain canonical main history: %s\n' \
+      "${commit}" >&2
+    return 1
+  fi
+  if ! expected_tree_output="$(
+    git -C "${path}" merge-tree --write-tree \
+      "${first_parent}" "${main_parent}" 2>&1
+  )"; then
+    printf 'release candidate refresh parents no longer merge cleanly: %s\n%s\n' \
+      "${commit}" "${expected_tree_output}" >&2
+    return 1
+  fi
+  expected_tree="${expected_tree_output%%$'\n'*}"
+  actual_tree="$(git -C "${path}" rev-parse "${commit}^{tree}")"
+  if [[ ! "${expected_tree}" =~ ^[0-9a-f]{40}$ || "${actual_tree}" != "${expected_tree}" ]]; then
+    printf 'release candidate refresh tree is not the exact parent merge: %s\n' \
+      "${commit}" >&2
+    return 1
+  fi
+  return 0
+}
+
+# Advance a retained, signed release candidate with reviewed commits that
+# landed on canonical main after the candidate was prepared. A signed merge
+# preserves every candidate commit identity while making the exact remote head
+# an ancestor. merge-tree proves the update is conflict-free without touching
+# the checkout; the branch moves only after the remote authority is rechecked.
+refresh_unpublished_release_candidate() {
+  local path="$1" remote="$2" local_head="$3" remote_head="$4" version="$5"
+  local base commit commits merge_output merge_tree live_remote_head refresh_head
+
+  base="$(git -C "${path}" merge-base "${local_head}" "${remote_head}")"
+  if [[ ! "${base}" =~ ^[0-9a-f]{40}$ || "${base}" == "${local_head}" || "${base}" == "${remote_head}" ]]; then
+    printf 'container-compose candidate has no safe diverged main base\n' >&2
+    return 1
+  fi
+
+  commits="$(git -C "${path}" rev-list --reverse "${base}..${local_head}")"
+  if [[ -z "${commits}" ]]; then
+    printf 'container-compose candidate has no retained release commits to refresh\n' >&2
+    return 1
+  fi
+  while IFS= read -r commit; do
+    validate_unpublished_release_commit \
+      "${path}" "${commit}" "${version}" "${remote_head}" || return 1
+  done <<<"${commits}"
+
+  if ! merge_output="$(
+    git -C "${path}" merge-tree --write-tree \
+      "${local_head}" "${remote_head}" 2>&1
+  )"; then
+    printf 'reviewed main cannot be applied cleanly to the retained release candidate:\n%s\n' \
+      "${merge_output}" >&2
+    return 1
+  fi
+  merge_tree="${merge_output%%$'\n'*}"
+  if [[ ! "${merge_tree}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'release candidate refresh did not produce an exact merge tree\n' >&2
+    return 1
+  fi
+
+  live_remote_head="$(
+    git -C "${path}" ls-remote --heads "${remote}" refs/heads/main \
+      | awk '{print $1}' | tail -n 1
+  )"
+  if [[ "${live_remote_head}" != "${remote_head}" ]]; then
+    printf 'container-compose main moved while refreshing the release candidate: expected %s, got %s\n' \
+      "${remote_head}" "${live_remote_head:-missing}" >&2
+    return 1
+  fi
+
+  refresh_head="$(
+    git -C "${path}" commit-tree -S "${merge_tree}" \
+      -p "${local_head}" -p "${remote_head}" \
+      -m "chore(release): refresh ${version} candidate from main"
+  )"
+  if [[ ! "${refresh_head}" =~ ^[0-9a-f]{40}$ ]] ||
+    ! git -C "${path}" verify-commit "${refresh_head}" >/dev/null 2>&1; then
+    printf 'could not create a verified release candidate refresh commit\n' >&2
+    return 1
+  fi
+
+  run git -C "${path}" merge --ff-only "${refresh_head}"
+  if [[ "$(git -C "${path}" rev-parse main)" != "${refresh_head}" ]] ||
+    [[ -n "$(git -C "${path}" status --short)" ]]; then
+    printf 'release candidate refresh did not leave an exact clean checkout\n' >&2
+    return 1
+  fi
+  printf 'refreshed retained release candidate %s with reviewed main %s\n' \
+    "${refresh_head}" "${remote_head}"
+}
+
 validate_unpublished_release_commit() {
-  local path="$1" commit="$2" version="$3" subject files file
+  local path="$1" commit="$2" version="$3" current_remote_head="${4:-}"
+  local subject files file
   subject="$(git -C "${path}" show -s --format=%s "${commit}")"
   files="$(git -C "${path}" diff-tree --no-commit-id --name-only -r "${commit}" | sort | paste -sd, -)"
 
@@ -663,6 +778,16 @@ validate_unpublished_release_commit() {
     printf 'unpublished release candidate contains an unverified commit: %s %s\n' \
       "${commit}" "${subject}" >&2
     return 1
+  fi
+
+  if [[ "${subject}" == "chore(release): refresh ${version} candidate from main" ]]; then
+    if [[ ! "${current_remote_head}" =~ ^[0-9a-f]{40}$ ]]; then
+      printf 'release candidate refresh validation requires canonical main\n' >&2
+      return 1
+    fi
+    validate_unpublished_release_refresh_commit \
+      "${path}" "${commit}" "${version}" "${current_remote_head}"
+    return
   fi
 
   if [[ "${subject}" == "chore(release): prepare ${version}" ]]; then
@@ -744,6 +869,7 @@ recover_unpublished_release_candidate() {
   RECOVERED_UNPUBLISHED_RELEASE_BASE=""
   path="$(repo_path "${COMPOSE_REPO}")"
   remote="$(push_remote "${COMPOSE_REPO}")"
+  fetch_release_remote "${COMPOSE_REPO}"
   local_head="$(git -C "${path}" rev-parse main)"
   remote_head="$(remote_main_commit "${COMPOSE_REPO}")"
 
@@ -759,8 +885,6 @@ recover_unpublished_release_candidate() {
     exit 1
   fi
   if ! git -C "${path}" merge-base --is-ancestor "${remote_head}" "${local_head}"; then
-    fetch_release_remote "${COMPOSE_REPO}"
-    remote_head="$(remote_main_commit "${COMPOSE_REPO}")"
     if [[ -z "${remote_head}" ]] ||
       ! git -C "${path}" cat-file -e "${remote_head}^{commit}" 2>/dev/null; then
       printf 'cannot inspect promoted container-compose main on %s\n' "${remote}" >&2
@@ -789,7 +913,8 @@ recover_unpublished_release_candidate() {
         exit 1
       fi
       while IFS= read -r commit; do
-        validate_unpublished_release_commit "${path}" "${commit}" "${version}" || exit 1
+        validate_unpublished_release_commit \
+          "${path}" "${commit}" "${version}" "${remote_head}" || exit 1
       done <<<"${commits}"
       if [[ "${current_head}" == "${promotion_parent}" ]]; then
         RECOVERED_UNPUBLISHED_RELEASE_BASE="${promotion_parent}"
@@ -797,8 +922,14 @@ recover_unpublished_release_candidate() {
       align_equivalent_compose_main "${path}" "${remote}" "${remote_head}" "${local_tree}"
       return 0
     fi
-    printf 'container-compose main is not based on %s/main; refusing to recover a release candidate\n' "${remote}" >&2
-    exit 1
+    if git -C "${path}" merge-base --is-ancestor "${local_head}" "${remote_head}"; then
+      printf 'container-compose main changed after candidate promotion; refusing to recover without exact promoted-tree evidence\n' >&2
+      exit 1
+    fi
+    refresh_unpublished_release_candidate \
+      "${path}" "${remote}" "${local_head}" "${remote_head}" "${version}" || exit 1
+    RECOVERED_UNPUBLISHED_RELEASE_BASE="${remote_head}"
+    return 0
   fi
 
   commits="$(git -C "${path}" rev-list --reverse "${remote_head}..${local_head}")"
@@ -807,7 +938,8 @@ recover_unpublished_release_candidate() {
     exit 1
   fi
   while IFS= read -r commit; do
-    validate_unpublished_release_commit "${path}" "${commit}" "${version}" || exit 1
+    validate_unpublished_release_commit \
+      "${path}" "${commit}" "${version}" "${remote_head}" || exit 1
   done <<<"${commits}"
 
   RECOVERED_UNPUBLISHED_RELEASE_BASE="${remote_head}"
