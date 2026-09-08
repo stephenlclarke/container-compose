@@ -291,6 +291,7 @@ SECURITY_REASON="${CONTAINER_STACK_SECURITY_REASON:-}"
 MAINTENANCE_REASON="${CONTAINER_STACK_MAINTENANCE_REASON:-}"
 MILESTONE_SOAK_OVERRIDE_REASON="${CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON:-}"
 RECOVERED_UNPUBLISHED_RELEASE_BASE=""
+RELEASE_CONTROLLER_RESTART_REQUIRED=0
 CURRENT_INIT_IMAGE_AUTHORITY_ROOT=""
 CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=0
 RELEASE_INIT_AUTHORITY_CACHE_ROOT="${CONTAINER_STACK_RELEASE_INIT_AUTHORITY_CACHE_ROOT:-$({ getconf DARWIN_USER_CACHE_DIR 2>/dev/null || printf '/private/tmp/'; })container-compose-release-authorities}"
@@ -867,6 +868,7 @@ validate_unpublished_release_commit() {
 recover_unpublished_release_candidate() {
   local version="$1" path remote local_head remote_head local_tree remote_tree current_head promotion_parent commit commits
   RECOVERED_UNPUBLISHED_RELEASE_BASE=""
+  RELEASE_CONTROLLER_RESTART_REQUIRED=0
   path="$(repo_path "${COMPOSE_REPO}")"
   remote="$(push_remote "${COMPOSE_REPO}")"
   fetch_release_remote "${COMPOSE_REPO}"
@@ -929,6 +931,7 @@ recover_unpublished_release_candidate() {
     refresh_unpublished_release_candidate \
       "${path}" "${remote}" "${local_head}" "${remote_head}" "${version}" || exit 1
     RECOVERED_UNPUBLISHED_RELEASE_BASE="${remote_head}"
+    RELEASE_CONTROLLER_RESTART_REQUIRED=1
     return 0
   fi
 
@@ -944,6 +947,28 @@ recover_unpublished_release_candidate() {
 
   RECOVERED_UNPUBLISHED_RELEASE_BASE="${remote_head}"
   printf 'retaining unpublished release candidate %s after an earlier local gate failure\n' "${local_head}"
+}
+
+# A retained candidate can acquire newer release-controller code and version
+# metadata when it is refreshed from canonical main. Replace this process so
+# no state computed by the old controller survives past that boundary. exec
+# preserves the marker-protected workspace lease because its PID is unchanged.
+restart_refreshed_release_controller() {
+  local path controller
+  if [[ "${RELEASE_CONTROLLER_RESTART_REQUIRED}" != "1" ]]; then
+    return 0
+  fi
+  path="$(repo_path "${COMPOSE_REPO}")"
+  controller="${path}/scripts/${SCRIPT_NAME}"
+  if [[ ! -f "${controller}" || -L "${controller}" ]]; then
+    printf 'refreshed release controller is missing or unsafe: %s\n' \
+      "${controller}" >&2
+    exit 1
+  fi
+  printf 'restarting from refreshed release controller: %s\n' "${controller}"
+  CONTAINER_STACK_RELEASE_LIBRARY=0
+  export CONTAINER_STACK_RELEASE_LIBRARY
+  exec /bin/bash "${controller}" release "${VERSION_SELECTOR}" --execute
 }
 
 # Print and optionally execute a command.
@@ -6229,6 +6254,7 @@ release_current_stack() {
   ensure_new_stable_release "${version}"
   ensure_release_intent
   recover_unpublished_release_candidate "${version}"
+  restart_refreshed_release_controller
   ensure_current_build_release_readiness
   require_current_stack_matches_sibling_mains
   require_release_upstream_alignment

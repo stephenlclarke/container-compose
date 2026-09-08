@@ -1297,8 +1297,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("dirty worktree blocks recovery", recovery)
         self.assertLess(
             release.index('recover_unpublished_release_candidate "${version}"'),
+            release.index("restart_refreshed_release_controller"),
+        )
+        self.assertLess(
+            release.index("restart_refreshed_release_controller"),
             release.index("ensure_current_build_release_readiness"),
         )
+        restart = self.script[
+            self.script.index("restart_refreshed_release_controller() {") :
+            self.script.index("# Print and optionally execute a command.")
+        ]
+        self.assertIn("RELEASE_CONTROLLER_RESTART_REQUIRED", restart)
+        self.assertIn('exec /bin/bash "${controller}" release "${VERSION_SELECTOR}" --execute', restart)
 
     def test_release_plan_describes_the_stable_promotion_lanes(self) -> None:
         plan = self.script[self.script.index("\nplan() {") : self.script.index("\nmain() {")]
@@ -7536,12 +7546,14 @@ esac
             result = self.run_release_function(
                 root / "github",
                 "recover_unpublished_release_candidate 0.6.71; "
-                "printf 'base=%s\\n' \"${RECOVERED_UNPUBLISHED_RELEASE_BASE}\"",
+                "printf 'base=%s restart=%s\\n' "
+                '"${RECOVERED_UNPUBLISHED_RELEASE_BASE}" '
+                '"${RELEASE_CONTROLLER_RESTART_REQUIRED}"',
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("refreshed retained release candidate", result.stdout)
-            self.assertIn(f"base={remote_head}", result.stdout)
+            self.assertIn(f"base={remote_head} restart=1", result.stdout)
             refreshed_head = self.git(local, "rev-parse", "main")
             self.assertEqual(
                 self.git(local, "show", "-s", "--format=%P", refreshed_head).split(),
@@ -7558,11 +7570,39 @@ esac
             self.assertEqual(self.git(local, "status", "--short"), "")
 
             repeated = self.run_release_function(
-                root / "github", "recover_unpublished_release_candidate 0.6.71"
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "printf 'restart=%s\\n' "
+                '"${RELEASE_CONTROLLER_RESTART_REQUIRED}"',
             )
             self.assertEqual(repeated.returncode, 0, repeated.stderr)
             self.assertIn("retaining unpublished release candidate", repeated.stdout)
+            self.assertIn("restart=0", repeated.stdout)
             self.assertEqual(self.git(local, "rev-parse", "main"), refreshed_head)
+
+    def test_release_helper_reexecutes_the_refreshed_controller(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "github" / "container-compose" / "scripts"
+            scripts.mkdir(parents=True)
+            controller = scripts / "CONTAINER_STACK_RELEASE.sh"
+            controller.write_text(
+                "#!/bin/bash\n"
+                "printf 'args=%s|%s|%s library=%s\\n' "
+                '"$1" "$2" "$3" "${CONTAINER_STACK_RELEASE_LIBRARY}"\n',
+                encoding="utf-8",
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "VERSION_SELECTOR=0.6.71; "
+                "RELEASE_CONTROLLER_RESTART_REQUIRED=1; "
+                "restart_refreshed_release_controller",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("restarting from refreshed release controller", result.stdout)
+            self.assertIn("args=release|0.6.71|--execute library=0", result.stdout)
 
     def test_release_helper_refreshes_the_same_candidate_after_main_advances_twice(
         self,
