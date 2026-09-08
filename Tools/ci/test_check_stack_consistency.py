@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import tempfile
@@ -181,6 +182,9 @@ def write_resolved(
     path.write_text(
         json.dumps(
             {
+                "originHash": hashlib.sha256(
+                    path.with_name("Package.swift").read_bytes()
+                ).hexdigest(),
                 "pins": pins
             }
         ),
@@ -318,6 +322,34 @@ class StackConsistencyTests(unittest.TestCase):
             write_resolved(root / "container" / "Package.resolved")
 
             self.assertEqual(self.run_checker(root), 0)
+
+    def test_rejects_stale_compose_resolved_origin_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "compose").mkdir()
+            (root / "container").mkdir()
+            write_stack_refs(root / "stack-refs.json")
+            write_package(
+                root / "compose" / "Package.swift",
+                "revision",
+                CONTAINERIZATION_REF,
+                include_container=True,
+            )
+            write_package(
+                root / "container" / "Package.swift",
+                "revision",
+                CONTAINERIZATION_REF,
+                requirement_constant="containerizationRevision",
+            )
+            compose_resolved = root / "compose" / "Package.resolved"
+            write_resolved(compose_resolved, include_container=True)
+            resolved = json.loads(compose_resolved.read_text(encoding="utf-8"))
+            resolved["originHash"] = "0" * 64
+            compose_resolved.write_text(json.dumps(resolved), encoding="utf-8")
+            write_resolved(root / "container" / "Package.resolved")
+
+            with self.assertRaisesRegex(SystemExit, "Package.resolved originHash mismatch"):
+                self.run_checker(root)
 
     def test_accepts_identity_preserving_local_override_with_remote_revision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
