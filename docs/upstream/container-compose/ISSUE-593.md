@@ -36,3 +36,5 @@ native build.
   and resumes at the first missing or invalid release stage.
 - Focused recovery, release-authority, workflow-policy, and benchmark tests
   pass without running a product-wide build cycle.
+
+Implementation: [pull request 594](https://github.com/stephenlclarke/container-compose/pull/594).
