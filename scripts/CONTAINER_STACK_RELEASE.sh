@@ -292,6 +292,7 @@ MAINTENANCE_REASON="${CONTAINER_STACK_MAINTENANCE_REASON:-}"
 MILESTONE_SOAK_OVERRIDE_REASON="${CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON:-}"
 RECOVERED_UNPUBLISHED_RELEASE_BASE=""
 RELEASE_CONTROLLER_RESTART_REQUIRED=0
+RELEASE_BOOTSTRAP_HEAD=""
 CURRENT_INIT_IMAGE_AUTHORITY_ROOT=""
 CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=0
 RELEASE_INIT_AUTHORITY_CACHE_ROOT="${CONTAINER_STACK_RELEASE_INIT_AUTHORITY_CACHE_ROOT:-$({ getconf DARWIN_USER_CACHE_DIR 2>/dev/null || printf '/private/tmp/'; })container-compose-release-authorities}"
@@ -701,10 +702,129 @@ PY
 # Retain a helper-created candidate after a local release gate fails before
 # promotion. Recommitting an identical tree changes the reviewed candidate
 # identity on every retry and makes evidence impossible to bind reliably.
+compute_release_candidate_refresh_tree() {
+  local path="$1" candidate_head="$2" remote_head="$3"
+  local merge_output merge_tree conflict_paths conflict_path authority_paths
+  local index_root index_file resolution_error resolved_tree
+  local remote_entry remote_mode remote_type remote_blob remote_path resolved_blob
+
+  RELEASE_CANDIDATE_REFRESH_TREE=""
+  RELEASE_CANDIDATE_REFRESH_CONFLICTS=""
+  RELEASE_CANDIDATE_REFRESH_ERROR=""
+
+  if merge_output="$(
+    git -C "${path}" merge-tree --write-tree --name-only --no-messages \
+      "${candidate_head}" "${remote_head}" 2>&1
+  )"; then
+    merge_tree="${merge_output%%$'\n'*}"
+    if [[ ! "${merge_tree}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${merge_output}" != "${merge_tree}" ]]; then
+      RELEASE_CANDIDATE_REFRESH_ERROR="release candidate refresh did not produce one exact merge tree"
+      return 1
+    fi
+    RELEASE_CANDIDATE_REFRESH_TREE="${merge_tree}"
+    return 0
+  fi
+
+  merge_tree="${merge_output%%$'\n'*}"
+  conflict_paths="${merge_output#*$'\n'}"
+  if [[ ! "${merge_tree}" =~ ^[0-9a-f]{40}$ ]] ||
+    [[ -z "${conflict_paths}" ]] || [[ "${conflict_paths}" == "${merge_output}" ]]; then
+    RELEASE_CANDIDATE_REFRESH_ERROR="${merge_output}"
+    return 1
+  fi
+
+  while IFS= read -r conflict_path; do
+    [[ -n "${conflict_path}" ]] || continue
+    # These snapshots describe the current reviewed fork heads, so canonical
+    # main owns their complete contents. The strict divergence gate validates
+    # that authority against the transaction repositories before any build.
+    case "${conflict_path}" in
+      docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json|docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md) ;;
+      *)
+        RELEASE_CANDIDATE_REFRESH_ERROR="${merge_output}"
+        return 1
+        ;;
+    esac
+  done <<<"${conflict_paths}"
+
+  authority_paths=$'docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json\ndocs/upstream/FORK-COMMIT-CLASSIFICATIONS.md'
+
+  index_root="$(
+    mktemp -d "${TMPDIR:-/tmp}/container-compose-refresh-index.XXXXXX"
+  )" || {
+    RELEASE_CANDIDATE_REFRESH_ERROR="could not create an isolated refresh index"
+    return 1
+  }
+  index_file="${index_root}/index"
+  resolution_error=""
+
+  if ! GIT_INDEX_FILE="${index_file}" git -C "${path}" read-tree "${merge_tree}"; then
+    resolution_error="could not read the candidate conflict tree"
+  fi
+
+  while [[ -z "${resolution_error}" ]] && IFS= read -r conflict_path; do
+    [[ -n "${conflict_path}" ]] || continue
+    remote_entry="$(
+      git -C "${path}" ls-tree "${remote_head}" -- "${conflict_path}"
+    )"
+    read -r remote_mode remote_type remote_blob remote_path <<<"${remote_entry}"
+    if [[ ! "${remote_mode}" =~ ^[0-7]{6}$ ]] ||
+      [[ "${remote_type}" != "blob" ]] ||
+      [[ ! "${remote_blob}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${remote_path}" != "${conflict_path}" ]]; then
+      resolution_error="reviewed classification authority is missing or unsafe: ${conflict_path}"
+      break
+    fi
+    if ! GIT_INDEX_FILE="${index_file}" git -C "${path}" update-index \
+      --add --cacheinfo "${remote_mode},${remote_blob},${conflict_path}"; then
+      resolution_error="could not install reviewed classification authority: ${conflict_path}"
+      break
+    fi
+  done <<<"${authority_paths}"
+
+  if [[ -z "${resolution_error}" ]]; then
+    resolved_tree="$(
+      GIT_INDEX_FILE="${index_file}" git -C "${path}" write-tree 2>/dev/null || true
+    )"
+    if [[ ! "${resolved_tree}" =~ ^[0-9a-f]{40}$ ]]; then
+      resolution_error="could not write the resolved candidate refresh tree"
+    fi
+  fi
+
+  /bin/rm -f "${index_file}" "${index_file}.lock"
+  if ! /bin/rmdir "${index_root}" && [[ -z "${resolution_error}" ]]; then
+    resolution_error="could not remove the isolated refresh index"
+  fi
+  if [[ -n "${resolution_error}" ]]; then
+    RELEASE_CANDIDATE_REFRESH_ERROR="${resolution_error}"
+    return 1
+  fi
+
+  while IFS= read -r conflict_path; do
+    [[ -n "${conflict_path}" ]] || continue
+    resolved_blob="$(
+      git -C "${path}" rev-parse "${resolved_tree}:${conflict_path}" 2>/dev/null || true
+    )"
+    remote_blob="$(
+      git -C "${path}" rev-parse "${remote_head}:${conflict_path}" 2>/dev/null || true
+    )"
+    if [[ ! "${resolved_blob}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${resolved_blob}" != "${remote_blob}" ]]; then
+      RELEASE_CANDIDATE_REFRESH_ERROR="reviewed classification authority was not selected exactly: ${conflict_path}"
+      return 1
+    fi
+  done <<<"${authority_paths}"
+
+  RELEASE_CANDIDATE_REFRESH_TREE="${resolved_tree}"
+  RELEASE_CANDIDATE_REFRESH_CONFLICTS="${authority_paths}"
+  return 0
+}
+
 validate_unpublished_release_refresh_commit() {
   local path="$1" commit="$2" version="$3" current_remote_head="$4"
   local subject parents first_parent main_parent extra_parent
-  local expected_tree_output expected_tree actual_tree
+  local expected_tree actual_tree
 
   subject="$(git -C "${path}" show -s --format=%s "${commit}")"
   if [[ "${subject}" != "chore(release): refresh ${version} candidate from main" ]]; then
@@ -727,15 +847,13 @@ validate_unpublished_release_refresh_commit() {
       "${commit}" >&2
     return 1
   fi
-  if ! expected_tree_output="$(
-    git -C "${path}" merge-tree --write-tree \
-      "${first_parent}" "${main_parent}" 2>&1
-  )"; then
+  if ! compute_release_candidate_refresh_tree \
+    "${path}" "${first_parent}" "${main_parent}"; then
     printf 'release candidate refresh parents no longer merge cleanly: %s\n%s\n' \
-      "${commit}" "${expected_tree_output}" >&2
+      "${commit}" "${RELEASE_CANDIDATE_REFRESH_ERROR}" >&2
     return 1
   fi
-  expected_tree="${expected_tree_output%%$'\n'*}"
+  expected_tree="${RELEASE_CANDIDATE_REFRESH_TREE}"
   actual_tree="$(git -C "${path}" rev-parse "${commit}^{tree}")"
   if [[ ! "${expected_tree}" =~ ^[0-9a-f]{40}$ || "${actual_tree}" != "${expected_tree}" ]]; then
     printf 'release candidate refresh tree is not the exact parent merge: %s\n' \
@@ -752,7 +870,7 @@ validate_unpublished_release_refresh_commit() {
 # the checkout; the branch moves only after the remote authority is rechecked.
 refresh_unpublished_release_candidate() {
   local path="$1" remote="$2" local_head="$3" remote_head="$4" version="$5"
-  local base commit commits merge_output merge_tree live_remote_head refresh_head
+  local base commit commits merge_tree live_remote_head refresh_head
 
   base="$(git -C "${path}" merge-base "${local_head}" "${remote_head}")"
   if [[ ! "${base}" =~ ^[0-9a-f]{40}$ || "${base}" == "${local_head}" || "${base}" == "${remote_head}" ]]; then
@@ -770,18 +888,20 @@ refresh_unpublished_release_candidate() {
       "${path}" "${commit}" "${version}" "${remote_head}" || return 1
   done <<<"${commits}"
 
-  if ! merge_output="$(
-    git -C "${path}" merge-tree --write-tree \
-      "${local_head}" "${remote_head}" 2>&1
-  )"; then
+  if ! compute_release_candidate_refresh_tree \
+    "${path}" "${local_head}" "${remote_head}"; then
     printf 'reviewed main cannot be applied cleanly to the retained release candidate:\n%s\n' \
-      "${merge_output}" >&2
+      "${RELEASE_CANDIDATE_REFRESH_ERROR}" >&2
     return 1
   fi
-  merge_tree="${merge_output%%$'\n'*}"
+  merge_tree="${RELEASE_CANDIDATE_REFRESH_TREE}"
   if [[ ! "${merge_tree}" =~ ^[0-9a-f]{40}$ ]]; then
     printf 'release candidate refresh did not produce an exact merge tree\n' >&2
     return 1
+  fi
+  if [[ -n "${RELEASE_CANDIDATE_REFRESH_CONFLICTS}" ]]; then
+    printf 'resolved superseded fork-classification authority from reviewed main:\n%s\n' \
+      "${RELEASE_CANDIDATE_REFRESH_CONFLICTS}"
   fi
 
   live_remote_head="$(
@@ -921,6 +1041,16 @@ recover_unpublished_release_candidate() {
   local_head="$(git -C "${path}" rev-parse main)"
   remote_head="$(remote_main_commit "${COMPOSE_REPO}")"
 
+  if [[ "${CONTAINER_STACK_RELEASE_BOOTSTRAP:-0}" == "1" ]]; then
+    if [[ ! "${CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD:-}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${remote_head}" != "${CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD}" ]]; then
+      printf 'reviewed release bootstrap moved before candidate recovery: expected %s, got %s\n' \
+        "${CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD:-missing}" \
+        "${remote_head:-missing}" >&2
+      exit 1
+    fi
+  fi
+
   if [[ "${local_head}" == "${remote_head}" ]]; then
     return 0
   fi
@@ -996,9 +1126,11 @@ recover_unpublished_release_candidate() {
 }
 
 # A retained candidate can acquire newer release-controller code and version
-# metadata when it is refreshed from canonical main. Replace this process so
-# no state computed by the old controller survives past that boundary. exec
-# preserves the marker-protected workspace lease because its PID is unchanged.
+# metadata when it is refreshed from canonical main. The outer bootstrap also
+# enters here after it has recovered an older candidate with reviewed main.
+# Replace either process so no state computed by the bootstrap or old controller
+# survives past that boundary. exec preserves the marker-protected workspace
+# lease because its PID is unchanged.
 restart_refreshed_release_controller() {
   local path controller
   if [[ "${RELEASE_CONTROLLER_RESTART_REQUIRED}" != "1" ]]; then
@@ -1013,7 +1145,9 @@ restart_refreshed_release_controller() {
   fi
   printf 'restarting from refreshed release controller: %s\n' "${controller}"
   CONTAINER_STACK_RELEASE_LIBRARY=0
+  CONTAINER_STACK_RELEASE_BOOTSTRAP=0
   export CONTAINER_STACK_RELEASE_LIBRARY
+  export CONTAINER_STACK_RELEASE_BOOTSTRAP
   exec /bin/bash "${controller}" release "${VERSION_SELECTOR}" --execute
 }
 
@@ -6296,6 +6430,19 @@ release_current_stack() {
   fi
   current="$(current_compose_version)"
   version="$(resolve_release_version "${VERSION_SELECTOR}")"
+  if [[ "${CONTAINER_STACK_RELEASE_BOOTSTRAP:-0}" == "1" ]]; then
+    if ! stable_tag_exists "${version}"; then
+      ensure_release_version_is_valid "${latest}" "${current}" "${version}"
+      ensure_new_stable_release "${version}"
+      ensure_release_intent
+      recover_unpublished_release_candidate "${version}"
+    fi
+    # No build, test, package, or publication step may use controller or tool
+    # files outside the signed transaction. Even an unchanged candidate must
+    # therefore replace the reviewed-main bootstrap before proceeding.
+    RELEASE_CONTROLLER_RESTART_REQUIRED=1
+    restart_refreshed_release_controller
+  fi
   if stable_tag_exists "${version}"; then
     printf 'resuming stable tag: %s\n' "${version}"
     resume_stable_release "${version}"
@@ -6404,11 +6551,88 @@ Process:
 EOF
 }
 
+# Require the one controller allowed to bootstrap a retained transaction to be
+# the clean, exact reviewed main checkout. The bootstrap may recover an
+# unpublished candidate, but it must re-exec the signed transaction controller
+# before any release stage runs.
+require_release_bootstrap_authority() {
+  local source_root source_head source_origin remote_head bootstrap_controller
+  local relative_path absolute_path index_entry expected_blob actual_blob
+  local -a bootstrap_closure=(
+    "Makefile"
+    "scripts/${SCRIPT_NAME}"
+    "Tools/ci/container-runtime-lock.sh"
+    "Tools/release/release-host-state.py"
+    "Tools/release/release-workspace.py"
+  )
+  source_root="$(cd "${SELF_DIRECTORY}/.." && pwd -P)"
+  bootstrap_controller="${SELF_DIRECTORY}/${SCRIPT_NAME}"
+  if [[ ! -f "${bootstrap_controller}" || -L "${bootstrap_controller}" ]]; then
+    printf 'release bootstrap controller is missing or unsafe: %s\n' \
+      "${bootstrap_controller}" >&2
+    return 1
+  fi
+  if ! git -C "${source_root}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'release bootstrap source is not a Git checkout: %s\n' \
+      "${source_root}" >&2
+    return 1
+  fi
+  if [[ -n "$(git -C "${source_root}" status --short)" ]]; then
+    printf 'dirty release bootstrap source is not reviewed authority: %s\n' \
+      "${source_root}" >&2
+    return 1
+  fi
+  for relative_path in "${bootstrap_closure[@]}"; do
+    absolute_path="${source_root}/${relative_path}"
+    if [[ ! -f "${absolute_path}" || -L "${absolute_path}" ]]; then
+      printf 'release bootstrap closure file is missing or unsafe: %s\n' \
+        "${absolute_path}" >&2
+      return 1
+    fi
+    index_entry="$(git -C "${source_root}" ls-files -v -- "${relative_path}")"
+    if [[ -z "${index_entry}" || "${index_entry}" == S\ * ||
+      "${index_entry:0:1}" =~ [a-z] ]]; then
+      printf 'release bootstrap closure has hidden index state: %s\n' \
+        "${relative_path}" >&2
+      return 1
+    fi
+    expected_blob="$(git -C "${source_root}" rev-parse "HEAD:${relative_path}" \
+      2>/dev/null || true)"
+    actual_blob="$(git -C "${source_root}" hash-object --no-filters \
+      "${absolute_path}" 2>/dev/null || true)"
+    if [[ ! "${expected_blob}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${actual_blob}" != "${expected_blob}" ]]; then
+      printf 'release bootstrap closure differs from reviewed HEAD: %s\n' \
+        "${relative_path}" >&2
+      return 1
+    fi
+  done
+  source_origin="$(git -C "${source_root}" remote get-url origin 2>/dev/null || true)"
+  case "${source_origin}" in
+    https://github.com/stephenlclarke/container-compose|https://github.com/stephenlclarke/container-compose.git|git@github.com:stephenlclarke/container-compose|git@github.com:stephenlclarke/container-compose.git) ;;
+    *)
+      printf 'release bootstrap origin is not stephenlclarke/container-compose: %s\n' \
+        "${source_origin:-missing}" >&2
+      return 1
+      ;;
+  esac
+  source_head="$(git -C "${source_root}" rev-parse HEAD)"
+  remote_head="$(git -C "${source_root}" ls-remote --heads origin refs/heads/main \
+    | awk '{print $1}' | tail -n 1)"
+  if [[ ! "${source_head}" =~ ^[0-9a-f]{40}$ ]] ||
+    [[ "${source_head}" != "${remote_head}" ]]; then
+    printf 'release bootstrap is not exact reviewed origin/main: local %s, remote %s\n' \
+      "${source_head:-missing}" "${remote_head:-missing}" >&2
+    return 1
+  fi
+  RELEASE_BOOTSTRAP_HEAD="${source_head}"
+}
+
 # Run a stable release only inside the exact marker-protected transaction
 # created by the release workspace controller. A failed child is retained for
 # the next invocation; only a completely successful publication is removed.
 run_isolated_release() {
-  local workspace child child_pid status claim_status
+  local workspace bootstrap child child_pid status claim_status
   if [[ "${EXECUTE}" != "1" ]]; then
     python3 "${RELEASE_WORKSPACE_TOOL}" plan
     printf 'would materialize and retain an exact isolated release workspace for %s\n' \
@@ -6418,6 +6642,7 @@ run_isolated_release() {
 
   workspace="$(python3 "${RELEASE_WORKSPACE_TOOL}" materialize \
     --build-root "${RELEASE_BUILD_ROOT}" -- "${VERSION_SELECTOR}")"
+  bootstrap="${SELF_DIRECTORY}/${SCRIPT_NAME}"
   child="${workspace}/container-compose/scripts/${SCRIPT_NAME}"
   if [[ ! -f "${child}" || -L "${child}" ]]; then
     printf 'isolated release controller is missing or unsafe: %s\n' "${child}" >&2
@@ -6427,9 +6652,11 @@ run_isolated_release() {
   CONTAINER_STACK_RELEASE_ROOT="${workspace}" \
   CONTAINER_STACK_RELEASE_BUILD_ROOT="${RELEASE_BUILD_ROOT}" \
   CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE=1 \
+  CONTAINER_STACK_RELEASE_BOOTSTRAP=1 \
+  CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD="${RELEASE_BOOTSTRAP_HEAD}" \
     python3 "${RELEASE_WORKSPACE_TOOL}" execute \
       --build-root "${RELEASE_BUILD_ROOT}" "${workspace}" \
-      /bin/bash "${child}" release "${VERSION_SELECTOR}" --execute &
+      /bin/bash "${bootstrap}" release "${VERSION_SELECTOR}" --execute &
   child_pid=$!
   wait "${child_pid}" || status=$?
   claim_status=0
@@ -6470,6 +6697,7 @@ main() {
         done
         release_current_stack
       else
+        require_release_bootstrap_authority
         recover_release_host_state_on_startup
         run_isolated_release
       fi

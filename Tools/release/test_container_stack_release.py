@@ -72,14 +72,15 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_existing_stable_tags_resume_without_changing_identity(self) -> None:
         release = self.script[self.script.index("release_current_stack() {") :]
-        self.assertIn('if stable_tag_exists "${version}"', release)
-        self.assertIn('resume_stable_release "${version}"', release)
+        ordinary = release[release.index('if stable_tag_exists "${version}"') :]
+        self.assertIn('if stable_tag_exists "${version}"', ordinary)
+        self.assertIn('resume_stable_release "${version}"', ordinary)
         self.assertIn('ensure_latest_stable_retry "${version}"', self.script)
         self.assertIn('ensure_stable_retry_source_authority "${version}"', self.script)
-        self.assertIn("ensure_new_stable_release \"${version}\"", release)
+        self.assertIn("ensure_new_stable_release \"${version}\"", ordinary)
         self.assertLess(
-            release.index('resume_stable_release "${version}"'),
-            release.index("ensure_new_stable_release \"${version}\""),
+            ordinary.index('resume_stable_release "${version}"'),
+            ordinary.index("ensure_new_stable_release \"${version}\""),
         )
         self.assertIn("ensure_stable_release_is_unpublished() {", self.script)
         self.assertIn("stable_release_is_published() {", self.script)
@@ -98,6 +99,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
     def test_release_helper_owns_an_isolated_transaction_root(self) -> None:
         self.assertIn("run_isolated_release() {", self.script)
         self.assertIn("CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE=1", self.script)
+        self.assertIn("CONTAINER_STACK_RELEASE_BOOTSTRAP=1", self.script)
         self.assertIn("release transaction retained for exact recovery", self.script)
         self.assertIn('RELEASE_BUILD_ROOT="${CONTAINER_STACK_RELEASE_BUILD_ROOT:', self.script)
         self.assertIn('"${RELEASE_WORKSPACE_TOOL}" execute', self.script)
@@ -106,6 +108,30 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('--pid "${child_pid}"', self.script)
         self.assertNotIn('--pid "$$"', self.script)
         self.assertNotIn("Local source checkout layout expected", self.script)
+        isolated = self.script[
+            self.script.index("require_release_bootstrap_authority() {") :
+            self.script.index("\nmain() {")
+        ]
+        self.assertIn('status --short', isolated)
+        self.assertIn("stephenlclarke/container-compose", isolated)
+        self.assertIn('"Tools/ci/container-runtime-lock.sh"', isolated)
+        self.assertIn('"Tools/release/release-host-state.py"', isolated)
+        self.assertIn('"Tools/release/release-workspace.py"', isolated)
+        self.assertIn('ls-files -v -- "${relative_path}"', isolated)
+        self.assertIn('"${index_entry}" == S\\ *', isolated)
+        self.assertIn('"${index_entry:0:1}" =~ [a-z]', isolated)
+        self.assertIn('hash-object --no-filters', isolated)
+        self.assertIn('rev-parse "HEAD:${relative_path}"', isolated)
+        self.assertIn('ls-remote --heads origin refs/heads/main', isolated)
+        self.assertIn('"${source_head}" != "${remote_head}"', isolated)
+        self.assertIn('RELEASE_BOOTSTRAP_HEAD="${source_head}"', isolated)
+        self.assertIn(
+            'CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD="${RELEASE_BOOTSTRAP_HEAD}"',
+            isolated,
+        )
+        self.assertIn('[[ ! -f "${child}" || -L "${child}" ]]', isolated)
+        self.assertIn('/bin/bash "${bootstrap}" release', isolated)
+        self.assertNotIn('/bin/bash "${child}" release', isolated)
         active = self.script.split(
             'elif [[ "${CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE:-0}" == "1" ]]',
             1,
@@ -118,6 +144,40 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             active.index("recover_release_host_state_on_startup"),
             active.index("release_current_stack"),
         )
+        outer = self.script[
+            self.script.index('      else\n        require_release_bootstrap_authority') :
+            self.script.index("      fi\n      CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=1")
+        ]
+        self.assertLess(
+            outer.index("require_release_bootstrap_authority"),
+            outer.index("recover_release_host_state_on_startup"),
+        )
+
+    def test_release_bootstrap_recovers_then_hands_off_before_readiness(self) -> None:
+        release = self.script[self.script.index("release_current_stack() {") :]
+        bootstrap = release[
+            release.index('if [[ "${CONTAINER_STACK_RELEASE_BOOTSTRAP:-0}" == "1" ]]') :
+            release.index('if stable_tag_exists "${version}"; then')
+        ]
+
+        self.assertIn('recover_unpublished_release_candidate "${version}"', bootstrap)
+        self.assertIn("RELEASE_CONTROLLER_RESTART_REQUIRED=1", bootstrap)
+        self.assertIn("restart_refreshed_release_controller", bootstrap)
+        self.assertNotIn("ensure_current_build_release_readiness", bootstrap)
+        self.assertLess(
+            release.index("restart_refreshed_release_controller", release.index("bootstrap")),
+            release.index("ensure_current_build_release_readiness"),
+        )
+
+        recovery = self.script[
+            self.script.index("recover_unpublished_release_candidate() {") :
+            self.script.index("# A retained candidate can acquire newer release-controller")
+        ]
+        self.assertIn("CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD", recovery)
+        self.assertLess(
+            recovery.index("reviewed release bootstrap moved"),
+            recovery.index('if [[ "${local_head}" == "${remote_head}" ]]'),
+        )
 
     def test_scheduled_release_delegates_checkout_ownership_to_controller(self) -> None:
         workflow = SCHEDULED_STABLE_RELEASE_WORKFLOW.read_text(encoding="utf-8")
@@ -128,6 +188,24 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("CONTAINER_STACK_RELEASE_BUILD_ROOT:", release)
         self.assertNotIn("CONTAINER_STACK_RELEASE_ROOT:", release)
         self.assertNotIn("Checkout builder-shim source", release)
+        checkout = release.index("Checkout container-compose release controls")
+        authority = release.index("Verify exact release bootstrap closure")
+        configure = release.index("Configure isolated release controller")
+        promote = release.index("Promote the selected stable release")
+        self.assertLess(checkout, authority)
+        self.assertLess(authority, configure)
+        self.assertLess(authority, promote)
+        preflight = release[authority:configure]
+        self.assertIn("EXPECTED_HEAD: ${{ github.sha }}", preflight)
+        self.assertIn("scripts/CONTAINER_STACK_RELEASE.sh", preflight)
+        self.assertIn("Tools/ci/container-runtime-lock.sh", preflight)
+        self.assertIn("Tools/release/release-host-state.py", preflight)
+        self.assertIn("Tools/release/release-workspace.py", preflight)
+        self.assertIn('git ls-files -v -- "${relative_path}"', preflight)
+        self.assertIn('git hash-object --no-filters "${relative_path}"', preflight)
+        self.assertNotIn("make ", preflight)
+        self.assertNotIn("./scripts/", preflight)
+        self.assertNotIn("python3 Tools/", preflight)
         self.assertNotIn("Checkout containerization source", release)
         self.assertNotIn("Checkout container runtime source", release)
         self.assertNotIn("Checkout Homebrew tap", release)
@@ -1277,7 +1355,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_release_helper_retains_only_its_unpublished_candidate_before_readiness(self) -> None:
         recovery = self.script[
-            self.script.index("validate_unpublished_release_refresh_commit() {") :
+            self.script.index("compute_release_candidate_refresh_tree() {") :
             self.script.index("# Print and optionally execute a command.")
         ]
         release = self.script[self.script.index("release_current_stack() {") :]
@@ -7826,6 +7904,49 @@ esac
             self.assertIn("restart=0", repeated.stdout)
             self.assertEqual(self.git(local, "rev-parse", "main"), refreshed_head)
 
+    def test_release_bootstrap_rejects_main_moving_before_candidate_recovery(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, local = self.create_compose_checkout(root)
+            reviewed_bootstrap_head = self.git(local, "rev-parse", "main")
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"Makefile": "COMPOSE_VERSION ?= 0.6.71\n"},
+                "chore(release): prepare 0.6.71",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+
+            updater = root / "updater"
+            self.run_command(
+                "git", "clone", "--branch", "main", str(remote), str(updater)
+            )
+            self.configure_repo(updater)
+            self.commit_file(
+                updater,
+                "REPAIR.md",
+                "newer reviewed main\n",
+                "fix: advance reviewed main",
+            )
+            self.run_command("git", "-C", str(updater), "push", "origin", "main")
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+                shell_setup=(
+                    "export CONTAINER_STACK_RELEASE_BOOTSTRAP=1\n"
+                    "export CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD="
+                    f"{reviewed_bootstrap_head}"
+                ),
+            )
+
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("reviewed release bootstrap moved", result.stderr)
+            self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
+            self.assertEqual(self.git(local, "status", "--short"), "")
+
     def test_release_helper_reexecutes_the_refreshed_controller(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -7834,8 +7955,9 @@ esac
             controller = scripts / "CONTAINER_STACK_RELEASE.sh"
             controller.write_text(
                 "#!/bin/bash\n"
-                "printf 'args=%s|%s|%s library=%s\\n' "
-                '"$1" "$2" "$3" "${CONTAINER_STACK_RELEASE_LIBRARY}"\n',
+                "printf 'args=%s|%s|%s library=%s bootstrap=%s\\n' "
+                '"$1" "$2" "$3" "${CONTAINER_STACK_RELEASE_LIBRARY}" '
+                '"${CONTAINER_STACK_RELEASE_BOOTSTRAP}"\n',
                 encoding="utf-8",
             )
 
@@ -7848,7 +7970,10 @@ esac
 
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("restarting from refreshed release controller", result.stdout)
-            self.assertIn("args=release|0.6.71|--execute library=0", result.stdout)
+            self.assertIn(
+                "args=release|0.6.71|--execute library=0 bootstrap=0",
+                result.stdout,
+            )
 
     def test_release_helper_refreshes_the_same_candidate_after_main_advances_twice(
         self,
@@ -7911,6 +8036,144 @@ esac
             )
             self.assertEqual(self.git(local, "show", "main:SECOND.md"), "second")
             self.assertEqual(self.git(local, "status", "--short"), "")
+
+    def test_release_helper_refreshes_superseded_classification_authority(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, local = self.create_compose_checkout(root)
+            base_files = {
+                "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json": (
+                    '{\n  "snapshot": "base",\n'
+                    '  "common-1": 1,\n  "common-2": 2,\n'
+                    '  "common-3": 3,\n  "common-4": 4\n}\n'
+                ),
+                "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md": (
+                    "base authority\n\n"
+                    + "".join(f"common {index}\n" for index in range(1, 21))
+                ),
+            }
+            for name, contents in base_files.items():
+                path = local / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(contents, encoding="utf-8")
+                self.run_command("git", "-C", str(local), "add", name)
+            self.run_command(
+                "git",
+                "-C",
+                str(local),
+                "commit",
+                "-m",
+                "docs: establish classification authority",
+            )
+            self.run_command("git", "-C", str(local), "push", "origin", "main")
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"Makefile": "COMPOSE_VERSION ?= 0.6.71\n"},
+                "chore(release): prepare 0.6.71",
+            )
+            self.commit_signed_files(
+                local,
+                {
+                    "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json": (
+                        '{\n  "snapshot": "candidate",\n'
+                        '  "common-1": 1,\n  "common-2": 2,\n'
+                        '  "common-3": 3,\n  "common-4": 4,\n'
+                        '  "candidate-only": true\n}\n'
+                    ),
+                    "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md": (
+                        base_files[
+                            "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md"
+                        ]
+                        + "\ncandidate-only residue\n"
+                    ),
+                },
+                "docs(release): classify candidate runtime repairs",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+
+            updater = root / "updater"
+            self.run_command(
+                "git", "clone", "--branch", "main", str(remote), str(updater)
+            )
+            self.configure_repo(updater)
+            reviewed_files = {
+                "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json": (
+                    '{\n  "snapshot": "reviewed-main",\n'
+                    '  "common-1": 1,\n  "common-2": 2,\n'
+                    '  "common-3": 3,\n  "common-4": 4\n}\n'
+                ),
+                "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md": (
+                    "reviewed main authority\n\n"
+                    + "".join(f"common {index}\n" for index in range(1, 21))
+                ),
+            }
+            for name, contents in reviewed_files.items():
+                path = updater / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(contents, encoding="utf-8")
+                self.run_command("git", "-C", str(updater), "add", name)
+            self.run_command(
+                "git",
+                "-C",
+                str(updater),
+                "commit",
+                "-m",
+                "docs: refresh reviewed classification authority",
+            )
+            self.run_command("git", "-C", str(updater), "push", "origin", "main")
+            remote_head = self.git(updater, "rev-parse", "main")
+
+            result = self.run_release_function(
+                root / "github", "recover_unpublished_release_candidate 0.6.71"
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            conflict_probe = subprocess.run(
+                [
+                    "git",
+                    "merge-tree",
+                    "--write-tree",
+                    "--name-only",
+                    "--no-messages",
+                    candidate_head,
+                    remote_head,
+                ],
+                cwd=local,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=self.non_interactive_environment(),
+            )
+            self.assertNotEqual(conflict_probe.returncode, 0)
+            self.assertIn("FORK-COMMIT-CLASSIFICATIONS.json", conflict_probe.stdout)
+            self.assertNotIn("FORK-COMMIT-CLASSIFICATIONS.md", conflict_probe.stdout)
+            self.assertIn(
+                "resolved superseded fork-classification authority", result.stdout
+            )
+            refreshed_head = self.git(local, "rev-parse", "main")
+            self.assertEqual(
+                self.git(local, "show", "main:Makefile"),
+                "COMPOSE_VERSION ?= 0.6.71",
+            )
+            for name, contents in reviewed_files.items():
+                self.assertEqual(
+                    self.git(local, "show", f"main:{name}"), contents.strip()
+                )
+            self.assertEqual(
+                self.git(local, "show", "-s", "--format=%P", refreshed_head).split(),
+                [candidate_head, remote_head],
+            )
+            self.run_command("git", "-C", str(local), "verify-commit", refreshed_head)
+            self.assertEqual(self.git(local, "status", "--short"), "")
+
+            repeated = self.run_release_function(
+                root / "github", "recover_unpublished_release_candidate 0.6.71"
+            )
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertEqual(self.git(local, "rev-parse", "main"), refreshed_head)
 
     def test_release_helper_rejects_a_conflicting_main_refresh_without_mutation(
         self,
