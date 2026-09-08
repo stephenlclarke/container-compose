@@ -2508,6 +2508,146 @@ github_cli() {{
         )
         self.assertIn("trap cleanup_current_init_image_authority EXIT", self.script)
 
+    def test_current_stack_compares_fresh_remote_sibling_mains(self) -> None:
+        start = self.script.index(
+            "refresh_release_sibling_main() {"
+        )
+        end = self.script.index(
+            "# Remove only the marker-protected authority", start
+        )
+        comparison = self.script[start:end]
+
+        self.assertIn(
+            'fetch_release_remote "${component}"', comparison
+        )
+        self.assertIn(
+            'rev-parse "refs/remotes/${remote}/main"', comparison
+        )
+        self.assertIn(
+            'merge-base --is-ancestor "${local_ref}" "${remote_ref}"', comparison
+        )
+        self.assertIn('merge --ff-only "${remote_ref}"', comparison)
+        self.assertIn('refresh_release_sibling_main "${component}"', comparison)
+        self.assertIn('"${published_ref}" != "${local_ref}"', comparison)
+
+    def test_current_stack_refreshes_stale_local_sibling_branches(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote_refs: dict[str, str] = {}
+            for component in (
+                "container-builder-shim",
+                "containerization",
+                "container",
+            ):
+                remote = root / f"{component}.git"
+                seed = root / f"{component}-seed"
+                local = root / component
+                self.run_command(
+                    "git", "init", "--bare", "--initial-branch=main", str(remote)
+                )
+                self.run_command(
+                    "git", "init", "--initial-branch=main", str(seed)
+                )
+                self.git(seed, "config", "user.name", "Release Test")
+                self.git(seed, "config", "user.email", "release-test@example.invalid")
+                marker = seed / "revision"
+                marker.write_text("local\n", encoding="utf-8")
+                self.git(seed, "add", "revision")
+                self.git(seed, "commit", "-m", "test: create local revision")
+                self.git(seed, "remote", "add", "origin", str(remote))
+                self.git(seed, "push", "-u", "origin", "main")
+                self.run_command("git", "clone", str(remote), str(local))
+                if component in {"container-builder-shim", "container"}:
+                    self.git(local, "remote", "rename", "origin", "fork")
+
+                marker.write_text("remote\n", encoding="utf-8")
+                self.git(seed, "add", "revision")
+                self.git(seed, "commit", "-m", "test: advance remote revision")
+                self.git(seed, "push", "origin", "main")
+                remote_refs[component] = self.git(seed, "rev-parse", "HEAD")
+                self.assertNotEqual(
+                    self.git(local, "rev-parse", "main"), remote_refs[component]
+                )
+
+            compose = root / "container-compose"
+            self.run_command("git", "init", "--initial-branch=main", str(compose))
+            self.git(compose, "config", "user.name", "Release Test")
+            self.git(
+                compose,
+                "config",
+                "user.email",
+                "release-test@example.invalid",
+            )
+            manifest = compose / "Tools" / "release" / "stack-refs.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "components": {
+                            component: {"ref": reference}
+                            for component, reference in remote_refs.items()
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.git(compose, "add", str(manifest.relative_to(compose)))
+            self.git(compose, "commit", "-m", "test: create Current stack")
+            self.git(compose, "tag", "current")
+
+            dry_run = self.run_release_function(
+                root,
+                "require_current_stack_matches_sibling_mains",
+                shell_setup="EXECUTE=0",
+            )
+
+            self.assertEqual(dry_run.returncode, 0, dry_run.stderr)
+            for component, reference in remote_refs.items():
+                self.assertNotEqual(
+                    self.git(root / component, "rev-parse", "main"), reference
+                )
+
+            completed = self.run_release_function(
+                root, "require_current_stack_matches_sibling_mains"
+            )
+
+            self.assertEqual(
+                completed.returncode,
+                0,
+                f"{completed.stderr}\nexpected remote refs: {remote_refs}",
+            )
+            for component, reference in remote_refs.items():
+                self.assertEqual(
+                    self.git(root / component, "rev-parse", "main"), reference
+                )
+
+            retained_builder = root / "container-builder-shim"
+            dirty_marker = retained_builder / "dirty"
+            dirty_marker.write_text("uncommitted\n", encoding="utf-8")
+            dirty = self.run_release_function(
+                root, "require_current_stack_matches_sibling_mains"
+            )
+            self.assertNotEqual(dirty.returncode, 0)
+            self.assertIn("is not a clean main branch", dirty.stderr)
+            dirty_marker.unlink()
+
+            self.git(retained_builder, "config", "user.name", "Release Test")
+            self.git(
+                retained_builder,
+                "config",
+                "user.email",
+                "release-test@example.invalid",
+            )
+            divergent_marker = retained_builder / "divergent"
+            divergent_marker.write_text("local\n", encoding="utf-8")
+            self.git(retained_builder, "add", "divergent")
+            self.git(retained_builder, "commit", "-m", "test: diverge local main")
+            divergent = self.run_release_function(
+                root, "require_current_stack_matches_sibling_mains"
+            )
+            self.assertNotEqual(divergent.returncode, 0)
+            self.assertIn("cannot fast-forward", divergent.stderr)
+
     def test_stable_controller_accepts_only_the_exact_explicit_vm_init(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -2798,6 +2938,11 @@ github_cli() {{
             "PUBLISH_SHA: ${{ needs.resolve-current.outputs.sha }}", publish_step
         )
         self.assertIn("current_release_matches()", publish_step)
+        self.assertIn('checkout_sha="$(git rev-parse HEAD)"', publish_step)
+        self.assertIn(
+            'tracked_status="$(git status --porcelain --untracked-files=no)"',
+            publish_step,
+        )
         self.assertGreaterEqual(
             publish_step.count("if ! current_release_matches"), 4
         )
@@ -2812,6 +2957,14 @@ github_cli() {{
         )
         self.assertIn(
             'replace_release_asset "${publication_release_id}" "${DEMO_OUTPUT}"',
+            publish_step,
+        )
+        self.assertIn(
+            "Current demo output verified against release %s.",
+            publish_step,
+        )
+        self.assertIn(
+            "Current demo upload returned success without the exact published output.",
             publish_step,
         )
         self.assertIn(
@@ -2953,6 +3106,17 @@ github_cli() {{
         self.assertIn("needs: build-sites", workflow)
         self.assertIn("merge-multiple: true", workflow)
         self.assertIn("Assemble DocC portal", workflow)
+        self.assertIn("Re-resolve documentation authority before deployment", workflow)
+        self.assertIn("Verify documentation authority after deployment", workflow)
+        self.assertEqual(workflow.count("documentation-authority.py"), 2)
+        self.assertLess(
+            workflow.index("Re-resolve documentation authority before deployment"),
+            workflow.index("Deploy to GitHub Pages"),
+        )
+        self.assertLess(
+            workflow.index("Deploy to GitHub Pages"),
+            workflow.index("Verify documentation authority after deployment"),
+        )
         self.assertNotIn("scripts/add-upstream-docc-sites.sh", workflow)
         self.assertNotIn("      - Makefile", workflow)
 
@@ -3143,7 +3307,35 @@ github_cli() {{
         self.assertIn('printf \'publish=%s\\n\' "${publish}" >> "$GITHUB_OUTPUT"', freshness)
         self.assertEqual(
             workflow.count("steps.current-freshness.outputs.publish == 'true'"),
-            8,
+            9,
+        )
+
+    def test_package_publication_closes_exact_inputs_and_outputs(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        publication = workflow[
+            workflow.index("- name: Retain active and stable benchmark assets") :
+            workflow.index("  repair-stable-tap:")
+        ]
+        repair = workflow[workflow.index("  repair-stable-tap:") :]
+
+        self.assertIn("Verify exact published output closure", publication)
+        self.assertIn("package-publication-authority.py", publication)
+        self.assertIn(
+            'verify_checkout release-tools "${RELEASE_CONTROL_SHA}"', publication
+        )
+        self.assertIn('verify_checkout container "${CONTAINER_REF}"', publication)
+        self.assertIn(
+            "Current release dependency changed during publication", publication
+        )
+        self.assertLess(
+            publication.index("Retain active and stable benchmark assets"),
+            publication.index("Verify exact published output closure"),
+        )
+        self.assertIn("Verify repaired stable Homebrew output closure", repair)
+        self.assertIn("package-publication-authority.py", repair)
+        self.assertLess(
+            repair.index("Commit repaired stable Homebrew stack"),
+            repair.index("Verify repaired stable Homebrew output closure"),
         )
 
     def test_current_package_workflow_only_follows_successful_main_ci(self) -> None:
@@ -3251,6 +3443,9 @@ github_cli() {{
         self.assertNotIn("branches:\n      - main", codeql)
         self.assertIn("release_ref:", codeql)
         self.assertIn("Require an immutable published release", codeql)
+        self.assertIn("release_id:", codeql)
+        self.assertIn("Verify release source remained exact", codeql)
+        self.assertIn("CodeQL release authority changed while analysis ran", codeql)
         self.assertIn("name: CodeQL", codeql)
         self.assertIn("needs.analyze.result", codeql)
         self.assertIn("codeql-release:", package)
@@ -3267,7 +3462,58 @@ github_cli() {{
             package_job,
         )
         self.assertIn("needs.codeql-release.result == 'success'", package_job)
+        self.assertIn("Verify CodeQL release authority after analysis", release_codeql)
+        self.assertLess(
+            release_codeql.index("Analyze CodeQL release source"),
+            release_codeql.index("Verify CodeQL release authority after analysis"),
+        )
         self.assertNotIn("workflow run codeql.yml", benchmark)
+
+    def test_benchmark_publication_rechecks_exact_release_authority(self) -> None:
+        for path in (
+            ROOT / ".github" / "workflows" / "published-benchmark.yml",
+            ROOT / ".github" / "workflows" / "historical-benchmark.yml",
+        ):
+            workflow = path.read_text(encoding="utf-8")
+            publication = workflow[
+                workflow.index("- name: Open documentation pull request") :
+            ]
+
+            self.assertIn("ref: ${{ github.sha }}", workflow)
+            self.assertIn("benchmark-authority.py", publication)
+            self.assertIn('expected_authority="$(verify_authority)"', publication)
+            self.assertIn('current_authority="$(verify_authority)"', publication)
+            self.assertIn(
+                "benchmark authority changed during report publication", publication
+            )
+            self.assertIn(
+                "benchmark report pull request is not bound to its exact output commit",
+                publication,
+            )
+            self.assertIn(
+                "--json baseRefName,headRefName,headRefOid,state,url", publication
+            )
+            self.assertLess(
+                publication.index('expected_authority="$(verify_authority)"'),
+                publication.index("gh pr create"),
+            )
+            self.assertLess(
+                publication.index("gh pr create"),
+                publication.index('current_authority="$(verify_authority)"'),
+            )
+
+    def test_stable_authority_check_verifies_its_created_output(self) -> None:
+        workflow = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
+        record = workflow[workflow.index("  record-release-authority:") :]
+
+        self.assertIn('check_run="$(', record)
+        self.assertIn("repos/${GITHUB_REPOSITORY}/check-runs", record)
+        self.assertIn(".head_sha == $sha", record)
+        self.assertIn(".external_id == $run", record)
+        self.assertIn(
+            "stable release authority check output does not match its exact candidate",
+            record,
+        )
 
     def test_release_sonar_step_preserves_and_restores_canonical_main(self) -> None:
         ci = CI_WORKFLOW.read_text(encoding="utf-8")

@@ -8371,6 +8371,25 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/558"
     },
     {
+      "id": "container-compose-571",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): refresh retained sibling mains",
+      "state": "active-draft",
+      "lastVerified": "2026-09-08",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-571.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-572.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/572"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",

@@ -228,9 +228,15 @@ def extract_cctl(
         or len(artifact_rows[0]) != 4
         or SHA256.fullmatch(artifact_rows[0][2]) is None
         or records.get("archive-sha256") != [archive_digest]
-        or receipt_records.get("schema") != ["3"]
+        or receipt_records.get("schema") != ["4"]
         or receipt_records.get("stage") != ["containerization-benchmark-cctl"]
         or receipt_records.get("repository") != ["containerization"]
+        or receipt_records.get("source-format") != ["git-tree-archive"]
+        or len(receipt_records.get("source-commit", [])) != 1
+        or COMMIT.fullmatch(receipt_records["source-commit"][0]) is None
+        or len(receipt_records.get("source-execution-head", [])) != 1
+        or COMMIT.fullmatch(receipt_records["source-execution-head"][0]) is None
+        or receipt_records.get("source-tracked-clean") != ["true"]
         or receipt_records.get("artifact-archive-sha256") != [archive_digest]
         or receipt_records.get("artifact-manifest-sha256") != [manifest_digest]
         or receipt_records.get("artifact-count") != ["1"]
@@ -245,6 +251,7 @@ def extract_cctl(
         "source-metadata-sha256",
         "command-sha256",
         "stage-tools-sha256",
+        "stage-inputs-sha256",
     )
     if any(
         len(receipt_records.get(key, [])) != 1
@@ -273,10 +280,15 @@ def extract_cctl(
     return {
         "cctlArtifactSha256": archive_digest,
         "cctlBuildCommandSha256": receipt_records["command-sha256"][0],
+        "cctlBuildInputsSha256": receipt_records["stage-inputs-sha256"][0],
+        "cctlBuildSourceCommit": receipt_records["source-commit"][0],
+        "cctlBuildSourceFormat": receipt_records["source-format"][0],
         "cctlBuildSourceMetadataSha256": receipt_records[
             "source-metadata-sha256"
         ][0],
+        "cctlBuildSourceHead": receipt_records["source-execution-head"][0],
         "cctlBuildSourceSha256": receipt_records["source-payload-sha256"][0],
+        "cctlBuildSourceTrackedClean": True,
         "cctlBuildToolsSha256": receipt_records["stage-tools-sha256"][0],
         "cctlReceiptSha256": receipt_digest,
         "cctlSha256": artifact_rows[0][2],
@@ -299,8 +311,13 @@ def prepare_reconstruction(
         "artifactId",
         "cctlArtifactSha256",
         "cctlBuildCommandSha256",
+        "cctlBuildInputsSha256",
         "cctlBuildSourceMetadataSha256",
+        "cctlBuildSourceHead",
+        "cctlBuildSourceCommit",
+        "cctlBuildSourceFormat",
         "cctlBuildSourceSha256",
+        "cctlBuildSourceTrackedClean",
         "cctlBuildToolsSha256",
         "cctlReceiptSha256",
         "cctlSha256",
@@ -311,6 +328,12 @@ def prepare_reconstruction(
         raise ReconstructionInputError("guest reconstruction provenance is incomplete")
     if (
         COMMIT.fullmatch(str(provenance["containerizationRef"])) is None
+        or COMMIT.fullmatch(str(provenance["cctlBuildSourceCommit"])) is None
+        or COMMIT.fullmatch(str(provenance["cctlBuildSourceHead"])) is None
+        or provenance["cctlBuildSourceCommit"]
+        != provenance["containerizationRef"]
+        or provenance["cctlBuildSourceFormat"] != "git-tree-archive"
+        or provenance["cctlBuildSourceTrackedClean"] is not True
         or SHA256.fullmatch(str(provenance["cctlArtifactSha256"])) is None
         or any(
             SHA256.fullmatch(str(provenance[key])) is None

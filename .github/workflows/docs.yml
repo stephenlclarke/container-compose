@@ -39,9 +39,12 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       compose_ref: ${{ steps.release.outputs.compose_ref }}
+      compose_release_id: ${{ steps.release.outputs.release_id }}
       container_ref: ${{ steps.stack.outputs.container_ref }}
       containerization_ref: ${{ steps.stack.outputs.containerization_ref }}
       k8s_ref: ${{ steps.stack.outputs.k8s_ref }}
+      k8s_release_id: ${{ steps.k8s-authority.outputs.release_id }}
+      k8s_release_tag: ${{ steps.stack.outputs.k8s_release_tag }}
     steps:
       - name: Require exact published release inputs
         id: release
@@ -74,12 +77,16 @@ jobs:
             exit 1
           fi
           release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}")"
-          if [[ "$(jq -r '.draft or .prerelease' <<<"${release}")" != "false" ]]; then
+          if [[ "$(jq -r '.draft or .prerelease' <<<"${release}")" != "false" ]] || \
+            [[ "$(jq -r '.tag_name' <<<"${release}")" != "${RELEASE_TAG}" ]] || \
+            [[ ! "$(jq -r '.id' <<<"${release}")" =~ ^[0-9]+$ ]]; then
             printf 'documentation requires a published stable release: %s\n' \
               "${RELEASE_TAG}" >&2
             exit 1
           fi
           printf 'compose_ref=%s\n' "${compose_ref}" >> "${GITHUB_OUTPUT}"
+          printf 'release_id=%s\n' "$(jq -er '.id' <<<"${release}")" \
+            >> "${GITHUB_OUTPUT}"
           printf 'Released documentation input: %s at %s.\n' \
             "${RELEASE_TAG}" "${compose_ref}" >> "${GITHUB_STEP_SUMMARY}"
 
@@ -143,6 +150,7 @@ jobs:
           PY
 
       - name: Verify released container-k8s authority
+        id: k8s-authority
         env:
           GH_TOKEN: ${{ github.token }}
           K8S_REF: ${{ steps.stack.outputs.k8s_ref }}
@@ -162,12 +170,16 @@ jobs:
             gh api \
               "repos/stephenlclarke/container-k8s/releases/tags/${K8S_RELEASE_TAG}"
           )"
-          if [[ "$(jq -r '.draft' <<<"${k8s_release}")" != "false" ]] || \
+          if [[ "$(jq -r '.draft or .prerelease' <<<"${k8s_release}")" != "false" ]] || \
+            [[ "$(jq -r '.tag_name' <<<"${k8s_release}")" != "${K8S_RELEASE_TAG}" ]] || \
+            [[ ! "$(jq -r '.id' <<<"${k8s_release}")" =~ ^[0-9]+$ ]] || \
             [[ "${k8s_tag_ref}" != "${K8S_REF}" ]]; then
             printf 'container-k8s ref is not attached to a published release: %s at %s\n' \
               "${K8S_RELEASE_TAG}" "${K8S_REF}" >&2
             exit 1
           fi
+          printf 'release_id=%s\n' "$(jq -er '.id' <<<"${k8s_release}")" \
+            >> "${GITHUB_OUTPUT}"
 
   build-sites:
     name: Build ${{ matrix.site }} DocC Site
@@ -267,6 +279,15 @@ jobs:
               ;;
           esac
 
+      - name: Verify documentation source remained exact
+        env:
+          EXPECTED_REF: ${{ matrix.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C source rev-parse HEAD)" == "${EXPECTED_REF}" ]]
+          [[ -z "$(git -C source status --porcelain --untracked-files=no)" ]]
+
       - name: Archive DocC site
         env:
           SITE: ${{ matrix.site }}
@@ -313,15 +334,84 @@ jobs:
 
   deploy:
     name: Deploy GitHub Pages
-    needs: upload-pages-artifact
+    needs:
+      - resolve-release
+      - upload-pages-artifact
     runs-on: ubuntu-24.04
     permissions:
+      contents: read
       id-token: write
       pages: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Checkout immutable documentation controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          path: release-tools
+          ref: ${{ github.sha }}
+
+      - name: Verify immutable documentation controls
+        env:
+          RELEASE_CONTROL_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C release-tools rev-parse HEAD)" == "${RELEASE_CONTROL_SHA}" ]]
+          [[ -z "$(git -C release-tools status --porcelain --untracked-files=no)" ]]
+
+      - name: Re-resolve documentation authority before deployment
+        id: authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          authority="$(
+            python3 release-tools/Tools/release/documentation-authority.py \
+              --compose-repository "${GITHUB_REPOSITORY}" \
+              --compose-tag "${{ inputs.ref }}" \
+              --compose-release-id "${{ needs.resolve-release.outputs.compose_release_id }}" \
+              --compose-ref "${{ needs.resolve-release.outputs.compose_ref }}" \
+              --component "stephenlclarke/container=${{ needs.resolve-release.outputs.container_ref }}" \
+              --component "stephenlclarke/containerization=${{ needs.resolve-release.outputs.containerization_ref }}" \
+              --k8s-repository stephenlclarke/container-k8s \
+              --k8s-tag "${{ needs.resolve-release.outputs.k8s_release_tag }}" \
+              --k8s-release-id "${{ needs.resolve-release.outputs.k8s_release_id }}" \
+              --k8s-ref "${{ needs.resolve-release.outputs.k8s_ref }}"
+          )"
+          printf 'digest=%s\n' "${authority}" >> "${GITHUB_OUTPUT}"
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+
+      - name: Verify documentation authority after deployment
+        env:
+          EXPECTED_AUTHORITY: ${{ steps.authority.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CONTROL_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C release-tools rev-parse HEAD)" == "${RELEASE_CONTROL_SHA}" ]]
+          [[ -z "$(git -C release-tools status --porcelain --untracked-files=no)" ]]
+          current="$(
+            python3 release-tools/Tools/release/documentation-authority.py \
+              --compose-repository "${GITHUB_REPOSITORY}" \
+              --compose-tag "${{ inputs.ref }}" \
+              --compose-release-id "${{ needs.resolve-release.outputs.compose_release_id }}" \
+              --compose-ref "${{ needs.resolve-release.outputs.compose_ref }}" \
+              --component "stephenlclarke/container=${{ needs.resolve-release.outputs.container_ref }}" \
+              --component "stephenlclarke/containerization=${{ needs.resolve-release.outputs.containerization_ref }}" \
+              --k8s-repository stephenlclarke/container-k8s \
+              --k8s-tag "${{ needs.resolve-release.outputs.k8s_release_tag }}" \
+              --k8s-release-id "${{ needs.resolve-release.outputs.k8s_release_id }}" \
+              --k8s-ref "${{ needs.resolve-release.outputs.k8s_ref }}"
+          )"
+          if [[ "${current}" != "${EXPECTED_AUTHORITY}" ]]; then
+            printf 'documentation authority changed while Pages deployed\n' >&2
+            exit 1
+          fi

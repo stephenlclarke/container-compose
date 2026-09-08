@@ -720,6 +720,202 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             self.assertTrue(fingerprint_started.exists())
             self.assertFalse(stage_started.exists())
 
+    def test_fingerprint_command_rejects_inputs_changed_by_the_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints = root / "checkpoints"
+            fingerprint_value = root / "fingerprint-value"
+            fingerprint_value.write_text("before\n", encoding="utf-8")
+            fingerprint_command = root / "fingerprint"
+            fingerprint_command.write_text(
+                "#!/bin/sh\n"
+                f"cat '{fingerprint_value}'\n",
+                encoding="utf-8",
+            )
+            fingerprint_command.chmod(0o755)
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--checkpoint-dir",
+                    str(checkpoints),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint-command",
+                    str(fingerprint_command),
+                    "--seconds",
+                    "5",
+                    "--",
+                    "/bin/sh",
+                    "-c",
+                    f"printf 'after\\n' >'{fingerprint_value}'",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 75, completed.stderr)
+            self.assertIn("inputs changed while stage ran", completed.stderr)
+            self.assertFalse((checkpoints / "compose-ci.success.json").exists())
+            result = json.loads(
+                (checkpoints / "compose-ci.last.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(result["fingerprint_before"], "before")
+            self.assertEqual(result["fingerprint_after"], "after")
+            self.assertEqual(result["status"], 75)
+
+    def test_unchanged_fingerprint_command_success_is_reusable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints = root / "checkpoints"
+            run_log = root / "runs.log"
+            fingerprint_command = root / "fingerprint"
+            fingerprint_command.write_text(
+                "#!/bin/sh\nprintf 'stable\\n'\n",
+                encoding="utf-8",
+            )
+            fingerprint_command.chmod(0o755)
+            arguments = [
+                sys.executable,
+                str(SCRIPT),
+                "--checkpoint-dir",
+                str(checkpoints),
+                "--stage",
+                "compose-ci",
+                "--fingerprint-command",
+                str(fingerprint_command),
+                "--seconds",
+                "5",
+                "--",
+                "/bin/sh",
+                "-c",
+                f"printf 'run\\n' >>'{run_log}'",
+            ]
+
+            first = subprocess.run(
+                arguments, capture_output=True, text=True, check=False
+            )
+            repeated = subprocess.run(
+                arguments, capture_output=True, text=True, check=False
+            )
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertEqual(run_log.read_text(encoding="utf-8"), "run\n")
+            self.assertIn("reusing exact-input release checkpoint", repeated.stdout)
+            checkpoint = json.loads(
+                (checkpoints / "compose-ci.success.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(checkpoint["fingerprint_before"], "stable")
+            self.assertEqual(checkpoint["fingerprint_after"], "stable")
+
+    def test_stack_stage_refuses_success_if_tracked_source_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repositories = [
+                root / name
+                for name in ("compose", "builder", "containerization", "container")
+            ]
+            for repository in repositories:
+                repository.mkdir()
+                (repository / "Makefile").touch()
+            builder = repositories[1]
+            (builder / "input.txt").write_text("original\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(builder), "init", "--quiet"], check=True)
+            subprocess.run(
+                ["git", "-C", str(builder), "add", "Makefile", "input.txt"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(builder),
+                    "-c",
+                    "user.name=Release Test",
+                    "-c",
+                    "user.email=release-test@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--quiet",
+                    "-m",
+                    "fixture",
+                ],
+                check=True,
+            )
+            tap = root / "tap"
+            (tap / "Formula").mkdir(parents=True)
+            (tap / "Formula" / "container-compose.rb").touch()
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_tool = "#!/bin/sh\nprintf 'fixture tool\\n'\n"
+            for name in (
+                "swift",
+                "clang",
+                "go",
+                "ruby",
+                "python3",
+                "docker",
+                "hawkeye",
+                "shellcheck",
+                "xcodebuild",
+            ):
+                path = fake_bin / name
+                path.write_text(fake_tool, encoding="utf-8")
+                path.chmod(0o755)
+            fake_make = fake_bin / "make"
+            fake_make.write_text(
+                "#!/bin/sh\n"
+                "if [ \"${1:-}\" = --version ]; then\n"
+                "  printf 'fixture make\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "if [ \"${1:-}\" = -C ] && "
+                "[ \"${2:-}\" = \"${STACK_MUTATION_REPO:?}\" ]; then\n"
+                "  printf 'changed\\n' >>\"${STACK_MUTATION_REPO}/input.txt\"\n"
+                "fi\n",
+                encoding="utf-8",
+            )
+            fake_make.chmod(0o755)
+            checkpoints = root / "checkpoints"
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR": str(checkpoints),
+                    "CONTAINER_STACK_VALIDATION_SCRATCH_ROOT": str(root / "scratch"),
+                    "BASH_ENV": "/dev/null",
+                    "ENV": "/dev/null",
+                    "PATH": f"{fake_bin}:/opt/homebrew/bin:/usr/bin:/bin",
+                    "STACK_MUTATION_REPO": str(builder),
+                }
+            )
+
+            completed = subprocess.run(
+                [
+                    str(STACK_SCRIPT),
+                    "hosted",
+                    *(str(repository) for repository in repositories),
+                    str(tap),
+                ],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 75, completed.stderr)
+            self.assertIn(
+                "tracked stack input changed at a stage boundary: builder",
+                completed.stderr,
+            )
+            self.assertFalse(
+                (checkpoints / "hosted-builder-check.sha256").exists()
+            )
+
     def test_release_gate_starts_deadline_before_make_fingerprinting(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
