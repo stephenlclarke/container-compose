@@ -1277,9 +1277,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_release_helper_retains_only_its_unpublished_candidate_before_readiness(self) -> None:
         recovery = self.script[
-            self.script.index("validate_unpublished_release_commit() {") : self.script.index(
-                "# Print and optionally execute a command."
-            )
+            self.script.index("validate_unpublished_release_refresh_commit() {") :
+            self.script.index("# Print and optionally execute a command.")
         ]
         release = self.script[self.script.index("release_current_stack() {") :]
         self.assertNotIn('git -C "${path}" reset --soft "${remote_head}"', recovery)
@@ -1287,6 +1286,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("RECOVERED_UNPUBLISHED_RELEASE_BASE", recovery)
         self.assertNotIn("reset --hard", recovery)
         self.assertIn('git -C "${path}" verify-commit "${commit}"', recovery)
+        self.assertIn('fetch_release_remote "${COMPOSE_REPO}"', recovery)
+        self.assertIn("merge-tree --write-tree", recovery)
+        self.assertIn('commit-tree -S "${merge_tree}"', recovery)
+        self.assertIn('ls-remote --heads "${remote}" refs/heads/main', recovery)
         self.assertIn('"chore(release): prepare ${version}"', recovery)
         self.assertIn("Package.resolved,Package.swift", recovery)
         self.assertIn("release preparation commit changes an unexpected file", recovery)
@@ -1294,8 +1297,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("dirty worktree blocks recovery", recovery)
         self.assertLess(
             release.index('recover_unpublished_release_candidate "${version}"'),
+            release.index("restart_refreshed_release_controller"),
+        )
+        self.assertLess(
+            release.index("restart_refreshed_release_controller"),
             release.index("ensure_current_build_release_readiness"),
         )
+        restart = self.script[
+            self.script.index("restart_refreshed_release_controller() {") :
+            self.script.index("# Print and optionally execute a command.")
+        ]
+        self.assertIn("RELEASE_CONTROLLER_RESTART_REQUIRED", restart)
+        self.assertIn('exec /bin/bash "${controller}" release "${VERSION_SELECTOR}" --execute', restart)
 
     def test_release_plan_describes_the_stable_promotion_lanes(self) -> None:
         plan = self.script[self.script.index("\nplan() {") : self.script.index("\nmain() {")]
@@ -7507,6 +7520,237 @@ esac
             self.assertNotEqual(candidate_head, remote_head)
             self.assertEqual(self.git(local, "diff", "--cached", "--name-only"), "")
 
+    def test_release_helper_refreshes_a_candidate_after_main_advances(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, local = self.create_compose_checkout(root)
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"Makefile": "COMPOSE_VERSION ?= 0.6.71\n"},
+                "chore(release): prepare 0.6.71",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+
+            updater = root / "updater"
+            self.run_command(
+                "git", "clone", "--branch", "main", str(remote), str(updater)
+            )
+            self.configure_repo(updater)
+            self.commit_file(
+                updater, "REPAIR.md", "reviewed\n", "fix: reviewed main repair"
+            )
+            self.run_command("git", "-C", str(updater), "push", "origin", "main")
+            remote_head = self.git(updater, "rev-parse", "main")
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "printf 'base=%s restart=%s\\n' "
+                '"${RECOVERED_UNPUBLISHED_RELEASE_BASE}" '
+                '"${RELEASE_CONTROLLER_RESTART_REQUIRED}"',
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("refreshed retained release candidate", result.stdout)
+            self.assertIn(f"base={remote_head} restart=1", result.stdout)
+            refreshed_head = self.git(local, "rev-parse", "main")
+            self.assertEqual(
+                self.git(local, "show", "-s", "--format=%P", refreshed_head).split(),
+                [candidate_head, remote_head],
+            )
+            self.assertEqual(
+                self.git(local, "show", f"{refreshed_head}:Makefile"),
+                "COMPOSE_VERSION ?= 0.6.71",
+            )
+            self.assertEqual(
+                self.git(local, "show", f"{refreshed_head}:REPAIR.md"), "reviewed"
+            )
+            self.run_command("git", "-C", str(local), "verify-commit", refreshed_head)
+            self.assertEqual(self.git(local, "status", "--short"), "")
+
+            repeated = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "printf 'restart=%s\\n' "
+                '"${RELEASE_CONTROLLER_RESTART_REQUIRED}"',
+            )
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertIn("retaining unpublished release candidate", repeated.stdout)
+            self.assertIn("restart=0", repeated.stdout)
+            self.assertEqual(self.git(local, "rev-parse", "main"), refreshed_head)
+
+    def test_release_helper_reexecutes_the_refreshed_controller(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "github" / "container-compose" / "scripts"
+            scripts.mkdir(parents=True)
+            controller = scripts / "CONTAINER_STACK_RELEASE.sh"
+            controller.write_text(
+                "#!/bin/bash\n"
+                "printf 'args=%s|%s|%s library=%s\\n' "
+                '"$1" "$2" "$3" "${CONTAINER_STACK_RELEASE_LIBRARY}"\n',
+                encoding="utf-8",
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "VERSION_SELECTOR=0.6.71; "
+                "RELEASE_CONTROLLER_RESTART_REQUIRED=1; "
+                "restart_refreshed_release_controller",
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("restarting from refreshed release controller", result.stdout)
+            self.assertIn("args=release|0.6.71|--execute library=0", result.stdout)
+
+    def test_release_helper_refreshes_the_same_candidate_after_main_advances_twice(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, local = self.create_compose_checkout(root)
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"Makefile": "COMPOSE_VERSION ?= 0.6.71\n"},
+                "chore(release): prepare 0.6.71",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+
+            updater = root / "updater"
+            self.run_command(
+                "git", "clone", "--branch", "main", str(remote), str(updater)
+            )
+            self.configure_repo(updater)
+            self.commit_file(updater, "FIRST.md", "first\n", "fix: first main repair")
+            self.run_command("git", "-C", str(updater), "push", "origin", "main")
+            first_remote_head = self.git(updater, "rev-parse", "main")
+            first = self.run_release_function(
+                root / "github", "recover_unpublished_release_candidate 0.6.71"
+            )
+            self.assertEqual(first.returncode, 0, first.stderr)
+            first_refresh_head = self.git(local, "rev-parse", "main")
+
+            self.commit_file(updater, "SECOND.md", "second\n", "fix: second main repair")
+            self.run_command("git", "-C", str(updater), "push", "origin", "main")
+            second_remote_head = self.git(updater, "rev-parse", "main")
+            second = self.run_release_function(
+                root / "github", "recover_unpublished_release_candidate 0.6.71"
+            )
+
+            self.assertEqual(second.returncode, 0, second.stderr)
+            second_refresh_head = self.git(local, "rev-parse", "main")
+            self.assertEqual(
+                self.git(local, "show", "-s", "--format=%P", second_refresh_head).split(),
+                [first_refresh_head, second_remote_head],
+            )
+            self.run_command(
+                "git",
+                "-C",
+                str(local),
+                "merge-base",
+                "--is-ancestor",
+                candidate_head,
+                second_refresh_head,
+            )
+            self.run_command(
+                "git",
+                "-C",
+                str(local),
+                "merge-base",
+                "--is-ancestor",
+                first_remote_head,
+                second_refresh_head,
+            )
+            self.assertEqual(self.git(local, "show", "main:SECOND.md"), "second")
+            self.assertEqual(self.git(local, "status", "--short"), "")
+
+    def test_release_helper_rejects_a_conflicting_main_refresh_without_mutation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, local = self.create_compose_checkout(root)
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"Makefile": "COMPOSE_VERSION ?= 0.6.71\n"},
+                "chore(release): prepare 0.6.71",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+
+            updater = root / "updater"
+            self.run_command(
+                "git", "clone", "--branch", "main", str(remote), str(updater)
+            )
+            self.configure_repo(updater)
+            self.commit_file(
+                updater,
+                "Makefile",
+                "COMPOSE_VERSION ?= 0.7.0\n",
+                "fix: reviewed conflicting repair",
+            )
+            self.run_command("git", "-C", str(updater), "push", "origin", "main")
+
+            result = self.run_release_function(
+                root / "github", "recover_unpublished_release_candidate 0.6.71"
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("cannot be applied cleanly", result.stderr)
+            self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
+            self.assertEqual(self.git(local, "status", "--short"), "")
+
+    def test_release_helper_rejects_a_forged_candidate_refresh_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, local = self.create_compose_checkout(root)
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"Makefile": "COMPOSE_VERSION ?= 0.6.71\n"},
+                "chore(release): prepare 0.6.71",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+            candidate_tree = self.git(local, "rev-parse", "main^{tree}")
+
+            updater = root / "updater"
+            self.run_command(
+                "git", "clone", "--branch", "main", str(remote), str(updater)
+            )
+            self.configure_repo(updater)
+            self.commit_file(
+                updater, "REPAIR.md", "reviewed\n", "fix: reviewed main repair"
+            )
+            self.run_command("git", "-C", str(updater), "push", "origin", "main")
+            remote_head = self.git(updater, "rev-parse", "main")
+            self.run_command("git", "-C", str(local), "fetch", "origin", "main")
+            forged_head = self.run_command(
+                "git",
+                "-C",
+                str(local),
+                "commit-tree",
+                "-S",
+                candidate_tree,
+                "-p",
+                candidate_head,
+                "-p",
+                remote_head,
+                "-m",
+                "chore(release): refresh 0.6.71 candidate from main",
+            ).stdout.strip()
+            self.run_command("git", "-C", str(local), "reset", "--hard", forged_head)
+
+            result = self.run_release_function(
+                root / "github", "recover_unpublished_release_candidate 0.6.71"
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("tree is not the exact parent merge", result.stderr)
+            self.assertEqual(self.git(local, "rev-parse", "main"), forged_head)
+            self.assertEqual(self.git(local, "status", "--short"), "")
+
     def test_release_helper_retains_an_atomic_stack_pin_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -7705,6 +7949,7 @@ esac
                 {
                     "README.md": "current candidate\n",
                     "docs/guides/INSTALL.md": "stable lane\n",
+                    "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json": "{}\n",
                 },
                 "docs(release): align 0.6.71 candidate guidance",
             )
@@ -7719,6 +7964,28 @@ esac
             self.assertIn("retaining unpublished release candidate", result.stdout)
             self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
             self.assertNotEqual(candidate_head, remote_head)
+
+    def test_release_helper_rejects_other_release_document_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"docs/guides/INSTALL.json": "{}\n"},
+                "docs(release): disguise unreviewed document data",
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "release documentation repair changes an unexpected file",
+                result.stderr,
+            )
 
     def test_release_helper_rejects_release_docs_commits_with_source_changes(
         self,
