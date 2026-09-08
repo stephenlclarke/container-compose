@@ -380,10 +380,117 @@ if [[ -n "${checkpoint_directory}" ]]; then
   )
 fi
 
+# Re-resolve the mutable input closure at every independently resumable stage
+# boundary. The component fingerprints above declare the initial environment
+# and versions; this live identity catches a changed checkout, tool executable,
+# Docker CLI plugin, runtime, or init archive before a stale success is reused
+# or recorded.
+live_validation_identity_for_stage() {
+  local stage="$1"
+  local repository label formula_sha256
+  case "${stage}" in
+    builder-*)
+      repository="${builder_repo}"
+      label=builder
+      ;;
+    containerization-*)
+      repository="${containerization_repo}"
+      label=containerization
+      ;;
+    container-*)
+      repository="${container_repo}"
+      label=container
+      ;;
+    homebrew-*)
+      repository="${homebrew_tap_repo}"
+      label=homebrew
+      ;;
+    *)
+      printf 'unknown stack validation checkpoint stage: %s\n' "${stage}" >&2
+      return 2
+      ;;
+  esac
+
+  local head=fixture
+  local tree=fixture
+  local describe=fixture
+  if git -C "${repository}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if ! git -C "${repository}" diff --quiet --ignore-submodules=none HEAD --; then
+      printf 'tracked stack input changed at a stage boundary: %s\n' \
+        "${label}" >&2
+      return 75
+    fi
+    head=$(git -C "${repository}" rev-parse HEAD)
+    tree=$(git -C "${repository}" rev-parse 'HEAD^{tree}')
+    describe=$(git -C "${repository}" describe --tags --always --dirty)
+  fi
+
+  local init_archive_fingerprint=unset
+  if [[ -n "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" ]]; then
+    if [[ -f "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}" ]]; then
+      init_archive_fingerprint=$(shasum -a 256 \
+        "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}" | awk '{print $1}')
+    else
+      init_archive_fingerprint="missing:${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}"
+    fi
+  fi
+
+  {
+    printf 'validator=%s\n' "$(shasum -a 256 "$0" | awk '{print $1}')"
+    printf 'head=%s\n' "${head}"
+    printf 'tree=%s\n' "${tree}"
+    printf 'describe=%s\n' "${describe}"
+    printf 'init_archive=%s\n' "${init_archive_fingerprint}"
+    printf 'runtime_cli=%s\n' "${runtime_cli}"
+    if [[ -n "${runtime_cli}" && -f "${runtime_cli}" ]]; then
+      printf 'runtime_cli_sha256=%s\n' \
+        "$(shasum -a 256 "${runtime_cli}" | awk '{print $1}')"
+    fi
+    if [[ "${label}" == homebrew ]]; then
+      formula_sha256=$(shasum -a 256 \
+        "${homebrew_tap_repo}/Formula/container-compose.rb" | awk '{print $1}')
+      printf 'formula=%s\n' "${formula_sha256}"
+    fi
+    local tool_name tool_path
+    for tool_name in git make swift clang go ruby python3 docker hawkeye shellcheck xcodebuild; do
+      tool_path=$(command -v "${tool_name}" 2>/dev/null || true)
+      printf 'tool=%s:path=%s\n' "${tool_name}" "${tool_path:-missing}"
+      if [[ -n "${tool_path}" && -f "${tool_path}" ]]; then
+        printf 'tool=%s:identity=%s\n' "${tool_name}" \
+          "$(/usr/bin/stat -L -f '%d:%i:%z:%m:%c' "${tool_path}")"
+      fi
+    done
+    local docker_config_file="${DOCKER_CONFIG:-${HOME}/.docker}/config.json"
+    if [[ -f "${docker_config_file}" ]]; then
+      printf 'docker:config=%s\n' \
+        "$(shasum -a 256 "${docker_config_file}" | awk '{print $1}')"
+    else
+      printf 'docker:config=missing:%s\n' "${docker_config_file}"
+    fi
+    local plugin_name plugin_path
+    for plugin_name in buildx compose; do
+      for plugin_path in \
+        "${DOCKER_CONFIG:-${HOME}/.docker}/cli-plugins/docker-${plugin_name}" \
+        "/usr/local/lib/docker/cli-plugins/docker-${plugin_name}" \
+        "/usr/local/libexec/docker/cli-plugins/docker-${plugin_name}" \
+        "/opt/homebrew/lib/docker/cli-plugins/docker-${plugin_name}" \
+        "/opt/homebrew/libexec/docker/cli-plugins/docker-${plugin_name}" \
+        "/Applications/Docker.app/Contents/Resources/cli-plugins/docker-${plugin_name}"; do
+        if [[ -e "${plugin_path}" ]]; then
+          printf 'docker:plugin=%s:path=%s:identity=%s\n' \
+            "${plugin_name}" "${plugin_path}" \
+            "$(/usr/bin/stat -L -f '%d:%i:%z:%m:%c' "${plugin_path}")"
+        fi
+      done
+    done
+    uname -a
+  } | shasum -a 256 | awk '{print $1}'
+}
+
 # Returns the exact-input fingerprint for one independently validated stage.
 validation_fingerprint_for_stage() {
   local stage="$1"
-  local base_fingerprint
+  local base_fingerprint live_identity
   case "${stage}" in
     builder-*)
       base_fingerprint="${builder_validation_fingerprint}"
@@ -402,8 +509,10 @@ validation_fingerprint_for_stage() {
       return 2
       ;;
   esac
+  live_identity=$(live_validation_identity_for_stage "${stage}")
   {
     printf 'base=%s\n' "${base_fingerprint}"
+    printf 'live=%s\n' "${live_identity}"
     printf 'stage=%s\n' "${stage}"
   } | shasum -a 256 | awk '{print $1}'
 }
@@ -421,13 +530,13 @@ run_checkpointed() {
 
   mkdir -p "${checkpoint_directory}"
   local stamp="${checkpoint_directory}/${mode}-${stage}.sha256"
-  local expected
-  expected="$(validation_fingerprint_for_stage "${stage}"):${stage}"
+  local expected_before
+  expected_before="$(validation_fingerprint_for_stage "${stage}"):${stage}"
   local actual=""
   if [[ -f "${stamp}" ]]; then
     IFS= read -r actual <"${stamp}" || true
   fi
-  if [[ "${actual}" == "${expected}" ]]; then
+  if [[ "${actual}" == "${expected_before}" ]]; then
     printf 'reusing exact-input validation checkpoint: %s\n' "${stage}"
     verify_runtime_cli_identity
     return
@@ -435,9 +544,16 @@ run_checkpointed() {
 
   "$@"
   verify_runtime_cli_identity
+  local expected_after
+  expected_after="$(validation_fingerprint_for_stage "${stage}"):${stage}"
+  if [[ "${expected_after}" != "${expected_before}" ]]; then
+    printf 'stack validation inputs changed while stage ran; refusing stale success: %s\n' \
+      "${stage}" >&2
+    return 75
+  fi
   local temporary_stamp
   temporary_stamp=$(mktemp "${checkpoint_directory}/.${mode}-${stage}.XXXXXX")
-  printf '%s\n' "${expected}" >"${temporary_stamp}"
+  printf '%s\n' "${expected_after}" >"${temporary_stamp}"
   mv -f "${temporary_stamp}" "${stamp}"
 }
 

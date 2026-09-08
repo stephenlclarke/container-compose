@@ -221,6 +221,22 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
             REPOSITORY_STAGE,
         )
 
+    def test_stage_rechecks_inputs_and_tracked_source_before_success(self) -> None:
+        """A stage cannot publish a receipt for inputs it changed while running."""
+        command_start = REPOSITORY_STAGE.index("set +e\n    (")
+        command_end = REPOSITORY_STAGE.index("verify_tool_closure", command_start)
+        command_boundary = REPOSITORY_STAGE[command_start:command_end]
+
+        self.assertIn("stage_input_sha256_before", REPOSITORY_STAGE[:command_start])
+        self.assertIn("source_head_before", REPOSITORY_STAGE[:command_start])
+        self.assertIn("stage_input_sha256_after", command_boundary)
+        self.assertIn("source_head_after", command_boundary)
+        self.assertIn("stage changed tracked source after preflight", command_boundary)
+        self.assertIn("stage inputs changed while command ran", command_boundary)
+        self.assertIn("printf 'schema\\t4\\n'", REPOSITORY_STAGE)
+        self.assertIn("stage-inputs-sha256", REPOSITORY_STAGE)
+        self.assertIn("source-tracked-clean", REPOSITORY_STAGE)
+
     def test_history_sensitive_release_stages_request_commit_metadata(self) -> None:
         expected_declarations = (
             "'make,go,hawkeye', '.', 'commit,describe'",

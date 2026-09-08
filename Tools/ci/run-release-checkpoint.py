@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 FAILURE_TAIL_BYTES = 32 * 1024
 FAILURE_TAIL_LINES = 80
 DEADLINE_RUNNER = Path(__file__).with_name("run-command-with-deadline.py")
@@ -296,6 +296,8 @@ def run_supervised(options: argparse.Namespace) -> int:
         if fingerprint_status != 0:
             return fingerprint_status
     assert fingerprint is not None
+    fingerprint_before = fingerprint
+    fingerprint_after = fingerprint_before
 
     digest = stage_digest(
         options.stage, fingerprint, options.seconds, options.command
@@ -394,6 +396,27 @@ def run_supervised(options: argparse.Namespace) -> int:
             )
             if status == 0:
                 status = 74
+    if status == 0 and options.fingerprint_command is not None:
+        fingerprint_status, resolved_fingerprint = run_fingerprint_command(
+            options.fingerprint_command
+        )
+        if fingerprint_status != 0:
+            print(
+                "could not re-resolve release checkpoint inputs after stage "
+                f"completion: {options.stage}",
+                file=sys.stderr,
+            )
+            status = fingerprint_status
+        else:
+            assert resolved_fingerprint is not None
+            fingerprint_after = resolved_fingerprint
+            if fingerprint_after != fingerprint_before:
+                print(
+                    "release checkpoint inputs changed while stage ran; "
+                    f"refusing stale success: {options.stage}",
+                    file=sys.stderr,
+                )
+                status = 75
     result: dict[str, object] = {
         "command_sha256": hashlib.sha256(
             json.dumps(options.command, separators=(",", ":")).encode("utf-8")
@@ -402,7 +425,9 @@ def run_supervised(options: argparse.Namespace) -> int:
         "duration_seconds": round(time.monotonic() - started, 6),
         "executable": options.command[0],
         "finished_at": utc_timestamp(),
-        "fingerprint": fingerprint,
+        "fingerprint": fingerprint_before,
+        "fingerprint_after": fingerprint_after,
+        "fingerprint_before": fingerprint_before,
         "schema": SCHEMA_VERSION,
         "seconds": options.seconds,
         "stage": options.stage,

@@ -792,6 +792,42 @@ process RUN_REPOSITORY_STAGE {
     } >"$stage_command"
     /bin/chmod 0700 "$stage_command"
 
+    compute_stage_input_closure() {
+        unexpected_input_entry="$(/usr/bin/find -P "$dependencies_root" \
+            -mindepth 1 -maxdepth 1 ! -type f -print -quit)"
+        if [[ -n "$unexpected_input_entry" ]]; then
+            printf 'stage dependency closure contains an unsupported entry: %s\n' \
+                "$unexpected_input_entry" >&2
+            return 75
+        fi
+        {
+            for input_file in "$source_payload" "$source_metadata" \
+                "$stage_tools" "$staged_deadline_runner" \
+                "$dependency_installer" "$stage_command"; do
+                printf 'input\t%s\t%s\n' "$(/usr/bin/basename "$input_file")" \
+                    "$(/usr/bin/shasum -a 256 "$input_file" | \
+                        /usr/bin/awk '{ print $1 }')"
+            done
+            while IFS= read -r dependency_input; do
+                [[ -n "$dependency_input" ]] || continue
+                printf 'dependency-input\t%s\t%s\n' \
+                    "$(/usr/bin/basename "$dependency_input")" \
+                    "$(/usr/bin/shasum -a 256 "$dependency_input" | \
+                        /usr/bin/awk '{ print $1 }')"
+            done < <(/usr/bin/find -P "$dependencies_root" \
+                -mindepth 1 -maxdepth 1 -type f -print | LC_ALL=C /usr/bin/sort)
+        } | /usr/bin/shasum -a 256 | /usr/bin/awk '{ print $1 }'
+    }
+
+    source_head_before="$(run_clean /usr/bin/git -C \
+        "$execution_root/source" rev-parse HEAD)"
+    if ! run_clean /usr/bin/git -C "$execution_root/source" diff \
+        --quiet --ignore-submodules=none HEAD --; then
+        printf 'stage source is dirty before execution: %s\n' "$stage_name" >&2
+        exit 75
+    fi
+    stage_input_sha256_before="$(compute_stage_input_closure)"
+
     set +e
     (
         cd "$execution_root/source"
@@ -808,6 +844,20 @@ process RUN_REPOSITORY_STAGE {
     /bin/cat "$stderr_log" >&2
     if ((stage_status != 0)); then
         exit "$stage_status"
+    fi
+    source_head_after="$(run_clean /usr/bin/git -C \
+        "$execution_root/source" rev-parse HEAD)"
+    if [[ "$source_head_after" != "$source_head_before" ]] || \
+        ! run_clean /usr/bin/git -C "$execution_root/source" diff \
+            --quiet --ignore-submodules=none HEAD --; then
+        printf 'stage changed tracked source after preflight: %s\n' \
+            "$stage_name" >&2
+        exit 75
+    fi
+    stage_input_sha256_after="$(compute_stage_input_closure)"
+    if [[ "$stage_input_sha256_after" != "$stage_input_sha256_before" ]]; then
+        printf 'stage inputs changed while command ran: %s\n' "$stage_name" >&2
+        exit 75
     fi
     verify_tool_closure
 
@@ -874,7 +924,7 @@ process RUN_REPOSITORY_STAGE {
     artifact_manifest_sha256="$(/usr/bin/shasum -a 256 \
         "$artifact_manifest" | /usr/bin/awk '{ print $1 }')"
     {
-        printf 'schema\t3\n'
+        printf 'schema\t4\n'
         printf 'stage\t%s\n' "$stage_name"
         printf 'repository\t%s\n' "$repository_name"
         printf 'source-format\t%s\n' "$source_format"
@@ -888,6 +938,9 @@ process RUN_REPOSITORY_STAGE {
         printf 'deadline-seconds\t%s\n' "$deadline_seconds"
         printf 'command-sha256\t%s\n' "$command_sha256"
         printf 'stage-tools-sha256\t%s\n' "$tools_sha256"
+        printf 'stage-inputs-sha256\t%s\n' "$stage_input_sha256_after"
+        printf 'source-execution-head\t%s\n' "$source_head_after"
+        printf 'source-tracked-clean\ttrue\n'
         printf 'stdout-sha256\t%s\n' "$stdout_sha256"
         printf 'stderr-sha256\t%s\n' "$stderr_sha256"
         printf 'artifact-archive-sha256\t%s\n' \
