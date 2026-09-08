@@ -168,13 +168,18 @@ class HistoricalReconstructionTests(unittest.TestCase):
             manifest_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
             receipt = root / "containerization-benchmark-cctl.receipt.tsv"
             receipt.write_text(
-                "schema\t3\n"
+                "schema\t4\n"
                 "stage\tcontainerization-benchmark-cctl\n"
                 "repository\tcontainerization\n"
+                "source-format\tgit-tree-archive\n"
+                f"source-commit\t{'6' * 40}\n"
                 f"source-payload-sha256\t{'1' * 64}\n"
                 f"source-metadata-sha256\t{'2' * 64}\n"
                 f"command-sha256\t{'3' * 64}\n"
                 f"stage-tools-sha256\t{'4' * 64}\n"
+                f"stage-inputs-sha256\t{'5' * 64}\n"
+                f"source-execution-head\t{'7' * 40}\n"
+                "source-tracked-clean\ttrue\n"
                 f"artifact-archive-sha256\t{archive_digest}\n"
                 f"artifact-manifest-sha256\t{manifest_digest}\n"
                 "artifact-count\t1\n"
@@ -200,6 +205,11 @@ class HistoricalReconstructionTests(unittest.TestCase):
             )
             self.assertEqual(output.read_bytes(), payload)
             self.assertEqual(result["cctlArtifactSha256"], archive_digest)
+            self.assertEqual(result["cctlBuildInputsSha256"], "5" * 64)
+            self.assertEqual(result["cctlBuildSourceCommit"], "6" * 40)
+            self.assertEqual(result["cctlBuildSourceFormat"], "git-tree-archive")
+            self.assertEqual(result["cctlBuildSourceHead"], "7" * 40)
+            self.assertIs(result["cctlBuildSourceTrackedClean"], True)
             self.assertEqual(result["cctlReceiptSha256"], receipt_digest)
 
     def test_prepare_reconstruction_requires_complete_provenance(self) -> None:

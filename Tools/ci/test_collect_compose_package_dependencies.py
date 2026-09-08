@@ -61,10 +61,16 @@ class ComposePackageDependencyCollectionTests(unittest.TestCase):
         (root / f"{stage}.receipt.tsv").write_text(
             "\n".join(
                 (
-                    "schema\t3",
+                    "schema\t4",
                     f"stage\t{stage}",
                     "repository\tcontainer-compose",
+                    "source-format\tgit-tree-archive",
                     f"source-payload-sha256\t{payload}",
+                    f"stage-inputs-sha256\t{'e' * 64}",
+                    f"source-execution-head\t{'f' * 40}",
+                    "source-tracked-clean\ttrue",
+                    "artifact-count\t1",
+                    "exit\t0",
                     f"artifact-archive-sha256\t{sha256(archive)}",
                     f"artifact-manifest-sha256\t{sha256(manifest)}",
                 )
@@ -122,6 +128,24 @@ class ComposePackageDependencyCollectionTests(unittest.TestCase):
             root = Path(directory)
             self.write_evidence(root, "compose-release-build", "a" * 64)
             self.write_evidence(root, "compose-go-validation", "not-a-digest")
+
+            result = self.run_collector(root)
+
+            self.assertNotEqual(result.returncode, 0)
+
+    def test_rejects_a_legacy_receipt_without_closed_stage_inputs(self) -> None:
+        """A cached pre-contract receipt cannot enter the package stage."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for stage in ARTIFACTS:
+                self.write_evidence(root, stage, "a" * 64)
+            receipt = root / "compose-release-build.receipt.tsv"
+            receipt.write_text(
+                receipt.read_text(encoding="utf-8").replace(
+                    "schema\t4", "schema\t3", 1
+                ),
+                encoding="utf-8",
+            )
 
             result = self.run_collector(root)
 

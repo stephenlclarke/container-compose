@@ -84,10 +84,20 @@ class PipelinePackageMaterializationTests(unittest.TestCase):
         receipt.write_text(
             "\n".join(
                 (
-                    "schema\t3",
+                    "schema\t4",
                     "stage\tcompose-package",
                     "repository\tcontainer-compose",
+                    "source-format\tgit-tree-archive",
                     f"source-commit\t{commit}",
+                    f"source-payload-sha256\t{'a' * 64}",
+                    f"source-metadata-sha256\t{'b' * 64}",
+                    f"command-sha256\t{'c' * 64}",
+                    f"stage-tools-sha256\t{'f' * 64}",
+                    f"stage-inputs-sha256\t{'d' * 64}",
+                    f"source-execution-head\t{'e' * 40}",
+                    "source-tracked-clean\ttrue",
+                    f"artifact-count\t{len(materializer.EXPECTED_ARTIFACTS)}",
+                    "exit\t0",
                     f"artifact-archive-sha256\t{materializer.sha256(archive)}",
                     f"artifact-manifest-sha256\t{materializer.sha256(manifest)}",
                 )
@@ -171,6 +181,31 @@ class PipelinePackageMaterializationTests(unittest.TestCase):
                 )
 
             self.assertEqual(existing.read_bytes(), b"existing")
+            self.assertFalse((destination / "dist").exists())
+
+    def test_rejects_a_legacy_receipt_without_closed_stage_inputs(self) -> None:
+        """Recovered pre-contract package evidence cannot reach the checkout."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination, commit = self.destination(root)
+            receipt, manifest, archive = self.evidence(root, commit)
+            receipt.write_text(
+                receipt.read_text(encoding="utf-8").replace(
+                    "schema\t4", "schema\t3", 1
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                materializer.MaterializationError, "wrong schema"
+            ):
+                materializer.materialize(
+                    receipt=receipt,
+                    manifest=manifest,
+                    archive=archive,
+                    destination=destination,
+                )
+
             self.assertFalse((destination / "dist").exists())
 
     def test_failed_replacement_restores_every_existing_output(self) -> None:

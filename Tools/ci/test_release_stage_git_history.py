@@ -118,7 +118,8 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         )[1].split("['container-compose', 'compose-tool-validation'", 1)[0]
         self.assertTrue(go_build_stage.rstrip().endswith("'none'],"))
         self.assertIn("source-payload-sha256", PACKAGE_DEPENDENCY_COLLECTOR)
-        self.assertNotIn("source-commit", PACKAGE_DEPENDENCY_COLLECTOR)
+        self.assertIn("source-execution-head", PACKAGE_DEPENDENCY_COLLECTOR)
+        self.assertIn("stage-inputs-sha256", PACKAGE_DEPENDENCY_COLLECTOR)
         self.assertIn(
             "Tools/release/runtime-capabilities.json", package_stage
         )
@@ -236,6 +237,15 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         self.assertIn("printf 'schema\\t4\\n'", REPOSITORY_STAGE)
         self.assertIn("stage-inputs-sha256", REPOSITORY_STAGE)
         self.assertIn("source-tracked-clean", REPOSITORY_STAGE)
+
+    def test_every_cached_receipt_consumer_requires_closed_stage_inputs(self) -> None:
+        """Legacy stage success cannot enter dependencies or the summary."""
+        self.assertIn('[[ "$dependency_receipt_schema" != 4 ]]', REPOSITORY_STAGE)
+        self.assertIn("dependency_stage_inputs_sha256", REPOSITORY_STAGE)
+        self.assertIn("dependency_source_execution_head", REPOSITORY_STAGE)
+        self.assertIn('[[ "$receipt_schema" == 4 ]]', PIPELINE_SOURCE)
+        self.assertIn("receipt_stage_inputs_sha256", PIPELINE_SOURCE)
+        self.assertIn("receipt_source_execution_head", PIPELINE_SOURCE)
 
     def test_history_sensitive_release_stages_request_commit_metadata(self) -> None:
         expected_declarations = (

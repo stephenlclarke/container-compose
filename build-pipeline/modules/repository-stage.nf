@@ -737,6 +737,26 @@ process RUN_REPOSITORY_STAGE {
         expected_dependency_manifest_sha256="$(/usr/bin/awk -F '\t' \
             '$1 == "artifact-manifest-sha256" { print $2 }' \
             "$dependency_receipt")"
+        dependency_receipt_schema="$(/usr/bin/awk -F '\t' \
+            '$1 == "schema" { print $2 }' "$dependency_receipt")"
+        dependency_source_format="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-format" { print $2 }' "$dependency_receipt")"
+        dependency_source_payload_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-payload-sha256" { print $2 }' \
+            "$dependency_receipt")"
+        dependency_stage_inputs_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "stage-inputs-sha256" { print $2 }' \
+            "$dependency_receipt")"
+        dependency_source_execution_head="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-execution-head" { print $2 }' \
+            "$dependency_receipt")"
+        dependency_source_tracked_clean="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-tracked-clean" { print $2 }' \
+            "$dependency_receipt")"
+        dependency_exit="$(/usr/bin/awk -F '\t' \
+            '$1 == "exit" { print $2 }' "$dependency_receipt")"
+        expected_dependency_artifact_count="$(/usr/bin/awk -F '\t' \
+            '$1 == "artifact-count" { print $2 }' "$dependency_receipt")"
         actual_dependency_archive_sha256="$(/usr/bin/shasum -a 256 \
             "$dependency_archive" | /usr/bin/awk '{ print $1 }')"
         actual_dependency_manifest_sha256="$(/usr/bin/shasum -a 256 \
@@ -745,7 +765,14 @@ process RUN_REPOSITORY_STAGE {
             '$1 == "archive-sha256" { print $2 }' "$dependency_manifest")"
         manifest_dependency_count="$(/usr/bin/awk -F '\t' \
             '$1 == "artifact-count" { print $2 }' "$dependency_manifest")"
-        if ! [[ "$expected_dependency_archive_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+        if [[ "$dependency_receipt_schema" != 4 ]] ||
+            ! [[ "$dependency_source_format" =~ ^(git-bundle|git-tree-archive)$ ]] ||
+            ! [[ "$dependency_source_payload_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+            ! [[ "$dependency_stage_inputs_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+            ! [[ "$dependency_source_execution_head" =~ ^[0-9a-f]{40}$ ]] ||
+            [[ "$dependency_source_tracked_clean" != true ]] ||
+            [[ "$dependency_exit" != 0 ]] ||
+            ! [[ "$expected_dependency_archive_sha256" =~ ^[0-9a-f]{64}$ ]] ||
             ! [[ "$expected_dependency_manifest_sha256" =~ ^[0-9a-f]{64}$ ]] ||
             [[ "$actual_dependency_archive_sha256" != \
                 "$expected_dependency_archive_sha256" ]] ||
@@ -753,7 +780,9 @@ process RUN_REPOSITORY_STAGE {
                 "$expected_dependency_manifest_sha256" ]] ||
             [[ "$manifest_dependency_archive_sha256" != \
                 "$expected_dependency_archive_sha256" ]] ||
-            ! [[ "$manifest_dependency_count" =~ ^[1-9][0-9]*$ ]]; then
+            ! [[ "$manifest_dependency_count" =~ ^[1-9][0-9]*$ ]] ||
+            [[ "$expected_dependency_artifact_count" != \
+                "$manifest_dependency_count" ]]; then
             printf 'stage dependency digest is invalid: %s\n' \
                 "$dependency_stage" >&2
             exit 2
