@@ -3307,7 +3307,7 @@ github_cli() {{
         self.assertIn('printf \'publish=%s\\n\' "${publish}" >> "$GITHUB_OUTPUT"', freshness)
         self.assertEqual(
             workflow.count("steps.current-freshness.outputs.publish == 'true'"),
-            8,
+            9,
         )
 
     def test_package_publication_closes_exact_inputs_and_outputs(self) -> None:

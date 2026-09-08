@@ -385,6 +385,20 @@ fi
 # and versions; this live identity catches a changed checkout, tool executable,
 # Docker CLI plugin, runtime, or init archive before a stale success is reused
 # or recorded.
+# Print a portable metadata identity for one resolved file.
+file_identity() {
+  local path="$1"
+  case "$(/usr/bin/uname -s)" in
+    Darwin)
+      /usr/bin/stat -L -f '%d:%i:%z:%m:%c' "${path}"
+      ;;
+    *)
+      /usr/bin/stat -L -c '%d:%i:%s:%Y:%Z' "${path}"
+      ;;
+  esac
+}
+
+# Re-resolve the mutable input closure for one stack-validation stage.
 live_validation_identity_for_stage() {
   local stage="$1"
   local repository label formula_sha256
@@ -441,11 +455,7 @@ live_validation_identity_for_stage() {
     printf 'tree=%s\n' "${tree}"
     printf 'describe=%s\n' "${describe}"
     printf 'init_archive=%s\n' "${init_archive_fingerprint}"
-    printf 'runtime_cli=%s\n' "${runtime_cli}"
-    if [[ -n "${runtime_cli}" && -f "${runtime_cli}" ]]; then
-      printf 'runtime_cli_sha256=%s\n' \
-        "$(shasum -a 256 "${runtime_cli}" | awk '{print $1}')"
-    fi
+    printf 'runtime_cli=%s\n' "${runtime_cli_fingerprint}"
     if [[ "${label}" == homebrew ]]; then
       formula_sha256=$(shasum -a 256 \
         "${homebrew_tap_repo}/Formula/container-compose.rb" | awk '{print $1}')
@@ -457,7 +467,7 @@ live_validation_identity_for_stage() {
       printf 'tool=%s:path=%s\n' "${tool_name}" "${tool_path:-missing}"
       if [[ -n "${tool_path}" && -f "${tool_path}" ]]; then
         printf 'tool=%s:identity=%s\n' "${tool_name}" \
-          "$(/usr/bin/stat -L -f '%d:%i:%z:%m:%c' "${tool_path}")"
+          "$(file_identity "${tool_path}")"
       fi
     done
     local docker_config_file="${DOCKER_CONFIG:-${HOME}/.docker}/config.json"
@@ -479,7 +489,7 @@ live_validation_identity_for_stage() {
         if [[ -e "${plugin_path}" ]]; then
           printf 'docker:plugin=%s:path=%s:identity=%s\n' \
             "${plugin_name}" "${plugin_path}" \
-            "$(/usr/bin/stat -L -f '%d:%i:%z:%m:%c' "${plugin_path}")"
+            "$(file_identity "${plugin_path}")"
         fi
       done
     done
