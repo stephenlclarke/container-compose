@@ -47,16 +47,21 @@ override NEXTFLOW_VERSION := 26.04.6
 override NEXTFLOW_SHA256 := 182a63c74074e2dc7956ffa3c8cd59de952ed2c44394e21faf5e1736b945444c
 override NEXTFLOW_DIST_URL := https://github.com/nextflow-io/nextflow/releases/download/v$(NEXTFLOW_VERSION)/nextflow-$(NEXTFLOW_VERSION)-dist
 override NEXTFLOW_JAVA_VERSION := 21.0.11
-override NEXTFLOW_JAVA_HOME := /opt/homebrew/Cellar/openjdk@21/21.0.11/libexec/openjdk.jdk/Contents/Home
-override NEXTFLOW_JAVA_BIN := $(NEXTFLOW_JAVA_HOME)/bin/java
-override NEXTFLOW_JAVA_SHA256 := 04005388bac0c272ea914210ca519ce94b2f873ea3962b9874a6859f74d7f279
-override NEXTFLOW_JAVA_MODULES_SHA256 := 260cdb63fb9926b2d194f9df3f1fd6836687a0e40d9707a97ffff4ae196e5ff9
-override NEXTFLOW_JAVA_LIBJVM_SHA256 := 7b93b74aec0a296db97fe380a97ce75a4dac7b8c5afbf4fee3d7397ebfb5c844
-override NEXTFLOW_JAVA_RELEASE_SHA256 := 7befd86565133fbebfa54138e55ec5b03bb59649ea5dda35d9f9b95265226756
+override NEXTFLOW_JAVA_RELEASE := 21.0.11+10
+override NEXTFLOW_JAVA_DIST_URL := https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.11%2B10/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.11_10.tar.gz
+override NEXTFLOW_JAVA_ARCHIVE_SHA256 := 6ebcf221c9b41507b14c098e93c6ead6440b8d9bd154f8ec666c4c73abbdb201
+override NEXTFLOW_JAVA_TREE_SHA256 := 4957b91571c12af578ab6d0aed7019d23af127570d1152a31693ad61db6b3496
+override NEXTFLOW_JAVA_SHA256 := afb8ed976e06d85c89192312923301959535169abe087d70166cd00fb96de2e5
+override NEXTFLOW_JAVA_MODULES_SHA256 := 915c525cd0b9d4db404cdc2368bfb4f3e0ab2a6a598b2d6a76d932de19dd2d33
+override NEXTFLOW_JAVA_LIBJVM_SHA256 := 34bc0bc23d87abb85147409ccdbf604ccd3d2fe8b83ac567a966a5df8a81eded
+override NEXTFLOW_JAVA_RELEASE_SHA256 := 5fccc331767cf526748f17402c7355efb0d1c24f397c49ff9836760f4a3f3d17
+override PIPELINE_HAWKEYE_VERSION := 6.5.1
+override PIPELINE_HAWKEYE_SHA256 := 369e3c1577fed2b3a15b1dd6016bb75716873c69c6e7c1f829e9e818d37e99d7
 override PIPELINE_MARKER_VALUE := container-compose recoverable pipeline v1
 override PIPELINE_ENTRY := $(abspath main.nf)
 override PIPELINE_CONFIG := $(abspath nextflow.config)
 override PIPELINE_DEADLINE_RUNNER := $(abspath Tools/ci/run-command-with-deadline.py)
+override PIPELINE_PACKAGE_MATERIALIZER := $(abspath Tools/ci/materialize-pipeline-package.py)
 ifneq ($(origin CONTAINER_FAMILY_SOURCE_ROOT),undefined)
 override CONTAINER_FAMILY_SOURCE_ROOT := $(value CONTAINER_FAMILY_SOURCE_ROOT)
 endif
@@ -321,8 +326,13 @@ NEXTFLOW_BIN := $(PIPELINE_STATE_ROOT)/tools/nextflow/$(NEXTFLOW_VERSION)/nextfl
 else
 override NEXTFLOW_BIN := $(value NEXTFLOW_BIN)
 endif
+override NEXTFLOW_JAVA_ROOT := $(PIPELINE_STATE_ROOT)/tools/temurin/$(NEXTFLOW_JAVA_RELEASE)
+override NEXTFLOW_JAVA_HOME := $(NEXTFLOW_JAVA_ROOT)/Contents/Home
+override NEXTFLOW_JAVA_BIN := $(NEXTFLOW_JAVA_HOME)/bin/java
+override PIPELINE_HAWKEYE_ROOT := $(PIPELINE_STATE_ROOT)/tools/hawkeye/$(PIPELINE_HAWKEYE_VERSION)
+override PIPELINE_HAWKEYE_BIN := $(PIPELINE_HAWKEYE_ROOT)/hawkeye
 ifeq ($(origin PIPELINE_EXECUTION_PATH),undefined)
-PIPELINE_EXECUTION_PATH := /opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+PIPELINE_EXECUTION_PATH := $(PIPELINE_HAWKEYE_ROOT):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 else
 override PIPELINE_EXECUTION_PATH := $(value PIPELINE_EXECUTION_PATH)
 endif
@@ -452,9 +462,13 @@ else
 override PIPELINE_HOMEBREW_REF := $(value PIPELINE_HOMEBREW_REF)
 endif
 export NEXTFLOW_VERSION NEXTFLOW_SHA256 NEXTFLOW_DIST_URL NEXTFLOW_BIN
-export NEXTFLOW_JAVA_VERSION NEXTFLOW_JAVA_HOME NEXTFLOW_JAVA_BIN
+export NEXTFLOW_JAVA_VERSION NEXTFLOW_JAVA_RELEASE NEXTFLOW_JAVA_DIST_URL
+export NEXTFLOW_JAVA_ARCHIVE_SHA256 NEXTFLOW_JAVA_TREE_SHA256 NEXTFLOW_JAVA_ROOT
+export NEXTFLOW_JAVA_HOME NEXTFLOW_JAVA_BIN
 export NEXTFLOW_JAVA_SHA256 NEXTFLOW_JAVA_MODULES_SHA256
 export NEXTFLOW_JAVA_LIBJVM_SHA256 NEXTFLOW_JAVA_RELEASE_SHA256
+export PIPELINE_HAWKEYE_VERSION PIPELINE_HAWKEYE_SHA256
+export PIPELINE_HAWKEYE_ROOT PIPELINE_HAWKEYE_BIN
 export CONTAINER_FAMILY_SOURCE_ROOT
 export PIPELINE_STATE_ROOT PIPELINE_MARKER_VALUE PIPELINE_EXECUTION_PATH
 export PIPELINE_PROFILE PIPELINE_ACTION PIPELINE_STAGE_SELECTOR PIPELINE_ATTEMPT_ID
@@ -467,7 +481,7 @@ export PIPELINE_CONTAINERIZATION_REF PIPELINE_CONTAINER_REPO PIPELINE_CONTAINER_
 export PIPELINE_ENGINE_API_REPO PIPELINE_ENGINE_API_REF PIPELINE_DEVCONTAINER_REPO
 export PIPELINE_DEVCONTAINER_REF PIPELINE_K8S_REPO PIPELINE_K8S_REF
 export PIPELINE_HOMEBREW_REPO PIPELINE_HOMEBREW_REF PIPELINE_ENTRY PIPELINE_CONFIG
-export PIPELINE_DEADLINE_RUNNER
+export PIPELINE_DEADLINE_RUNNER PIPELINE_PACKAGE_MATERIALIZER
 # Reassert the denylist after all explicit exports for GNU Make 3.81.
 unexport BASH_ENV ENV SHELLOPTS BASHOPTS BASH_XTRACEFD PS4 CDPATH
 unexport JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS CLASSPATH
@@ -599,7 +613,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 SWIFT_TEST_FLAGS ?=
 SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -F -Xswiftc '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' -Xlinker -rpath -Xlinker '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' $(if $(strip $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)),-Xlinker -rpath -Xlinker '$(SWIFT_TEST_RUNTIME_LIBRARY_PATH)'))
 
-.PHONY: all workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-test-direct swift-runtime-test-build swift-runtime-test swift-coverage go-test go-build go-release-check cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit swift-style-tools swift-style-paths swift-style-check swift-style-format local-swift-stack-clean
+.PHONY: all workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-test-direct swift-runtime-test-build swift-runtime-test swift-coverage swift-coverage-check go-test go-coverage-check go-build go-release-check cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit swift-style-tools swift-style-paths swift-style-check swift-style-format local-swift-stack-clean
 
 .PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint
 .PHONY: worktree-audit worktree-audit-strict
@@ -639,32 +653,29 @@ pipeline-source-check: source-preflight lint-static
 pipeline-tool-validation: coverage-tools-test performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
 
 pipeline-bootstrap: pipeline-state-init
-	@destination="$${NEXTFLOW_BIN}"; \
-	expected_sha256="$${NEXTFLOW_SHA256}"; \
-	if [[ -x "$$destination" ]] \
-		&& [[ "$$(/usr/bin/shasum -a 256 "$$destination" | /usr/bin/awk '{ print $$1 }')" == "$$expected_sha256" ]]; then \
-		printf 'Pinned Nextflow %s is already installed at %s\n' "$${NEXTFLOW_VERSION}" "$$destination"; \
-		exit 0; \
-	fi; \
-	/bin/mkdir -p "$$(/usr/bin/dirname "$$destination")"; \
-	temporary="$$(/usr/bin/mktemp "$$(/usr/bin/dirname "$$destination")/.nextflow-download.XXXXXX")"; \
-	cleanup() { /bin/rm -f -- "$$temporary"; }; \
-	trap cleanup EXIT HUP INT TERM; \
-	/usr/bin/curl --fail --location --proto '=https' --proto-redir '=https' \
-		--connect-timeout 20 --max-time 600 \
-		--retry 3 --retry-all-errors --output "$$temporary" "$${NEXTFLOW_DIST_URL}"; \
-	actual_sha256="$$(/usr/bin/shasum -a 256 "$$temporary" | /usr/bin/awk '{ print $$1 }')"; \
-	if [[ "$$actual_sha256" != "$$expected_sha256" ]]; then \
-		printf 'Nextflow digest mismatch: expected %s, got %s\n' \
-			"$$expected_sha256" "$$actual_sha256" >&2; \
-		exit 1; \
-	fi; \
-	/bin/chmod 0755 "$$temporary"; \
-	/bin/mv -f -- "$$temporary" "$$destination"; \
-	trap - EXIT HUP INT TERM; \
-	printf 'Installed verified Nextflow %s at %s\n' "$${NEXTFLOW_VERSION}" "$$destination"
+	@/usr/bin/lockf -t 300 "$${PIPELINE_STATE_ROOT}/bootstrap.lock" \
+		/usr/bin/python3 -I Tools/ci/bootstrap-nextflow-runtime.py \
+		--state-root "$${PIPELINE_STATE_ROOT}" \
+		--nextflow-version "$${NEXTFLOW_VERSION}" \
+		--nextflow-url "$${NEXTFLOW_DIST_URL}" \
+		--nextflow-sha256 "$${NEXTFLOW_SHA256}" \
+		--nextflow-bin "$${NEXTFLOW_BIN}" \
+		--java-version "$${NEXTFLOW_JAVA_VERSION}" \
+		--java-release "$${NEXTFLOW_JAVA_RELEASE}" \
+		--java-url "$${NEXTFLOW_JAVA_DIST_URL}" \
+		--java-archive-sha256 "$${NEXTFLOW_JAVA_ARCHIVE_SHA256}" \
+		--java-tree-sha256 "$${NEXTFLOW_JAVA_TREE_SHA256}" \
+		--java-root "$${NEXTFLOW_JAVA_ROOT}" \
+		--java-sha256 "$${NEXTFLOW_JAVA_SHA256}" \
+		--java-modules-sha256 "$${NEXTFLOW_JAVA_MODULES_SHA256}" \
+		--java-libjvm-sha256 "$${NEXTFLOW_JAVA_LIBJVM_SHA256}" \
+		--java-release-sha256 "$${NEXTFLOW_JAVA_RELEASE_SHA256}" \
+		--hawkeye-version "$${PIPELINE_HAWKEYE_VERSION}" \
+		--hawkeye-sha256 "$${PIPELINE_HAWKEYE_SHA256}" \
+		--hawkeye-installer "$(CURDIR)/scripts/install-hawkeye.sh" \
+		--hawkeye-bin "$${PIPELINE_HAWKEYE_BIN}"
 
-pipeline-runtime-check: pipeline-state-init
+pipeline-runtime-check: pipeline-bootstrap
 	@launcher="$${NEXTFLOW_BIN}"; \
 	state_root="$${PIPELINE_STATE_ROOT}"; \
 	java_home="$${NEXTFLOW_JAVA_HOME}"; \
@@ -685,6 +696,10 @@ pipeline-runtime-check: pipeline-state-init
 		exit 2; \
 	fi; \
 	hash_environment=(/usr/bin/env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C); \
+	/usr/bin/python3 -I Tools/ci/bootstrap-nextflow-runtime.py verify-java \
+		--state-root "$$state_root" --java-release "$${NEXTFLOW_JAVA_RELEASE}" \
+		--java-root "$${NEXTFLOW_JAVA_ROOT}" \
+		--java-tree-sha256 "$${NEXTFLOW_JAVA_TREE_SHA256}"; \
 	digest_line="$$("$${hash_environment[@]}" /usr/bin/shasum -a 256 "$$launcher")"; \
 	actual_sha256="$${digest_line%% *}"; \
 	if [[ "$$actual_sha256" != "$${NEXTFLOW_SHA256}" ]]; then \
@@ -743,6 +758,29 @@ pipeline-runtime-check: pipeline-state-init
 		printf 'Nextflow version mismatch: expected %s, got %s\n' \
 			"$${NEXTFLOW_VERSION}" "$$actual_version" >&2; \
 		exit 2; \
+	fi; \
+	hawkeye="$${PIPELINE_HAWKEYE_BIN}"; \
+	if [[ -L "$$hawkeye" ]] || [[ ! -f "$$hawkeye" ]] || [[ ! -x "$$hawkeye" ]]; then \
+		printf 'Pinned Hawkeye is missing or indirect at %s.\n' "$$hawkeye" >&2; \
+		exit 2; \
+	fi; \
+	hawkeye_digest_line="$$($${hash_environment[@]} /usr/bin/shasum -a 256 "$$hawkeye")"; \
+	if [[ "$${hawkeye_digest_line%% *}" != "$${PIPELINE_HAWKEYE_SHA256}" ]]; then \
+		printf 'Pinned Hawkeye digest mismatch.\n' >&2; \
+		exit 2; \
+	fi; \
+	hawkeye_version="$$($${clean_environment[@]} "$$hawkeye" --version 2>&1)"; \
+	if [[ "$$hawkeye_version" != *"version: $${PIPELINE_HAWKEYE_VERSION}"* ]]; then \
+		printf 'Pinned Hawkeye version mismatch; expected %s.\n' \
+			"$${PIPELINE_HAWKEYE_VERSION}" >&2; \
+		exit 2; \
+	fi; \
+	hawkeye_check_help="$$($${clean_environment[@]} "$$hawkeye" check --help 2>&1)"; \
+	hawkeye_format_help="$$($${clean_environment[@]} "$$hawkeye" format --help 2>&1)"; \
+	if [[ "$$hawkeye_check_help" != *--fail-if-unknown* ]] \
+		|| [[ "$$hawkeye_format_help" != *--fail-if-updated* ]]; then \
+		printf 'Pinned Hawkeye does not satisfy the repository CLI contract.\n' >&2; \
+		exit 2; \
 	fi
 
 pipeline-state-init:
@@ -788,7 +826,7 @@ pipeline-state-init:
 		printf 'Pipeline state marker became indirect or invalid: %s\n' "$$marker" >&2; \
 		exit 2; \
 	fi; \
-	for managed_name in evidence nextflow-home recovery-proofs tmp tools work failures caches; do \
+	for managed_name in evidence nextflow-home recovery-proofs tmp tools work failures caches empty-dependencies; do \
 		managed_path="$$state_root/$$managed_name"; \
 		if [[ -L "$$managed_path" ]] || [[ -e "$$managed_path" && ! -d "$$managed_path" ]]; then \
 			printf 'Pipeline managed path must be a non-symbolic directory: %s\n' "$$managed_path" >&2; \
@@ -914,7 +952,7 @@ pipeline-execute: pipeline-runtime-check
 		printf 'Pipeline state marker became indirect or invalid: %s\n' "$$marker" >&2; \
 		exit 2; \
 	fi; \
-	for managed_name in evidence nextflow-home tmp work failures caches; do \
+	for managed_name in evidence nextflow-home tmp work failures caches empty-dependencies; do \
 		managed_path="$$canonical_state/$$managed_name"; \
 		if [[ -L "$$managed_path" ]] || [[ ! -d "$$managed_path" ]] \
 			|| [[ "$$(cd "$$managed_path" && pwd -P)" != "$$canonical_state/$$managed_name" ]]; then \
@@ -942,6 +980,15 @@ pipeline-execute: pipeline-runtime-check
 	devcontainer_repo="$${PIPELINE_DEVCONTAINER_REPO:-$$source_root/devcontainer}"; \
 	k8s_repo="$${PIPELINE_K8S_REPO:-$$source_root/container-k8s}"; \
 	homebrew_repo="$${PIPELINE_HOMEBREW_REPO:-$$source_root/homebrew-tap}"; \
+	materialization_lock="$$state_root/package-materialization.lock"; \
+	if [[ -L "$$materialization_lock" ]]; then \
+		printf 'Package materialization lock must not be a symbolic link: %s\n' \
+			"$$materialization_lock" >&2; \
+		exit 2; \
+	fi; \
+	/usr/bin/lockf -t 30 "$$materialization_lock" \
+		/usr/bin/python3 -I "$${PIPELINE_PACKAGE_MATERIALIZER}" \
+		--recover-only --destination "$$compose_repo"; \
 	operator_name="$$(/usr/bin/id -un)"; \
 	operator_home=; \
 	requires_operator_keychain=false; \
@@ -991,6 +1038,8 @@ pipeline-execute: pipeline-runtime-check
 		"$${NEXTFLOW_JAVA_SHA256}" "$${NEXTFLOW_JAVA_MODULES_SHA256}" \
 		"$${NEXTFLOW_JAVA_LIBJVM_SHA256}" "$${NEXTFLOW_JAVA_RELEASE_SHA256}" \
 		"$$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)" >"$$attempt_dir/attempt.tsv"; \
+	printf 'java-tree-sha256\t%s\n' "$${NEXTFLOW_JAVA_TREE_SHA256}" \
+		>>"$$attempt_dir/attempt.tsv"; \
 	set --; \
 	if [[ -n "$$resume_session" ]]; then set -- -resume "$$resume_session"; fi; \
 	set +e; \
@@ -1122,13 +1171,51 @@ pipeline-execute: pipeline-runtime-check
 		fi; \
 	fi; \
 	if ((exit_status == 0 && evidence_status != 0)); then exit_status="$$evidence_status"; fi; \
-	printf 'evidence-exit\t%s\nexit\t%s\ncompleted-utc\t%s\n' \
-		"$$evidence_status" "$$exit_status" \
+	materialization_status=0; \
+	package_expected=false; \
+	if [[ "$$action" == run ]]; then \
+		if [[ "$${PIPELINE_PROFILE}" == repository ]] \
+			&& [[ -z "$${PIPELINE_STAGE_SELECTOR//[[:space:]]/}" ]]; then \
+			package_expected=true; \
+		else \
+			IFS=',' read -r -a selected_stages <<<"$${PIPELINE_STAGE_SELECTOR}"; \
+			for selected_stage in "$${selected_stages[@]}"; do \
+				if [[ "$${selected_stage//[[:space:]]/}" == compose-package ]]; then \
+					package_expected=true; \
+					break; \
+				fi; \
+			done; \
+		fi; \
+	fi; \
+	if ((exit_status == 0)) && [[ "$$package_expected" == true ]]; then \
+		package_receipt="$$attempt_dir/receipts/compose-package.receipt.tsv"; \
+		package_manifest="$$attempt_dir/receipts/compose-package.artifacts.tsv"; \
+		package_archive="$$attempt_dir/receipts/compose-package.artifacts.tar"; \
+		if [[ ! -s "$$package_receipt" ]] || [[ ! -s "$$package_manifest" ]] \
+			|| [[ ! -s "$$package_archive" ]]; then \
+			printf 'Required recovered package evidence is incomplete: %s\n' \
+				"$$attempt_dir/receipts" >&2; \
+			materialization_status=74; \
+		else \
+			set +e; \
+			/usr/bin/lockf -t 30 "$$materialization_lock" \
+				/usr/bin/python3 -I "$${PIPELINE_PACKAGE_MATERIALIZER}" \
+				--receipt "$$package_receipt" --manifest "$$package_manifest" \
+				--archive "$$package_archive" --destination "$$compose_repo"; \
+			materialization_status=$$?; \
+			set -e; \
+		fi; \
+	fi; \
+	if ((exit_status == 0 && materialization_status != 0)); then \
+		exit_status="$$materialization_status"; \
+	fi; \
+	printf 'evidence-exit\t%s\nmaterialization-exit\t%s\nexit\t%s\ncompleted-utc\t%s\n' \
+		"$$evidence_status" "$$materialization_status" "$$exit_status" \
 		"$$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$$attempt_dir/attempt.tsv"; \
 	printf 'Pipeline evidence: %s\n' "$$attempt_dir"; \
 	exit "$$exit_status"
 
-all: workflow
+all: pipeline
 
 workflow: ci package
 
@@ -2684,7 +2771,11 @@ docker-compose-restart-policy-parity: build docker-compose-reference
 coverage: swift-coverage go-test
 
 coverage-check: coverage
+	$(MAKE) --no-print-directory swift-coverage-check go-coverage-check
+
+swift-coverage-check:
 	$(PYTHON) Tools/coverage/check-coverage.py \
+		--scope swift \
 		--swift-core-minimum "$(SWIFT_CORE_COVERAGE_MIN)" \
 		--swift-runtime-spi-minimum "$(SWIFT_RUNTIME_SPI_COVERAGE_MIN)" \
 		--swift-provider-minimum "$(SWIFT_PROVIDER_COVERAGE_MIN)" \
@@ -2696,6 +2787,17 @@ coverage-check: coverage
 		--swift-provider coverage-provider.xml \
 		--swift-plugin coverage-plugin.xml \
 		--swift-aggregate coverage-aggregate.xml \
+		--go Tools/compose-normalizer/coverage.out
+
+go-coverage-check:
+	$(PYTHON) Tools/coverage/check-coverage.py \
+		--scope go \
+		--swift-core coverage-core.xml \
+		--swift-runtime-spi coverage-runtime-spi.xml \
+		--swift-provider coverage-provider.xml \
+		--swift-plugin coverage-plugin.xml \
+		--swift-aggregate coverage-aggregate.xml \
+		--go-minimum "$(GO_COVERAGE_MIN)" \
 		--go Tools/compose-normalizer/coverage.out
 
 sonar: coverage sonar-scan
