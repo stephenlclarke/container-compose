@@ -292,6 +292,7 @@ MAINTENANCE_REASON="${CONTAINER_STACK_MAINTENANCE_REASON:-}"
 MILESTONE_SOAK_OVERRIDE_REASON="${CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON:-}"
 RECOVERED_UNPUBLISHED_RELEASE_BASE=""
 RELEASE_CONTROLLER_RESTART_REQUIRED=0
+RELEASE_BOOTSTRAP_HEAD=""
 CURRENT_INIT_IMAGE_AUTHORITY_ROOT=""
 CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=0
 RELEASE_INIT_AUTHORITY_CACHE_ROOT="${CONTAINER_STACK_RELEASE_INIT_AUTHORITY_CACHE_ROOT:-$({ getconf DARWIN_USER_CACHE_DIR 2>/dev/null || printf '/private/tmp/'; })container-compose-release-authorities}"
@@ -1040,6 +1041,16 @@ recover_unpublished_release_candidate() {
   local_head="$(git -C "${path}" rev-parse main)"
   remote_head="$(remote_main_commit "${COMPOSE_REPO}")"
 
+  if [[ "${CONTAINER_STACK_RELEASE_BOOTSTRAP:-0}" == "1" ]]; then
+    if [[ ! "${CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD:-}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${remote_head}" != "${CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD}" ]]; then
+      printf 'reviewed release bootstrap moved before candidate recovery: expected %s, got %s\n' \
+        "${CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD:-missing}" \
+        "${remote_head:-missing}" >&2
+      exit 1
+    fi
+  fi
+
   if [[ "${local_head}" == "${remote_head}" ]]; then
     return 0
   fi
@@ -1115,9 +1126,11 @@ recover_unpublished_release_candidate() {
 }
 
 # A retained candidate can acquire newer release-controller code and version
-# metadata when it is refreshed from canonical main. Replace this process so
-# no state computed by the old controller survives past that boundary. exec
-# preserves the marker-protected workspace lease because its PID is unchanged.
+# metadata when it is refreshed from canonical main. The outer bootstrap also
+# enters here after it has recovered an older candidate with reviewed main.
+# Replace either process so no state computed by the bootstrap or old controller
+# survives past that boundary. exec preserves the marker-protected workspace
+# lease because its PID is unchanged.
 restart_refreshed_release_controller() {
   local path controller
   if [[ "${RELEASE_CONTROLLER_RESTART_REQUIRED}" != "1" ]]; then
@@ -1132,7 +1145,9 @@ restart_refreshed_release_controller() {
   fi
   printf 'restarting from refreshed release controller: %s\n' "${controller}"
   CONTAINER_STACK_RELEASE_LIBRARY=0
+  CONTAINER_STACK_RELEASE_BOOTSTRAP=0
   export CONTAINER_STACK_RELEASE_LIBRARY
+  export CONTAINER_STACK_RELEASE_BOOTSTRAP
   exec /bin/bash "${controller}" release "${VERSION_SELECTOR}" --execute
 }
 
@@ -6415,6 +6430,19 @@ release_current_stack() {
   fi
   current="$(current_compose_version)"
   version="$(resolve_release_version "${VERSION_SELECTOR}")"
+  if [[ "${CONTAINER_STACK_RELEASE_BOOTSTRAP:-0}" == "1" ]]; then
+    if ! stable_tag_exists "${version}"; then
+      ensure_release_version_is_valid "${latest}" "${current}" "${version}"
+      ensure_new_stable_release "${version}"
+      ensure_release_intent
+      recover_unpublished_release_candidate "${version}"
+    fi
+    # No build, test, package, or publication step may use controller or tool
+    # files outside the signed transaction. Even an unchanged candidate must
+    # therefore replace the reviewed-main bootstrap before proceeding.
+    RELEASE_CONTROLLER_RESTART_REQUIRED=1
+    restart_refreshed_release_controller
+  fi
   if stable_tag_exists "${version}"; then
     printf 'resuming stable tag: %s\n' "${version}"
     resume_stable_release "${version}"
@@ -6523,11 +6551,88 @@ Process:
 EOF
 }
 
+# Require the one controller allowed to bootstrap a retained transaction to be
+# the clean, exact reviewed main checkout. The bootstrap may recover an
+# unpublished candidate, but it must re-exec the signed transaction controller
+# before any release stage runs.
+require_release_bootstrap_authority() {
+  local source_root source_head source_origin remote_head bootstrap_controller
+  local relative_path absolute_path index_entry expected_blob actual_blob
+  local -a bootstrap_closure=(
+    "Makefile"
+    "scripts/${SCRIPT_NAME}"
+    "Tools/ci/container-runtime-lock.sh"
+    "Tools/release/release-host-state.py"
+    "Tools/release/release-workspace.py"
+  )
+  source_root="$(cd "${SELF_DIRECTORY}/.." && pwd -P)"
+  bootstrap_controller="${SELF_DIRECTORY}/${SCRIPT_NAME}"
+  if [[ ! -f "${bootstrap_controller}" || -L "${bootstrap_controller}" ]]; then
+    printf 'release bootstrap controller is missing or unsafe: %s\n' \
+      "${bootstrap_controller}" >&2
+    return 1
+  fi
+  if ! git -C "${source_root}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'release bootstrap source is not a Git checkout: %s\n' \
+      "${source_root}" >&2
+    return 1
+  fi
+  if [[ -n "$(git -C "${source_root}" status --short)" ]]; then
+    printf 'dirty release bootstrap source is not reviewed authority: %s\n' \
+      "${source_root}" >&2
+    return 1
+  fi
+  for relative_path in "${bootstrap_closure[@]}"; do
+    absolute_path="${source_root}/${relative_path}"
+    if [[ ! -f "${absolute_path}" || -L "${absolute_path}" ]]; then
+      printf 'release bootstrap closure file is missing or unsafe: %s\n' \
+        "${absolute_path}" >&2
+      return 1
+    fi
+    index_entry="$(git -C "${source_root}" ls-files -v -- "${relative_path}")"
+    if [[ -z "${index_entry}" || "${index_entry}" == S\ * ||
+      "${index_entry:0:1}" =~ [a-z] ]]; then
+      printf 'release bootstrap closure has hidden index state: %s\n' \
+        "${relative_path}" >&2
+      return 1
+    fi
+    expected_blob="$(git -C "${source_root}" rev-parse "HEAD:${relative_path}" \
+      2>/dev/null || true)"
+    actual_blob="$(git -C "${source_root}" hash-object --no-filters \
+      "${absolute_path}" 2>/dev/null || true)"
+    if [[ ! "${expected_blob}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${actual_blob}" != "${expected_blob}" ]]; then
+      printf 'release bootstrap closure differs from reviewed HEAD: %s\n' \
+        "${relative_path}" >&2
+      return 1
+    fi
+  done
+  source_origin="$(git -C "${source_root}" remote get-url origin 2>/dev/null || true)"
+  case "${source_origin}" in
+    https://github.com/stephenlclarke/container-compose|https://github.com/stephenlclarke/container-compose.git|git@github.com:stephenlclarke/container-compose|git@github.com:stephenlclarke/container-compose.git) ;;
+    *)
+      printf 'release bootstrap origin is not stephenlclarke/container-compose: %s\n' \
+        "${source_origin:-missing}" >&2
+      return 1
+      ;;
+  esac
+  source_head="$(git -C "${source_root}" rev-parse HEAD)"
+  remote_head="$(git -C "${source_root}" ls-remote --heads origin refs/heads/main \
+    | awk '{print $1}' | tail -n 1)"
+  if [[ ! "${source_head}" =~ ^[0-9a-f]{40}$ ]] ||
+    [[ "${source_head}" != "${remote_head}" ]]; then
+    printf 'release bootstrap is not exact reviewed origin/main: local %s, remote %s\n' \
+      "${source_head:-missing}" "${remote_head:-missing}" >&2
+    return 1
+  fi
+  RELEASE_BOOTSTRAP_HEAD="${source_head}"
+}
+
 # Run a stable release only inside the exact marker-protected transaction
 # created by the release workspace controller. A failed child is retained for
 # the next invocation; only a completely successful publication is removed.
 run_isolated_release() {
-  local workspace child child_pid status claim_status
+  local workspace bootstrap child child_pid status claim_status
   if [[ "${EXECUTE}" != "1" ]]; then
     python3 "${RELEASE_WORKSPACE_TOOL}" plan
     printf 'would materialize and retain an exact isolated release workspace for %s\n' \
@@ -6537,6 +6642,7 @@ run_isolated_release() {
 
   workspace="$(python3 "${RELEASE_WORKSPACE_TOOL}" materialize \
     --build-root "${RELEASE_BUILD_ROOT}" -- "${VERSION_SELECTOR}")"
+  bootstrap="${SELF_DIRECTORY}/${SCRIPT_NAME}"
   child="${workspace}/container-compose/scripts/${SCRIPT_NAME}"
   if [[ ! -f "${child}" || -L "${child}" ]]; then
     printf 'isolated release controller is missing or unsafe: %s\n' "${child}" >&2
@@ -6546,9 +6652,11 @@ run_isolated_release() {
   CONTAINER_STACK_RELEASE_ROOT="${workspace}" \
   CONTAINER_STACK_RELEASE_BUILD_ROOT="${RELEASE_BUILD_ROOT}" \
   CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE=1 \
+  CONTAINER_STACK_RELEASE_BOOTSTRAP=1 \
+  CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD="${RELEASE_BOOTSTRAP_HEAD}" \
     python3 "${RELEASE_WORKSPACE_TOOL}" execute \
       --build-root "${RELEASE_BUILD_ROOT}" "${workspace}" \
-      /bin/bash "${child}" release "${VERSION_SELECTOR}" --execute &
+      /bin/bash "${bootstrap}" release "${VERSION_SELECTOR}" --execute &
   child_pid=$!
   wait "${child_pid}" || status=$?
   claim_status=0
@@ -6589,6 +6697,7 @@ main() {
         done
         release_current_stack
       else
+        require_release_bootstrap_authority
         recover_release_host_state_on_startup
         run_isolated_release
       fi
