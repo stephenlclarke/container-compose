@@ -7909,6 +7909,7 @@ esac
                 {
                     "README.md": "current candidate\n",
                     "docs/guides/INSTALL.md": "stable lane\n",
+                    "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json": "{}\n",
                 },
                 "docs(release): align 0.6.71 candidate guidance",
             )
@@ -7923,6 +7924,28 @@ esac
             self.assertIn("retaining unpublished release candidate", result.stdout)
             self.assertEqual(self.git(local, "rev-parse", "main"), candidate_head)
             self.assertNotEqual(candidate_head, remote_head)
+
+    def test_release_helper_rejects_other_release_document_data(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _remote, local = self.create_compose_checkout(root)
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"docs/guides/INSTALL.json": "{}\n"},
+                "docs(release): disguise unreviewed document data",
+            )
+
+            result = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71",
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "release documentation repair changes an unexpected file",
+                result.stderr,
+            )
 
     def test_release_helper_rejects_release_docs_commits_with_source_changes(
         self,
