@@ -17,7 +17,9 @@ process RUN_REPOSITORY_STAGE {
         val(deadlineSeconds), val(stageCommandBase64), val(artifactPaths),
         val(sourcePaths), path(sourcePayload), path(sourceMetadata),
         path(stageTools), val(gateReady)
+    path dependencies
     path deadlineRunner
+    path dependencyInstaller
     val stateRootBase64
     val sessionIdentifier
 
@@ -51,7 +53,9 @@ process RUN_REPOSITORY_STAGE {
     source_payload="$task_root/!{sourcePayload}"
     source_metadata="$task_root/!{sourceMetadata}"
     stage_tools="$task_root/!{stageTools}"
+    dependencies_root="$task_root/!{dependencies}"
     staged_deadline_runner="$task_root/!{deadlineRunner}"
+    dependency_installer="$task_root/!{dependencyInstaller}"
     state_root="$(decode_parameter '!{stateRootBase64}')"
     session_identifier="!{sessionIdentifier}"
     success_receipt="$task_root/!{stageName}.receipt.tsv"
@@ -65,6 +69,8 @@ process RUN_REPOSITORY_STAGE {
     stage_runner_pid=
     failure_session_root=
     semantic_cache_root=
+    dependency_count=0
+    dependency_records="$task_root/dependencies.tsv"
 
     record_result_and_cleanup() {
         local stage_status="$1"
@@ -185,6 +191,7 @@ process RUN_REPOSITORY_STAGE {
     test -s "$source_metadata"
     test -s "$stage_tools"
     test -x "$staged_deadline_runner"
+    test -f "$dependency_installer"
     case "$state_root" in /*) ;; *) exit 2 ;; esac
     [[ "$session_identifier" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]]
     if [[ -L "$state_root" ]] || [[ ! -d "$state_root" ]]; then
@@ -221,6 +228,24 @@ process RUN_REPOSITORY_STAGE {
     }
     require_managed_directory caches
     require_managed_directory failures
+    require_managed_directory work
+    require_managed_directory empty-dependencies
+
+    if [[ ! -d "$dependencies_root" ]]; then
+        printf 'stage dependency root is invalid: %s\n' \
+            "$dependencies_root" >&2
+        exit 2
+    fi
+    canonical_dependencies="$(cd "$dependencies_root" && pwd -P)"
+    case "$canonical_dependencies" in
+        "$state_root/empty-dependencies"|"$state_root/work/"*) ;;
+        *)
+            printf 'stage dependency root escaped pipeline state: %s\n' \
+                "$canonical_dependencies" >&2
+            exit 2
+            ;;
+    esac
+    dependencies_root="$canonical_dependencies"
 
     failure_session_root="$state_root/failures/$session_identifier"
     if [[ -L "$failure_session_root" ]] ||
@@ -579,6 +604,8 @@ process RUN_REPOSITORY_STAGE {
     metadata_environment=(
         "PIPELINE_ORIGINAL_COMMIT=$expected_commit"
         "PIPELINE_ORIGINAL_DESCRIBE=$expected_describe"
+        "PIPELINE_ORIGINAL_BRANCH=$expected_branch"
+        "PIPELINE_ORIGINAL_ORIGIN=$expected_origin"
         "PIPELINE_INTERNAL_CACHE_ROOT=$execution_root/cache"
     )
     if [[ "$stage_name" == container-release-validation ]]; then
@@ -672,6 +699,90 @@ process RUN_REPOSITORY_STAGE {
     fi
     [[ -z "$(run_clean /usr/bin/git -C "$execution_root/source" \
         status --porcelain=v1 --untracked-files=all)" ]]
+
+    : >"$dependency_records"
+    unexpected_dependency="$(/usr/bin/find -P "$dependencies_root" \
+        -mindepth 1 -maxdepth 1 \
+        \\( ! -type f -o \
+        \\( ! -name .keep ! -name '*.receipt.tsv' \
+        ! -name '*.artifacts.tar' ! -name '*.artifacts.tsv' \\) \\) \
+        -print -quit)"
+    if [[ -n "$unexpected_dependency" ]]; then
+        printf 'stage dependency root contains an unsupported entry: %s\n' \
+            "$unexpected_dependency" >&2
+        exit 2
+    fi
+    for dependency_receipt in "$dependencies_root"/*.receipt.tsv; do
+        [[ -f "$dependency_receipt" ]] || continue
+        dependency_stage="$(/usr/bin/awk -F '\t' \
+            '$1 == "stage" { print $2 }' "$dependency_receipt")"
+        if ! [[ "$dependency_stage" =~ ^[a-z0-9][a-z0-9-]*$ ]] ||
+            [[ "$(/usr/bin/basename "$dependency_receipt")" != \
+                "${dependency_stage}.receipt.tsv" ]]; then
+            printf 'stage dependency receipt is invalid: %s\n' \
+                "$dependency_receipt" >&2
+            exit 2
+        fi
+        dependency_archive="$dependencies_root/${dependency_stage}.artifacts.tar"
+        dependency_manifest="$dependencies_root/${dependency_stage}.artifacts.tsv"
+        if [[ -L "$dependency_archive" ]] || [[ ! -f "$dependency_archive" ]] ||
+            [[ -L "$dependency_manifest" ]] || [[ ! -f "$dependency_manifest" ]]; then
+            printf 'stage dependency evidence is incomplete: %s\n' \
+                "$dependency_stage" >&2
+            exit 2
+        fi
+        expected_dependency_archive_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "artifact-archive-sha256" { print $2 }' \
+            "$dependency_receipt")"
+        expected_dependency_manifest_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "artifact-manifest-sha256" { print $2 }' \
+            "$dependency_receipt")"
+        actual_dependency_archive_sha256="$(/usr/bin/shasum -a 256 \
+            "$dependency_archive" | /usr/bin/awk '{ print $1 }')"
+        actual_dependency_manifest_sha256="$(/usr/bin/shasum -a 256 \
+            "$dependency_manifest" | /usr/bin/awk '{ print $1 }')"
+        manifest_dependency_archive_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "archive-sha256" { print $2 }' "$dependency_manifest")"
+        manifest_dependency_count="$(/usr/bin/awk -F '\t' \
+            '$1 == "artifact-count" { print $2 }' "$dependency_manifest")"
+        if ! [[ "$expected_dependency_archive_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+            ! [[ "$expected_dependency_manifest_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+            [[ "$actual_dependency_archive_sha256" != \
+                "$expected_dependency_archive_sha256" ]] ||
+            [[ "$actual_dependency_manifest_sha256" != \
+                "$expected_dependency_manifest_sha256" ]] ||
+            [[ "$manifest_dependency_archive_sha256" != \
+                "$expected_dependency_archive_sha256" ]] ||
+            ! [[ "$manifest_dependency_count" =~ ^[1-9][0-9]*$ ]]; then
+            printf 'stage dependency digest is invalid: %s\n' \
+                "$dependency_stage" >&2
+            exit 2
+        fi
+        run_clean /usr/bin/python3 "$dependency_installer" \
+            --archive "$dependency_archive" \
+            --manifest "$dependency_manifest" \
+            --destination "$execution_root/source"
+        printf 'dependency\t%s\t%s\t%s\n' "$dependency_stage" \
+            "$actual_dependency_archive_sha256" \
+            "$actual_dependency_manifest_sha256" >>"$dependency_records"
+        ((dependency_count += 1))
+    done
+    dependency_receipt_count="$(/usr/bin/find -P "$dependencies_root" \
+        -mindepth 1 -maxdepth 1 -type f -name '*.receipt.tsv' | \
+        /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+    dependency_archive_count="$(/usr/bin/find -P "$dependencies_root" \
+        -mindepth 1 -maxdepth 1 -type f -name '*.artifacts.tar' | \
+        /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+    dependency_manifest_count="$(/usr/bin/find -P "$dependencies_root" \
+        -mindepth 1 -maxdepth 1 -type f -name '*.artifacts.tsv' | \
+        /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+    if [[ "$dependency_receipt_count" -ne "$dependency_count" ]] ||
+        [[ "$dependency_archive_count" -ne "$dependency_count" ]] ||
+        [[ "$dependency_manifest_count" -ne "$dependency_count" ]]; then
+        printf 'stage dependency evidence has unmatched files: %s\n' \
+            "$dependencies_root" >&2
+        exit 2
+    fi
 
     stage_command="$execution_root/stage-command.sh"
     {
@@ -769,6 +880,10 @@ process RUN_REPOSITORY_STAGE {
         printf 'source-format\t%s\n' "$source_format"
         printf 'source-payload-sha256\t%s\n' "$actual_payload_sha256"
         printf 'source-metadata-sha256\t%s\n' "$source_metadata_sha256"
+        [[ -z "$expected_commit" ]] || \
+            printf 'source-commit\t%s\n' "$expected_commit"
+        [[ -z "$expected_branch" ]] || \
+            printf 'source-branch\t%s\n' "$expected_branch"
         printf 'classification\t%s\n' "$failure_class"
         printf 'deadline-seconds\t%s\n' "$deadline_seconds"
         printf 'command-sha256\t%s\n' "$command_sha256"
@@ -780,6 +895,8 @@ process RUN_REPOSITORY_STAGE {
         printf 'artifact-manifest-sha256\t%s\n' \
             "$artifact_manifest_sha256"
         printf 'artifact-count\t%s\n' "$artifact_count"
+        printf 'dependency-count\t%s\n' "$dependency_count"
+        /bin/cat "$dependency_records"
         printf 'stdin-closed\ttrue\n'
         printf 'environment\tallowlisted\n'
         printf 'timezone\tUTC\n'
@@ -788,6 +905,7 @@ process RUN_REPOSITORY_STAGE {
     } >"$success_receipt"
     ''', [
         artifactPaths: artifactPaths,
+        dependencyInstaller: dependencyInstaller,
         deadlineRunner: deadlineRunner,
         deadlineSeconds: deadlineSeconds,
         failureClass: failureClass,
@@ -800,6 +918,7 @@ process RUN_REPOSITORY_STAGE {
         stageCommandBase64: stageCommandBase64,
         stageName: stageName,
         stageTools: stageTools,
+        dependencies: dependencies,
         stateRootBase64: stateRootBase64,
     ])
 }
