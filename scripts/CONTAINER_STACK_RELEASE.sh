@@ -468,21 +468,67 @@ PY
   fi
 }
 
+# Advance one clean retained sibling checkout to the canonical fork main. A
+# failed release transaction is intentionally reusable, so its sibling clones
+# can be older than the Current stack that repaired the failure.
+refresh_release_sibling_main() {
+  local component="$1" path remote remote_ref local_ref
+  path="$(repo_path "${component}")"
+  remote="$(push_remote "${component}")"
+  if [[ "$(git -C "${path}" branch --show-current)" != "main" ]] ||
+    [[ -n "$(git -C "${path}" status --short)" ]]; then
+    printf 'retained %s checkout is not a clean main branch\n' "${component}" >&2
+    return 1
+  fi
+
+  fetch_release_remote "${component}"
+  if ! remote_ref="$(git -C "${path}" rev-parse "refs/remotes/${remote}/main")" ||
+    [[ ! "${remote_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'cannot resolve freshly fetched canonical main for %s\n' \
+      "${component}" >&2
+    return 1
+  fi
+  local_ref="$(git -C "${path}" rev-parse main)"
+  if [[ "${local_ref}" == "${remote_ref}" ]]; then
+    return 0
+  fi
+  if ! git -C "${path}" merge-base --is-ancestor "${local_ref}" "${remote_ref}"; then
+    printf 'retained %s main cannot fast-forward from %s to canonical remote %s\n' \
+      "${component}" "${local_ref}" "${remote_ref}" >&2
+    return 1
+  fi
+
+  run git -C "${path}" merge --ff-only "${remote_ref}"
+  if [[ "$(git -C "${path}" rev-parse main)" != "${remote_ref}" ]] ||
+    [[ -n "$(git -C "${path}" status --short)" ]]; then
+    printf 'retained %s checkout did not reach clean canonical remote main\n' \
+      "${component}" >&2
+    return 1
+  fi
+}
+
 # A stable candidate must be the exact stack already published as Current.
-# Refuse a sibling-main advance before the release helper mutates dependency
-# pins or creates commits; the normal main/Current lane must integrate it first.
+# Refresh retained sibling checkouts first, then refuse a sibling-main advance
+# before dependency pins or release commits can change.
 require_current_stack_matches_sibling_mains() {
   local path current_commit component published_ref local_ref
   path="$(repo_path "${COMPOSE_REPO}")"
   current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
   for component in container-builder-shim containerization container; do
+    if [[ "${EXECUTE}" == "1" ]]; then
+      refresh_release_sibling_main "${component}"
+      local_ref="$(git -C "$(repo_path "${component}")" rev-parse main)"
+    elif ! local_ref="$(remote_main_commit "${component}")" ||
+      [[ ! "${local_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+      printf 'cannot resolve canonical remote main for %s\n' "${component}" >&2
+      return 1
+    fi
     published_ref="$(git -C "${path}" show \
       "${current_commit}:Tools/release/stack-refs.json" | python3 -c \
       'import json, sys; print(json.load(sys.stdin)["components"][sys.argv[1]]["ref"])' \
       "${component}")"
-    local_ref="$(git -C "$(repo_path "${component}")" rev-parse main)"
     if [[ "${published_ref}" != "${local_ref}" ]]; then
-      printf 'Current stack uses %s %s, but sibling main is %s; integrate and publish exact Current before stable release\n' \
+      printf 'Current stack uses %s %s, but canonical sibling main is %s; integrate and publish exact Current before stable release\n' \
         "${component}" "${published_ref:-missing}" "${local_ref}" >&2
       return 1
     fi
@@ -1025,8 +1071,13 @@ fetch_release_remote() {
   if [[ "${repo}" == "${CONTAINER_REPO}" ]]; then
     # The legacy Homebrew lane retargets this pointer on every runtime build.
     # Stable release preparation does not consume it, so exclude it while
-    # fetching immutable package and semantic tags.
-    fetch_args+=("^refs/tags/homebrew-main")
+    # fetching immutable package and semantic tags. The explicit negative
+    # refspec disables Git's configured branch refspec unless a positive one
+    # is also supplied, so retain the canonical fork branch mapping here.
+    fetch_args+=(
+      "+refs/heads/*:refs/remotes/${remote}/*"
+      "^refs/tags/homebrew-main"
+    )
   fi
 
   if [[ "${EXECUTE}" != "1" ]]; then
