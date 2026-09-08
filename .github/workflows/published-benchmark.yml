@@ -59,12 +59,28 @@ jobs:
       target: ${{ steps.versions.outputs.target }}
       baseline: ${{ steps.versions.outputs.baseline }}
       latest: ${{ steps.versions.outputs.latest }}
+      controls_ref: ${{ steps.controls.outputs.ref }}
+      homebrew_ref: ${{ steps.versions.outputs.homebrew_ref }}
+      target_release_id: ${{ steps.versions.outputs.target_release_id }}
+      target_release_ref: ${{ steps.versions.outputs.target_release_ref }}
+      baseline_release_id: ${{ steps.versions.outputs.baseline_release_id }}
+      baseline_release_ref: ${{ steps.versions.outputs.baseline_release_ref }}
     steps:
       - name: Checkout benchmark controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 1
-          ref: main
+          ref: ${{ github.sha }}
+
+      - name: Verify exact benchmark controls
+        id: controls
+        env:
+          CONTROLS_REF: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${CONTROLS_REF}" ]]
+          printf 'ref=%s\n' "${CONTROLS_REF}" >> "${GITHUB_OUTPUT}"
 
       - name: Resolve target and comparison releases
         id: versions
@@ -93,10 +109,50 @@ jobs:
           target="$(jq -r '.target' "${RUNNER_TEMP}/comparison.json")"
           baseline="$(jq -r '.baseline' "${RUNNER_TEMP}/comparison.json")"
           latest="$(jq -r '.latest' "${RUNNER_TEMP}/comparison.json")"
+
+          # Resolve one published release to its immutable object and tag identities.
+          resolve_release() {
+            local label="$1" tag="$2" release release_id release_ref
+            release="$(
+              gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}"
+            )"
+            release_id="$(jq -er '.id' <<<"${release}")"
+            release_ref="$(
+              git ls-remote --tags \
+                "https://github.com/${GITHUB_REPOSITORY}.git" \
+                "refs/tags/${tag}" "refs/tags/${tag}^{}" |
+                awk '$2 ~ /\^\{\}$/ { peeled = $1 } $2 !~ /\^\{\}$/ { direct = $1 } END { print peeled ? peeled : direct }'
+            )"
+            if [[ "$(jq -r '.draft or .prerelease' <<<"${release}")" != "false" ]] ||
+              [[ "$(jq -r '.tag_name' <<<"${release}")" != "${tag}" ]] ||
+              [[ ! "${release_id}" =~ ^[0-9]+$ ]] ||
+              [[ ! "${release_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+              printf 'benchmark release authority is invalid: %s\n' "${tag}" >&2
+              exit 1
+            fi
+            printf '%s_release_id=%s\n' "${label}" "${release_id}" \
+              >> "${GITHUB_OUTPUT}"
+            printf '%s_release_ref=%s\n' "${label}" "${release_ref}" \
+              >> "${GITHUB_OUTPUT}"
+          }
+
+          resolve_release target "${target}"
+          resolve_release baseline "${baseline}"
+          homebrew_ref="$(
+            git ls-remote --heads \
+              https://github.com/stephenlclarke/homebrew-tap.git \
+              refs/heads/main | awk '{ print $1 }' | tail -n 1
+          )"
+          if [[ ! "${homebrew_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Homebrew benchmark authority is invalid: %s\n' \
+              "${homebrew_ref:-missing}" >&2
+            exit 1
+          fi
           {
             printf 'target=%s\n' "${target}"
             printf 'baseline=%s\n' "${baseline}"
             printf 'latest=%s\n' "${latest}"
+            printf 'homebrew_ref=%s\n' "${homebrew_ref}"
           } >> "${GITHUB_OUTPUT}"
           printf 'Benchmarking %s against %s.\n' "${target}" "${baseline}" \
             >> "${GITHUB_STEP_SUMMARY}"
@@ -113,6 +169,12 @@ jobs:
       TARGET_VERSION: ${{ needs.resolve.outputs.target }}
       BASELINE_VERSION: ${{ needs.resolve.outputs.baseline }}
       LATEST_STABLE_VERSION: ${{ needs.resolve.outputs.latest }}
+      CONTROLS_REF: ${{ needs.resolve.outputs.controls_ref }}
+      HOMEBREW_REF: ${{ needs.resolve.outputs.homebrew_ref }}
+      TARGET_RELEASE_ID: ${{ needs.resolve.outputs.target_release_id }}
+      TARGET_RELEASE_REF: ${{ needs.resolve.outputs.target_release_ref }}
+      BASELINE_RELEASE_ID: ${{ needs.resolve.outputs.baseline_release_id }}
+      BASELINE_RELEASE_REF: ${{ needs.resolve.outputs.baseline_release_ref }}
       REPETITIONS: ${{ inputs.repetitions }}
       RUNTIME_ROOT_PREFIX: /private/tmp/ccpb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -136,7 +198,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-          ref: main
+          ref: ${{ needs.resolve.outputs.controls_ref }}
 
       - name: Checkout complete Homebrew distribution history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -144,6 +206,14 @@ jobs:
           repository: stephenlclarke/homebrew-tap
           path: homebrew-tap
           fetch-depth: 0
+          ref: ${{ needs.resolve.outputs.homebrew_ref }}
+
+      - name: Verify exact benchmark checkouts
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${CONTROLS_REF}" ]]
+          [[ "$(git -C homebrew-tap rev-parse HEAD)" == "${HOMEBREW_REF}" ]]
 
       - name: Verify unattended documentation signing
         shell: bash
@@ -385,6 +455,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Recheck the exact inputs used to produce this report.
+          verify_authority() {
+            python3 Tools/parity/benchmark-authority.py \
+              --source . \
+              --controls-ref "${CONTROLS_REF}" \
+              --allow-output "${REPORT_PATH}" \
+              --release "${GITHUB_REPOSITORY}|${TARGET_VERSION}|${TARGET_RELEASE_ID}|${TARGET_RELEASE_REF}" \
+              --release "${GITHUB_REPOSITORY}|${BASELINE_VERSION}|${BASELINE_RELEASE_ID}|${BASELINE_RELEASE_REF}" \
+              --checkout "homebrew-tap|${HOMEBREW_REF}"
+          }
+
+          expected_authority="$(verify_authority)"
           branch="docs/benchmark-${TARGET_VERSION}-vs-${BASELINE_VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git switch -c "${branch}"
           git add -- "${REPORT_PATH}"
@@ -402,6 +484,29 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --ref "${branch}" \
             -f documentation_pr="${pr_number}"
+          local_head="$(git rev-parse HEAD)"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/${branch}" |
+              awk '{ print $1 }' | tail -n 1
+          )"
+          pr_details="$(
+            gh pr view "${pr_number}" --repo "${GITHUB_REPOSITORY}" \
+              --json baseRefName,headRefName,headRefOid,state,url
+          )"
+          if [[ "${remote_head}" != "${local_head}" ]] ||
+            ! jq -e --arg base main --arg head "${local_head}" \
+              --arg name "${branch}" --arg url "${pr_url}" \
+              '.baseRefName == $base and .headRefName == $name and
+                .headRefOid == $head and .state == "OPEN" and .url == $url' \
+              <<<"${pr_details}" >/dev/null; then
+            printf 'benchmark report pull request is not bound to its exact output commit\n' >&2
+            exit 1
+          fi
+          current_authority="$(verify_authority)"
+          if [[ "${current_authority}" != "${expected_authority}" ]]; then
+            printf 'benchmark authority changed during report publication\n' >&2
+            exit 1
+          fi
           printf 'Documentation report pull request: %s\n' "${pr_url}" \
             >> "${GITHUB_STEP_SUMMARY}"
 

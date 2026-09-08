@@ -611,13 +611,24 @@ jobs:
           summary+=" Authority receipt SHA-256: ${AUTHORITY_RECEIPT_SHA256}."
           summary+=" Authority artifact ID: ${AUTHORITY_ARTIFACT_ID}."
           summary+=" Authority artifact digest: ${AUTHORITY_ARTIFACT_DIGEST}."
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" \
-            -f "name=${authority_name}" \
-            -f "head_sha=${CANDIDATE_SHA}" \
-            -f 'status=completed' \
-            -f 'conclusion=success' \
-            -f "external_id=${GITHUB_RUN_ID}" \
-            -f "details_url=${details_url}" \
-            -f "output[title]=${authority_name}" \
-            -f "output[summary]=${summary}" \
-            --silent
+          check_run="$(
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" \
+              -f "name=${authority_name}" \
+              -f "head_sha=${CANDIDATE_SHA}" \
+              -f 'status=completed' \
+              -f 'conclusion=success' \
+              -f "external_id=${GITHUB_RUN_ID}" \
+              -f "details_url=${details_url}" \
+              -f "output[title]=${authority_name}" \
+              -f "output[summary]=${summary}"
+          )"
+          if ! jq -e \
+            --arg name "${authority_name}" \
+            --arg sha "${CANDIDATE_SHA}" \
+            --arg run "${GITHUB_RUN_ID}" \
+            '.name == $name and .head_sha == $sha and .external_id == $run and
+              .status == "completed" and .conclusion == "success"' \
+            <<<"${check_run}" >/dev/null; then
+            printf 'stable release authority check output does not match its exact candidate\n' >&2
+            exit 75
+          fi
