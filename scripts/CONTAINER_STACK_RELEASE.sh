@@ -701,10 +701,129 @@ PY
 # Retain a helper-created candidate after a local release gate fails before
 # promotion. Recommitting an identical tree changes the reviewed candidate
 # identity on every retry and makes evidence impossible to bind reliably.
+compute_release_candidate_refresh_tree() {
+  local path="$1" candidate_head="$2" remote_head="$3"
+  local merge_output merge_tree conflict_paths conflict_path authority_paths
+  local index_root index_file resolution_error resolved_tree
+  local remote_entry remote_mode remote_type remote_blob remote_path resolved_blob
+
+  RELEASE_CANDIDATE_REFRESH_TREE=""
+  RELEASE_CANDIDATE_REFRESH_CONFLICTS=""
+  RELEASE_CANDIDATE_REFRESH_ERROR=""
+
+  if merge_output="$(
+    git -C "${path}" merge-tree --write-tree --name-only --no-messages \
+      "${candidate_head}" "${remote_head}" 2>&1
+  )"; then
+    merge_tree="${merge_output%%$'\n'*}"
+    if [[ ! "${merge_tree}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${merge_output}" != "${merge_tree}" ]]; then
+      RELEASE_CANDIDATE_REFRESH_ERROR="release candidate refresh did not produce one exact merge tree"
+      return 1
+    fi
+    RELEASE_CANDIDATE_REFRESH_TREE="${merge_tree}"
+    return 0
+  fi
+
+  merge_tree="${merge_output%%$'\n'*}"
+  conflict_paths="${merge_output#*$'\n'}"
+  if [[ ! "${merge_tree}" =~ ^[0-9a-f]{40}$ ]] ||
+    [[ -z "${conflict_paths}" ]] || [[ "${conflict_paths}" == "${merge_output}" ]]; then
+    RELEASE_CANDIDATE_REFRESH_ERROR="${merge_output}"
+    return 1
+  fi
+
+  while IFS= read -r conflict_path; do
+    [[ -n "${conflict_path}" ]] || continue
+    # These snapshots describe the current reviewed fork heads, so canonical
+    # main owns their complete contents. The strict divergence gate validates
+    # that authority against the transaction repositories before any build.
+    case "${conflict_path}" in
+      docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json|docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md) ;;
+      *)
+        RELEASE_CANDIDATE_REFRESH_ERROR="${merge_output}"
+        return 1
+        ;;
+    esac
+  done <<<"${conflict_paths}"
+
+  authority_paths=$'docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json\ndocs/upstream/FORK-COMMIT-CLASSIFICATIONS.md'
+
+  index_root="$(
+    mktemp -d "${TMPDIR:-/tmp}/container-compose-refresh-index.XXXXXX"
+  )" || {
+    RELEASE_CANDIDATE_REFRESH_ERROR="could not create an isolated refresh index"
+    return 1
+  }
+  index_file="${index_root}/index"
+  resolution_error=""
+
+  if ! GIT_INDEX_FILE="${index_file}" git -C "${path}" read-tree "${merge_tree}"; then
+    resolution_error="could not read the candidate conflict tree"
+  fi
+
+  while [[ -z "${resolution_error}" ]] && IFS= read -r conflict_path; do
+    [[ -n "${conflict_path}" ]] || continue
+    remote_entry="$(
+      git -C "${path}" ls-tree "${remote_head}" -- "${conflict_path}"
+    )"
+    read -r remote_mode remote_type remote_blob remote_path <<<"${remote_entry}"
+    if [[ ! "${remote_mode}" =~ ^[0-7]{6}$ ]] ||
+      [[ "${remote_type}" != "blob" ]] ||
+      [[ ! "${remote_blob}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${remote_path}" != "${conflict_path}" ]]; then
+      resolution_error="reviewed classification authority is missing or unsafe: ${conflict_path}"
+      break
+    fi
+    if ! GIT_INDEX_FILE="${index_file}" git -C "${path}" update-index \
+      --add --cacheinfo "${remote_mode},${remote_blob},${conflict_path}"; then
+      resolution_error="could not install reviewed classification authority: ${conflict_path}"
+      break
+    fi
+  done <<<"${authority_paths}"
+
+  if [[ -z "${resolution_error}" ]]; then
+    resolved_tree="$(
+      GIT_INDEX_FILE="${index_file}" git -C "${path}" write-tree 2>/dev/null || true
+    )"
+    if [[ ! "${resolved_tree}" =~ ^[0-9a-f]{40}$ ]]; then
+      resolution_error="could not write the resolved candidate refresh tree"
+    fi
+  fi
+
+  /bin/rm -f "${index_file}" "${index_file}.lock"
+  if ! /bin/rmdir "${index_root}" && [[ -z "${resolution_error}" ]]; then
+    resolution_error="could not remove the isolated refresh index"
+  fi
+  if [[ -n "${resolution_error}" ]]; then
+    RELEASE_CANDIDATE_REFRESH_ERROR="${resolution_error}"
+    return 1
+  fi
+
+  while IFS= read -r conflict_path; do
+    [[ -n "${conflict_path}" ]] || continue
+    resolved_blob="$(
+      git -C "${path}" rev-parse "${resolved_tree}:${conflict_path}" 2>/dev/null || true
+    )"
+    remote_blob="$(
+      git -C "${path}" rev-parse "${remote_head}:${conflict_path}" 2>/dev/null || true
+    )"
+    if [[ ! "${resolved_blob}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${resolved_blob}" != "${remote_blob}" ]]; then
+      RELEASE_CANDIDATE_REFRESH_ERROR="reviewed classification authority was not selected exactly: ${conflict_path}"
+      return 1
+    fi
+  done <<<"${authority_paths}"
+
+  RELEASE_CANDIDATE_REFRESH_TREE="${resolved_tree}"
+  RELEASE_CANDIDATE_REFRESH_CONFLICTS="${authority_paths}"
+  return 0
+}
+
 validate_unpublished_release_refresh_commit() {
   local path="$1" commit="$2" version="$3" current_remote_head="$4"
   local subject parents first_parent main_parent extra_parent
-  local expected_tree_output expected_tree actual_tree
+  local expected_tree actual_tree
 
   subject="$(git -C "${path}" show -s --format=%s "${commit}")"
   if [[ "${subject}" != "chore(release): refresh ${version} candidate from main" ]]; then
@@ -727,15 +846,13 @@ validate_unpublished_release_refresh_commit() {
       "${commit}" >&2
     return 1
   fi
-  if ! expected_tree_output="$(
-    git -C "${path}" merge-tree --write-tree \
-      "${first_parent}" "${main_parent}" 2>&1
-  )"; then
+  if ! compute_release_candidate_refresh_tree \
+    "${path}" "${first_parent}" "${main_parent}"; then
     printf 'release candidate refresh parents no longer merge cleanly: %s\n%s\n' \
-      "${commit}" "${expected_tree_output}" >&2
+      "${commit}" "${RELEASE_CANDIDATE_REFRESH_ERROR}" >&2
     return 1
   fi
-  expected_tree="${expected_tree_output%%$'\n'*}"
+  expected_tree="${RELEASE_CANDIDATE_REFRESH_TREE}"
   actual_tree="$(git -C "${path}" rev-parse "${commit}^{tree}")"
   if [[ ! "${expected_tree}" =~ ^[0-9a-f]{40}$ || "${actual_tree}" != "${expected_tree}" ]]; then
     printf 'release candidate refresh tree is not the exact parent merge: %s\n' \
@@ -752,7 +869,7 @@ validate_unpublished_release_refresh_commit() {
 # the checkout; the branch moves only after the remote authority is rechecked.
 refresh_unpublished_release_candidate() {
   local path="$1" remote="$2" local_head="$3" remote_head="$4" version="$5"
-  local base commit commits merge_output merge_tree live_remote_head refresh_head
+  local base commit commits merge_tree live_remote_head refresh_head
 
   base="$(git -C "${path}" merge-base "${local_head}" "${remote_head}")"
   if [[ ! "${base}" =~ ^[0-9a-f]{40}$ || "${base}" == "${local_head}" || "${base}" == "${remote_head}" ]]; then
@@ -770,18 +887,20 @@ refresh_unpublished_release_candidate() {
       "${path}" "${commit}" "${version}" "${remote_head}" || return 1
   done <<<"${commits}"
 
-  if ! merge_output="$(
-    git -C "${path}" merge-tree --write-tree \
-      "${local_head}" "${remote_head}" 2>&1
-  )"; then
+  if ! compute_release_candidate_refresh_tree \
+    "${path}" "${local_head}" "${remote_head}"; then
     printf 'reviewed main cannot be applied cleanly to the retained release candidate:\n%s\n' \
-      "${merge_output}" >&2
+      "${RELEASE_CANDIDATE_REFRESH_ERROR}" >&2
     return 1
   fi
-  merge_tree="${merge_output%%$'\n'*}"
+  merge_tree="${RELEASE_CANDIDATE_REFRESH_TREE}"
   if [[ ! "${merge_tree}" =~ ^[0-9a-f]{40}$ ]]; then
     printf 'release candidate refresh did not produce an exact merge tree\n' >&2
     return 1
+  fi
+  if [[ -n "${RELEASE_CANDIDATE_REFRESH_CONFLICTS}" ]]; then
+    printf 'resolved superseded fork-classification authority from reviewed main:\n%s\n' \
+      "${RELEASE_CANDIDATE_REFRESH_CONFLICTS}"
   fi
 
   live_remote_head="$(

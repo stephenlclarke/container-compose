@@ -1277,7 +1277,7 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_release_helper_retains_only_its_unpublished_candidate_before_readiness(self) -> None:
         recovery = self.script[
-            self.script.index("validate_unpublished_release_refresh_commit() {") :
+            self.script.index("compute_release_candidate_refresh_tree() {") :
             self.script.index("# Print and optionally execute a command.")
         ]
         release = self.script[self.script.index("release_current_stack() {") :]
@@ -7911,6 +7911,144 @@ esac
             )
             self.assertEqual(self.git(local, "show", "main:SECOND.md"), "second")
             self.assertEqual(self.git(local, "status", "--short"), "")
+
+    def test_release_helper_refreshes_superseded_classification_authority(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, local = self.create_compose_checkout(root)
+            base_files = {
+                "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json": (
+                    '{\n  "snapshot": "base",\n'
+                    '  "common-1": 1,\n  "common-2": 2,\n'
+                    '  "common-3": 3,\n  "common-4": 4\n}\n'
+                ),
+                "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md": (
+                    "base authority\n\n"
+                    + "".join(f"common {index}\n" for index in range(1, 21))
+                ),
+            }
+            for name, contents in base_files.items():
+                path = local / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(contents, encoding="utf-8")
+                self.run_command("git", "-C", str(local), "add", name)
+            self.run_command(
+                "git",
+                "-C",
+                str(local),
+                "commit",
+                "-m",
+                "docs: establish classification authority",
+            )
+            self.run_command("git", "-C", str(local), "push", "origin", "main")
+            self.enable_ssh_signing(root, local)
+            self.commit_signed_files(
+                local,
+                {"Makefile": "COMPOSE_VERSION ?= 0.6.71\n"},
+                "chore(release): prepare 0.6.71",
+            )
+            self.commit_signed_files(
+                local,
+                {
+                    "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json": (
+                        '{\n  "snapshot": "candidate",\n'
+                        '  "common-1": 1,\n  "common-2": 2,\n'
+                        '  "common-3": 3,\n  "common-4": 4,\n'
+                        '  "candidate-only": true\n}\n'
+                    ),
+                    "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md": (
+                        base_files[
+                            "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md"
+                        ]
+                        + "\ncandidate-only residue\n"
+                    ),
+                },
+                "docs(release): classify candidate runtime repairs",
+            )
+            candidate_head = self.git(local, "rev-parse", "main")
+
+            updater = root / "updater"
+            self.run_command(
+                "git", "clone", "--branch", "main", str(remote), str(updater)
+            )
+            self.configure_repo(updater)
+            reviewed_files = {
+                "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json": (
+                    '{\n  "snapshot": "reviewed-main",\n'
+                    '  "common-1": 1,\n  "common-2": 2,\n'
+                    '  "common-3": 3,\n  "common-4": 4\n}\n'
+                ),
+                "docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md": (
+                    "reviewed main authority\n\n"
+                    + "".join(f"common {index}\n" for index in range(1, 21))
+                ),
+            }
+            for name, contents in reviewed_files.items():
+                path = updater / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(contents, encoding="utf-8")
+                self.run_command("git", "-C", str(updater), "add", name)
+            self.run_command(
+                "git",
+                "-C",
+                str(updater),
+                "commit",
+                "-m",
+                "docs: refresh reviewed classification authority",
+            )
+            self.run_command("git", "-C", str(updater), "push", "origin", "main")
+            remote_head = self.git(updater, "rev-parse", "main")
+
+            result = self.run_release_function(
+                root / "github", "recover_unpublished_release_candidate 0.6.71"
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            conflict_probe = subprocess.run(
+                [
+                    "git",
+                    "merge-tree",
+                    "--write-tree",
+                    "--name-only",
+                    "--no-messages",
+                    candidate_head,
+                    remote_head,
+                ],
+                cwd=local,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=self.non_interactive_environment(),
+            )
+            self.assertNotEqual(conflict_probe.returncode, 0)
+            self.assertIn("FORK-COMMIT-CLASSIFICATIONS.json", conflict_probe.stdout)
+            self.assertNotIn("FORK-COMMIT-CLASSIFICATIONS.md", conflict_probe.stdout)
+            self.assertIn(
+                "resolved superseded fork-classification authority", result.stdout
+            )
+            refreshed_head = self.git(local, "rev-parse", "main")
+            self.assertEqual(
+                self.git(local, "show", "main:Makefile"),
+                "COMPOSE_VERSION ?= 0.6.71",
+            )
+            for name, contents in reviewed_files.items():
+                self.assertEqual(
+                    self.git(local, "show", f"main:{name}"), contents.strip()
+                )
+            self.assertEqual(
+                self.git(local, "show", "-s", "--format=%P", refreshed_head).split(),
+                [candidate_head, remote_head],
+            )
+            self.run_command("git", "-C", str(local), "verify-commit", refreshed_head)
+            self.assertEqual(self.git(local, "status", "--short"), "")
+
+            repeated = self.run_release_function(
+                root / "github", "recover_unpublished_release_candidate 0.6.71"
+            )
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertEqual(self.git(local, "rev-parse", "main"), refreshed_head)
 
     def test_release_helper_rejects_a_conflicting_main_refresh_without_mutation(
         self,
