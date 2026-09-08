@@ -158,6 +158,10 @@ runtime_codesign_identity=${CONTAINER_RUNTIME_CODESIGN_IDENTITY:-}
 validation_environment_path=${PATH}
 runtime_make_args=()
 container_codesign_make_args=()
+managed_runtime_manager="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/manage-release-gate-runtime.sh"
+managed_runtime_app_root=${CONTAINER_APP_ROOT:-}
+managed_runtime_namespace=${CONTAINER_SERVICE_NAMESPACE:-}
+managed_runtime_enabled=false
 if [[ "${mode}" == "full" ]]; then
   if [[ -z "${runtime_cli}" ]]; then
     printf 'full stack validation requires an executable CONTAINER_RUNTIME_CLI: %s\n' \
@@ -251,6 +255,16 @@ PY
   container_codesign_make_args+=(
     "CODESIGN_OPTS=--force --sign ${runtime_codesign_identity} --timestamp=none"
   )
+  if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == 1 ]]; then
+    managed_runtime_enabled=true
+    if [[ ! -x "${managed_runtime_manager}" ]]; then
+      printf 'full stack validation requires its managed runtime lifecycle helper: %s\n' \
+        "${managed_runtime_manager}" >&2
+      exit 2
+    fi
+    "${managed_runtime_manager}" validate "${runtime_cli}" \
+      "${managed_runtime_app_root}" "${managed_runtime_namespace}"
+  fi
 fi
 
 # The full gate owns one namespace-scoped Container candidate. Pin PATH as a
@@ -287,6 +301,8 @@ if [[ -n "${checkpoint_directory}" ]]; then
     {
       printf 'mode=%s\n' "${mode}"
       printf 'validator=%s\n' "$(shasum -a 256 "$0" | awk '{print $1}')"
+      printf 'runtime_manager=%s\n' \
+        "$(shasum -a 256 "${managed_runtime_manager}" | awk '{print $1}')"
       printf 'environment=PATH=%s\n' "${validation_environment_path}"
       printf 'environment=DEVELOPER_DIR=%s\n' "${DEVELOPER_DIR:-}"
       printf 'environment=SDKROOT=%s\n' "${SDKROOT:-}"
@@ -451,6 +467,8 @@ live_validation_identity_for_stage() {
 
   {
     printf 'validator=%s\n' "$(shasum -a 256 "$0" | awk '{print $1}')"
+    printf 'runtime_manager=%s\n' \
+      "$(shasum -a 256 "${managed_runtime_manager}" | awk '{print $1}')"
     printf 'head=%s\n' "${head}"
     printf 'tree=%s\n' "${tree}"
     printf 'describe=%s\n' "${describe}"
@@ -593,6 +611,15 @@ fi
 run_checkpointed_make_targets builder "${builder_repo}" "${builder_targets[@]}"
 run_checkpointed_make_targets containerization "${containerization_repo}" \
   "${containerization_targets[@]}"
+# Containerization's macOS build uses the managed candidate for Linux build
+# containers. Quiesce that exact runtime before Container's independent
+# integration namespace starts its own VMs, then resume it for the remaining
+# Compose release gate. This lifecycle boundary is deliberately not
+# checkpointed: every resumed run must prove the host is uncontaminated again.
+if [[ "${managed_runtime_enabled}" == true ]]; then
+  "${managed_runtime_manager}" quiesce "${runtime_cli}" \
+    "${managed_runtime_app_root}" "${managed_runtime_namespace}"
+fi
 # The outer stable gate may select an already-running isolated runtime for
 # Containerization's image build. Container's unit tests exercise their own
 # default namespace contract, so do not let that selector rewrite the expected
@@ -606,5 +633,9 @@ for target in "${container_targets[@]}"; do
       make -C "${container_repo}" "${runtime_make_args[@]}" \
         "${container_codesign_make_args[@]}" "${container_make_args[@]}" "${target}"
 done
+if [[ "${managed_runtime_enabled}" == true ]]; then
+  "${managed_runtime_manager}" resume "${runtime_cli}" \
+    "${managed_runtime_app_root}" "${managed_runtime_namespace}"
+fi
 run_checkpointed homebrew-formula \
   ruby -c "${homebrew_tap_repo}/Formula/container-compose.rb"
