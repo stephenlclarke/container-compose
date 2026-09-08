@@ -164,7 +164,7 @@ CODESIGN_OPTS ?= --force --sign - --timestamp=none
 CONTAINER_RUNTIME_CODESIGN_IDENTITY ?= $(shell security find-identity -v -p codesigning 2>/dev/null | awk '/"Developer ID Application:/{print $$2; exit}')
 PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
-HAWKEYE ?= $(shell command -v hawkeye 2>/dev/null || printf '%s' .local/bin/hawkeye)
+HAWKEYE ?= .local/bin/hawkeye
 CODEQL_CACHE_ROOT ?= .local/share/codeql
 CODEQL_ARTIFACT_ROOT ?= .build/codeql
 CODEQL_UPLOAD_REPOSITORY ?= stephenlclarke/container-compose
@@ -3004,11 +3004,11 @@ format: update-licenses swift-style-format
 	cd Tools/compose-normalizer && $(GO) fmt ./...
 
 check-licenses:
-	@./scripts/ensure-hawkeye-exists.sh
+	@HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh
 	@$(HAWKEYE) check --fail-if-unknown
 
 update-licenses:
-	@./scripts/ensure-hawkeye-exists.sh
+	@HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh
 	@$(HAWKEYE) format --fail-if-unknown --fail-if-updated false
 
 pre-commit:
@@ -3019,7 +3019,7 @@ pre-commit:
 	printf 'PRECOMMIT_NOFMT=$${PRECOMMIT_NOFMT} "$$(git rev-parse --git-path hooks/pre-commit.fmt)"\n' >> /tmp/container-compose-pre-commit.new
 	mv /tmp/container-compose-pre-commit.new "$(HOOKS_DIR)/pre-commit"
 	chmod +x "$(HOOKS_DIR)/pre-commit"
-	@./scripts/ensure-hawkeye-exists.sh
+	@HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh
 
 clean: local-swift-stack-clean
 	$(SWIFT) package clean
