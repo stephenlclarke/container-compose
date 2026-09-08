@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -162,6 +163,13 @@ def container_pin() -> dict[str, Any]:
     raise SystemExit(f"{package_resolved} is missing a container pin")
 
 
+def validate_compose_resolved_origin_hash() -> None:
+    resolved = load_json(COMPOSE_RESOLVED)
+    actual = str(resolved.get("originHash", ""))
+    expected = hashlib.sha256(COMPOSE_PACKAGE.read_bytes()).hexdigest()
+    require_match("Package.resolved originHash", actual, expected)
+
+
 def require_match(label: str, actual: str, expected: str) -> None:
     if actual != expected:
         raise SystemExit(f"{label} mismatch: expected {expected}, got {actual}")
@@ -295,6 +303,7 @@ def validate_builder_image(stack_refs: dict[str, Any]) -> None:
 
 def main() -> int:
     stack_refs = load_json(STACK_REFS)
+    validate_compose_resolved_origin_hash()
     validate_runtime_capabilities()
     validate_builder_image(stack_refs)
     components = stack_refs.get("components", {})
