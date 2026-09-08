@@ -152,6 +152,69 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # This inline workflow step is the trust root for unattended recovery.
+      # It must run before Make, Bash, or Python consumes any checked-out file;
+      # the controller repeats the check later only as defence in depth.
+      - name: Verify exact release bootstrap closure
+        shell: bash
+        working-directory: release-controls/container-compose
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bootstrap_closure=(
+            Makefile
+            scripts/CONTAINER_STACK_RELEASE.sh
+            Tools/ci/container-runtime-lock.sh
+            Tools/release/release-host-state.py
+            Tools/release/release-workspace.py
+          )
+          origin_url="$(git remote get-url origin)"
+          case "${origin_url}" in
+            https://github.com/stephenlclarke/container-compose|https://github.com/stephenlclarke/container-compose.git|git@github.com:stephenlclarke/container-compose|git@github.com:stephenlclarke/container-compose.git) ;;
+            *)
+              printf 'release bootstrap origin is not stephenlclarke/container-compose: %s\n' \
+                "${origin_url:-missing}" >&2
+              exit 1
+              ;;
+          esac
+          local_head="$(git rev-parse HEAD)"
+          remote_head="$(git ls-remote --heads origin refs/heads/main | awk '{print $1}' | tail -n 1)"
+          if [[ ! "${EXPECTED_HEAD}" =~ ^[0-9a-f]{40}$ ]] ||
+            [[ "${local_head}" != "${EXPECTED_HEAD}" ]] ||
+            [[ "${remote_head}" != "${EXPECTED_HEAD}" ]]; then
+            printf 'unattended release bootstrap is not exact reviewed main: workflow %s, local %s, remote %s\n' \
+              "${EXPECTED_HEAD:-missing}" "${local_head:-missing}" \
+              "${remote_head:-missing}" >&2
+            exit 1
+          fi
+          if [[ -n "$(git status --short)" ]]; then
+            printf 'unattended release bootstrap checkout is dirty\n' >&2
+            exit 1
+          fi
+          for relative_path in "${bootstrap_closure[@]}"; do
+            if [[ ! -f "${relative_path}" || -L "${relative_path}" ]]; then
+              printf 'release bootstrap closure file is missing or unsafe: %s\n' \
+                "${relative_path}" >&2
+              exit 1
+            fi
+            index_entry="$(git ls-files -v -- "${relative_path}")"
+            if [[ -z "${index_entry}" || "${index_entry}" == S\ * ||
+              "${index_entry:0:1}" =~ [a-z] ]]; then
+              printf 'release bootstrap closure has hidden index state: %s\n' \
+                "${relative_path}" >&2
+              exit 1
+            fi
+            expected_blob="$(git rev-parse "HEAD:${relative_path}")"
+            actual_blob="$(git hash-object --no-filters "${relative_path}")"
+            if [[ ! "${expected_blob}" =~ ^[0-9a-f]{40}$ ]] ||
+              [[ "${actual_blob}" != "${expected_blob}" ]]; then
+              printf 'release bootstrap closure differs from reviewed HEAD: %s\n' \
+                "${relative_path}" >&2
+              exit 1
+            fi
+          done
+
       - name: Configure isolated release controller
         shell: bash
         run: |
