@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `eee7ad097079cc3b02d5309ec10160143f2d0c6a` | `0eb4a7e9df9bda860e48b809d777a8ba4e28b7df` | 0 | 796 | 670 |
+| `container` | `eee7ad097079cc3b02d5309ec10160143f2d0c6a` | `7ed777a171554cd6309ca96d3d2a4e7135c910c5` | 0 | 800 | 672 |
 | `containerization` | `847655d373a27b8b8d0c3a9747f04f16b5de1206` | `9e0626e1171cee5c09b0adecb886f1b24784320c` | 0 | 304 | 240 |
 | `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `f99e66b8940242d6ea8bed448619ba61f3f6f1a5` | 0 | 55 | 45 |
-| **Total** | | | **0** | **1155** | **955** |
+| **Total** | | | **0** | **1159** | **957** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,7 +32,7 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 699 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `support-maintenance` | 701 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
 | `generic-runtime-primitive` | 231 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
@@ -318,3 +318,12 @@ through `9e0626e1171c` and Container through `0eb4a7e9df9b`. The runtime fix
 redials an available VM only when an exited process retained an already-stopped
 gRPC client; the Container change pins that reviewed correction. Both are
 support maintenance and add no Compose policy or new public runtime primitive.
+
+The 8 September 2026 release-gate correction advances Container through
+`7ed777a17155` and classifies two reviewed support-maintenance commits. The
+runtime change makes `system stop` clean an unhealthy Kubernetes API server
+and every namespace service; its focused regression proves that cleanup and
+error propagation. The companion Kubernetes test proves that a retained
+cluster restarts on its configured address without preserving the obsolete
+address-rotation expectation. Neither commit adds a fork-only capability or
+temporary upstream port.
