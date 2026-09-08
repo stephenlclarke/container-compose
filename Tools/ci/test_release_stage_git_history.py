@@ -120,6 +120,14 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, stack.lower())
 
+    def test_ci_tools_lane_runs_recovery_regressions_once(self) -> None:
+        ci_tools = make_target("ci-tools-test", "coverage-tools-test")
+        self.assertIn(
+            "$(MAKE) --no-print-directory stack-self-test",
+            ci_tools,
+        )
+        self.assertEqual(MAKEFILE.count("stack-self-test\n"), 1)
+
     def test_runtime_validation_uses_pinned_managed_macos_toolchain(self) -> None:
         runtime_validation = CI_WORKFLOW.split("  validate_runtime:", 1)[1].split(
             "  prebuilt_binaries:", 1

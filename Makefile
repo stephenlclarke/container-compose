@@ -2328,6 +2328,7 @@ release-tools-test: coverage-tools-syntax
 
 ci-tools-test: coverage-tools-syntax
 	$(PYTHON) -m unittest discover Tools/ci
+	$(MAKE) --no-print-directory stack-self-test
 
 coverage-tools-test: coverage-python-tools-test release-tools-test ci-tools-test
 
