@@ -19,12 +19,12 @@ import PackageDescription
 
 let containerDependency: Package.Dependency = .package(
     url: "https://github.com/stephenlclarke/container.git",
-    revision: "24c4726d104859149f9227007822dd79edbfa88d",
+    revision: "0eb4a7e9df9bda860e48b809d777a8ba4e28b7df",
 )
 
 let containerizationDependency: Package.Dependency = .package(
     url: "https://github.com/stephenlclarke/containerization.git",
-    revision: "f9d57ad1c80944c43bec6fc74afe1bfac3956480",
+    revision: "9e0626e1171cee5c09b0adecb886f1b24784320c",
 )
 
 let nioSSLDependency: Package.Dependency = .package(
