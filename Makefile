@@ -15,141 +15,30 @@
 #===----------------------------------------------------------------------===#
 
 # GNU Make 3.81 ignores .SHELLFLAGS, so keep the security-critical Bash modes
-# in SHELL itself. Privileged mode suppresses inherited BASH_ENV, SHELLOPTS,
-# CDPATH, and exported functions before the first recipe command can execute;
-# pipeline recipes then establish their explicit `env -i` Nextflow boundary.
+# in SHELL itself. Privileged mode suppresses inherited shell hooks before the
+# first recipe command can execute.
 override SHELL := /bin/bash -p -euo pipefail
 override .SHELLFLAGS := -c
 .DEFAULT_GOAL := all
 .PHONY: fork-classifications-check upstream-divergence-report upstream-divergence-check upstream-divergence-release-check upstream-handoff-registry-update upstream-handoff-registry-check readme-upstream-metrics-update readme-upstream-metrics-check source-preflight lint-static docs serve-docs
 
-# Never let inherited shell hooks, JVM option injection, or loader overrides
-# reach a Make recipe before the clean Nextflow environment is established.
+# Builds are unattended. Git and credential helpers must fail with a concrete
+# diagnostic instead of opening a terminal, Keychain, or GUI approval prompt.
 unexport BASH_ENV ENV SHELLOPTS BASHOPTS BASH_XTRACEFD PS4 CDPATH
 unexport JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS CLASSPATH
 unexport DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH LD_PRELOAD LD_LIBRARY_PATH
+export GIT_TERMINAL_PROMPT := 0
+export GCM_INTERACTIVE := never
+export SSH_ASKPASS_REQUIRE := never
+export GIT_ASKPASS := /usr/bin/false
 
 # This release/parity selector is interpolated by shell-backed fingerprints
 # later in the file, so freeze caller text before any such expansion.
 ifneq ($(origin PARITY_SINK_BIND_ADDRESS),undefined)
 override PARITY_SINK_BIND_ADDRESS := $(value PARITY_SINK_BIND_ADDRESS)
 endif
-# Quote one frozen Make value as one literal POSIX-shell word. Keep the helper
-# non-overridable because it protects the fingerprint and recipe boundary.
-override PIPELINE_SHELL_QUOTE = '$(subst ','"'"',$(1))'
-
-# Freeze the recoverable pipeline's complete caller-controlled boundary before
-# any $(shell ...) expansion in this file. GNU Make automatically exports
-# command-line variables to subprocesses; leaving even one recursive value live
-# here would let Make functions in that value run while evaluating an unrelated
-# shell-backed default later in the file.
-override NEXTFLOW_VERSION := 26.04.6
-override NEXTFLOW_SHA256 := 182a63c74074e2dc7956ffa3c8cd59de952ed2c44394e21faf5e1736b945444c
-override NEXTFLOW_DIST_URL := https://github.com/nextflow-io/nextflow/releases/download/v$(NEXTFLOW_VERSION)/nextflow-$(NEXTFLOW_VERSION)-dist
-override NEXTFLOW_JAVA_VERSION := 21.0.11
-override NEXTFLOW_JAVA_RELEASE := 21.0.11+10
-override NEXTFLOW_JAVA_DIST_URL := https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.11%2B10/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.11_10.tar.gz
-override NEXTFLOW_JAVA_ARCHIVE_SHA256 := 6ebcf221c9b41507b14c098e93c6ead6440b8d9bd154f8ec666c4c73abbdb201
-override NEXTFLOW_JAVA_TREE_SHA256 := 4957b91571c12af578ab6d0aed7019d23af127570d1152a31693ad61db6b3496
-override NEXTFLOW_JAVA_SHA256 := afb8ed976e06d85c89192312923301959535169abe087d70166cd00fb96de2e5
-override NEXTFLOW_JAVA_MODULES_SHA256 := 915c525cd0b9d4db404cdc2368bfb4f3e0ab2a6a598b2d6a76d932de19dd2d33
-override NEXTFLOW_JAVA_LIBJVM_SHA256 := 34bc0bc23d87abb85147409ccdbf604ccd3d2fe8b83ac567a966a5df8a81eded
-override NEXTFLOW_JAVA_RELEASE_SHA256 := 5fccc331767cf526748f17402c7355efb0d1c24f397c49ff9836760f4a3f3d17
-override PIPELINE_HAWKEYE_VERSION := 6.5.1
-override PIPELINE_HAWKEYE_SHA256 := 369e3c1577fed2b3a15b1dd6016bb75716873c69c6e7c1f829e9e818d37e99d7
-override PIPELINE_MARKER_VALUE := container-compose recoverable pipeline v1
-override PIPELINE_ENTRY := $(abspath main.nf)
-override PIPELINE_CONFIG := $(abspath nextflow.config)
-override PIPELINE_DEADLINE_RUNNER := $(abspath Tools/ci/run-command-with-deadline.py)
-override PIPELINE_PACKAGE_MATERIALIZER := $(abspath Tools/ci/materialize-pipeline-package.py)
-ifneq ($(origin CONTAINER_FAMILY_SOURCE_ROOT),undefined)
-override CONTAINER_FAMILY_SOURCE_ROOT := $(value CONTAINER_FAMILY_SOURCE_ROOT)
-endif
-ifneq ($(origin PIPELINE_STATE_ROOT),undefined)
-override PIPELINE_STATE_ROOT := $(value PIPELINE_STATE_ROOT)
-endif
-ifneq ($(origin NEXTFLOW_BIN),undefined)
-override NEXTFLOW_BIN := $(value NEXTFLOW_BIN)
-endif
-ifneq ($(origin PIPELINE_EXECUTION_PATH),undefined)
-override PIPELINE_EXECUTION_PATH := $(value PIPELINE_EXECUTION_PATH)
-endif
-ifneq ($(origin PIPELINE_PROFILE),undefined)
-override PIPELINE_PROFILE := $(value PIPELINE_PROFILE)
-endif
-ifneq ($(origin PIPELINE_ACTION),undefined)
-override PIPELINE_ACTION := $(value PIPELINE_ACTION)
-endif
-ifneq ($(origin PIPELINE_STAGE_SELECTOR),undefined)
-override PIPELINE_STAGE_SELECTOR := $(value PIPELINE_STAGE_SELECTOR)
-endif
-ifneq ($(origin PIPELINE_ATTEMPT_ID),undefined)
-override PIPELINE_ATTEMPT_ID := $(value PIPELINE_ATTEMPT_ID)
-endif
-ifneq ($(origin PIPELINE_SESSION),undefined)
-override PIPELINE_SESSION := $(value PIPELINE_SESSION)
-endif
-ifneq ($(origin PIPELINE_RESUME_SESSION),undefined)
-override PIPELINE_RESUME_SESSION := $(value PIPELINE_RESUME_SESSION)
-endif
-ifneq ($(origin PIPELINE_ORCHESTRATOR_TIMEOUT_SECONDS),undefined)
-override PIPELINE_ORCHESTRATOR_TIMEOUT_SECONDS := $(value PIPELINE_ORCHESTRATOR_TIMEOUT_SECONDS)
-endif
-ifneq ($(origin PIPELINE_SOURCE_TIMEOUT_SECONDS),undefined)
-override PIPELINE_SOURCE_TIMEOUT_SECONDS := $(value PIPELINE_SOURCE_TIMEOUT_SECONDS)
-endif
-ifneq ($(origin PIPELINE_FUNCTIONAL_TIMEOUT_SECONDS),undefined)
-override PIPELINE_FUNCTIONAL_TIMEOUT_SECONDS := $(value PIPELINE_FUNCTIONAL_TIMEOUT_SECONDS)
-endif
-ifneq ($(origin PIPELINE_COMPOSE_REPO),undefined)
-override PIPELINE_COMPOSE_REPO := $(value PIPELINE_COMPOSE_REPO)
-endif
-ifneq ($(origin PIPELINE_COMPOSE_REF),undefined)
-override PIPELINE_COMPOSE_REF := $(value PIPELINE_COMPOSE_REF)
-endif
-ifneq ($(origin PIPELINE_BUILDER_REPO),undefined)
-override PIPELINE_BUILDER_REPO := $(value PIPELINE_BUILDER_REPO)
-endif
-ifneq ($(origin PIPELINE_BUILDER_REF),undefined)
-override PIPELINE_BUILDER_REF := $(value PIPELINE_BUILDER_REF)
-endif
-ifneq ($(origin PIPELINE_CONTAINERIZATION_REPO),undefined)
-override PIPELINE_CONTAINERIZATION_REPO := $(value PIPELINE_CONTAINERIZATION_REPO)
-endif
-ifneq ($(origin PIPELINE_CONTAINERIZATION_REF),undefined)
-override PIPELINE_CONTAINERIZATION_REF := $(value PIPELINE_CONTAINERIZATION_REF)
-endif
-ifneq ($(origin PIPELINE_CONTAINER_REPO),undefined)
-override PIPELINE_CONTAINER_REPO := $(value PIPELINE_CONTAINER_REPO)
-endif
-ifneq ($(origin PIPELINE_CONTAINER_REF),undefined)
-override PIPELINE_CONTAINER_REF := $(value PIPELINE_CONTAINER_REF)
-endif
-ifneq ($(origin PIPELINE_ENGINE_API_REPO),undefined)
-override PIPELINE_ENGINE_API_REPO := $(value PIPELINE_ENGINE_API_REPO)
-endif
-ifneq ($(origin PIPELINE_ENGINE_API_REF),undefined)
-override PIPELINE_ENGINE_API_REF := $(value PIPELINE_ENGINE_API_REF)
-endif
-ifneq ($(origin PIPELINE_DEVCONTAINER_REPO),undefined)
-override PIPELINE_DEVCONTAINER_REPO := $(value PIPELINE_DEVCONTAINER_REPO)
-endif
-ifneq ($(origin PIPELINE_DEVCONTAINER_REF),undefined)
-override PIPELINE_DEVCONTAINER_REF := $(value PIPELINE_DEVCONTAINER_REF)
-endif
-ifneq ($(origin PIPELINE_K8S_REPO),undefined)
-override PIPELINE_K8S_REPO := $(value PIPELINE_K8S_REPO)
-endif
-ifneq ($(origin PIPELINE_K8S_REF),undefined)
-override PIPELINE_K8S_REF := $(value PIPELINE_K8S_REF)
-endif
-ifneq ($(origin PIPELINE_HOMEBREW_REPO),undefined)
-override PIPELINE_HOMEBREW_REPO := $(value PIPELINE_HOMEBREW_REPO)
-endif
-ifneq ($(origin PIPELINE_HOMEBREW_REF),undefined)
-override PIPELINE_HOMEBREW_REF := $(value PIPELINE_HOMEBREW_REF)
-endif
-
+# Quote one frozen Make value as one literal POSIX-shell word.
+override SHELL_QUOTE = '$(subst ','"'"',$(1))'
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
 # Additional release compiler flags for deliberate toolchain experiments.
@@ -161,7 +50,10 @@ GO_RELEASE_BUILD_FLAGS ?= -trimpath
 GO_RELEASE_LDFLAGS ?= -s -w
 CODESIGN ?= codesign
 CODESIGN_OPTS ?= --force --sign - --timestamp=none
-CONTAINER_RUNTIME_CODESIGN_IDENTITY ?= $(shell security find-identity -v -p codesigning 2>/dev/null | awk '/"Developer ID Application:/{print $$2; exit}')
+# Release callers must pass the exact identity fingerprint explicitly. Never
+# query Keychain while Make is parsing: ordinary or resumed builds are
+# unattended and must not block behind a GUI approval dialog.
+CONTAINER_RUNTIME_CODESIGN_IDENTITY ?=
 PYTHON ?= python3
 MARKDOWNLINT ?= markdownlint
 HAWKEYE ?= .local/bin/hawkeye
@@ -243,9 +135,13 @@ DEFAULT_COMPOSE_TEST_BINARY := $(abspath .build/debug/compose)
 COMPOSE_TEST_BINARY ?= $(DEFAULT_COMPOSE_TEST_BINARY)
 RELEASE_PARITY_COMPOSE_BINARY := $(abspath .build/release/compose)
 RELEASE_PARITY_BUILD_INFO := $(abspath .build/release-parity-build-info.json)
-CONTAINER_STACK_REPO ?= $(abspath ../container)
-CONTAINERIZATION_STACK_REPO ?= $(abspath ../containerization)
-CONTAINER_ENGINE_API_STACK_REPO ?= $(abspath ../container-engine-api)
+# Resolve sibling source repositories from this checkout's common Git
+# directory. This keeps source in ~/github while allowing the active Compose
+# worktree and all generated build state to live on /Volumes/SSD.
+STACK_SOURCE_ROOT ?= $(shell common_dir="$$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; if [[ "$$common_dir" == */.git ]]; then dirname "$$(dirname "$$common_dir")"; else dirname "$(CURDIR)"; fi)
+CONTAINER_STACK_REPO ?= $(abspath $(STACK_SOURCE_ROOT)/container)
+CONTAINERIZATION_STACK_REPO ?= $(abspath $(STACK_SOURCE_ROOT)/containerization)
+CONTAINER_ENGINE_API_STACK_REPO ?= $(abspath $(STACK_SOURCE_ROOT)/container-engine-api)
 CONTAINER_PACKAGE_PATH ?= $(if $(wildcard $(CONTAINER_STACK_REPO)/Package.swift),$(CONTAINER_STACK_REPO),)
 CONTAINERIZATION_PACKAGE_PATH ?= $(if $(wildcard $(CONTAINERIZATION_STACK_REPO)/Package.swift),$(CONTAINERIZATION_STACK_REPO),)
 CONTAINER_ENGINE_API_PACKAGE_PATH ?= $(if $(wildcard $(CONTAINER_ENGINE_API_STACK_REPO)/Package.swift),$(CONTAINER_ENGINE_API_STACK_REPO),)
@@ -268,9 +164,9 @@ LOCAL_SWIFT_STACK_DEPENDENCY_ARGS = \
 PARITY_CONTAINER_REF ?= $(if $(CONTAINER_PACKAGE_PATH),$(shell git -C "$(CONTAINER_PACKAGE_PATH)" rev-parse HEAD 2>/dev/null),$(CONTAINER_REF))
 PARITY_CONTAINERIZATION_REF ?= $(if $(CONTAINERIZATION_PACKAGE_PATH),$(shell git -C "$(CONTAINERIZATION_PACKAGE_PATH)" rev-parse HEAD 2>/dev/null),$(CONTAINERIZATION_REF))
 PARITY_CONTAINER_ENGINE_API_REF ?= $(if $(CONTAINER_ENGINE_API_PACKAGE_PATH),$(shell git -C "$(CONTAINER_ENGINE_API_PACKAGE_PATH)" rev-parse HEAD 2>/dev/null),unspecified)
-CONTAINER_BUILDER_SHIM_STACK_REPO ?= $(abspath ../container-builder-shim)
-CONTAINER_K8S_STACK_REPO ?= $(abspath ../container-k8s)
-HOMEBREW_TAP_REPO ?= $(abspath ../homebrew-tap)
+CONTAINER_BUILDER_SHIM_STACK_REPO ?= $(abspath $(STACK_SOURCE_ROOT)/container-builder-shim)
+CONTAINER_K8S_STACK_REPO ?= $(abspath $(STACK_SOURCE_ROOT)/container-k8s)
+HOMEBREW_TAP_REPO ?= $(abspath $(STACK_SOURCE_ROOT)/homebrew-tap)
 LOCAL_CONTAINER_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/bin/container)
 LOCAL_CONTAINER_PACKAGE_BINARY ?= $(abspath $(CONTAINER_STACK_REPO)/usr/local/bin/container)
 CONTAINER_COMPOSE_CONTAINER_EXPLICIT := $(if $(filter undefined,$(origin CONTAINER_COMPOSE_CONTAINER)),0,1)
@@ -304,188 +200,33 @@ RELEASE_GATE_STACK_TIMEOUT_SECONDS ?= 14400
 RELEASE_GATE_PARITY_TIMEOUT_SECONDS ?= 14400
 PARITY_STAGE_TIMEOUT_SECONDS ?= 900
 CONTAINER_RUNTIME_START_DEADLINE_SECONDS ?= 300
-# Defaults are assigned only after every supplied pipeline value has been made
-# simple at the file boundary above. Recipes reference only exported shell
-# values and quote every use.
-ifeq ($(origin CONTAINER_FAMILY_SOURCE_ROOT),undefined)
-CONTAINER_FAMILY_SOURCE_ROOT :=
-else
-override CONTAINER_FAMILY_SOURCE_ROOT := $(value CONTAINER_FAMILY_SOURCE_ROOT)
-endif
-ifeq ($(origin PIPELINE_STATE_ROOT),undefined)
-ifneq ($(wildcard /Volumes/SSD/github/.),)
-PIPELINE_STATE_ROOT := /Volumes/SSD/github/.container-compose-pipeline
-else
-PIPELINE_STATE_ROOT := $(abspath ../.container-compose-pipeline)
-endif
-else
-override PIPELINE_STATE_ROOT := $(value PIPELINE_STATE_ROOT)
-endif
-ifeq ($(origin NEXTFLOW_BIN),undefined)
-NEXTFLOW_BIN := $(PIPELINE_STATE_ROOT)/tools/nextflow/$(NEXTFLOW_VERSION)/nextflow
-else
-override NEXTFLOW_BIN := $(value NEXTFLOW_BIN)
-endif
-override NEXTFLOW_JAVA_ROOT := $(PIPELINE_STATE_ROOT)/tools/temurin/$(NEXTFLOW_JAVA_RELEASE)
-override NEXTFLOW_JAVA_HOME := $(NEXTFLOW_JAVA_ROOT)/Contents/Home
-override NEXTFLOW_JAVA_BIN := $(NEXTFLOW_JAVA_HOME)/bin/java
-override PIPELINE_HAWKEYE_ROOT := $(PIPELINE_STATE_ROOT)/tools/hawkeye/$(PIPELINE_HAWKEYE_VERSION)
-override PIPELINE_HAWKEYE_BIN := $(PIPELINE_HAWKEYE_ROOT)/hawkeye
-ifeq ($(origin PIPELINE_EXECUTION_PATH),undefined)
-PIPELINE_EXECUTION_PATH := $(PIPELINE_HAWKEYE_ROOT):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-else
-override PIPELINE_EXECUTION_PATH := $(value PIPELINE_EXECUTION_PATH)
-endif
-ifeq ($(origin PIPELINE_PROFILE),undefined)
-PIPELINE_PROFILE := repository
-else
-override PIPELINE_PROFILE := $(value PIPELINE_PROFILE)
-endif
-ifeq ($(origin PIPELINE_ACTION),undefined)
-PIPELINE_ACTION := run
-else
-override PIPELINE_ACTION := $(value PIPELINE_ACTION)
-endif
-ifeq ($(origin PIPELINE_STAGE_SELECTOR),undefined)
-PIPELINE_STAGE_SELECTOR :=
-else
-override PIPELINE_STAGE_SELECTOR := $(value PIPELINE_STAGE_SELECTOR)
-endif
-ifeq ($(origin PIPELINE_ATTEMPT_ID),undefined)
-PIPELINE_ATTEMPT_ID :=
-else
-override PIPELINE_ATTEMPT_ID := $(value PIPELINE_ATTEMPT_ID)
-endif
-ifeq ($(origin PIPELINE_SESSION),undefined)
-PIPELINE_SESSION :=
-else
-override PIPELINE_SESSION := $(value PIPELINE_SESSION)
-endif
-ifeq ($(origin PIPELINE_RESUME_SESSION),undefined)
-PIPELINE_RESUME_SESSION :=
-else
-override PIPELINE_RESUME_SESSION := $(value PIPELINE_RESUME_SESSION)
-endif
-ifeq ($(origin PIPELINE_ORCHESTRATOR_TIMEOUT_SECONDS),undefined)
-PIPELINE_ORCHESTRATOR_TIMEOUT_SECONDS := 28800
-else
-override PIPELINE_ORCHESTRATOR_TIMEOUT_SECONDS := $(value PIPELINE_ORCHESTRATOR_TIMEOUT_SECONDS)
-endif
-ifeq ($(origin PIPELINE_SOURCE_TIMEOUT_SECONDS),undefined)
-PIPELINE_SOURCE_TIMEOUT_SECONDS := 1800
-else
-override PIPELINE_SOURCE_TIMEOUT_SECONDS := $(value PIPELINE_SOURCE_TIMEOUT_SECONDS)
-endif
-ifeq ($(origin PIPELINE_FUNCTIONAL_TIMEOUT_SECONDS),undefined)
-PIPELINE_FUNCTIONAL_TIMEOUT_SECONDS := 7200
-else
-override PIPELINE_FUNCTIONAL_TIMEOUT_SECONDS := $(value PIPELINE_FUNCTIONAL_TIMEOUT_SECONDS)
-endif
-ifeq ($(origin PIPELINE_COMPOSE_REPO),undefined)
-PIPELINE_COMPOSE_REPO := $(abspath .)
-else
-override PIPELINE_COMPOSE_REPO := $(value PIPELINE_COMPOSE_REPO)
-endif
-ifeq ($(origin PIPELINE_COMPOSE_REF),undefined)
-PIPELINE_COMPOSE_REF := HEAD
-else
-override PIPELINE_COMPOSE_REF := $(value PIPELINE_COMPOSE_REF)
-endif
-ifeq ($(origin PIPELINE_BUILDER_REPO),undefined)
-PIPELINE_BUILDER_REPO :=
-else
-override PIPELINE_BUILDER_REPO := $(value PIPELINE_BUILDER_REPO)
-endif
-ifeq ($(origin PIPELINE_BUILDER_REF),undefined)
-PIPELINE_BUILDER_REF := HEAD
-else
-override PIPELINE_BUILDER_REF := $(value PIPELINE_BUILDER_REF)
-endif
-ifeq ($(origin PIPELINE_CONTAINERIZATION_REPO),undefined)
-PIPELINE_CONTAINERIZATION_REPO :=
-else
-override PIPELINE_CONTAINERIZATION_REPO := $(value PIPELINE_CONTAINERIZATION_REPO)
-endif
-ifeq ($(origin PIPELINE_CONTAINERIZATION_REF),undefined)
-PIPELINE_CONTAINERIZATION_REF := HEAD
-else
-override PIPELINE_CONTAINERIZATION_REF := $(value PIPELINE_CONTAINERIZATION_REF)
-endif
-ifeq ($(origin PIPELINE_CONTAINER_REPO),undefined)
-PIPELINE_CONTAINER_REPO :=
-else
-override PIPELINE_CONTAINER_REPO := $(value PIPELINE_CONTAINER_REPO)
-endif
-ifeq ($(origin PIPELINE_CONTAINER_REF),undefined)
-PIPELINE_CONTAINER_REF := HEAD
-else
-override PIPELINE_CONTAINER_REF := $(value PIPELINE_CONTAINER_REF)
-endif
-ifeq ($(origin PIPELINE_ENGINE_API_REPO),undefined)
-PIPELINE_ENGINE_API_REPO :=
-else
-override PIPELINE_ENGINE_API_REPO := $(value PIPELINE_ENGINE_API_REPO)
-endif
-ifeq ($(origin PIPELINE_ENGINE_API_REF),undefined)
-PIPELINE_ENGINE_API_REF := HEAD
-else
-override PIPELINE_ENGINE_API_REF := $(value PIPELINE_ENGINE_API_REF)
-endif
-ifeq ($(origin PIPELINE_DEVCONTAINER_REPO),undefined)
-PIPELINE_DEVCONTAINER_REPO :=
-else
-override PIPELINE_DEVCONTAINER_REPO := $(value PIPELINE_DEVCONTAINER_REPO)
-endif
-ifeq ($(origin PIPELINE_DEVCONTAINER_REF),undefined)
-PIPELINE_DEVCONTAINER_REF := HEAD
-else
-override PIPELINE_DEVCONTAINER_REF := $(value PIPELINE_DEVCONTAINER_REF)
-endif
-ifeq ($(origin PIPELINE_K8S_REPO),undefined)
-PIPELINE_K8S_REPO :=
-else
-override PIPELINE_K8S_REPO := $(value PIPELINE_K8S_REPO)
-endif
-ifeq ($(origin PIPELINE_K8S_REF),undefined)
-PIPELINE_K8S_REF := HEAD
-else
-override PIPELINE_K8S_REF := $(value PIPELINE_K8S_REF)
-endif
-ifeq ($(origin PIPELINE_HOMEBREW_REPO),undefined)
-PIPELINE_HOMEBREW_REPO :=
-else
-override PIPELINE_HOMEBREW_REPO := $(value PIPELINE_HOMEBREW_REPO)
-endif
-ifeq ($(origin PIPELINE_HOMEBREW_REF),undefined)
-PIPELINE_HOMEBREW_REF := HEAD
-else
-override PIPELINE_HOMEBREW_REF := $(value PIPELINE_HOMEBREW_REF)
-endif
-export NEXTFLOW_VERSION NEXTFLOW_SHA256 NEXTFLOW_DIST_URL NEXTFLOW_BIN
-export NEXTFLOW_JAVA_VERSION NEXTFLOW_JAVA_RELEASE NEXTFLOW_JAVA_DIST_URL
-export NEXTFLOW_JAVA_ARCHIVE_SHA256 NEXTFLOW_JAVA_TREE_SHA256 NEXTFLOW_JAVA_ROOT
-export NEXTFLOW_JAVA_HOME NEXTFLOW_JAVA_BIN
-export NEXTFLOW_JAVA_SHA256 NEXTFLOW_JAVA_MODULES_SHA256
-export NEXTFLOW_JAVA_LIBJVM_SHA256 NEXTFLOW_JAVA_RELEASE_SHA256
-export PIPELINE_HAWKEYE_VERSION PIPELINE_HAWKEYE_SHA256
-export PIPELINE_HAWKEYE_ROOT PIPELINE_HAWKEYE_BIN
-export CONTAINER_FAMILY_SOURCE_ROOT
-export PIPELINE_STATE_ROOT PIPELINE_MARKER_VALUE PIPELINE_EXECUTION_PATH
-export PIPELINE_PROFILE PIPELINE_ACTION PIPELINE_STAGE_SELECTOR PIPELINE_ATTEMPT_ID
-export PIPELINE_SESSION
-export PIPELINE_RESUME_SESSION PIPELINE_ORCHESTRATOR_TIMEOUT_SECONDS
-export PIPELINE_SOURCE_TIMEOUT_SECONDS PIPELINE_FUNCTIONAL_TIMEOUT_SECONDS
-export PIPELINE_COMPOSE_REPO PIPELINE_COMPOSE_REF PIPELINE_BUILDER_REPO
-export PIPELINE_BUILDER_REF PIPELINE_CONTAINERIZATION_REPO
-export PIPELINE_CONTAINERIZATION_REF PIPELINE_CONTAINER_REPO PIPELINE_CONTAINER_REF
-export PIPELINE_ENGINE_API_REPO PIPELINE_ENGINE_API_REF PIPELINE_DEVCONTAINER_REPO
-export PIPELINE_DEVCONTAINER_REF PIPELINE_K8S_REPO PIPELINE_K8S_REF
-export PIPELINE_HOMEBREW_REPO PIPELINE_HOMEBREW_REF PIPELINE_ENTRY PIPELINE_CONFIG
-export PIPELINE_DEADLINE_RUNNER PIPELINE_PACKAGE_MATERIALIZER
-# Reassert the denylist after all explicit exports for GNU Make 3.81.
-unexport BASH_ENV ENV SHELLOPTS BASHOPTS BASH_XTRACEFD PS4 CDPATH
-unexport JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS CLASSPATH
-unexport DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH LD_PRELOAD LD_LIBRARY_PATH
+# Durable stack state lives beside the disposable worktrees when the external
+# development volume is available. A local fallback keeps ordinary source
+# builds usable when that volume is intentionally disconnected.
+STACK_STATE_ROOT ?= $(if $(wildcard /Volumes/SSD/github/.),/Volumes/SSD/github/.container-compose-build,$(abspath .build/stack))
+STACK_MARKER_VALUE := container-compose recoverable build v1
+STACK_PIN_TOOL := $(abspath Tools/build/stack-pin.py)
+STACK_CONFIGURATION ?= debug
+STACK_PIN_DIR := $(STACK_STATE_ROOT)/pins/$(STACK_CONFIGURATION)
+STACK_SCRATCH_ROOT := $(STACK_STATE_ROOT)/scratch
+STACK_ARTIFACT_ROOT := $(STACK_STATE_ROOT)/artifacts/$(STACK_CONFIGURATION)
+STACK_CONTAINERIZATION_PIN := $(STACK_PIN_DIR)/containerization.json
+STACK_ENGINE_API_PIN := $(STACK_PIN_DIR)/container-engine-api.json
+STACK_CONTAINER_PIN := $(STACK_PIN_DIR)/container.json
+STACK_BUILDER_PIN := $(STACK_PIN_DIR)/container-builder-shim.json
+STACK_COMPOSE_PIN := $(STACK_PIN_DIR)/container-compose.json
+STACK_BUNDLE := $(STACK_PIN_DIR)/stack.json
+STACK_SWIFT ?= /usr/bin/swift
+STACK_GO ?= $(GO)
+STACK_SWIFT_CONTRACT = $(shell "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
+	--tool $(call SHELL_QUOTE,$(STACK_SWIFT)) \
+	--configuration $(call SHELL_QUOTE,$(STACK_CONFIGURATION)) \
+	--controller "$(abspath Makefile)" --controller "$(STACK_PIN_TOOL)" \
+	--controller "$(abspath Tools/ci/run-with-local-swift-stack.py)")
+STACK_GO_CONTRACT = $(shell "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
+	--tool $(call SHELL_QUOTE,$(STACK_GO)) \
+	--configuration $(call SHELL_QUOTE,$(STACK_CONFIGURATION)) \
+	--controller "$(abspath Makefile)" --controller "$(STACK_PIN_TOOL)")
 RELEASE_GATE_CHECKPOINT_DIR = $(if $(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR),$(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR)/compose-release-gate,)
 PARITY_GATE_CHECKPOINT_DIR = $(if $(RELEASE_GATE_CHECKPOINT_DIR),$(RELEASE_GATE_CHECKPOINT_DIR)/parity,)
 RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT = $(shell if [[ -z "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then printf unset; elif [[ -f "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then shasum -a 256 "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" | awk '{print $$1}'; else printf missing; fi)
@@ -495,7 +236,7 @@ RELEASE_GATE_PARITY_INPUT_FINGERPRINT = $(shell { printf '%s\n' \
 	'targets=$(DOCKER_COMPOSE_PARITY_TARGETS)' \
 	'repetitions=$(PARITY_REPETITIONS)' \
 	'timeout=$(PARITY_TIMEOUT_SECONDS)' \
-	'api-socket-client-image='$(call PIPELINE_SHELL_QUOTE,$(API_SOCKET_CLIENT_IMAGE)) \
+	'api-socket-client-image='$(call SHELL_QUOTE,$(API_SOCKET_CLIENT_IMAGE)) \
 	'timing-max-ratio=$(PARITY_TIMING_MAX_RATIO)' \
 	'timing-policy=$(PARITY_TIMING_POLICY)' \
 	'comparable-noise-pct=$(PARITY_COMPARABLE_NOISE_PCT)' \
@@ -504,15 +245,15 @@ RELEASE_GATE_PARITY_INPUT_FINGERPRINT = $(shell { printf '%s\n' \
 	'fixture-groups=$(PARITY_FIXTURE_GROUPS)' \
 	'finalize-evidence=$(PARITY_FINALIZE_EVIDENCE)' \
 	'sink-stall-seconds=$(PARITY_SINK_STALL_SECONDS)' \
-	'sink-bind-address='$(call PIPELINE_SHELL_QUOTE,$(PARITY_SINK_BIND_ADDRESS)) \
+	'sink-bind-address='$(call SHELL_QUOTE,$(PARITY_SINK_BIND_ADDRESS)) \
 	'pressure-records=$(PARITY_PRESSURE_RECORDS)' \
 	'docker-host-address=$(PARITY_DOCKER_HOST_ADDRESS)' \
 	'container-host-address=$(PARITY_CONTAINER_HOST_ADDRESS)' \
 	'init-image-archive=$(shell if [[ -z "$(PARITY_INIT_IMAGE_ARCHIVE)" ]]; then printf unset; elif [[ -f "$(PARITY_INIT_IMAGE_ARCHIVE)" ]]; then shasum -a 256 "$(PARITY_INIT_IMAGE_ARCHIVE)" | awk '{print $$1}'; else printf missing; fi)' \
-	'init-image-references='$(call PIPELINE_SHELL_QUOTE,$(PARITY_INIT_IMAGE_REFERENCES)) \
+	'init-image-references='$(call SHELL_QUOTE,$(PARITY_INIT_IMAGE_REFERENCES)) \
 	'fixture-image-archive=$(shell if [[ -z "$(PARITY_FIXTURE_IMAGE_ARCHIVE)" ]]; then printf unset; elif [[ -f "$(PARITY_FIXTURE_IMAGE_ARCHIVE)" ]]; then shasum -a 256 "$(PARITY_FIXTURE_IMAGE_ARCHIVE)" | awk '{print $$1}'; else printf missing; fi)' \
-	'fixture-image-reference='$(call PIPELINE_SHELL_QUOTE,$(PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE)) \
-	'work-root='$(call PIPELINE_SHELL_QUOTE,$(PARITY_WORK_ROOT)); \
+	'fixture-image-reference='$(call SHELL_QUOTE,$(PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE)) \
+	'work-root='$(call SHELL_QUOTE,$(PARITY_WORK_ROOT)); \
 	} | shasum -a 256 | awk '{print $$1}')
 override RELEASE_GATE_STATIC_FINGERPRINT = compose=$(shell /usr/bin/git rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):builder=$(shell /usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):containerization=$(shell /usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):container=$(shell /usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):homebrew=$(shell if [[ -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" ]]; then shasum -a 256 "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" | awk '{print $$1}'; else printf missing; fi):candidate=$(CONTAINER_RUNTIME_CANDIDATE_SHA256):init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT):compose-test=$(RELEASE_GATE_COMPOSE_TEST_BINARY_FINGERPRINT):tools=$(RELEASE_GATE_TOOL_FINGERPRINT):engine=$(PARITY_CONTAINER_ENGINE_API_REF):container-source=$(CONTAINER_SOURCE):container-ref=$(PARITY_CONTAINER_REF):containerization-source=$(CONTAINERIZATION_SOURCE):containerization-ref=$(PARITY_CONTAINERIZATION_REF):swift=$(shell $(SWIFT) --version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):swift-resolved-flags=$(SWIFT_RESOLVED_FLAGS):swift-test-flags=$(SWIFT_TEST_FLAGS):swift-test-run-flags=$(SWIFT_TEST_RUN_FLAGS):swift-test-attempts=$(SWIFT_TEST_ATTEMPTS):swift-coverage-attempts=$(SWIFT_COVERAGE_TEST_ATTEMPTS):swift-runtime-filter=$(SWIFT_RUNTIME_TEST_FILTER):go=$(shell $(GO) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):go-release-env=$(GO_RELEASE_ENV):go-release-build-flags=$(GO_RELEASE_BUILD_FLAGS):go-release-ldflags=$(GO_RELEASE_LDFLAGS):docker=$(shell $(DOCKER_COMPOSE_REFERENCE) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):reference=$(DOCKER_COMPOSE_REFERENCE_VERSION):fixtures=$(DOCKER_COMPOSE_E2E_REF):parity-inputs=$(RELEASE_GATE_PARITY_INPUT_FINGERPRINT):release-stack-timeout=$(RELEASE_GATE_STACK_TIMEOUT_SECONDS):release-parity-timeout=$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS):parity-stage-timeout=$(PARITY_STAGE_TIMEOUT_SECONDS):runtime-start-deadline=$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS):parity-live=1:build-check-live=1:swift-core-min=$(SWIFT_CORE_COVERAGE_MIN):swift-runtime-spi-min=$(SWIFT_RUNTIME_SPI_COVERAGE_MIN):swift-provider-min=$(SWIFT_PROVIDER_COVERAGE_MIN):swift-plugin-min=$(SWIFT_PLUGIN_COVERAGE_MIN):swift-aggregate-min=$(SWIFT_AGGREGATE_COVERAGE_MIN):go-min=$(GO_COVERAGE_MIN)
 PARITY_ENV = \
@@ -625,597 +366,291 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity docker-compose-deploy-job-modes-parity
 .PHONY: docker-compose-up-exit-code-from-parity docker-compose-api-socket-client-fixture docker-compose-api-socket-client-parity docker-compose-performance-matrix performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
 .PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle docker-rest-logging-oracle docker-rest-logging-candidate docker-rest-logging-parity docker-rest-discovery-oracle docker-rest-discovery-candidate docker-rest-discovery-parity docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate docker-rest-image-discovery-parity docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate docker-rest-image-mutation-parity
-.PHONY: pipeline-help pipeline-bootstrap pipeline-runtime-check pipeline-state-init pipeline-lint pipeline-plan pipeline-preflight pipeline pipeline-resume pipeline-status pipeline-self-test pipeline-execute pipeline-source-check pipeline-tool-validation
+.PHONY: stack-help stack-state-init stack-preflight stack-status stack-self-test stack-build stack-build-locked stack-containerization-build stack-engine-api-build stack-container-build stack-builder-build stack-compose-build
 
-pipeline-help:
+STACK_REQUIRE_LOCK = @[[ "$(STACK_LOCK_HELD)" == 1 ]] || { printf 'stack stage requires the stack-build lock\n' >&2; exit 2; }
+
+stack-help:
 	@printf '%s\n' \
-		'Recoverable Container-family build targets:' \
-		'  pipeline-bootstrap  Download and verify the pinned Nextflow OSS runtime.' \
-		'  pipeline-plan       Print the selected repositories and stages without running them.' \
-		'  pipeline-preflight  Verify the host, tools, clean repositories, and exact source revisions.' \
-		'  pipeline            Run the selected content-addressed stage graph.' \
-		'  pipeline-resume     Resume PIPELINE_SESSION after correcting a failure.' \
-		'  pipeline-status     Show the durable Nextflow session history.' \
-		'  pipeline-self-test  Prove exact-session recovery without rerunning upstream work.' \
+		'Recoverable Container-family source build:' \
+		'  make                 Build Compose with SwiftPM and Go only.' \
+		'  make stack-preflight Verify tools and clean sibling source repositories.' \
+		'  make stack-build     Build the complete source stack and publish exact pins.' \
+		'  make stack-status    Verify each retained build pin and artifact.' \
+		'  make stack-self-test Run the focused receipt/recovery regression tests.' \
 		'' \
-		'Important selectors:' \
-		'  PIPELINE_PROFILE=focused|repository|stack|hosted-safe|release-hosted|benchmark-reconstruction' \
-		'  PIPELINE_STAGE_SELECTOR=compose-source,compose-swift-validation,compose-go-validation' \
-		'  PIPELINE_ATTEMPT_ID=<safe-unique-id-for-a-known-evidence-directory>' \
-		'  PIPELINE_SESSION=<failed-session-uuid>' \
-		'  CONTAINER_FAMILY_SOURCE_ROOT=<directory-containing-sibling-repositories>' \
-		'  PIPELINE_STATE_ROOT=<absolute-durable-state-directory>'
+		'Stack build order:' \
+		'  containerization + container-engine-api + container-builder-shim (parallel)' \
+		'  container (consumes the first two pins)' \
+		'  container-compose (consumes all Swift pins)' \
+		'' \
+		'All generated state defaults to: $(STACK_STATE_ROOT)'
 
-# Keep the fail-fast source stage free of executable test suites. Functional
-# validation runs each tool suite once, in parallel with the Swift lane.
-pipeline-source-check: source-preflight lint-static
-
-pipeline-tool-validation: coverage-tools-test performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
-
-pipeline-bootstrap: pipeline-state-init
-	@/usr/bin/lockf -t 300 "$${PIPELINE_STATE_ROOT}/bootstrap.lock" \
-		/usr/bin/python3 -I Tools/ci/bootstrap-nextflow-runtime.py \
-		--state-root "$${PIPELINE_STATE_ROOT}" \
-		--nextflow-version "$${NEXTFLOW_VERSION}" \
-		--nextflow-url "$${NEXTFLOW_DIST_URL}" \
-		--nextflow-sha256 "$${NEXTFLOW_SHA256}" \
-		--nextflow-bin "$${NEXTFLOW_BIN}" \
-		--java-version "$${NEXTFLOW_JAVA_VERSION}" \
-		--java-release "$${NEXTFLOW_JAVA_RELEASE}" \
-		--java-url "$${NEXTFLOW_JAVA_DIST_URL}" \
-		--java-archive-sha256 "$${NEXTFLOW_JAVA_ARCHIVE_SHA256}" \
-		--java-tree-sha256 "$${NEXTFLOW_JAVA_TREE_SHA256}" \
-		--java-root "$${NEXTFLOW_JAVA_ROOT}" \
-		--java-sha256 "$${NEXTFLOW_JAVA_SHA256}" \
-		--java-modules-sha256 "$${NEXTFLOW_JAVA_MODULES_SHA256}" \
-		--java-libjvm-sha256 "$${NEXTFLOW_JAVA_LIBJVM_SHA256}" \
-		--java-release-sha256 "$${NEXTFLOW_JAVA_RELEASE_SHA256}" \
-		--hawkeye-version "$${PIPELINE_HAWKEYE_VERSION}" \
-		--hawkeye-sha256 "$${PIPELINE_HAWKEYE_SHA256}" \
-		--hawkeye-installer "$(CURDIR)/scripts/install-hawkeye.sh" \
-		--hawkeye-bin "$${PIPELINE_HAWKEYE_BIN}"
-
-pipeline-runtime-check: pipeline-bootstrap
-	@launcher="$${NEXTFLOW_BIN}"; \
-	state_root="$${PIPELINE_STATE_ROOT}"; \
-	java_home="$${NEXTFLOW_JAVA_HOME}"; \
-	java_bin="$${NEXTFLOW_JAVA_BIN}"; \
-	if [[ ! -x "$$launcher" ]]; then \
-		printf 'Pinned Nextflow is missing; run make pipeline-bootstrap first.\n' >&2; \
-		exit 2; \
-	fi; \
-	if [[ ! -d "$$java_home" || ! -x "$$java_bin" || -L "$$java_bin" ]]; then \
-		printf 'Pinned Nextflow Java runtime is missing or indirect at %s.\n' "$$java_home" >&2; \
-		exit 2; \
-	fi; \
-	resolved_java_home="$$(cd "$$java_home" && pwd -P)"; \
-	resolved_java_bin="$$(cd "$$(/usr/bin/dirname "$$java_bin")" && pwd -P)/$$(/usr/bin/basename "$$java_bin")"; \
-	if [[ "$$resolved_java_home" != "$$java_home" || "$$resolved_java_bin" != "$$java_bin" ]]; then \
-		printf 'Pinned Nextflow Java path must be physical: expected %s, got %s.\n' \
-			"$$java_bin" "$$resolved_java_bin" >&2; \
-		exit 2; \
-	fi; \
-	hash_environment=(/usr/bin/env -i PATH=/usr/bin:/bin LANG=C LC_ALL=C); \
-	/usr/bin/python3 -I Tools/ci/bootstrap-nextflow-runtime.py verify-java \
-		--state-root "$$state_root" --java-release "$${NEXTFLOW_JAVA_RELEASE}" \
-		--java-root "$${NEXTFLOW_JAVA_ROOT}" \
-		--java-tree-sha256 "$${NEXTFLOW_JAVA_TREE_SHA256}"; \
-	digest_line="$$("$${hash_environment[@]}" /usr/bin/shasum -a 256 "$$launcher")"; \
-	actual_sha256="$${digest_line%% *}"; \
-	if [[ "$$actual_sha256" != "$${NEXTFLOW_SHA256}" ]]; then \
-		printf 'Nextflow digest mismatch: expected %s, got %s\n' \
-			"$${NEXTFLOW_SHA256}" "$$actual_sha256" >&2; \
-		exit 2; \
-	fi; \
-	runtime_files=("$$java_bin" "$$java_home/lib/modules" \
-		"$$java_home/lib/server/libjvm.dylib" "$$java_home/release"); \
-	runtime_digests=("$${NEXTFLOW_JAVA_SHA256}" \
-		"$${NEXTFLOW_JAVA_MODULES_SHA256}" "$${NEXTFLOW_JAVA_LIBJVM_SHA256}" \
-		"$${NEXTFLOW_JAVA_RELEASE_SHA256}"); \
-	for ((file_index = 0; file_index < $${#runtime_files[@]}; file_index += 1)); do \
-		runtime_file="$${runtime_files[$$file_index]}"; \
-		if [[ ! -f "$$runtime_file" ]]; then \
-			printf 'Pinned Java runtime file is missing: %s\n' "$$runtime_file" >&2; \
-			exit 2; \
-		fi; \
-		digest_line="$$("$${hash_environment[@]}" /usr/bin/shasum -a 256 "$$runtime_file")"; \
-		actual_runtime_digest="$${digest_line%% *}"; \
-		if [[ "$$actual_runtime_digest" != "$${runtime_digests[$$file_index]}" ]]; then \
-			printf 'Pinned Java runtime digest mismatch for %s.\n' "$$runtime_file" >&2; \
-			exit 2; \
-		fi; \
-	done; \
-	operator_name="$$(/usr/bin/id -un)"; \
-	clean_environment=(/usr/bin/env -i \
-		CI=1 HOME="$$state_root/nextflow-home" USER="$$operator_name" \
-		LOGNAME="$$operator_name" SHELL=/bin/bash \
-		PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C LC_ALL=C TERM=dumb TZ=UTC \
-		TMPDIR="$$state_root/tmp" GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never \
-		SSH_ASKPASS_REQUIRE=never JAVA_HOME="$$java_home" JAVA_CMD="$$java_bin" \
-		NXF_JAVA_HOME="$$java_home" NXF_HOME="$$state_root/nextflow-home" \
-		NXF_TEMP="$$state_root/tmp" NXF_ANSI_LOG=false \
-		NXF_DISABLE_CHECK_LATEST=true); \
-	if ! java_version_output="$$("$${clean_environment[@]}" "$$java_bin" -version </dev/null 2>&1)"; then \
-		printf 'Pinned Java runtime could not start.\n' >&2; \
-		exit 2; \
-	fi; \
-	if [[ ! "$$java_version_output" =~ version[[:space:]]+\"$${NEXTFLOW_JAVA_VERSION}\" ]]; then \
-		printf 'Pinned Java version mismatch; expected %s.\n' "$${NEXTFLOW_JAVA_VERSION}" >&2; \
-		exit 2; \
-	fi; \
-	if ! version_output="$$("$${clean_environment[@]}" \
-		/usr/bin/python3 "$${PIPELINE_DEADLINE_RUNNER}" \
-			--seconds 30 -- "$$launcher" -version </dev/null 2>&1)"; then \
-		printf 'Pinned Nextflow launcher could not start under the clean environment.\n' >&2; \
-		exit 2; \
-	fi; \
-	if [[ "$$version_output" =~ version[[:space:]]+([0-9]+[.][0-9]+[.][0-9]+) ]]; then \
-		actual_version="$${BASH_REMATCH[1]}"; \
-	else \
-		actual_version=missing; \
-	fi; \
-	if [[ "$$actual_version" != "$${NEXTFLOW_VERSION}" ]]; then \
-		printf 'Nextflow version mismatch: expected %s, got %s\n' \
-			"$${NEXTFLOW_VERSION}" "$$actual_version" >&2; \
-		exit 2; \
-	fi; \
-	hawkeye="$${PIPELINE_HAWKEYE_BIN}"; \
-	if [[ -L "$$hawkeye" ]] || [[ ! -f "$$hawkeye" ]] || [[ ! -x "$$hawkeye" ]]; then \
-		printf 'Pinned Hawkeye is missing or indirect at %s.\n' "$$hawkeye" >&2; \
-		exit 2; \
-	fi; \
-	hawkeye_digest_line="$$($${hash_environment[@]} /usr/bin/shasum -a 256 "$$hawkeye")"; \
-	if [[ "$${hawkeye_digest_line%% *}" != "$${PIPELINE_HAWKEYE_SHA256}" ]]; then \
-		printf 'Pinned Hawkeye digest mismatch.\n' >&2; \
-		exit 2; \
-	fi; \
-	hawkeye_version="$$($${clean_environment[@]} "$$hawkeye" --version 2>&1)"; \
-	if [[ "$$hawkeye_version" != *"version: $${PIPELINE_HAWKEYE_VERSION}"* ]]; then \
-		printf 'Pinned Hawkeye version mismatch; expected %s.\n' \
-			"$${PIPELINE_HAWKEYE_VERSION}" >&2; \
-		exit 2; \
-	fi; \
-	hawkeye_check_help="$$($${clean_environment[@]} "$$hawkeye" check --help 2>&1)"; \
-	hawkeye_format_help="$$($${clean_environment[@]} "$$hawkeye" format --help 2>&1)"; \
-	if [[ "$$hawkeye_check_help" != *--fail-if-unknown* ]] \
-		|| [[ "$$hawkeye_format_help" != *--fail-if-updated* ]]; then \
-		printf 'Pinned Hawkeye does not satisfy the repository CLI contract.\n' >&2; \
-		exit 2; \
-	fi
-
-pipeline-state-init:
-	@state_root="$${PIPELINE_STATE_ROOT}"; \
-	case "$$state_root" in /*) ;; *) printf 'PIPELINE_STATE_ROOT must be absolute: %s\n' "$$state_root" >&2; exit 2 ;; esac; \
-	[[ "$$state_root" != / ]] || { printf 'PIPELINE_STATE_ROOT must not be /.\n' >&2; exit 2; }; \
+stack-state-init:
+	@case "$(STACK_CONFIGURATION)" in debug|release) ;; *) printf 'STACK_CONFIGURATION must be debug or release: %s\n' "$(STACK_CONFIGURATION)" >&2; exit 2 ;; esac; \
+	state_root="$(STACK_STATE_ROOT)"; \
+	case "$$state_root" in /*) ;; *) printf 'STACK_STATE_ROOT must be absolute: %s\n' "$$state_root" >&2; exit 2 ;; esac; \
+	[[ "$$state_root" != / ]] || { printf 'STACK_STATE_ROOT must not be /.\n' >&2; exit 2; }; \
 	if [[ -L "$$state_root" ]]; then \
-		printf 'PIPELINE_STATE_ROOT must not be a symbolic link: %s\n' "$$state_root" >&2; \
+		printf 'STACK_STATE_ROOT must not be a symbolic link: %s\n' "$$state_root" >&2; \
 		exit 2; \
 	fi; \
 	if [[ -e "$$state_root" && ! -d "$$state_root" ]]; then \
-		printf 'PIPELINE_STATE_ROOT is not a directory: %s\n' "$$state_root" >&2; \
+		printf 'STACK_STATE_ROOT is not a directory: %s\n' "$$state_root" >&2; \
 		exit 2; \
 	fi; \
-	if [[ -d "$$state_root" && ! -f "$$state_root/.container-compose-pipeline-root" ]] \
+	marker="$$state_root/.container-compose-build-root"; \
+	if [[ -d "$$state_root" && ! -f "$$marker" ]] \
 		&& [[ -n "$$(/usr/bin/find "$$state_root" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then \
-		printf 'Refusing to claim non-empty unmarked state root: %s\n' "$$state_root" >&2; \
+		printf 'refusing to claim non-empty unmarked STACK_STATE_ROOT: %s\n' "$$state_root" >&2; \
 		exit 2; \
 	fi; \
-	/bin/mkdir -p "$$state_root"; \
-	if [[ -L "$$state_root" ]] || [[ ! -d "$$state_root" ]]; then \
-		printf 'PIPELINE_STATE_ROOT became indirect or invalid: %s\n' "$$state_root" >&2; \
-		exit 2; \
-	fi; \
+	/usr/bin/install -d -m 0700 "$$state_root"; \
 	state_root="$$(cd "$$state_root" && pwd -P)"; \
-	marker="$$state_root/.container-compose-pipeline-root"; \
+	marker="$$state_root/.container-compose-build-root"; \
 	if [[ -L "$$marker" ]] || [[ -e "$$marker" && ! -f "$$marker" ]]; then \
-		printf 'Pipeline state marker must be a regular, non-symbolic file: %s\n' "$$marker" >&2; \
+		printf 'build state marker must be a regular file: %s\n' "$$marker" >&2; \
 		exit 2; \
 	fi; \
-	if [[ -f "$$marker" ]] \
-		&& [[ "$$(<"$$marker")" != "$${PIPELINE_MARKER_VALUE}" ]]; then \
-		printf 'Pipeline state marker does not match at %s.\n' "$$state_root" >&2; \
+	if [[ -f "$$marker" ]] && [[ "$$(<"$$marker")" != "$(STACK_MARKER_VALUE)" ]]; then \
+		printf 'STACK_STATE_ROOT has an unexpected ownership marker: %s\n' "$$marker" >&2; \
 		exit 2; \
 	fi; \
 	if [[ ! -f "$$marker" ]]; then \
-		marker_temporary="$$(/usr/bin/mktemp "$$state_root/.container-compose-pipeline-root.XXXXXX")"; \
-		printf '%s\n' "$${PIPELINE_MARKER_VALUE}" >"$$marker_temporary"; \
-		/bin/chmod 0600 "$$marker_temporary"; \
-		/bin/mv "$$marker_temporary" "$$marker"; \
+		temporary="$$marker.$$$$.tmp"; \
+		trap '/bin/rm -f "$$temporary"' EXIT; \
+		printf '%s\n' "$(STACK_MARKER_VALUE)" >"$$temporary"; \
+		/bin/chmod 0600 "$$temporary"; \
+		/bin/mv "$$temporary" "$$marker"; \
+		trap - EXIT; \
 	fi; \
-	if [[ -L "$$marker" ]] || [[ ! -f "$$marker" ]]; then \
-		printf 'Pipeline state marker became indirect or invalid: %s\n' "$$marker" >&2; \
-		exit 2; \
-	fi; \
-	for managed_name in evidence nextflow-home recovery-proofs tmp tools work failures caches empty-dependencies; do \
-		managed_path="$$state_root/$$managed_name"; \
-		if [[ -L "$$managed_path" ]] || [[ -e "$$managed_path" && ! -d "$$managed_path" ]]; then \
-			printf 'Pipeline managed path must be a non-symbolic directory: %s\n' "$$managed_path" >&2; \
+	for managed in "$(STACK_PIN_DIR)" "$(STACK_SCRATCH_ROOT)" "$(STACK_ARTIFACT_ROOT)"; do \
+		if [[ -L "$$managed" ]] || [[ -e "$$managed" && ! -d "$$managed" ]]; then \
+			printf 'build state path must be a direct directory: %s\n' "$$managed" >&2; \
 			exit 2; \
 		fi; \
-		if [[ ! -d "$$managed_path" ]]; then \
-			/bin/mkdir "$$managed_path"; \
-		fi; \
-		if [[ -L "$$managed_path" ]] || [[ ! -d "$$managed_path" ]]; then \
-			printf 'Pipeline managed path became indirect or invalid: %s\n' "$$managed_path" >&2; \
-			exit 2; \
-		fi; \
-		canonical_managed="$$(cd "$$managed_path" && pwd -P)"; \
-		if [[ "$$canonical_managed" != "$$state_root/$$managed_name" ]]; then \
-			printf 'Pipeline managed path escaped the marked state root: %s\n' "$$canonical_managed" >&2; \
-			exit 2; \
-		fi; \
+		/usr/bin/install -d -m 0700 "$$managed"; \
+		managed="$$(cd "$$managed" && pwd -P)"; \
+		case "$$managed" in "$$state_root"/*) ;; *) printf 'build state path escaped its root: %s\n' "$$managed" >&2; exit 2 ;; esac; \
 	done
 
-pipeline-lint: pipeline-runtime-check pipeline-state-init
-	@state_root="$${PIPELINE_STATE_ROOT}"; \
-	operator_name="$$(/usr/bin/id -un)"; \
-	clean_environment=(/usr/bin/env -i \
-		CI=1 HOME="$$state_root/nextflow-home" USER="$$operator_name" \
-		LOGNAME="$$operator_name" SHELL=/bin/bash \
-		PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C LC_ALL=C TERM=dumb TZ=UTC \
-		TMPDIR="$$state_root/tmp" GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never \
-		SSH_ASKPASS_REQUIRE=never JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
-		JAVA_CMD="$${NEXTFLOW_JAVA_BIN}" NXF_JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
-		NXF_HOME="$$state_root/nextflow-home" NXF_TEMP="$$state_root/tmp" \
-		NXF_ANSI_LOG=false NXF_DISABLE_CHECK_LATEST=true \
-		DEVELOPER_DIR="$${DEVELOPER_DIR:-}"); \
-	cd "$$state_root"; \
-	"$${clean_environment[@]}" \
-		/usr/bin/python3 "$${PIPELINE_DEADLINE_RUNNER}" --seconds 120 -- \
-			"$${NEXTFLOW_BIN}" -log "$$state_root/lint.log" \
-			-C "$${PIPELINE_CONFIG}" lint "$${PIPELINE_ENTRY}" </dev/null
-
-pipeline-plan: override PIPELINE_ACTION := plan
-pipeline-plan: pipeline-execute
-
-pipeline-preflight: override PIPELINE_ACTION := preflight
-pipeline-preflight: pipeline-execute
-
-pipeline: override PIPELINE_ACTION := run
-pipeline: pipeline-execute
-
-pipeline-resume: override PIPELINE_ACTION := resume
-pipeline-resume: override PIPELINE_RESUME_SESSION := $(PIPELINE_SESSION)
-pipeline-resume: pipeline-execute
-
-pipeline-status: pipeline-runtime-check
-	@state_root="$${PIPELINE_STATE_ROOT}"; \
-	operator_name="$$(/usr/bin/id -un)"; \
-	clean_environment=(/usr/bin/env -i \
-		CI=1 HOME="$$state_root/nextflow-home" USER="$$operator_name" \
-		LOGNAME="$$operator_name" SHELL=/bin/bash \
-		PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C LC_ALL=C TERM=dumb TZ=UTC \
-		TMPDIR="$$state_root/tmp" GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never \
-		SSH_ASKPASS_REQUIRE=never JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
-		JAVA_CMD="$${NEXTFLOW_JAVA_BIN}" NXF_JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
-		NXF_HOME="$$state_root/nextflow-home" NXF_TEMP="$$state_root/tmp" \
-		NXF_ANSI_LOG=false NXF_DISABLE_CHECK_LATEST=true); \
-	if [[ ! -f "$$state_root/.container-compose-pipeline-root" ]]; then \
-		printf 'No marked pipeline state exists at %s.\n' "$$state_root" >&2; \
-		exit 2; \
-	fi; \
-	if [[ ! -s "$$state_root/.nextflow/history" ]]; then \
-		printf 'No pipeline sessions have been recorded at %s.\n' "$$state_root"; \
-		exit 0; \
-	fi; \
-	cd "$$state_root"; \
-	"$${clean_environment[@]}" \
-		/usr/bin/python3 "$${PIPELINE_DEADLINE_RUNNER}" --seconds 30 -- \
-			"$${NEXTFLOW_BIN}" -log "$$state_root/status.log" log </dev/null
-
-pipeline-self-test: pipeline-lint
-	@state_root="$${PIPELINE_STATE_ROOT}"; \
-	proof_id="$$(/bin/date -u +%Y%m%dT%H%M%SZ)-$$$$"; \
-	proof_root="$$state_root/recovery-proofs/$$proof_id"; \
-	operator_name="$$(/usr/bin/id -un)"; \
-	clean_environment=(/usr/bin/env -i \
-		CI=1 HOME="$$state_root/nextflow-home" USER="$$operator_name" \
-		LOGNAME="$$operator_name" SHELL=/bin/bash \
-		PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C LC_ALL=C TERM=dumb TZ=UTC \
-		TMPDIR="$$state_root/tmp" GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never \
-		SSH_ASKPASS_REQUIRE=never JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
-		JAVA_CMD="$${NEXTFLOW_JAVA_BIN}" NXF_JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
-		NXF_HOME="$$state_root/nextflow-home" NXF_TEMP="$$state_root/tmp" \
-		NXF_ANSI_LOG=false NXF_DISABLE_CHECK_LATEST=true \
-		NEXTFLOW_RECOVERY_KEEP=1); \
-	"$${clean_environment[@]}" /bin/bash Tools/ci/test-nextflow-recovery.sh \
-		--nextflow "$${NEXTFLOW_BIN}" --proof-root "$$proof_root"
-
-pipeline-execute: pipeline-runtime-check
-	@requested_action="$${PIPELINE_ACTION}"; \
-	action="$$requested_action"; \
-	resume_session="$${PIPELINE_RESUME_SESSION}"; \
-	case "$$action" in run|plan|preflight) ;; \
-		resume) \
-			if ! [[ "$$resume_session" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$$ ]]; then \
-				printf 'PIPELINE_SESSION must be the exact failed Nextflow session UUID.\n' >&2; \
-				exit 2; \
-			fi; \
-			action=run; \
-			;; \
-		*) printf 'Unsupported PIPELINE_ACTION: %s\n' "$$action" >&2; exit 2 ;; \
-	esac; \
-	if [[ -n "$$resume_session" ]] \
-		&& ! [[ "$$resume_session" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$$ ]]; then \
-		printf 'Invalid resume session UUID: %s\n' "$$resume_session" >&2; \
-		exit 2; \
-	fi; \
-	state_root="$${PIPELINE_STATE_ROOT}"; \
-	if [[ -L "$$state_root" ]] || [[ ! -d "$$state_root" ]]; then \
-		printf 'Pipeline state root became indirect or invalid: %s\n' "$$state_root" >&2; \
-		exit 2; \
-	fi; \
-	canonical_state="$$(cd "$$state_root" && pwd -P)"; \
-	marker="$$canonical_state/.container-compose-pipeline-root"; \
-	if [[ -L "$$marker" ]] || [[ ! -f "$$marker" ]] \
-		|| [[ "$$(<"$$marker")" != "$${PIPELINE_MARKER_VALUE}" ]]; then \
-		printf 'Pipeline state marker became indirect or invalid: %s\n' "$$marker" >&2; \
-		exit 2; \
-	fi; \
-	for managed_name in evidence nextflow-home tmp work failures caches empty-dependencies; do \
-		managed_path="$$canonical_state/$$managed_name"; \
-		if [[ -L "$$managed_path" ]] || [[ ! -d "$$managed_path" ]] \
-			|| [[ "$$(cd "$$managed_path" && pwd -P)" != "$$canonical_state/$$managed_name" ]]; then \
-			printf 'Pipeline managed path became indirect or escaped its root: %s\n' "$$managed_path" >&2; \
+stack-preflight: stack-state-init
+	@for tool in /usr/bin/git "$(STACK_SWIFT)" "$(STACK_GO)" "$(PYTHON)"; do \
+		if [[ "$$tool" == */* ]]; then [[ -x "$$tool" ]] || { printf 'required build tool is unavailable: %s\n' "$$tool" >&2; exit 2; }; \
+		else command -v "$$tool" >/dev/null 2>&1 || { printf 'required build tool is unavailable: %s\n' "$$tool" >&2; exit 2; }; fi; \
+	done; \
+	for repository in "$(CONTAINERIZATION_STACK_REPO)" "$(CONTAINER_ENGINE_API_STACK_REPO)" \
+		"$(CONTAINER_STACK_REPO)" "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" "$(CURDIR)"; do \
+		[[ -d "$$repository" ]] || { printf 'stack repository is unavailable: %s\n' "$$repository" >&2; exit 2; }; \
+		[[ ! -L "$$repository" ]] || { printf 'stack repository must not be a symbolic link: %s\n' "$$repository" >&2; exit 2; }; \
+		/usr/bin/git -C "$$repository" rev-parse --verify 'HEAD^{commit}' >/dev/null; \
+		if [[ -n "$$(/usr/bin/git -C "$$repository" status --porcelain --untracked-files=normal)" ]]; then \
+			printf 'stack repository must be clean: %s\n' "$$repository" >&2; \
 			exit 2; \
 		fi; \
 	done; \
-	state_root="$$canonical_state"; \
-	source_root="$${CONTAINER_FAMILY_SOURCE_ROOT}"; \
-	if [[ -z "$$source_root" ]]; then \
-		common_git_dir="$$(/usr/bin/git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"; \
-		if [[ -n "$$common_git_dir" ]]; then \
-			common_parent="$$(/usr/bin/dirname "$$common_git_dir")"; \
-			source_root="$$(/usr/bin/dirname "$$common_parent")"; \
+	for contract in "$(STACK_SWIFT_CONTRACT)" "$(STACK_GO_CONTRACT)"; do \
+		[[ "$$contract" =~ ^[0-9a-f]{64}$$ ]] || { printf 'could not establish an exact build contract\n' >&2; exit 2; }; \
+	done
+
+stack-status:
+	@exit_status=0; \
+	for specification in \
+		"containerization|$(CONTAINERIZATION_STACK_REPO)|$(STACK_CONTAINERIZATION_PIN)|$(STACK_SWIFT_CONTRACT)" \
+		"container-engine-api|$(CONTAINER_ENGINE_API_STACK_REPO)|$(STACK_ENGINE_API_PIN)|$(STACK_SWIFT_CONTRACT)" \
+		"container|$(CONTAINER_STACK_REPO)|$(STACK_CONTAINER_PIN)|$(STACK_SWIFT_CONTRACT)" \
+		"container-builder-shim|$(CONTAINER_BUILDER_SHIM_STACK_REPO)|$(STACK_BUILDER_PIN)|$(STACK_GO_CONTRACT)" \
+		"container-compose|$(CURDIR)|$(STACK_COMPOSE_PIN)|$(STACK_SWIFT_CONTRACT)"; do \
+		IFS='|' read -r repository source receipt contract <<<"$$specification"; \
+		if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet --receipt "$$receipt" \
+			--repository "$$repository" --repository-path "$$source" \
+			--build-contract "$$contract"; then \
+			printf '%-28s valid    %s\n' "$$repository" "$$receipt"; \
+		elif [[ -e "$$receipt" ]]; then \
+			printf '%-28s stale    %s\n' "$$repository" "$$receipt"; \
+			exit_status=1; \
 		else \
-			source_root="$$(cd .. && pwd -P)"; \
+			printf '%-28s missing  %s\n' "$$repository" "$$receipt"; \
+			exit_status=1; \
 		fi; \
-	fi; \
-	case "$$source_root" in /*) ;; *) printf 'CONTAINER_FAMILY_SOURCE_ROOT must be absolute: %s\n' "$$source_root" >&2; exit 2 ;; esac; \
-	compose_repo="$${PIPELINE_COMPOSE_REPO}"; \
-	builder_repo="$${PIPELINE_BUILDER_REPO:-$$source_root/container-builder-shim}"; \
-	containerization_repo="$${PIPELINE_CONTAINERIZATION_REPO:-$$source_root/containerization}"; \
-	container_repo="$${PIPELINE_CONTAINER_REPO:-$$source_root/container}"; \
-	engine_api_repo="$${PIPELINE_ENGINE_API_REPO:-$$source_root/container-engine-api}"; \
-	devcontainer_repo="$${PIPELINE_DEVCONTAINER_REPO:-$$source_root/devcontainer}"; \
-	k8s_repo="$${PIPELINE_K8S_REPO:-$$source_root/container-k8s}"; \
-	homebrew_repo="$${PIPELINE_HOMEBREW_REPO:-$$source_root/homebrew-tap}"; \
-	materialization_lock="$$state_root/package-materialization.lock"; \
-	if [[ -L "$$materialization_lock" ]]; then \
-		printf 'Package materialization lock must not be a symbolic link: %s\n' \
-			"$$materialization_lock" >&2; \
-		exit 2; \
-	fi; \
-	/usr/bin/lockf -t 30 "$$materialization_lock" \
-		/usr/bin/python3 -I "$${PIPELINE_PACKAGE_MATERIALIZER}" \
-		--recover-only --destination "$$compose_repo"; \
-	operator_name="$$(/usr/bin/id -un)"; \
-	operator_home=; \
-	requires_operator_keychain=false; \
-	if [[ "$$action" != plan ]] && [[ "$${PIPELINE_PROFILE}" == release-hosted ]]; then \
-		if [[ -z "$${PIPELINE_STAGE_SELECTOR//[[:space:]]/}" ]]; then \
-			requires_operator_keychain=true; \
+	done; \
+	if [[ "$$exit_status" == 0 ]]; then \
+		if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify-bundle --quiet --bundle "$(STACK_BUNDLE)" \
+			--repository containerization --repository container-engine-api \
+			--repository container --repository container-builder-shim \
+			--repository container-compose; then \
+			printf '%-28s valid    %s\n' stack-bundle "$(STACK_BUNDLE)"; \
 		else \
-			IFS=',' read -r -a selected_stages <<<"$${PIPELINE_STAGE_SELECTOR}"; \
-			for selected_stage in "$${selected_stages[@]}"; do \
-				selected_stage="$${selected_stage//[[:space:]]/}"; \
-				if [[ "$$selected_stage" == container-release-validation ]]; then \
-					requires_operator_keychain=true; \
-					break; \
-				fi; \
-			done; \
+			printf '%-28s stale    %s\n' stack-bundle "$(STACK_BUNDLE)"; \
+			exit_status=1; \
 		fi; \
 	fi; \
-	if [[ "$$requires_operator_keychain" == true ]]; then \
-		operator_home="$$(/usr/bin/python3 -I -c 'import os, pwd; print(pwd.getpwuid(os.getuid()).pw_dir)')"; \
-		case "$$operator_home" in /*) ;; *) printf 'Operator home must be absolute: %s\n' "$$operator_home" >&2; exit 2 ;; esac; \
-		if [[ "$$operator_home" == *$$'\t'* ]] || [[ "$$operator_home" == *$$'\n'* ]]; then \
-			printf 'Operator home contains a control character.\n' >&2; \
-			exit 2; \
-		fi; \
-	fi; \
-	clean_environment=(/usr/bin/env -i \
-		CI=1 HOME="$$state_root/nextflow-home" USER="$$operator_name" \
-		LOGNAME="$$operator_name" SHELL=/bin/bash \
-		PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=C LC_ALL=C TERM=dumb TZ=UTC \
-		TMPDIR="$$state_root/tmp" GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never \
-		SSH_ASKPASS_REQUIRE=never JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
-		JAVA_CMD="$${NEXTFLOW_JAVA_BIN}" NXF_JAVA_HOME="$${NEXTFLOW_JAVA_HOME}" \
-		NXF_HOME="$$state_root/nextflow-home" NXF_TEMP="$$state_root/tmp" \
-		NXF_ANSI_LOG=false NXF_DISABLE_CHECK_LATEST=true \
-		DEVELOPER_DIR="$${DEVELOPER_DIR:-}"); \
-	attempt_id="$${PIPELINE_ATTEMPT_ID:-$$(/bin/date -u +%Y%m%dT%H%M%SZ)-$$$$}"; \
-	if ! [[ "$$attempt_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$$ ]]; then \
-		printf 'PIPELINE_ATTEMPT_ID is unsafe: %s\n' "$$attempt_id" >&2; \
-		exit 2; \
-	fi; \
-	attempt_dir="$$state_root/evidence/$$attempt_id"; \
-	/bin/mkdir "$$attempt_dir"; \
-	printf 'schema\t1\naction\t%s\nprofile\t%s\nstage-selector\t%s\nresume-session\t%s\nsource\t%s\njava-home\t%s\njava-version\t%s\njava-sha256\t%s\njava-modules-sha256\t%s\njava-libjvm-sha256\t%s\njava-release-sha256\t%s\nstarted-utc\t%s\n' \
-		"$$requested_action" "$${PIPELINE_PROFILE}" "$${PIPELINE_STAGE_SELECTOR}" \
-		"$${resume_session:-none}" "$$compose_repo" \
-		"$${NEXTFLOW_JAVA_HOME}" "$${NEXTFLOW_JAVA_VERSION}" \
-		"$${NEXTFLOW_JAVA_SHA256}" "$${NEXTFLOW_JAVA_MODULES_SHA256}" \
-		"$${NEXTFLOW_JAVA_LIBJVM_SHA256}" "$${NEXTFLOW_JAVA_RELEASE_SHA256}" \
-		"$$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)" >"$$attempt_dir/attempt.tsv"; \
-	printf 'java-tree-sha256\t%s\n' "$${NEXTFLOW_JAVA_TREE_SHA256}" \
-		>>"$$attempt_dir/attempt.tsv"; \
-	set --; \
-	if [[ -n "$$resume_session" ]]; then set -- -resume "$$resume_session"; fi; \
-	set +e; \
-	( \
-		cd "$$state_root"; \
-		"$${clean_environment[@]}" \
-			/usr/bin/lockf -t 0 "$$state_root/pipeline.lock" \
-			/usr/bin/python3 "$${PIPELINE_DEADLINE_RUNNER}" \
-				--seconds "$${PIPELINE_ORCHESTRATOR_TIMEOUT_SECONDS}" \
-				--grace-seconds 15 -- \
-				"$${NEXTFLOW_BIN}" -log "$$attempt_dir/nextflow.log" \
-				-C "$${PIPELINE_CONFIG}" run "$${PIPELINE_ENTRY}" \
-				-ansi-log false -offline -name "pipeline_$${attempt_id//-/_}" \
-				-work-dir "$$state_root/work" \
-				-with-trace "$$attempt_dir/trace.tsv" \
-				-with-report "$$attempt_dir/report.html" \
-				-with-timeline "$$attempt_dir/timeline.html" \
-				-with-dag "$$attempt_dir/dag.html" \
-				"$$@" \
-				--pipelineAction "$$action" \
-				--pipelineProfile "$${PIPELINE_PROFILE}" \
-				"--stageSelector=$${PIPELINE_STAGE_SELECTOR}" \
-				--stateRoot "$$state_root" \
-				--evidenceDir "$$attempt_dir" \
-				--stateMarkerValue "$${PIPELINE_MARKER_VALUE}" \
-				--executionPath "$${PIPELINE_EXECUTION_PATH}" \
-				"--operatorHome=$$operator_home" \
-				--launcherPath "$${NEXTFLOW_BIN}" \
-				--expectedNextflowVersion "$${NEXTFLOW_VERSION}" \
-				--expectedLauncherSha256 "$${NEXTFLOW_SHA256}" \
-				--deadlineRunner "$${PIPELINE_DEADLINE_RUNNER}" \
-				--sourceTimeoutSeconds "$${PIPELINE_SOURCE_TIMEOUT_SECONDS}" \
-				--functionalTimeoutSeconds "$${PIPELINE_FUNCTIONAL_TIMEOUT_SECONDS}" \
-				--composeRepo "$$compose_repo" \
-				--composeRef "$${PIPELINE_COMPOSE_REF}" \
-				--builderRepo "$$builder_repo" \
-				--builderRef "$${PIPELINE_BUILDER_REF}" \
-				--containerizationRepo "$$containerization_repo" \
-				--containerizationRef "$${PIPELINE_CONTAINERIZATION_REF}" \
-				--containerRepo "$$container_repo" \
-				--containerRef "$${PIPELINE_CONTAINER_REF}" \
-				--engineApiRepo "$$engine_api_repo" \
-				--engineApiRef "$${PIPELINE_ENGINE_API_REF}" \
-				--devcontainerRepo "$$devcontainer_repo" \
-				--devcontainerRef "$${PIPELINE_DEVCONTAINER_REF}" \
-				--k8sRepo "$$k8s_repo" \
-				--k8sRef "$${PIPELINE_K8S_REF}" \
-				--homebrewRepo "$$homebrew_repo" \
-				--homebrewRef "$${PIPELINE_HOMEBREW_REF}" \
-	) </dev/null 2>&1 | /usr/bin/tee "$$attempt_dir/console.log"; \
-	pipeline_statuses=("$${PIPESTATUS[@]}"); \
-	orchestrator_status="$${pipeline_statuses[0]:-125}"; \
-	tee_status="$${pipeline_statuses[1]:-125}"; \
-	exit_status="$$orchestrator_status"; \
-	if ((exit_status == 0 && tee_status != 0)); then exit_status="$$tee_status"; fi; \
-	set -e; \
-	printf 'orchestrator-exit\t%s\ntee-exit\t%s\n' \
-		"$$orchestrator_status" "$$tee_status" >>"$$attempt_dir/attempt.tsv"; \
-	evidence_status=0; \
-	session_uuid=; \
-	session_receipt_valid=0; \
-	if [[ -s "$$attempt_dir/session.uuid" ]]; then \
-		session_uuid="$$(<"$$attempt_dir/session.uuid")"; \
-		if ! [[ "$$session_uuid" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$$ ]]; then \
-			printf 'Pipeline wrote an invalid session UUID: %s\n' "$$session_uuid" >&2; \
-			evidence_status=74; \
-		elif [[ -n "$$resume_session" && "$$session_uuid" != "$$resume_session" ]]; then \
-			printf 'Resumed session mismatch: expected %s, got %s\n' \
-				"$$resume_session" "$$session_uuid" >&2; \
-			evidence_status=74; \
-		else \
-			session_receipt_valid=1; \
-		fi; \
-	else \
-		printf 'Required pipeline session receipt is missing or empty: %s\n' \
-			"$$attempt_dir/session.uuid" >&2; \
-		evidence_status=74; \
-	fi; \
-	if ((orchestrator_status == 0 && tee_status == 0)); then \
-		for required_file in nextflow.log trace.tsv report.html timeline.html dag.html; do \
-			if [[ ! -s "$$attempt_dir/$$required_file" ]]; then \
-				printf 'Required pipeline evidence is missing or empty: %s\n' \
-					"$$attempt_dir/$$required_file" >&2; \
-				evidence_status=74; \
-			fi; \
-		done; \
-		if [[ ! -f "$$attempt_dir/console.log" ]]; then \
-			printf 'Required pipeline evidence is missing: %s\n' \
-				"$$attempt_dir/console.log" >&2; \
-			evidence_status=74; \
-		fi; \
-	fi; \
-	if ((exit_status != 0 && session_receipt_valid == 1)); then \
-		failure_parent="$$state_root/failures"; \
-		failure_destination="$$attempt_dir/failures"; \
-		if [[ -L "$$failure_parent" ]] || [[ ! -d "$$failure_parent" ]] \
-			|| [[ "$$(cd "$$failure_parent" && pwd -P)" != "$$state_root/failures" ]]; then \
-			printf 'Pipeline failure evidence parent escaped the marked state root: %s\n' \
-				"$$failure_parent" >&2; \
-			evidence_status=74; \
-		else \
-			failure_source="$$failure_parent/$$session_uuid"; \
-		fi; \
-		if ((evidence_status == 0)) && [[ -L "$$failure_source" ]]; then \
-			printf 'Pipeline failure evidence root must not be a symbolic link: %s\n' \
-				"$$failure_source" >&2; \
-			evidence_status=74; \
-		elif ((evidence_status == 0)) && [[ -d "$$failure_source" ]]; then \
-			canonical_failure_source="$$(cd "$$failure_source" && pwd -P)"; \
-			if [[ "$$canonical_failure_source" != "$$failure_parent/$$session_uuid" ]]; then \
-				printf 'Pipeline failure evidence escaped its managed parent: %s\n' \
-					"$$canonical_failure_source" >&2; \
-				evidence_status=74; \
-			fi; \
-			unexpected_failure_entry="$$(/usr/bin/find "$$failure_source" \
-				! -type d ! -type f -print -quit)"; \
-			if ((evidence_status == 0)) && [[ -n "$$unexpected_failure_entry" ]]; then \
-				printf 'Pipeline failure evidence contains an unsupported entry: %s\n' \
-					"$$unexpected_failure_entry" >&2; \
-				evidence_status=74; \
-			elif ((evidence_status == 0)); then \
-				if ! /bin/mkdir "$$failure_destination" \
-					|| ! /bin/cp -R "$$failure_source/." "$$failure_destination/"; then \
-					printf 'Could not copy pipeline failure evidence from %s to %s.\n' \
-						"$$failure_source" "$$failure_destination" >&2; \
-					evidence_status=74; \
-				fi; \
-			fi; \
-		fi; \
-	fi; \
-	if ((exit_status == 0 && evidence_status != 0)); then exit_status="$$evidence_status"; fi; \
-	materialization_status=0; \
-	package_expected=false; \
-	if [[ "$$action" == run ]]; then \
-		if [[ "$${PIPELINE_PROFILE}" == repository ]] \
-			&& [[ -z "$${PIPELINE_STAGE_SELECTOR//[[:space:]]/}" ]]; then \
-			package_expected=true; \
-		else \
-			IFS=',' read -r -a selected_stages <<<"$${PIPELINE_STAGE_SELECTOR}"; \
-			for selected_stage in "$${selected_stages[@]}"; do \
-				if [[ "$${selected_stage//[[:space:]]/}" == compose-package ]]; then \
-					package_expected=true; \
-					break; \
-				fi; \
-			done; \
-		fi; \
-	fi; \
-	if ((exit_status == 0)) && [[ "$$package_expected" == true ]]; then \
-		package_receipt="$$attempt_dir/receipts/compose-package.receipt.tsv"; \
-		package_manifest="$$attempt_dir/receipts/compose-package.artifacts.tsv"; \
-		package_archive="$$attempt_dir/receipts/compose-package.artifacts.tar"; \
-		if [[ ! -s "$$package_receipt" ]] || [[ ! -s "$$package_manifest" ]] \
-			|| [[ ! -s "$$package_archive" ]]; then \
-			printf 'Required recovered package evidence is incomplete: %s\n' \
-				"$$attempt_dir/receipts" >&2; \
-			materialization_status=74; \
-		else \
-			set +e; \
-			/usr/bin/lockf -t 30 "$$materialization_lock" \
-				/usr/bin/python3 -I "$${PIPELINE_PACKAGE_MATERIALIZER}" \
-				--receipt "$$package_receipt" --manifest "$$package_manifest" \
-				--archive "$$package_archive" --destination "$$compose_repo"; \
-			materialization_status=$$?; \
-			set -e; \
-		fi; \
-	fi; \
-	if ((exit_status == 0 && materialization_status != 0)); then \
-		exit_status="$$materialization_status"; \
-	fi; \
-	printf 'evidence-exit\t%s\nmaterialization-exit\t%s\nexit\t%s\ncompleted-utc\t%s\n' \
-		"$$evidence_status" "$$materialization_status" "$$exit_status" \
-		"$$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$$attempt_dir/attempt.tsv"; \
-	printf 'Pipeline evidence: %s\n' "$$attempt_dir"; \
 	exit "$$exit_status"
 
-all: pipeline
+stack-self-test:
+	"$(PYTHON)" -m unittest discover Tools/build
+
+stack-build: stack-preflight
+	@/usr/bin/lockf -t 0 "$(STACK_STATE_ROOT)/stack-build.lock" \
+		$(MAKE) --no-print-directory stack-build-locked STACK_LOCK_HELD=1 \
+			STACK_STATE_ROOT="$(STACK_STATE_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)"
+
+stack-build-locked:
+	@[[ "$(STACK_LOCK_HELD)" == 1 ]] || { printf 'stack-build-locked requires the stack-build lock\n' >&2; exit 2; }
+	@$(MAKE) --no-print-directory -j3 stack-builder-build stack-compose-build \
+		STACK_STATE_ROOT="$(STACK_STATE_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)"
+	@"$(PYTHON)" "$(STACK_PIN_TOOL)" bundle --output "$(STACK_BUNDLE)" \
+		--pin "$(STACK_CONTAINERIZATION_PIN)" --pin "$(STACK_ENGINE_API_PIN)" \
+		--pin "$(STACK_CONTAINER_PIN)" --pin "$(STACK_BUILDER_PIN)" \
+		--pin "$(STACK_COMPOSE_PIN)" >/dev/null
+	@"$(PYTHON)" "$(STACK_PIN_TOOL)" verify-bundle --quiet --bundle "$(STACK_BUNDLE)" \
+		--repository containerization --repository container-engine-api \
+		--repository container --repository container-builder-shim \
+		--repository container-compose
+	@printf 'Recoverable stack build complete. Pin bundle: %s\n' "$(STACK_BUNDLE)"
+
+stack-containerization-build:
+	$(STACK_REQUIRE_LOCK)
+	@if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet \
+		--receipt "$(STACK_CONTAINERIZATION_PIN)" --repository containerization \
+		--repository-path "$(CONTAINERIZATION_STACK_REPO)" \
+		--build-contract "$(STACK_SWIFT_CONTRACT)"; then \
+		printf 'Reusing containerization build pin.\n'; \
+	else \
+		source_commit="$$(/usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{commit}')"; \
+		source_tree="$$(/usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}')"; \
+		scratch="$(STACK_SCRATCH_ROOT)/$(STACK_SWIFT_CONTRACT)/containerization"; \
+		started=$$SECONDS; \
+		cd "$(CONTAINERIZATION_STACK_REPO)"; \
+		"$(STACK_SWIFT)" build --disable-automatic-resolution \
+			--scratch-path "$$scratch" -c "$(STACK_CONFIGURATION)" --product cctl; \
+		bin_path="$$($(STACK_SWIFT) build --scratch-path "$$scratch" \
+			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
+		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository containerization \
+			--repository-path "$(CONTAINERIZATION_STACK_REPO)" \
+			--output "$(STACK_CONTAINERIZATION_PIN)" --artifact "$$bin_path/cctl" \
+			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
+			--build-contract "$(STACK_SWIFT_CONTRACT)" \
+			--duration-seconds "$$((SECONDS - started))" \
+			--command-label 'swift build --product cctl' >/dev/null; \
+	fi
+
+stack-engine-api-build:
+	$(STACK_REQUIRE_LOCK)
+	@if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet \
+		--receipt "$(STACK_ENGINE_API_PIN)" --repository container-engine-api \
+		--repository-path "$(CONTAINER_ENGINE_API_STACK_REPO)" \
+		--build-contract "$(STACK_SWIFT_CONTRACT)"; then \
+		printf 'Reusing container-engine-api build pin.\n'; \
+	else \
+		source_commit="$$(/usr/bin/git -C "$(CONTAINER_ENGINE_API_STACK_REPO)" rev-parse 'HEAD^{commit}')"; \
+		source_tree="$$(/usr/bin/git -C "$(CONTAINER_ENGINE_API_STACK_REPO)" rev-parse 'HEAD^{tree}')"; \
+		scratch="$(STACK_SCRATCH_ROOT)/$(STACK_SWIFT_CONTRACT)/container-engine-api"; \
+		started=$$SECONDS; \
+		cd "$(CONTAINER_ENGINE_API_STACK_REPO)"; \
+		"$(STACK_SWIFT)" build --disable-automatic-resolution \
+			--scratch-path "$$scratch" -c "$(STACK_CONFIGURATION)" --product container-engine; \
+		bin_path="$$($(STACK_SWIFT) build --scratch-path "$$scratch" \
+			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
+		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-engine-api \
+			--repository-path "$(CONTAINER_ENGINE_API_STACK_REPO)" \
+			--output "$(STACK_ENGINE_API_PIN)" --artifact "$$bin_path/container-engine" \
+			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
+			--build-contract "$(STACK_SWIFT_CONTRACT)" \
+			--duration-seconds "$$((SECONDS - started))" \
+			--command-label 'swift build --product container-engine' >/dev/null; \
+	fi
+
+stack-container-build: stack-containerization-build stack-engine-api-build
+	$(STACK_REQUIRE_LOCK)
+	@if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet \
+		--receipt "$(STACK_CONTAINER_PIN)" --repository container \
+		--repository-path "$(CONTAINER_STACK_REPO)" \
+		--build-contract "$(STACK_SWIFT_CONTRACT)"; then \
+		printf 'Reusing container build pin.\n'; \
+	else \
+		"$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet --receipt "$(STACK_CONTAINERIZATION_PIN)"; \
+		"$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet --receipt "$(STACK_ENGINE_API_PIN)"; \
+		source_commit="$$(/usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{commit}')"; \
+		source_tree="$$(/usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}')"; \
+		scratch="$(STACK_SCRATCH_ROOT)/$(STACK_SWIFT_CONTRACT)/container"; \
+		started=$$SECONDS; \
+		cd "$(CONTAINER_STACK_REPO)"; \
+		CONTAINERIZATION_PACKAGE_PATH="$(CONTAINERIZATION_STACK_REPO)" \
+		CONTAINER_ENGINE_API_PACKAGE_PATH="$(CONTAINER_ENGINE_API_STACK_REPO)" \
+			"$(STACK_SWIFT)" build --disable-automatic-resolution \
+			--scratch-path "$$scratch" -c "$(STACK_CONFIGURATION)" --product container; \
+		bin_path="$$(CONTAINERIZATION_PACKAGE_PATH="$(CONTAINERIZATION_STACK_REPO)" \
+			CONTAINER_ENGINE_API_PACKAGE_PATH="$(CONTAINER_ENGINE_API_STACK_REPO)" \
+			"$(STACK_SWIFT)" build --scratch-path "$$scratch" \
+			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
+		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container \
+			--repository-path "$(CONTAINER_STACK_REPO)" --output "$(STACK_CONTAINER_PIN)" \
+			--dependency "$(STACK_CONTAINERIZATION_PIN)" \
+			--dependency "$(STACK_ENGINE_API_PIN)" --artifact "$$bin_path/container" \
+			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
+			--build-contract "$(STACK_SWIFT_CONTRACT)" \
+			--duration-seconds "$$((SECONDS - started))" \
+			--command-label 'swift build --product container' >/dev/null; \
+	fi
+
+stack-builder-build:
+	$(STACK_REQUIRE_LOCK)
+	@if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet \
+		--receipt "$(STACK_BUILDER_PIN)" --repository container-builder-shim \
+		--repository-path "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" \
+		--build-contract "$(STACK_GO_CONTRACT)"; then \
+		printf 'Reusing container-builder-shim build pin.\n'; \
+	else \
+		source_commit="$$(/usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{commit}')"; \
+		source_tree="$$(/usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}')"; \
+		artifact="$(STACK_ARTIFACT_ROOT)/container-builder-shim/container-builder-shim"; \
+		/usr/bin/install -d -m 0700 "$$(dirname "$$artifact")"; \
+		cd "$(CONTAINER_BUILDER_SHIM_STACK_REPO)"; \
+		started=$$SECONDS; \
+		"$(STACK_GO)" build -trimpath -o "$$artifact" .; \
+		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-builder-shim \
+			--repository-path "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" \
+			--output "$(STACK_BUILDER_PIN)" --artifact "$$artifact" \
+			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
+			--build-contract "$(STACK_GO_CONTRACT)" \
+			--duration-seconds "$$((SECONDS - started))" \
+			--command-label 'go build -trimpath' >/dev/null; \
+	fi
+
+stack-compose-build: stack-container-build
+	$(STACK_REQUIRE_LOCK)
+	@if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet \
+		--receipt "$(STACK_COMPOSE_PIN)" --repository container-compose \
+		--repository-path "$(CURDIR)" \
+		--build-contract "$(STACK_SWIFT_CONTRACT)"; then \
+		printf 'Reusing container-compose build pin.\n'; \
+	else \
+		source_commit="$$(/usr/bin/git -C "$(CURDIR)" rev-parse 'HEAD^{commit}')"; \
+		source_tree="$$(/usr/bin/git -C "$(CURDIR)" rev-parse 'HEAD^{tree}')"; \
+		container_commit="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_CONTAINER_PIN)" --field source.commit)"; \
+		container_tree="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_CONTAINER_PIN)" --field source.tree)"; \
+		containerization_commit="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_CONTAINERIZATION_PIN)" --field source.commit)"; \
+		containerization_tree="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_CONTAINERIZATION_PIN)" --field source.tree)"; \
+		engine_commit="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_ENGINE_API_PIN)" --field source.commit)"; \
+		engine_tree="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_ENGINE_API_PIN)" --field source.tree)"; \
+		started=$$SECONDS; \
+		"$(PYTHON)" Tools/ci/run-with-local-swift-stack.py --swift "$(STACK_SWIFT)" --retain-edits \
+			--container "$(CONTAINER_STACK_REPO)" --container-commit "$$container_commit" --container-tree "$$container_tree" \
+			--containerization "$(CONTAINERIZATION_STACK_REPO)" --containerization-commit "$$containerization_commit" --containerization-tree "$$containerization_tree" \
+			--engine-api "$(CONTAINER_ENGINE_API_STACK_REPO)" --engine-api-commit "$$engine_commit" --engine-api-tree "$$engine_tree" \
+			-- "$(STACK_SWIFT)" build --disable-automatic-resolution -c "$(STACK_CONFIGURATION)" --product compose; \
+		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-compose \
+			--repository-path "$(CURDIR)" --output "$(STACK_COMPOSE_PIN)" \
+			--dependency "$(STACK_CONTAINERIZATION_PIN)" --dependency "$(STACK_ENGINE_API_PIN)" \
+			--dependency "$(STACK_CONTAINER_PIN)" --artifact "$(CURDIR)/.build/$(STACK_CONFIGURATION)/compose" \
+			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
+			--build-contract "$(STACK_SWIFT_CONTRACT)" \
+			--duration-seconds "$$((SECONDS - started))" \
+			--command-label 'swift build --product compose' >/dev/null; \
+	fi
+
+all: build go-build
 
 workflow: ci package
 
@@ -1243,15 +678,12 @@ release-gate:
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage swift-runtime --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory swift-runtime-test
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-parity --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory docker-compose-parity
 
-release-gate-hosted: pipeline-bootstrap
-	PIPELINE_PROFILE=release-hosted \
-		PIPELINE_EXECUTION_PATH="$(CURDIR)/.local/bin:$(PIPELINE_EXECUTION_PATH)" \
-		PIPELINE_COMPOSE_REPO="$(CURDIR)" \
-		PIPELINE_BUILDER_REPO="$(CONTAINER_BUILDER_SHIM_STACK_REPO)" \
-		PIPELINE_CONTAINERIZATION_REPO="$(CONTAINERIZATION_STACK_REPO)" \
-		PIPELINE_CONTAINER_REPO="$(CONTAINER_STACK_REPO)" \
-		PIPELINE_HOMEBREW_REPO="$(HOMEBREW_TAP_REPO)" \
-		$(MAKE) --no-print-directory pipeline
+release-gate-hosted:
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py \
+		--checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage hosted-sibling-stack \
+		--fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py \
+		--seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- \
+		$(MAKE) --no-print-directory container-stack-hosted-release-validation
 
 ci-release: release-gate package-release
 

@@ -32,8 +32,6 @@ from pathlib import Path
 SCRIPT = Path(__file__).with_name("historical_reconstruction_benchmark.py")
 WORKFLOW = SCRIPT.parents[2] / ".github/workflows/historical-benchmark.yml"
 MAKEFILE = SCRIPT.parents[2] / "Makefile"
-PIPELINE = SCRIPT.parents[2] / "main.nf"
-STAGE_MODULE = SCRIPT.parents[2] / "build-pipeline/modules/repository-stage.nf"
 spec = importlib.util.spec_from_file_location("historical_reconstruction_benchmark", SCRIPT)
 assert spec and spec.loader
 MODULE = importlib.util.module_from_spec(spec)
@@ -246,8 +244,8 @@ class HistoricalWorkflowTests(unittest.TestCase):
         self.assertIn("run-candidates", workflow)
         self.assertIn("no retained initfs run exists", workflow)
         self.assertIn("artifactDigest", workflow)
-        self.assertIn("PIPELINE_PROFILE=benchmark-reconstruction", workflow)
-        self.assertIn("containerization-benchmark-cctl", workflow)
+        self.assertIn("Tools/build/stack-pin.py create", workflow)
+        self.assertIn("Tools/build/stack-pin.py verify", workflow)
         self.assertIn("validate-oci-image-layout.py", workflow)
         self.assertIn("actions: write", workflow)
         self.assertIn('-f documentation_pr="${pr_number}"', workflow)
@@ -277,10 +275,9 @@ class HistoricalWorkflowTests(unittest.TestCase):
     def test_workflow_keeps_runtime_inputs_local_and_noninteractive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('"${RUNNER_TEMP}" "${GITHUB_RUN_ID}"', workflow)
-        self.assertIn("PIPELINE_STATE_ROOT: /Volumes/SSD/github/", workflow)
+        self.assertIn("BUILD_STATE_ROOT: /Volumes/SSD/github/", workflow)
         self.assertIn("PARITY_INCLUDE_REMOTE_LOGGING=0", workflow)
         self.assertIn("CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT=/private/tmp", workflow)
-        self.assertIn("/opt/homebrew/opt/make/libexec/gnubin/make", workflow)
         self.assertIn("ssh-keygen -y -P ''", workflow)
         self.assertNotIn("security import", workflow)
         self.assertNotIn("crane auth", workflow)
@@ -362,16 +359,26 @@ class HistoricalWorkflowTests(unittest.TestCase):
         self.assertNotIn("make docs", workflow)
         self.assertNotIn("package-release", workflow)
 
-    def test_recoverable_pipeline_exports_authenticated_stage_artifacts(self) -> None:
-        pipeline = PIPELINE.read_text(encoding="utf-8")
-        stage_module = STAGE_MODULE.read_text(encoding="utf-8")
-        makefile = MAKEFILE.read_text(encoding="utf-8")
-        self.assertIn("'benchmark-reconstruction'", pipeline)
-        self.assertIn("'containerization-benchmark-cctl': 'bin/cctl'", pipeline)
-        self.assertIn("artifact-archive-sha256", stage_module)
-        self.assertIn("artifact-manifest-sha256", stage_module)
-        self.assertIn('"--stageSelector=$${PIPELINE_STAGE_SELECTOR}"', makefile)
-        self.assertIn("PIPELINE_ATTEMPT_ID is unsafe", makefile)
+    def test_recoverable_build_uses_native_cache_and_authenticated_pin(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn('scratch="${BUILD_STATE_ROOT}/scratch/', workflow)
+        self.assertIn("--disable-automatic-resolution", workflow)
+        self.assertIn("--repository containerization", workflow)
+        self.assertIn('--artifact "${version_root}/cctl"', workflow)
+        self.assertNotIn("nextflow", workflow.lower())
+
+    def test_cleanup_unregisters_temporary_git_worktrees(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        unregister = workflow.index(
+            "git -C containerization-source worktree remove --force"
+        )
+        delete_root = workflow.index('find "${BENCHMARK_ROOT}" -depth -delete')
+
+        self.assertLess(unregister, delete_root)
+        self.assertIn("git -C containerization-source worktree prune", workflow)
+        self.assertIn(
+            "refusing to remove symbolic-link benchmark worktree", workflow
+        )
 
 
 if __name__ == "__main__":

@@ -69,10 +69,6 @@ def classify(paths: list[str], *, full: bool = False) -> ValidationScope:
         if path.suffix == ".md" or _under(path, "docs") or _under(path, "Formula"):
             continue
 
-        if value.startswith("Tests/BuildPipeline/"):
-            tools = True
-            continue
-
         if value in RUNTIME_DRIVER_PATHS:
             tools = True
             runtime = True
@@ -102,7 +98,6 @@ def classify(paths: list[str], *, full: bool = False) -> ValidationScope:
             _under(path, ".github")
             or _under(path, "Tools")
             or _under(path, "scripts")
-            or _under(path, "build-pipeline")
             or value
             in {
                 ".gitignore",
@@ -112,8 +107,6 @@ def classify(paths: list[str], *, full: bool = False) -> ValidationScope:
                 "LICENSE",
                 "config.toml",
                 "licenserc.toml",
-                "main.nf",
-                "nextflow.config",
                 "sonar-project.properties",
             }
         ):

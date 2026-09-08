@@ -376,7 +376,7 @@ jobs:
           [[ "${CANDIDATE_SHA}" =~ ^[[:xdigit:]]{40}$ ]]
           runner_work_root="$(cd "${RUNNER_TEMP}/.." && pwd -P)"
           workspace_root="$(cd "${GITHUB_WORKSPACE}" && pwd -P)"
-          state_parent="${runner_work_root}/.container-compose-release-pipeline"
+          state_parent="${runner_work_root}/.container-compose-release-build"
           if [[ -L "${state_parent}" ]]; then
             printf 'Release state parent must not be a symbolic link: %s\n' \
               "${state_parent}" >&2
@@ -399,7 +399,7 @@ jobs:
               exit 2
               ;;
           esac
-          printf 'RELEASE_PIPELINE_STATE_ROOT=%s\n' "${state_root}" >> "${GITHUB_ENV}"
+          printf 'RELEASE_BUILD_STATE_ROOT=%s\n' "${state_root}" >> "${GITHUB_ENV}"
           printf 'Candidate-keyed release state: %s\n' "${state_root}" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Set up Go
@@ -416,63 +416,34 @@ jobs:
             container-compose/.local/cache/hawkeye
           key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
 
-      - name: Provision checksum-pinned release tools
+      - name: Provision checksum-pinned repository tools
         shell: /bin/bash --noprofile --norc -e -o pipefail {0}
         working-directory: container-compose
         run: |
           set -euo pipefail
           ./scripts/install-hawkeye.sh
-          PIPELINE_STATE_ROOT="${RELEASE_PIPELINE_STATE_ROOT}" \
-            make -C ../release-tools pipeline-bootstrap
 
-      # GitHub-hosted macOS runners are VMs and cannot launch nested
-      # Virtualization.framework guests. Hosted stack validation therefore uses
-      # Container's native build, dSYM, docs, and unit-coverage targets rather
-      # than the installer-staging target that builds Linux service workloads
-      # with Colima. The release helper runs the full packaging/live gate on a
-      # supported local Mac before it creates the signed source tag.
+      # This self-hosted release runner executes the release-only sibling proof.
+      # The release helper has already run the full packaging/live gate before
+      # it creates the signed source tag, so this stage does not repeat that
+      # installer workload.
       # Main CI is already green at the exact candidate SHA. This graph runs
-      # only release-specific sibling proofs, with one Swift-heavy lane and one
-      # independent Go/Homebrew lane. Nextflow retains content-addressed stage
-      # state so a corrected rerun resumes from the last valid output.
+      # only release-specific sibling proofs. Make declares the repository
+      # dependencies and the checkpoint controller retains each exact-input
+      # success so a corrected rerun resumes at the first invalid stage.
       - name: Run recoverable hosted release graph
         shell: /bin/bash --noprofile --norc -e -o pipefail {0}
-        env:
-          BUILDER_REF: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
-          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
-          CONTAINER_REF: ${{ steps.stack-refs.outputs.container_ref }}
-          HOMEBREW_TAP_REF: ${{ needs.resolve-candidate.outputs.homebrew_tap_ref }}
-          CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
         run: |
           set -euo pipefail
-          pipeline_environment=(
-            "PIPELINE_PROFILE=release-hosted"
-            "PIPELINE_STATE_ROOT=${RELEASE_PIPELINE_STATE_ROOT}"
-            "PIPELINE_ATTEMPT_ID=stable-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-            "PIPELINE_EXECUTION_PATH=${GITHUB_WORKSPACE}/container-compose/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-            "PIPELINE_COMPOSE_REPO=${GITHUB_WORKSPACE}/container-compose"
-            "PIPELINE_COMPOSE_REF=${CANDIDATE_SHA}"
-            "PIPELINE_BUILDER_REPO=${GITHUB_WORKSPACE}/container-builder-shim"
-            "PIPELINE_BUILDER_REF=${BUILDER_REF}"
-            "PIPELINE_CONTAINERIZATION_REPO=${GITHUB_WORKSPACE}/containerization"
-            "PIPELINE_CONTAINERIZATION_REF=${CONTAINERIZATION_REF}"
-            "PIPELINE_CONTAINER_REPO=${GITHUB_WORKSPACE}/container"
-            "PIPELINE_CONTAINER_REF=${CONTAINER_REF}"
-            "PIPELINE_HOMEBREW_REPO=${GITHUB_WORKSPACE}/homebrew-tap"
-            "PIPELINE_HOMEBREW_REF=${HOMEBREW_TAP_REF}"
-          )
-          resume_session=""
-          history="${RELEASE_PIPELINE_STATE_ROOT}/.nextflow/history"
-          if [[ -s "${history}" ]]; then
-            resume_session="$(awk -F $'\t' 'NF >= 6 { value = $6 } END { print value }' "${history}")"
-          fi
-          if [[ "${resume_session}" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]]; then
-            printf 'resuming content-addressed release graph session %s\n' "${resume_session}"
-            env "${pipeline_environment[@]}" PIPELINE_SESSION="${resume_session}" \
-              make -C release-tools pipeline-resume
-          else
-            env "${pipeline_environment[@]}" make -C release-tools pipeline
-          fi
+          checkpoint_root="${RELEASE_BUILD_STATE_ROOT}/checkpoints"
+          mkdir -p "${checkpoint_root}"
+          CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR="${checkpoint_root}" \
+          STACK_SOURCE_ROOT="${GITHUB_WORKSPACE}" \
+          CONTAINER_BUILDER_SHIM_STACK_REPO="${GITHUB_WORKSPACE}/container-builder-shim" \
+          CONTAINERIZATION_STACK_REPO="${GITHUB_WORKSPACE}/containerization" \
+          CONTAINER_STACK_REPO="${GITHUB_WORKSPACE}/container" \
+          HOMEBREW_TAP_REPO="${GITHUB_WORKSPACE}/homebrew-tap" \
+            make -C release-tools release-gate-hosted
 
       - name: Create candidate-bound authority receipt
         id: authority-receipt
@@ -487,18 +458,27 @@ jobs:
         shell: /bin/bash --noprofile --norc -e -o pipefail {0}
         run: |
           set -euo pipefail
-          attempt_id="stable-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          evidence="${RELEASE_PIPELINE_STATE_ROOT}/evidence/${attempt_id}"
+          evidence="${RELEASE_BUILD_STATE_ROOT}/checkpoints/compose-release-gate"
           bundle="${RUNNER_TEMP}/stable-release-authority"
           if [[ -e "${bundle}" || -L "${bundle}" ]]; then
             printf 'stable release authority bundle already exists: %s\n' "${bundle}" >&2
             exit 2
           fi
           mkdir "${bundle}"
-          cp "${evidence}/pipeline-summary.tsv" "${bundle}/"
-          cp "${evidence}/attempt.tsv" "${bundle}/"
-          cp "${evidence}/session.uuid" "${bundle}/"
-          cp -R "${evidence}/preflight" "${bundle}/preflight"
+          checkpoint="${evidence}/hosted-sibling-stack.success.json"
+          output_name="$(python3 - "${checkpoint}" <<'PY'
+          import json
+          import sys
+
+          print(json.load(open(sys.argv[1], encoding="utf-8"))["output_file"])
+          PY
+          )"
+          if [[ -z "${output_name}" ]] || [[ "${output_name}" != "$(basename "${output_name}")" ]]; then
+            printf 'stable release checkpoint output name is unsafe: %s\n' "${output_name}" >&2
+            exit 2
+          fi
+          cp "${checkpoint}" "${bundle}/"
+          cp "${evidence}/${output_name}" "${bundle}/"
           receipt_sha256="$(
             python3 release-tools/Tools/release/stable-release-authority.py create \
               --evidence-dir "${bundle}" \

@@ -61,7 +61,7 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 240
     env:
-      PIPELINE_STATE_ROOT: /Volumes/SSD/github/.container-compose-pipeline
+      BUILD_STATE_ROOT: /Volumes/SSD/github/.container-compose-build/historical-benchmark
       REPETITIONS: ${{ inputs.repetitions }}
       FIXTURE_GROUPS: ${{ inputs.fixture_groups }}
       FIXTURE_IMAGE: alpine:3.20
@@ -232,11 +232,10 @@ jobs:
         run: |
           set -euo pipefail
           [[ -d /Volumes/SSD/github ]]
-          [[ -d "${PIPELINE_STATE_ROOT}" ]]
-          [[ -f "${PIPELINE_STATE_ROOT}/.container-compose-pipeline-root" ]]
-          [[ "$(<"${PIPELINE_STATE_ROOT}/.container-compose-pipeline-root")" == \
-            'container-compose recoverable pipeline v1' ]]
-          [[ -x "${PIPELINE_STATE_ROOT}/tools/nextflow/26.04.6/nextflow" ]]
+          make stack-state-init STACK_STATE_ROOT="${BUILD_STATE_ROOT}"
+          [[ -f "${BUILD_STATE_ROOT}/.container-compose-build-root" ]]
+          [[ "$(<"${BUILD_STATE_ROOT}/.container-compose-build-root")" == \
+            'container-compose recoverable build v1' ]]
           if [[ -e "${BENCHMARK_ROOT}" ]]; then
             printf 'benchmark root already exists: %s\n' "${BENCHMARK_ROOT}" >&2
             exit 1
@@ -503,23 +502,37 @@ jobs:
               extract-initfs --archive "${version_root}/initfs.zip" \
               --digest "${initfs_artifact_digest}" --output "${initfs_root}"
 
-            attempt_id="historical-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${version//./-}"
-            PIPELINE_PROFILE=benchmark-reconstruction \
-              PIPELINE_STAGE_SELECTOR=containerization-benchmark-cctl \
-              PIPELINE_ATTEMPT_ID="${attempt_id}" \
-              PIPELINE_CONTAINERIZATION_REPO="${GITHUB_WORKSPACE}/containerization-source" \
-              PIPELINE_CONTAINERIZATION_REF="${containerization_ref}" \
-              /opt/homebrew/opt/make/libexec/gnubin/make \
-                --no-print-directory pipeline
-            pipeline_evidence="${PIPELINE_STATE_ROOT}/evidence/${attempt_id}"
-            cctl_result="${version_root}/cctl-result.json"
-            /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py \
-              extract-cctl \
-              --archive "${pipeline_evidence}/receipts/containerization-benchmark-cctl.artifacts.tar" \
-              --manifest "${pipeline_evidence}/receipts/containerization-benchmark-cctl.artifacts.tsv" \
-              --receipt "${pipeline_evidence}/receipts/containerization-benchmark-cctl.receipt.tsv" \
-              --summary "${pipeline_evidence}/pipeline-summary.tsv" \
-              --output "${version_root}/cctl" > "${cctl_result}"
+            source_worktree="${BENCHMARK_ROOT}/work/containerization-${version}"
+            cctl_pin="${version_root}/containerization-cctl.pin.json"
+            git -C containerization-source worktree add --detach \
+              "${source_worktree}" "${containerization_ref}"
+            source_commit="$(git -C "${source_worktree}" rev-parse 'HEAD^{commit}')"
+            source_tree="$(git -C "${source_worktree}" rev-parse 'HEAD^{tree}')"
+            cctl_contract="$(/usr/bin/python3 Tools/build/stack-pin.py contract \
+              --tool /usr/bin/swift --configuration release \
+              --controller "$(pwd -P)/.github/workflows/historical-benchmark.yml" \
+              --controller "$(pwd -P)/Tools/build/stack-pin.py")"
+            scratch="${BUILD_STATE_ROOT}/scratch/${cctl_contract}/containerization-${containerization_ref}"
+            started=${SECONDS}
+            /usr/bin/swift build --package-path "${source_worktree}" \
+              --disable-automatic-resolution --scratch-path "${scratch}" \
+              -c release --product cctl
+            cctl_bin_path="$(/usr/bin/swift build --package-path "${source_worktree}" \
+              --scratch-path "${scratch}" -c release --show-bin-path)"
+            /usr/bin/install -m 0755 "${cctl_bin_path}/cctl" \
+              "${version_root}/cctl"
+            /usr/bin/python3 Tools/build/stack-pin.py create \
+              --repository containerization \
+              --repository-path "${source_worktree}" --output "${cctl_pin}" \
+              --artifact "${version_root}/cctl" \
+              --expected-commit "${source_commit}" --expected-tree "${source_tree}" \
+              --build-contract "${cctl_contract}" \
+              --duration-seconds "$((SECONDS - started))" \
+              --command-label 'swift build -c release --product cctl' >/dev/null
+            /usr/bin/python3 Tools/build/stack-pin.py verify --quiet \
+              --receipt "${cctl_pin}" --repository containerization \
+              --repository-path "${source_worktree}" \
+              --build-contract "${cctl_contract}"
 
             cctl_home="${version_root}/cctl-home"
             install -d -m 0700 "${cctl_home}/Library/Application Support" \
@@ -565,7 +578,7 @@ jobs:
         run: |
           set -euo pipefail
           competing=0
-          for process_name in swift-frontend swiftc clang xcodebuild nextflow; do
+          for process_name in swift-frontend swiftc clang xcodebuild; do
             if pgrep -x "${process_name}" > \
               "${BENCHMARK_ROOT}/work/competing-${process_name}.txt" 2>/dev/null; then
               printf 'competing build process is still active: %s\n' \
@@ -751,6 +764,20 @@ jobs:
           marker="${BENCHMARK_ROOT}/.historical-benchmark-root"
           if [[ -f "${marker}" ]] && \
             [[ "$(<"${marker}")" == 'container-compose historical benchmark v1' ]]; then
+            for version in "${BASELINE_VERSION:-}" "${TARGET_VERSION:-}"; do
+              [[ -n "${version}" ]] || continue
+              source_worktree="${BENCHMARK_ROOT}/work/containerization-${version}"
+              if [[ -L "${source_worktree}" ]]; then
+                printf 'refusing to remove symbolic-link benchmark worktree: %s\n' \
+                  "${source_worktree}" >&2
+                exit 1
+              fi
+              if [[ -d "${source_worktree}" ]]; then
+                git -C containerization-source worktree remove --force \
+                  "${source_worktree}"
+              fi
+            done
+            git -C containerization-source worktree prune
             find "${BENCHMARK_ROOT}" -depth -delete
           elif [[ -e "${BENCHMARK_ROOT}" ]]; then
             printf 'refusing to clean unmarked benchmark root: %s\n' \

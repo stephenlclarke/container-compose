@@ -37,8 +37,6 @@ SPEC.loader.exec_module(AUTHORITY)
 
 
 class StableReleaseAuthorityTests(unittest.TestCase):
-    """A successful receipt is complete, immutable, and evidence-bound."""
-
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
@@ -52,60 +50,27 @@ class StableReleaseAuthorityTests(unittest.TestCase):
             "container": "d" * 40,
             "homebrew-tap": "e" * 40,
         }
-        preflight = self.evidence / "preflight"
-        preflight.mkdir()
-        repository_summary = []
-        for repository, commit in self.refs.items():
-            for kind in ("identity", "provenance"):
-                receipt = preflight / f"{repository}.{kind}.tsv"
-                receipt.write_text(
-                    "\n".join(
-                        (
-                            "schema\t2",
-                            f"repository\t{repository}",
-                            f"commit\t{commit}",
-                            "clean\ttrue",
-                            "",
-                        )
-                    ),
-                    encoding="utf-8",
-                )
-                repository_summary.append(
-                    "repository-receipt\t"
-                    f"{receipt.name}\t{AUTHORITY.sha256_file(receipt)}"
-                )
-        (self.evidence / "pipeline-summary.tsv").write_text(
-            "\n".join(
-                (
-                    "schema\t1",
-                    "profile\trelease-hosted",
-                    f"host-tools-sha256\t{'1' * 64}",
-                    f"stage-receipt\tcontainer.receipt.tsv\t{'2' * 64}",
-                    f"stage-output\tcontainer.stdout.log\t{'3' * 64}",
-                    f"stage-artifact\tcontainer.artifacts.tar\t{'4' * 64}",
-                    *repository_summary,
-                    "complete\ttrue",
-                    "",
-                )
-            ),
+        self.output = self.evidence / "hosted-sibling-stack.example.log"
+        self.output.write_text("validated\n", encoding="utf-8")
+        self.checkpoint = self.evidence / "hosted-sibling-stack.success.json"
+        self.checkpoint.write_text(
+            json.dumps(
+                {
+                    "digest": "1" * 64,
+                    "duration_seconds": 123.5,
+                    "fingerprint": "exact candidate inputs",
+                    "fingerprint_after": "exact candidate inputs",
+                    "fingerprint_before": "exact candidate inputs",
+                    "output_file": self.output.name,
+                    "output_sha256": AUTHORITY.sha256_file(self.output),
+                    "schema": 4,
+                    "stage": "hosted-sibling-stack",
+                    "status": 0,
+                },
+                sort_keys=True,
+            )
+            + "\n",
             encoding="utf-8",
-        )
-        (self.evidence / "attempt.tsv").write_text(
-            "\n".join(
-                (
-                    "schema\t1",
-                    "profile\trelease-hosted",
-                    "orchestrator-exit\t0",
-                    "tee-exit\t0",
-                    "evidence-exit\t0",
-                    "exit\t0",
-                    "",
-                )
-            ),
-            encoding="utf-8",
-        )
-        (self.evidence / "session.uuid").write_text(
-            "01234567-89ab-cdef-0123-456789abcdef\n", encoding="utf-8"
         )
         self.receipt = self.root / "receipt.json"
 
@@ -124,85 +89,70 @@ class StableReleaseAuthorityTests(unittest.TestCase):
         values.update(overrides)
         return argparse.Namespace(**values)
 
-    def test_receipt_binds_inputs_toolchain_and_pipeline_evidence(self) -> None:
+    def test_receipt_binds_inputs_and_success_checkpoint(self) -> None:
         expected = AUTHORITY.build_receipt(self.arguments())
         AUTHORITY.write_receipt(expected, self.receipt)
         actual = json.loads(self.receipt.read_text(encoding="utf-8"))
 
         self.assertEqual(actual, expected)
+        self.assertEqual(actual["schema"], 2)
         self.assertEqual(actual["candidateSha"], "a" * 40)
         self.assertEqual(actual["components"]["container"], "d" * 40)
-        self.assertEqual(actual["pipeline"]["hostToolsSha256"], "1" * 64)
-        self.assertEqual(len(actual["pipeline"]["evidence"]), 13)
+        self.assertEqual(actual["buildEvidence"]["durationSeconds"], 123.5)
         self.assertRegex(actual["packageInputsSha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(self.receipt.stat().st_mode & 0o777, 0o444)
 
-    def test_receipt_changes_when_package_input_or_evidence_changes(self) -> None:
+    def test_changed_package_input_or_evidence_changes_receipt(self) -> None:
         original = AUTHORITY.build_receipt(self.arguments())
         changed_input = AUTHORITY.build_receipt(
             self.arguments(init_image_sha256="0" * 64)
         )
-        (self.evidence / "attempt.tsv").write_text(
-            (self.evidence / "attempt.tsv").read_text(encoding="utf-8")
-            + "completed-utc\t2026-09-06T10:00:00Z\n",
-            encoding="utf-8",
-        )
+        self.output.write_text("different output\n", encoding="utf-8")
+        checkpoint = json.loads(self.checkpoint.read_text(encoding="utf-8"))
+        checkpoint["output_sha256"] = AUTHORITY.sha256_file(self.output)
+        self.checkpoint.write_text(json.dumps(checkpoint), encoding="utf-8")
         changed_evidence = AUTHORITY.build_receipt(self.arguments())
 
         self.assertNotEqual(
-            original["packageInputsSha256"],
-            changed_input["packageInputsSha256"],
+            original["packageInputsSha256"], changed_input["packageInputsSha256"]
         )
         self.assertNotEqual(
-            original["pipeline"]["attemptSha256"],
-            changed_evidence["pipeline"]["attemptSha256"],
+            original["buildEvidence"]["checkpointSha256"],
+            changed_evidence["buildEvidence"]["checkpointSha256"],
         )
 
-    def test_failed_attempt_is_rejected(self) -> None:
-        attempt = self.evidence / "attempt.tsv"
-        attempt.write_text(
-            attempt.read_text(encoding="utf-8").replace("exit\t0", "exit\t1"),
-            encoding="utf-8",
-        )
+    def test_failed_or_drifted_checkpoint_is_rejected(self) -> None:
+        original = self.checkpoint.read_text(encoding="utf-8")
+        for field, value, message in (
+            ("status", 1, "did not pass"),
+            ("fingerprint_after", "drifted", "inputs changed"),
+            ("duration_seconds", float("inf"), "duration is invalid"),
+        ):
+            with self.subTest(field=field):
+                checkpoint = json.loads(original)
+                checkpoint[field] = value
+                self.checkpoint.write_text(json.dumps(checkpoint), encoding="utf-8")
+                with self.assertRaisesRegex(SystemExit, message):
+                    AUTHORITY.build_receipt(self.arguments())
+        self.checkpoint.write_text(original, encoding="utf-8")
 
-        with self.assertRaisesRegex(SystemExit, "attempt did not pass"):
+    def test_changed_or_indirect_output_is_rejected(self) -> None:
+        self.output.write_text("tampered\n", encoding="utf-8")
+        with self.assertRaisesRegex(SystemExit, "output changed"):
             AUTHORITY.build_receipt(self.arguments())
 
-    def test_duplicate_evidence_name_is_rejected(self) -> None:
-        summary = self.evidence / "pipeline-summary.tsv"
-        summary.write_text(
-            summary.read_text(encoding="utf-8")
-            + f"stage-receipt\tcontainer.receipt.tsv\t{'2' * 64}\n",
-            encoding="utf-8",
-        )
-
-        with self.assertRaisesRegex(SystemExit, "contains duplicates"):
+        self.output.unlink()
+        destination = self.root / "retained.log"
+        destination.write_text("validated\n", encoding="utf-8")
+        self.output.symlink_to(destination)
+        with self.assertRaisesRegex(SystemExit, "indirect or missing"):
             AUTHORITY.build_receipt(self.arguments())
 
-    def test_repository_receipt_tampering_is_rejected(self) -> None:
-        identity = self.evidence / "preflight" / "container.identity.tsv"
-        identity.write_text(
-            identity.read_text(encoding="utf-8").replace("clean\ttrue", "clean\tfalse"),
-            encoding="utf-8",
-        )
-
-        with self.assertRaisesRegex(SystemExit, "repository receipt changed"):
-            AUTHORITY.build_receipt(self.arguments())
-
-    def test_indirect_evidence_and_preflight_are_rejected(self) -> None:
-        indirect_evidence = self.root / "indirect-evidence"
-        indirect_evidence.symlink_to(self.evidence, target_is_directory=True)
+    def test_indirect_evidence_is_rejected(self) -> None:
+        indirect = self.root / "indirect"
+        indirect.symlink_to(self.evidence, target_is_directory=True)
         with self.assertRaisesRegex(SystemExit, "evidence is indirect"):
-            AUTHORITY.build_receipt(
-                self.arguments(evidence_dir=str(indirect_evidence))
-            )
-
-        preflight = self.evidence / "preflight"
-        retained = self.root / "retained-preflight"
-        preflight.rename(retained)
-        preflight.symlink_to(retained, target_is_directory=True)
-        with self.assertRaisesRegex(SystemExit, "preflight is indirect"):
-            AUTHORITY.build_receipt(self.arguments())
+            AUTHORITY.build_receipt(self.arguments(evidence_dir=str(indirect)))
 
     def test_incomplete_input_identity_is_rejected(self) -> None:
         with self.assertRaisesRegex(SystemExit, "not immutable"):
@@ -210,7 +160,6 @@ class StableReleaseAuthorityTests(unittest.TestCase):
 
     def test_existing_receipt_is_never_replaced(self) -> None:
         self.receipt.write_text("retained\n", encoding="utf-8")
-
         with self.assertRaisesRegex(SystemExit, "refusing to replace"):
             AUTHORITY.write_receipt(
                 AUTHORITY.build_receipt(self.arguments()), self.receipt
@@ -232,22 +181,18 @@ class StableReleaseAuthorityTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(SystemExit, "does not match its evidence"):
             AUTHORITY.verify_receipt(expected, self.receipt)
-
         self.receipt.write_text("{not-json}\n", encoding="utf-8")
         with self.assertRaisesRegex(SystemExit, "receipt is malformed"):
             AUTHORITY.verify_receipt(expected, self.receipt)
 
     def test_temporary_output_is_removed_after_write_failure(self) -> None:
-        temporary = self.receipt.with_name(
-            f".{self.receipt.name}.{os.getpid()}.tmp"
-        )
-
-        with mock.patch.object(AUTHORITY.os, "replace", side_effect=OSError("failed")):
-            with self.assertRaisesRegex(OSError, "failed"):
-                AUTHORITY.write_receipt(
-                    AUTHORITY.build_receipt(self.arguments()), self.receipt
-                )
+        expected = AUTHORITY.build_receipt(self.arguments())
+        temporary = self.receipt.with_name(f".{self.receipt.name}.{os.getpid()}.tmp")
+        with mock.patch.object(os, "replace", side_effect=OSError("disk full")):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                AUTHORITY.write_receipt(expected, self.receipt)
         self.assertFalse(temporary.exists())
+        self.assertFalse(self.receipt.exists())
 
 
 if __name__ == "__main__":
