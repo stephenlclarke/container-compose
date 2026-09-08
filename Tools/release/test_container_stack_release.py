@@ -4129,6 +4129,11 @@ github_cli() {{
             "env -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE",
             validation,
         )
+        quiesce_index = validation.index('"${managed_runtime_manager}" quiesce')
+        container_index = validation.index('for target in "${container_targets[@]}"')
+        resume_index = validation.index('"${managed_runtime_manager}" resume')
+        self.assertLess(quiesce_index, container_index)
+        self.assertLess(container_index, resume_index)
         self.assertIn(
             'CONTAINER_INIT_BOOTSTRAP_IMAGE_ARCHIVE="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"',
             validation,
