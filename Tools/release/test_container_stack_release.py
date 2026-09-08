@@ -2508,6 +2508,146 @@ github_cli() {{
         )
         self.assertIn("trap cleanup_current_init_image_authority EXIT", self.script)
 
+    def test_current_stack_compares_fresh_remote_sibling_mains(self) -> None:
+        start = self.script.index(
+            "refresh_release_sibling_main() {"
+        )
+        end = self.script.index(
+            "# Remove only the marker-protected authority", start
+        )
+        comparison = self.script[start:end]
+
+        self.assertIn(
+            'fetch_release_remote "${component}"', comparison
+        )
+        self.assertIn(
+            'rev-parse "refs/remotes/${remote}/main"', comparison
+        )
+        self.assertIn(
+            'merge-base --is-ancestor "${local_ref}" "${remote_ref}"', comparison
+        )
+        self.assertIn('merge --ff-only "${remote_ref}"', comparison)
+        self.assertIn('refresh_release_sibling_main "${component}"', comparison)
+        self.assertIn('"${published_ref}" != "${local_ref}"', comparison)
+
+    def test_current_stack_refreshes_stale_local_sibling_branches(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote_refs: dict[str, str] = {}
+            for component in (
+                "container-builder-shim",
+                "containerization",
+                "container",
+            ):
+                remote = root / f"{component}.git"
+                seed = root / f"{component}-seed"
+                local = root / component
+                self.run_command(
+                    "git", "init", "--bare", "--initial-branch=main", str(remote)
+                )
+                self.run_command(
+                    "git", "init", "--initial-branch=main", str(seed)
+                )
+                self.git(seed, "config", "user.name", "Release Test")
+                self.git(seed, "config", "user.email", "release-test@example.invalid")
+                marker = seed / "revision"
+                marker.write_text("local\n", encoding="utf-8")
+                self.git(seed, "add", "revision")
+                self.git(seed, "commit", "-m", "test: create local revision")
+                self.git(seed, "remote", "add", "origin", str(remote))
+                self.git(seed, "push", "-u", "origin", "main")
+                self.run_command("git", "clone", str(remote), str(local))
+                if component in {"container-builder-shim", "container"}:
+                    self.git(local, "remote", "rename", "origin", "fork")
+
+                marker.write_text("remote\n", encoding="utf-8")
+                self.git(seed, "add", "revision")
+                self.git(seed, "commit", "-m", "test: advance remote revision")
+                self.git(seed, "push", "origin", "main")
+                remote_refs[component] = self.git(seed, "rev-parse", "HEAD")
+                self.assertNotEqual(
+                    self.git(local, "rev-parse", "main"), remote_refs[component]
+                )
+
+            compose = root / "container-compose"
+            self.run_command("git", "init", "--initial-branch=main", str(compose))
+            self.git(compose, "config", "user.name", "Release Test")
+            self.git(
+                compose,
+                "config",
+                "user.email",
+                "release-test@example.invalid",
+            )
+            manifest = compose / "Tools" / "release" / "stack-refs.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "components": {
+                            component: {"ref": reference}
+                            for component, reference in remote_refs.items()
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            self.git(compose, "add", str(manifest.relative_to(compose)))
+            self.git(compose, "commit", "-m", "test: create Current stack")
+            self.git(compose, "tag", "current")
+
+            dry_run = self.run_release_function(
+                root,
+                "require_current_stack_matches_sibling_mains",
+                shell_setup="EXECUTE=0",
+            )
+
+            self.assertEqual(dry_run.returncode, 0, dry_run.stderr)
+            for component, reference in remote_refs.items():
+                self.assertNotEqual(
+                    self.git(root / component, "rev-parse", "main"), reference
+                )
+
+            completed = self.run_release_function(
+                root, "require_current_stack_matches_sibling_mains"
+            )
+
+            self.assertEqual(
+                completed.returncode,
+                0,
+                f"{completed.stderr}\nexpected remote refs: {remote_refs}",
+            )
+            for component, reference in remote_refs.items():
+                self.assertEqual(
+                    self.git(root / component, "rev-parse", "main"), reference
+                )
+
+            retained_builder = root / "container-builder-shim"
+            dirty_marker = retained_builder / "dirty"
+            dirty_marker.write_text("uncommitted\n", encoding="utf-8")
+            dirty = self.run_release_function(
+                root, "require_current_stack_matches_sibling_mains"
+            )
+            self.assertNotEqual(dirty.returncode, 0)
+            self.assertIn("is not a clean main branch", dirty.stderr)
+            dirty_marker.unlink()
+
+            self.git(retained_builder, "config", "user.name", "Release Test")
+            self.git(
+                retained_builder,
+                "config",
+                "user.email",
+                "release-test@example.invalid",
+            )
+            divergent_marker = retained_builder / "divergent"
+            divergent_marker.write_text("local\n", encoding="utf-8")
+            self.git(retained_builder, "add", "divergent")
+            self.git(retained_builder, "commit", "-m", "test: diverge local main")
+            divergent = self.run_release_function(
+                root, "require_current_stack_matches_sibling_mains"
+            )
+            self.assertNotEqual(divergent.returncode, 0)
+            self.assertIn("cannot fast-forward", divergent.stderr)
+
     def test_stable_controller_accepts_only_the_exact_explicit_vm_init(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
