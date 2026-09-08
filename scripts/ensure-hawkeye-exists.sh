@@ -18,6 +18,17 @@
 set -euo pipefail
 
 auto_install=0
+hawkeye="${HAWKEYE:-.local/bin/hawkeye}"
+
+hawkeye_is_compatible() {
+    local check_help format_help
+    [[ -f "${hawkeye}" && -x "${hawkeye}" && ! -L "${hawkeye}" ]] || return 1
+    check_help="$("${hawkeye}" check --help 2>&1)" || return 1
+    format_help="$("${hawkeye}" format --help 2>&1)" || return 1
+    [[ "${check_help}" == *--fail-if-unknown* ]] || return 1
+    [[ "${format_help}" == *--fail-if-unknown* ]] || return 1
+    [[ "${format_help}" == *--fail-if-updated* ]]
+}
 
 for arg in "$@"; do
     case "${arg}" in
@@ -28,9 +39,10 @@ for arg in "$@"; do
             cat <<EOF
 Usage: $(basename "$0") [--auto-install|-y]
 
-Checks first for a working system-wide hawkeye installation, then for the
-repository-local .local/bin fallback. If hawkeye is missing, prompts before
-running scripts/install-hawkeye.sh.
+Checks the selected Hawkeye executable against the pinned CLI contract. The
+default is the repository-local .local/bin/hawkeye; system installations are
+used only when HAWKEYE explicitly selects one. If the default is missing or
+incompatible, prompts before running scripts/install-hawkeye.sh.
 
 Skip the prompt non-interactively in either of two ways:
   --auto-install, -y      pass on the command line
@@ -50,19 +62,20 @@ if [[ "${HAWKEYE_AUTO_INSTALL:-}" == "1" ]]; then
     auto_install=1
 fi
 
-if command -v hawkeye >/dev/null 2>&1; then
-    printf 'hawkeye found at %s\n' "$(command -v hawkeye)"
+if hawkeye_is_compatible; then
+    printf 'compatible hawkeye found at %s\n' "${hawkeye}"
     exit 0
 fi
 
-if command -v .local/bin/hawkeye >/dev/null 2>&1; then
-    printf 'repository-local hawkeye found at .local/bin/hawkeye\n'
-    exit 0
+if [[ "${hawkeye}" != ".local/bin/hawkeye" ]]; then
+    printf 'selected Hawkeye does not satisfy the pinned CLI contract: %s\n' \
+        "${hawkeye}" >&2
+    exit 1
 fi
 
 cat <<EOF
 
-hawkeye is not installed system-wide or in this checkout.
+the repository-pinned Hawkeye is missing or incompatible in this checkout.
 
 scripts/install-hawkeye.sh will install a repository-local fallback by running:
 
