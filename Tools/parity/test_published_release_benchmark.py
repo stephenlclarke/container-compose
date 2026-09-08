@@ -1017,7 +1017,8 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         for job in (resolve, benchmark):
             self.assertIn("github.repository == 'stephenlclarke/container-compose'", job)
             self.assertIn("github.ref == 'refs/heads/main'", job)
-            self.assertIn("ref: main", job)
+        self.assertIn("ref: ${{ github.sha }}", resolve)
+        self.assertIn("ref: ${{ needs.resolve.outputs.controls_ref }}", benchmark)
 
     def test_workflow_reruns_use_a_fresh_publication_branch(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
