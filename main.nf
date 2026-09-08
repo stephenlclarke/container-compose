@@ -1583,7 +1583,31 @@ process PIPELINE_SUMMARY {
         test -s "$receipt"
         receipt_stage="$(/usr/bin/awk -F '\t' '$1 == "stage" { print $2 }' \
             "$receipt")"
+        receipt_schema="$(/usr/bin/awk -F '\t' '$1 == "schema" { print $2 }' \
+            "$receipt")"
+        receipt_repository="$(/usr/bin/awk -F '\t' \
+            '$1 == "repository" { print $2 }' "$receipt")"
+        receipt_source_format="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-format" { print $2 }' "$receipt")"
+        receipt_source_payload_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-payload-sha256" { print $2 }' "$receipt")"
+        receipt_stage_inputs_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "stage-inputs-sha256" { print $2 }' "$receipt")"
+        receipt_source_execution_head="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-execution-head" { print $2 }' "$receipt")"
+        receipt_source_tracked_clean="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-tracked-clean" { print $2 }' "$receipt")"
+        receipt_exit="$(/usr/bin/awk -F '\t' '$1 == "exit" { print $2 }' \
+            "$receipt")"
+        [[ "$receipt_schema" == 4 ]]
         [[ "$receipt_stage" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+        [[ "$receipt_repository" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+        [[ "$receipt_source_format" =~ ^(git-bundle|git-tree-archive)$ ]]
+        [[ "$receipt_source_payload_sha256" =~ ^[0-9a-f]{64}$ ]]
+        [[ "$receipt_stage_inputs_sha256" =~ ^[0-9a-f]{64}$ ]]
+        [[ "$receipt_source_execution_head" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$receipt_source_tracked_clean" == true ]]
+        [[ "$receipt_exit" == 0 ]]
         [[ "$(/usr/bin/basename "$receipt")" == \
             "${receipt_stage}.receipt.tsv" ]]
         case "$observed_stage_names" in
@@ -1607,10 +1631,22 @@ process PIPELINE_SUMMARY {
             '$1 == "artifact-archive-sha256" { print $2 }' "$receipt")"
         expected_artifact_manifest_sha256="$(/usr/bin/awk -F '\t' \
             '$1 == "artifact-manifest-sha256" { print $2 }' "$receipt")"
+        expected_artifact_count="$(/usr/bin/awk -F '\t' \
+            '$1 == "artifact-count" { print $2 }' "$receipt")"
+        manifest_stage="$(/usr/bin/awk -F '\t' \
+            '$1 == "stage" { print $2 }' "$artifact_manifest")"
+        manifest_repository="$(/usr/bin/awk -F '\t' \
+            '$1 == "repository" { print $2 }' "$artifact_manifest")"
+        manifest_artifact_count="$(/usr/bin/awk -F '\t' \
+            '$1 == "artifact-count" { print $2 }' "$artifact_manifest")"
         [[ "$expected_stdout_sha256" =~ ^[0-9a-f]{64}$ ]]
         [[ "$expected_stderr_sha256" =~ ^[0-9a-f]{64}$ ]]
         [[ "$expected_artifact_archive_sha256" =~ ^[0-9a-f]{64}$ ]]
         [[ "$expected_artifact_manifest_sha256" =~ ^[0-9a-f]{64}$ ]]
+        [[ "$expected_artifact_count" =~ ^[0-9]+$ ]]
+        [[ "$manifest_stage" == "$receipt_stage" ]]
+        [[ "$manifest_repository" == "$receipt_repository" ]]
+        [[ "$manifest_artifact_count" == "$expected_artifact_count" ]]
         [[ "$(/usr/bin/shasum -a 256 "$stdout_log" | \
             /usr/bin/awk '{ print $1 }')" == "$expected_stdout_sha256" ]]
         [[ "$(/usr/bin/shasum -a 256 "$stderr_log" | \

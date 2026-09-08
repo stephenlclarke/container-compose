@@ -96,15 +96,39 @@ def verify_evidence(
     """Verify the complete package receipt, manifest and archive closure."""
     receipt_rows = read_tsv(receipt)
     manifest_rows = read_tsv(manifest)
+    if one(receipt_rows, "schema") != "4":
+        raise MaterializationError("package receipt has the wrong schema")
     if one(receipt_rows, "stage") != "compose-package":
         raise MaterializationError("package receipt has the wrong stage")
     if one(receipt_rows, "repository") != "container-compose":
         raise MaterializationError("package receipt has the wrong repository")
+    if one(receipt_rows, "source-format") != "git-tree-archive":
+        raise MaterializationError("package receipt has the wrong source format")
     source_commit = one(receipt_rows, "source-commit")
     if len(source_commit) != 40 or any(
         character not in "0123456789abcdef" for character in source_commit
     ):
         raise MaterializationError("package receipt has an invalid source commit")
+    source_execution_head = one(receipt_rows, "source-execution-head")
+    if len(source_execution_head) != 40 or any(
+        character not in "0123456789abcdef"
+        for character in source_execution_head
+    ):
+        raise MaterializationError("package receipt has an invalid execution head")
+    if one(receipt_rows, "source-tracked-clean") != "true":
+        raise MaterializationError("package receipt source was not clean")
+    for key, label in (
+        ("source-payload-sha256", "source payload digest"),
+        ("source-metadata-sha256", "source metadata digest"),
+        ("command-sha256", "command digest"),
+        ("stage-tools-sha256", "stage tools digest"),
+        ("stage-inputs-sha256", "stage input digest"),
+    ):
+        require_sha256(one(receipt_rows, key), label)
+    if one(receipt_rows, "artifact-count") != str(len(EXPECTED_ARTIFACTS)):
+        raise MaterializationError("package receipt has the wrong artifact count")
+    if one(receipt_rows, "exit") != "0":
+        raise MaterializationError("package receipt did not record success")
     archive_digest = require_sha256(
         one(receipt_rows, "artifact-archive-sha256"), "archive digest"
     )
@@ -115,6 +139,12 @@ def verify_evidence(
         raise MaterializationError("package artifact archive digest does not match")
     if sha256(manifest) != manifest_digest:
         raise MaterializationError("package artifact manifest digest does not match")
+    if one(manifest_rows, "schema") != "1":
+        raise MaterializationError("package manifest has the wrong schema")
+    if one(manifest_rows, "stage") != "compose-package":
+        raise MaterializationError("package manifest has the wrong stage")
+    if one(manifest_rows, "repository") != "container-compose":
+        raise MaterializationError("package manifest has the wrong repository")
     if one(manifest_rows, "archive-sha256") != archive_digest:
         raise MaterializationError("package manifest does not bind its archive")
     if one(manifest_rows, "artifact-count") != str(len(EXPECTED_ARTIFACTS)):

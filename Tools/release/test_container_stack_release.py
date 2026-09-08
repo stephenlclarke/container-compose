@@ -2938,6 +2938,11 @@ github_cli() {{
             "PUBLISH_SHA: ${{ needs.resolve-current.outputs.sha }}", publish_step
         )
         self.assertIn("current_release_matches()", publish_step)
+        self.assertIn('checkout_sha="$(git rev-parse HEAD)"', publish_step)
+        self.assertIn(
+            'tracked_status="$(git status --porcelain --untracked-files=no)"',
+            publish_step,
+        )
         self.assertGreaterEqual(
             publish_step.count("if ! current_release_matches"), 4
         )
@@ -2952,6 +2957,14 @@ github_cli() {{
         )
         self.assertIn(
             'replace_release_asset "${publication_release_id}" "${DEMO_OUTPUT}"',
+            publish_step,
+        )
+        self.assertIn(
+            "Current demo output verified against release %s.",
+            publish_step,
+        )
+        self.assertIn(
+            "Current demo upload returned success without the exact published output.",
             publish_step,
         )
         self.assertIn(
@@ -3093,6 +3106,17 @@ github_cli() {{
         self.assertIn("needs: build-sites", workflow)
         self.assertIn("merge-multiple: true", workflow)
         self.assertIn("Assemble DocC portal", workflow)
+        self.assertIn("Re-resolve documentation authority before deployment", workflow)
+        self.assertIn("Verify documentation authority after deployment", workflow)
+        self.assertEqual(workflow.count("documentation-authority.py"), 2)
+        self.assertLess(
+            workflow.index("Re-resolve documentation authority before deployment"),
+            workflow.index("Deploy to GitHub Pages"),
+        )
+        self.assertLess(
+            workflow.index("Deploy to GitHub Pages"),
+            workflow.index("Verify documentation authority after deployment"),
+        )
         self.assertNotIn("scripts/add-upstream-docc-sites.sh", workflow)
         self.assertNotIn("      - Makefile", workflow)
 
@@ -3283,7 +3307,35 @@ github_cli() {{
         self.assertIn('printf \'publish=%s\\n\' "${publish}" >> "$GITHUB_OUTPUT"', freshness)
         self.assertEqual(
             workflow.count("steps.current-freshness.outputs.publish == 'true'"),
-            8,
+            9,
+        )
+
+    def test_package_publication_closes_exact_inputs_and_outputs(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        publication = workflow[
+            workflow.index("- name: Retain active and stable benchmark assets") :
+            workflow.index("  repair-stable-tap:")
+        ]
+        repair = workflow[workflow.index("  repair-stable-tap:") :]
+
+        self.assertIn("Verify exact published output closure", publication)
+        self.assertIn("package-publication-authority.py", publication)
+        self.assertIn(
+            'verify_checkout release-tools "${RELEASE_CONTROL_SHA}"', publication
+        )
+        self.assertIn('verify_checkout container "${CONTAINER_REF}"', publication)
+        self.assertIn(
+            "Current release dependency changed during publication", publication
+        )
+        self.assertLess(
+            publication.index("Retain active and stable benchmark assets"),
+            publication.index("Verify exact published output closure"),
+        )
+        self.assertIn("Verify repaired stable Homebrew output closure", repair)
+        self.assertIn("package-publication-authority.py", repair)
+        self.assertLess(
+            repair.index("Commit repaired stable Homebrew stack"),
+            repair.index("Verify repaired stable Homebrew output closure"),
         )
 
     def test_current_package_workflow_only_follows_successful_main_ci(self) -> None:
@@ -3391,6 +3443,9 @@ github_cli() {{
         self.assertNotIn("branches:\n      - main", codeql)
         self.assertIn("release_ref:", codeql)
         self.assertIn("Require an immutable published release", codeql)
+        self.assertIn("release_id:", codeql)
+        self.assertIn("Verify release source remained exact", codeql)
+        self.assertIn("CodeQL release authority changed while analysis ran", codeql)
         self.assertIn("name: CodeQL", codeql)
         self.assertIn("needs.analyze.result", codeql)
         self.assertIn("codeql-release:", package)
@@ -3407,7 +3462,58 @@ github_cli() {{
             package_job,
         )
         self.assertIn("needs.codeql-release.result == 'success'", package_job)
+        self.assertIn("Verify CodeQL release authority after analysis", release_codeql)
+        self.assertLess(
+            release_codeql.index("Analyze CodeQL release source"),
+            release_codeql.index("Verify CodeQL release authority after analysis"),
+        )
         self.assertNotIn("workflow run codeql.yml", benchmark)
+
+    def test_benchmark_publication_rechecks_exact_release_authority(self) -> None:
+        for path in (
+            ROOT / ".github" / "workflows" / "published-benchmark.yml",
+            ROOT / ".github" / "workflows" / "historical-benchmark.yml",
+        ):
+            workflow = path.read_text(encoding="utf-8")
+            publication = workflow[
+                workflow.index("- name: Open documentation pull request") :
+            ]
+
+            self.assertIn("ref: ${{ github.sha }}", workflow)
+            self.assertIn("benchmark-authority.py", publication)
+            self.assertIn('expected_authority="$(verify_authority)"', publication)
+            self.assertIn('current_authority="$(verify_authority)"', publication)
+            self.assertIn(
+                "benchmark authority changed during report publication", publication
+            )
+            self.assertIn(
+                "benchmark report pull request is not bound to its exact output commit",
+                publication,
+            )
+            self.assertIn(
+                "--json baseRefName,headRefName,headRefOid,state,url", publication
+            )
+            self.assertLess(
+                publication.index('expected_authority="$(verify_authority)"'),
+                publication.index("gh pr create"),
+            )
+            self.assertLess(
+                publication.index("gh pr create"),
+                publication.index('current_authority="$(verify_authority)"'),
+            )
+
+    def test_stable_authority_check_verifies_its_created_output(self) -> None:
+        workflow = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
+        record = workflow[workflow.index("  record-release-authority:") :]
+
+        self.assertIn('check_run="$(', record)
+        self.assertIn("repos/${GITHUB_REPOSITORY}/check-runs", record)
+        self.assertIn(".head_sha == $sha", record)
+        self.assertIn(".external_id == $run", record)
+        self.assertIn(
+            "stable release authority check output does not match its exact candidate",
+            record,
+        )
 
     def test_release_sonar_step_preserves_and_restores_canonical_main(self) -> None:
         ci = CI_WORKFLOW.read_text(encoding="utf-8")

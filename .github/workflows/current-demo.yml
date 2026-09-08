@@ -378,7 +378,11 @@ jobs:
             local release_id
             local release_target
             local release_upload_url
+            local checkout_sha
+            local tracked_status
             local expected_upload_url
+            checkout_sha="$(git rev-parse HEAD)" || return 1
+            tracked_status="$(git status --porcelain --untracked-files=no)" || return 1
             main_sha="$(
               git ls-remote --heads "${remote}" refs/heads/main \
                 | awk '{ print $1 }' \
@@ -410,7 +414,9 @@ jobs:
             fi
             [[ "${PUBLISH_SHA}" == "${main_sha}" &&
                "${PUBLISH_SHA}" == "${current_tag_sha}" &&
-               "${PUBLISH_SHA}" == "${release_target}" ]] || return 1
+               "${PUBLISH_SHA}" == "${release_target}" &&
+               "${PUBLISH_SHA}" == "${checkout_sha}" &&
+               -z "${tracked_status}" ]] || return 1
             CURRENT_RELEASE_ID="${release_id}"
           }
 
@@ -480,7 +486,26 @@ jobs:
           upload_status=$?
           set -e
           if ((upload_status == 0)); then
-            exit 0
+            if ! current_release_matches ||
+               [[ "${CURRENT_RELEASE_ID}" != "${publication_release_id}" ]]; then
+              printf 'Current moved after demo upload; refusing to accept a stale publication.\n' >&2
+              exit 75
+            fi
+            published_asset_id="$(release_asset_id "${publication_release_id}")"
+            published_demo="${recovery_demo_dir}/${DEMO_ASSET}"
+            if [[ -n "${published_asset_id}" ]] &&
+              download_release_asset "${published_asset_id}" "${published_demo}"; then
+              published_sha256="$(shasum -a 256 \
+                "${published_demo}" | awk '{ print $1 }')"
+              candidate_sha256="$(shasum -a 256 "${DEMO_OUTPUT}" | awk '{ print $1 }')"
+              if [[ "${published_sha256}" == "${candidate_sha256}" ]]; then
+                printf 'Current demo output verified against release %s.\n' \
+                  "${publication_release_id}"
+                exit 0
+              fi
+            fi
+            printf 'Current demo upload returned success without the exact published output.\n' >&2
+            upload_status=1
           fi
 
           if [[ ! -s "${prior_demo}" ]]; then

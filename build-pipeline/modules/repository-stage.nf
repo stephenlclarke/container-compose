@@ -737,6 +737,26 @@ process RUN_REPOSITORY_STAGE {
         expected_dependency_manifest_sha256="$(/usr/bin/awk -F '\t' \
             '$1 == "artifact-manifest-sha256" { print $2 }' \
             "$dependency_receipt")"
+        dependency_receipt_schema="$(/usr/bin/awk -F '\t' \
+            '$1 == "schema" { print $2 }' "$dependency_receipt")"
+        dependency_source_format="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-format" { print $2 }' "$dependency_receipt")"
+        dependency_source_payload_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-payload-sha256" { print $2 }' \
+            "$dependency_receipt")"
+        dependency_stage_inputs_sha256="$(/usr/bin/awk -F '\t' \
+            '$1 == "stage-inputs-sha256" { print $2 }' \
+            "$dependency_receipt")"
+        dependency_source_execution_head="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-execution-head" { print $2 }' \
+            "$dependency_receipt")"
+        dependency_source_tracked_clean="$(/usr/bin/awk -F '\t' \
+            '$1 == "source-tracked-clean" { print $2 }' \
+            "$dependency_receipt")"
+        dependency_exit="$(/usr/bin/awk -F '\t' \
+            '$1 == "exit" { print $2 }' "$dependency_receipt")"
+        expected_dependency_artifact_count="$(/usr/bin/awk -F '\t' \
+            '$1 == "artifact-count" { print $2 }' "$dependency_receipt")"
         actual_dependency_archive_sha256="$(/usr/bin/shasum -a 256 \
             "$dependency_archive" | /usr/bin/awk '{ print $1 }')"
         actual_dependency_manifest_sha256="$(/usr/bin/shasum -a 256 \
@@ -745,7 +765,14 @@ process RUN_REPOSITORY_STAGE {
             '$1 == "archive-sha256" { print $2 }' "$dependency_manifest")"
         manifest_dependency_count="$(/usr/bin/awk -F '\t' \
             '$1 == "artifact-count" { print $2 }' "$dependency_manifest")"
-        if ! [[ "$expected_dependency_archive_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+        if [[ "$dependency_receipt_schema" != 4 ]] ||
+            ! [[ "$dependency_source_format" =~ ^(git-bundle|git-tree-archive)$ ]] ||
+            ! [[ "$dependency_source_payload_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+            ! [[ "$dependency_stage_inputs_sha256" =~ ^[0-9a-f]{64}$ ]] ||
+            ! [[ "$dependency_source_execution_head" =~ ^[0-9a-f]{40}$ ]] ||
+            [[ "$dependency_source_tracked_clean" != true ]] ||
+            [[ "$dependency_exit" != 0 ]] ||
+            ! [[ "$expected_dependency_archive_sha256" =~ ^[0-9a-f]{64}$ ]] ||
             ! [[ "$expected_dependency_manifest_sha256" =~ ^[0-9a-f]{64}$ ]] ||
             [[ "$actual_dependency_archive_sha256" != \
                 "$expected_dependency_archive_sha256" ]] ||
@@ -753,7 +780,9 @@ process RUN_REPOSITORY_STAGE {
                 "$expected_dependency_manifest_sha256" ]] ||
             [[ "$manifest_dependency_archive_sha256" != \
                 "$expected_dependency_archive_sha256" ]] ||
-            ! [[ "$manifest_dependency_count" =~ ^[1-9][0-9]*$ ]]; then
+            ! [[ "$manifest_dependency_count" =~ ^[1-9][0-9]*$ ]] ||
+            [[ "$expected_dependency_artifact_count" != \
+                "$manifest_dependency_count" ]]; then
             printf 'stage dependency digest is invalid: %s\n' \
                 "$dependency_stage" >&2
             exit 2
@@ -792,6 +821,42 @@ process RUN_REPOSITORY_STAGE {
     } >"$stage_command"
     /bin/chmod 0700 "$stage_command"
 
+    compute_stage_input_closure() {
+        unexpected_input_entry="$(/usr/bin/find -P "$dependencies_root" \
+            -mindepth 1 -maxdepth 1 ! -type f -print -quit)"
+        if [[ -n "$unexpected_input_entry" ]]; then
+            printf 'stage dependency closure contains an unsupported entry: %s\n' \
+                "$unexpected_input_entry" >&2
+            return 75
+        fi
+        {
+            for input_file in "$source_payload" "$source_metadata" \
+                "$stage_tools" "$staged_deadline_runner" \
+                "$dependency_installer" "$stage_command"; do
+                printf 'input\t%s\t%s\n' "$(/usr/bin/basename "$input_file")" \
+                    "$(/usr/bin/shasum -a 256 "$input_file" | \
+                        /usr/bin/awk '{ print $1 }')"
+            done
+            while IFS= read -r dependency_input; do
+                [[ -n "$dependency_input" ]] || continue
+                printf 'dependency-input\t%s\t%s\n' \
+                    "$(/usr/bin/basename "$dependency_input")" \
+                    "$(/usr/bin/shasum -a 256 "$dependency_input" | \
+                        /usr/bin/awk '{ print $1 }')"
+            done < <(/usr/bin/find -P "$dependencies_root" \
+                -mindepth 1 -maxdepth 1 -type f -print | LC_ALL=C /usr/bin/sort)
+        } | /usr/bin/shasum -a 256 | /usr/bin/awk '{ print $1 }'
+    }
+
+    source_head_before="$(run_clean /usr/bin/git -C \
+        "$execution_root/source" rev-parse HEAD)"
+    if ! run_clean /usr/bin/git -C "$execution_root/source" diff \
+        --quiet --ignore-submodules=none HEAD --; then
+        printf 'stage source is dirty before execution: %s\n' "$stage_name" >&2
+        exit 75
+    fi
+    stage_input_sha256_before="$(compute_stage_input_closure)"
+
     set +e
     (
         cd "$execution_root/source"
@@ -808,6 +873,20 @@ process RUN_REPOSITORY_STAGE {
     /bin/cat "$stderr_log" >&2
     if ((stage_status != 0)); then
         exit "$stage_status"
+    fi
+    source_head_after="$(run_clean /usr/bin/git -C \
+        "$execution_root/source" rev-parse HEAD)"
+    if [[ "$source_head_after" != "$source_head_before" ]] || \
+        ! run_clean /usr/bin/git -C "$execution_root/source" diff \
+            --quiet --ignore-submodules=none HEAD --; then
+        printf 'stage changed tracked source after preflight: %s\n' \
+            "$stage_name" >&2
+        exit 75
+    fi
+    stage_input_sha256_after="$(compute_stage_input_closure)"
+    if [[ "$stage_input_sha256_after" != "$stage_input_sha256_before" ]]; then
+        printf 'stage inputs changed while command ran: %s\n' "$stage_name" >&2
+        exit 75
     fi
     verify_tool_closure
 
@@ -874,7 +953,7 @@ process RUN_REPOSITORY_STAGE {
     artifact_manifest_sha256="$(/usr/bin/shasum -a 256 \
         "$artifact_manifest" | /usr/bin/awk '{ print $1 }')"
     {
-        printf 'schema\t3\n'
+        printf 'schema\t4\n'
         printf 'stage\t%s\n' "$stage_name"
         printf 'repository\t%s\n' "$repository_name"
         printf 'source-format\t%s\n' "$source_format"
@@ -888,6 +967,9 @@ process RUN_REPOSITORY_STAGE {
         printf 'deadline-seconds\t%s\n' "$deadline_seconds"
         printf 'command-sha256\t%s\n' "$command_sha256"
         printf 'stage-tools-sha256\t%s\n' "$tools_sha256"
+        printf 'stage-inputs-sha256\t%s\n' "$stage_input_sha256_after"
+        printf 'source-execution-head\t%s\n' "$source_head_after"
+        printf 'source-tracked-clean\ttrue\n'
         printf 'stdout-sha256\t%s\n' "$stdout_sha256"
         printf 'stderr-sha256\t%s\n' "$stderr_sha256"
         printf 'artifact-archive-sha256\t%s\n' \

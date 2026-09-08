@@ -52,10 +52,41 @@ for receipt in *.receipt.tsv; do
     '$1 == "artifact-archive-sha256" { print $2 }' "${receipt}")"
   expected_manifest_sha256="$(/usr/bin/awk -F '\t' \
     '$1 == "artifact-manifest-sha256" { print $2 }' "${receipt}")"
+  receipt_schema="$(/usr/bin/awk -F '\t' \
+    '$1 == "schema" { print $2 }' "${receipt}")"
+  receipt_repository="$(/usr/bin/awk -F '\t' \
+    '$1 == "repository" { print $2 }' "${receipt}")"
+  source_format="$(/usr/bin/awk -F '\t' \
+    '$1 == "source-format" { print $2 }' "${receipt}")"
   source_payload_sha256="$(/usr/bin/awk -F '\t' \
     '$1 == "source-payload-sha256" { print $2 }' "${receipt}")"
+  source_execution_head="$(/usr/bin/awk -F '\t' \
+    '$1 == "source-execution-head" { print $2 }' "${receipt}")"
+  source_tracked_clean="$(/usr/bin/awk -F '\t' \
+    '$1 == "source-tracked-clean" { print $2 }' "${receipt}")"
+  stage_inputs_sha256="$(/usr/bin/awk -F '\t' \
+    '$1 == "stage-inputs-sha256" { print $2 }' "${receipt}")"
+  receipt_artifact_count="$(/usr/bin/awk -F '\t' \
+    '$1 == "artifact-count" { print $2 }' "${receipt}")"
+  receipt_exit="$(/usr/bin/awk -F '\t' \
+    '$1 == "exit" { print $2 }' "${receipt}")"
+  [[ "${receipt_schema}" == 4 ]] || \
+    fail "Unsupported dependency receipt schema: ${stage}"
+  [[ "${receipt_repository}" == container-compose ]] || \
+    fail "Unsupported dependency repository: ${stage}"
+  [[ "${source_format}" == git-tree-archive ]] || \
+    fail "Unsupported dependency source format: ${stage}"
   [[ "${source_payload_sha256}" =~ ^[0-9a-f]{64}$ ]] || \
     fail "Invalid dependency source payload: ${stage}"
+  [[ "${stage_inputs_sha256}" =~ ^[0-9a-f]{64}$ ]] || \
+    fail "Invalid dependency stage input closure: ${stage}"
+  [[ "${source_execution_head}" =~ ^[0-9a-f]{40}$ &&
+    "${source_tracked_clean}" == true ]] || \
+    fail "Dependency source did not retain its exact checkout: ${stage}"
+  [[ "${receipt_artifact_count}" == 1 && "${receipt_exit}" == 0 ]] || \
+    fail "Dependency receipt did not record exact success: ${stage}"
+  expected_receipt_sha256="$(/usr/bin/shasum -a 256 "${receipt}" | \
+    /usr/bin/awk '{ print $1 }')"
   [[ "$(/usr/bin/shasum -a 256 "${archive}" | /usr/bin/awk '{ print $1 }')" == \
     "${expected_archive_sha256}" ]] || \
     fail "Dependency archive digest changed: ${stage}"
@@ -65,6 +96,18 @@ for receipt in *.receipt.tsv; do
   [[ "$(/usr/bin/awk -F '\t' '$1 == "artifact-count" { print $2 }' \
     "${manifest}")" == 1 ]] || \
     fail "Dependency manifest has the wrong artifact count: ${stage}"
+  [[ "$(/usr/bin/awk -F '\t' '$1 == "schema" { print $2 }' \
+    "${manifest}")" == 1 ]] || \
+    fail "Dependency manifest has the wrong schema: ${stage}"
+  [[ "$(/usr/bin/awk -F '\t' '$1 == "stage" { print $2 }' \
+    "${manifest}")" == "${stage}" ]] || \
+    fail "Dependency manifest has the wrong stage: ${stage}"
+  [[ "$(/usr/bin/awk -F '\t' '$1 == "repository" { print $2 }' \
+    "${manifest}")" == container-compose ]] || \
+    fail "Dependency manifest has the wrong repository: ${stage}"
+  [[ "$(/usr/bin/awk -F '\t' '$1 == "archive-sha256" { print $2 }' \
+    "${manifest}")" == "${expected_archive_sha256}" ]] || \
+    fail "Dependency manifest did not bind its archive: ${stage}"
   artifact_path="$(/usr/bin/awk -F '\t' '$1 == "artifact" { print $2 }' \
     "${manifest}")"
   case "${stage}" in
@@ -77,6 +120,18 @@ for receipt in *.receipt.tsv; do
     fail "Dependency manifest has the wrong artifact: ${stage}"
   /bin/cp "${receipt}" "${archive}" "${manifest}" \
     compose-package-dependencies/ || fail "Could not collect dependency: ${stage}"
+  [[ "$(/usr/bin/shasum -a 256 \
+    "compose-package-dependencies/${receipt}" | /usr/bin/awk '{ print $1 }')" == \
+    "${expected_receipt_sha256}" ]] || \
+    fail "Collected dependency receipt changed: ${stage}"
+  [[ "$(/usr/bin/shasum -a 256 \
+    "compose-package-dependencies/${archive}" | /usr/bin/awk '{ print $1 }')" == \
+    "${expected_archive_sha256}" ]] || \
+    fail "Collected dependency archive changed: ${stage}"
+  [[ "$(/usr/bin/shasum -a 256 \
+    "compose-package-dependencies/${manifest}" | /usr/bin/awk '{ print $1 }')" == \
+    "${expected_manifest_sha256}" ]] || \
+    fail "Collected dependency manifest changed: ${stage}"
   observed_stages="${observed_stages}${stage},"
   ((observed_count += 1))
 done
