@@ -71,3 +71,49 @@ time.
 The release gate remains the authority for full product, parity, security, and
 documentation validation. Those release-only timings will be retained by its
 own checkpoint evidence rather than mixed into this build-only measurement.
+
+## Upstream-refresh validation timings
+
+The 0.14.3 upstream refresh supplied additional first-run evidence:
+
+- Containerization's matching Swift 6.3.0 Linux-musl `vminitd` rebuild took
+  13.300 seconds. Its focused macOS OCI and socket tests took 17.250 seconds;
+  14 applicable tests passed.
+- Containerization's exact-head Linux workflow took 20 minutes 40 seconds.
+  Its parallel macOS/initfs workflow took 22 minutes 54 seconds. Both passed
+  without a retry.
+- Container's SwiftPM resolve took 73.530 seconds. Its two focused provenance
+  and application-health suites took 144.620 seconds including the cold
+  compile; 22 tests passed.
+- Container's exact-head hosted workflow took 26 minutes 35 seconds. The
+  build/test job accounted for 26 minutes 14 seconds. Release-only Linux
+  workloads and documentation packaging were correctly skipped.
+- Compose's classification refresh took 4.399 seconds. Stack consistency plus
+  the strict current-upstream gate took 3.060 seconds after the canonical
+  source checkouts were fast-forwarded. The focused consistency/divergence
+  regression set ran 22 tests in 2.614 seconds.
+
+Two workflow defects failed before expensive release work. The Containerization
+signature gate rejected unsigned commits already present on Apple `main`; it
+now accepts them only after GitHub proves upstream ancestry and still rejects
+unsigned fork-only commits. Compose's strict divergence gate correctly found
+that the clean canonical source checkouts under `~/github` were behind their
+fork remotes, but the preceding stack-consistency target had initially used
+that stale checkout without reporting the authority mismatch. The checkouts
+were restored with fast-forward-only updates; a later workflow refinement
+should make the shared canonical-source precondition explicit before any stage
+that reads lower-stack manifests.
+
+The Container hosted run also spent over ten minutes in `Check protobuf`
+because that step cold-builds both Swift protobuf generators. The integrity
+check is valid, but build-input classification should skip it when neither the
+protobuf inputs nor generator pins changed. That optimization belongs after
+the stable release so this release candidate is not changed while under
+exact-head review.
+
+A clean Compose worktree's first `make source-preflight` stopped after 1.340
+seconds because the repository-local Hawkeye binary was absent and the Make
+target had not authorized its checksum-pinned non-interactive bootstrap. The
+corrected target installed verified Hawkeye 6.5.1 and completed the whole
+source preflight in 3.130 seconds. Subsequent runs reuse that local binary and
+do not need network access or an approval prompt.

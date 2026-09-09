@@ -1,6 +1,6 @@
 # Fork Commit Classifications
 
-Updated: 8 September 2026
+Updated: 9 September 2026
 
 This review classifies every patch-unique non-merge commit in the three
 Stephen-supported Apple forks. The machine-readable source is
@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `eee7ad097079cc3b02d5309ec10160143f2d0c6a` | `7ed777a171554cd6309ca96d3d2a4e7135c910c5` | 0 | 800 | 672 |
-| `containerization` | `847655d373a27b8b8d0c3a9747f04f16b5de1206` | `9e0626e1171cee5c09b0adecb886f1b24784320c` | 0 | 304 | 240 |
-| `container-builder-shim` | `e18d2182fd060dbf1c68113a74e7564d563dde27` | `f99e66b8940242d6ea8bed448619ba61f3f6f1a5` | 0 | 55 | 45 |
-| **Total** | | | **0** | **1159** | **957** |
+| `container` | `9a8917ca2da5cd6ba059b9ba5ca5a74892e9bb7d` | `7da98fd3c8e03d491672ca8c069e8bee02dd9074` | 0 | 816 | 678 |
+| `containerization` | `9eacc197d7c3663eb29cbab6d51244ede6d1cd7d` | `28ad7c77a2a5ec7c2a1bdbff5e1e6a588958bb3c` | 0 | 313 | 243 |
+| `container-builder-shim` | `5dc4286e5adbeb7dac189b22b7d5aab336942fe2` | `5373d9b4363c6e536dc6401199da269c7045abf9` | 0 | 59 | 46 |
+| **Total** | | | **0** | **1188** | **967** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -327,3 +327,15 @@ error propagation. The companion Kubernetes test proves that a retained
 cluster restarts on its configured address without preserving the obsolete
 address-rotation expectation. Neither commit adds a fork-only capability or
 temporary upstream port.
+
+The 9 September 2026 release refresh advances Apple Container through
+`9a8917ca2da5`, Container through `7da98fd3c8e0`, Apple Containerization
+through `9eacc197d7c3`, Containerization through `28ad7c77a2a5`, Apple builder
+shim through `5dc4286e5adb`, and the builder shim through `5373d9b4363c`.
+Apple's Kubernetes guide, CZ 0.45.0 update, OCI-layout hardening, confined
+rootfs copy/stat handling, and Unix-socket length fix are upstream history.
+The ten new patch-unique commits cover dependency security and exact pins,
+deterministic protobuf and image publishing, retained VSOCK and VM-init
+authority, and strict upstream-aware signature verification. All are support
+maintenance; no generic primitive, temporary upstream port, or rejected
+Compose-policy disposition changed.
