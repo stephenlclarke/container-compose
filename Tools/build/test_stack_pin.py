@@ -259,6 +259,24 @@ class StackPinTests(unittest.TestCase):
         self.assertRegex(baseline, r"^[0-9a-f]{64}$")
         self.assertNotEqual(baseline, changed)
 
+    def test_go_contract_is_repeatable(self) -> None:
+        go = shutil.which("go")
+        self.assertIsNotNone(go)
+        assert go is not None
+        options = STACK_PIN.parse_arguments(
+            [
+                "contract",
+                "--tool",
+                go,
+                "--configuration",
+                "release",
+            ]
+        )
+
+        contracts = {STACK_PIN.build_contract(options) for _ in range(3)}
+
+        self.assertEqual(len(contracts), 1)
+
     def test_dependency_change_invalidates_downstream_pin(self) -> None:
         self.assertEqual(self.create_pin(), 0)
         downstream = self.create_repository("container")

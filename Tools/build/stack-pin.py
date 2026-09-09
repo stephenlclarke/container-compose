@@ -26,6 +26,7 @@ import math
 import os
 import platform
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -195,6 +196,23 @@ def validate_repository_name(name: str) -> str:
     return name
 
 
+def normalize_gogccflags(value: str) -> str:
+    """Remove cmd/go's per-invocation work path without hiding real flag changes."""
+    normalized: list[str] = []
+    for argument in shlex.split(value):
+        prefix = "-ffile-prefix-map="
+        if argument.startswith(prefix):
+            source, separator, destination = argument[len(prefix) :].rpartition("=")
+            if (
+                separator
+                and destination == "/tmp/go-build"
+                and re.fullmatch(r"go-build[0-9]+", Path(source).name)
+            ):
+                argument = f"{prefix}<go-build-work>={destination}"
+        normalized.append(argument)
+    return shlex.join(normalized)
+
+
 def effective_go_build_environment(tool: Path) -> dict[str, str]:
     result = subprocess.run(
         [str(tool), "env", "-json", *GO_BUILD_ENVIRONMENT],
@@ -217,6 +235,7 @@ def effective_go_build_environment(tool: Path) -> dict[str, str]:
         or any(not isinstance(value, str) for value in environment.values())
     ):
         raise PinError("effective Go build target is incomplete")
+    environment["GOGCCFLAGS"] = normalize_gogccflags(environment["GOGCCFLAGS"])
     return {name: environment[name] for name in sorted(environment)}
 
 
