@@ -13,21 +13,32 @@ cold-build baseline. It must not be used to claim a build speed-up.
 
 ## Build timings
 
-The corrected cold five-repository build completed in 292.726 seconds:
+The final isolated cold five-repository build from the merged controller head
+completed in 282.796 seconds:
 
-- `container-builder-shim`: 0.394 seconds.
-- `container-engine-api`: 31.678 seconds.
-- `containerization`: 56.770 seconds.
-- `container`: 154.122 seconds.
-- `container-compose`: 74.460 seconds.
+- `container-builder-shim`: 0.459 seconds.
+- `container-engine-api`: 31.595 seconds.
+- `containerization`: 58.005 seconds.
+- `container`: 144.114 seconds.
+- `container-compose`: 73.350 seconds.
 
 The independent builder, engine API, and Containerization roots ran in
 parallel, so their durations do not sum to the end-to-end result. Bin-path
-queries added 1.196 seconds in total.
+queries added 1.186 seconds in total.
 
-An immediate unchanged rerun verified and reused all five exact pins in 5.873
-seconds. That recovery path was 49.8 times faster than the cold build and
-removed 286.853 seconds, or 98.0%, from the end-to-end duration.
+An immediate unchanged rerun verified and reused all five exact pins in 5.747
+seconds. That recovery path was 49.2 times faster than the cold build and
+removed 277.049 seconds, or 98.0%, from the end-to-end duration.
+
+A Compose-only source change rebuilt Compose and reused the four unaffected
+repositories in 23.687 seconds. The Compose build itself took 17.323 seconds;
+pin verification and orchestration accounted for the remaining 6.364 seconds.
+
+An earlier corrected cold run completed in 292.726 seconds and recovered in
+5.873 seconds. The final isolated cold measurement is 3.4% faster, but a pair
+of local diagnostic runs is not enough evidence to attribute that difference
+to the controller. The defensible result is the repeatable 98.0% reduction for
+an exact no-op recovery.
 
 The initial pre-fix run stopped after 225.619 seconds when SwiftPM found that
 Compose and Container required different exact Containerization revisions.
@@ -48,6 +59,14 @@ The complete Python tooling gate ran before the timing exercise and took
 - Release tools: 515 tests in 727.433 seconds.
 - CI tools: 304 tests in 470.572 seconds.
 - Nested stack self-tests: 25 tests in 14.969 seconds.
+
+The merged controller's exact-head hosted CI ran its independent jobs in
+parallel. Source checks took 1 minute 17 seconds, CI tool tests took 8 minutes
+7 seconds, release tool tests took 10 minutes 35 seconds, and runtime
+validation took 11 minutes 26 seconds. The aggregate CI wall time was 11
+minutes 48 seconds. The separate quality workflow's Address Sanitizer job
+took 15 minutes 18 seconds and set that workflow's 15 minute 29 second wall
+time.
 
 The release gate remains the authority for full product, parity, security, and
 documentation validation. Those release-only timings will be retained by its

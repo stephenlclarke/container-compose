@@ -529,6 +529,69 @@ jobs:
             exit 1
           fi
 
+      - name: Require exact Current VM-init authority
+        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        working-directory: container-compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          containerization_ref="$(
+            jq -er '.components.containerization.ref' \
+              Tools/release/stack-refs.json
+          )"
+          if [[ ! "${containerization_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Current VM-init authority requires an exact Containerization ref: %s\n' \
+              "${containerization_ref:-<unset>}" >&2
+            exit 1
+          fi
+
+          authority_root="${RUNNER_TEMP}/current-vminit-preflight"
+          mkdir -p "${authority_root}"
+          gh api --paginate --slurp \
+            "repos/stephenlclarke/containerization/actions/workflows/containerization-build.yml/runs?head_sha=${containerization_ref}&per_page=100" \
+            > "${authority_root}/run-pages.json"
+          jq '[.[].workflow_runs[] | {
+            databaseId: .id,
+            workflowName: .name,
+            headSha: .head_sha,
+            status,
+            conclusion,
+            event,
+            createdAt: .created_at,
+            url: .html_url
+          }]' "${authority_root}/run-pages.json" > "${authority_root}/runs.json"
+          python3 Tools/parity/historical_reconstruction_benchmark.py \
+            run-candidates \
+            --runs "${authority_root}/runs.json" \
+            --revision "${containerization_ref}" \
+            > "${authority_root}/run-candidates.json"
+
+          authority_found=false
+          while IFS= read -r run_id; do
+            candidate_run="${authority_root}/run-${run_id}.json"
+            candidate_artifacts="${authority_root}/artifacts-${run_id}.json"
+            jq --argjson id "${run_id}" \
+              '.[] | select(.runId == $id)' \
+              "${authority_root}/run-candidates.json" > "${candidate_run}"
+            gh api \
+              "repos/stephenlclarke/containerization/actions/runs/${run_id}/artifacts" \
+              > "${candidate_artifacts}"
+            if python3 Tools/parity/historical_reconstruction_benchmark.py \
+              validate-initfs \
+              --run "${candidate_run}" \
+              --artifacts "${candidate_artifacts}" >/dev/null; then
+              authority_found=true
+              break
+            fi
+          done < <(jq -r '.[].runId' "${authority_root}/run-candidates.json")
+          if [[ "${authority_found}" != "true" ]]; then
+            printf 'no exact, retained initfs artifact exists for Containerization %s\n' \
+              "${containerization_ref}" >&2
+            exit 1
+          fi
+
       - name: Resolve the pinned Container formula source
         id: container-source
         working-directory: container-compose
