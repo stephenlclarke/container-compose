@@ -21,6 +21,7 @@ import importlib.util
 import json
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -151,6 +152,16 @@ class StackPinTests(unittest.TestCase):
             2,
         )
 
+    def test_changed_artifact_mode_invalidates_pin(self) -> None:
+        self.assertEqual(self.create_pin(), 0)
+        original_mode = stat.S_IMODE(self.artifact.stat().st_mode)
+        os.chmod(self.artifact, original_mode ^ stat.S_IXUSR)
+
+        self.assertEqual(
+            self.invoke(["verify", "--receipt", str(self.receipt), "--quiet"]),
+            2,
+        )
+
     def test_changed_source_remote_invalidates_pin(self) -> None:
         self.assertEqual(self.create_pin(), 0)
         self.git(
@@ -276,6 +287,34 @@ class StackPinTests(unittest.TestCase):
         contracts = {STACK_PIN.build_contract(options) for _ in range(3)}
 
         self.assertEqual(len(contracts), 1)
+
+    def test_contract_changes_with_the_effective_swift_sdk(self) -> None:
+        swift = shutil.which("swift")
+        self.assertIsNotNone(swift)
+        assert swift is not None
+        options = STACK_PIN.parse_arguments(
+            [
+                "contract",
+                "--tool",
+                swift,
+                "--configuration",
+                "release",
+            ]
+        )
+        with patch.object(
+            STACK_PIN,
+            "effective_swift_build_environment",
+            return_value={"sdk": {"path": "/SDKs/MacOSX26.5.sdk"}},
+        ):
+            baseline = STACK_PIN.build_contract(options)
+        with patch.object(
+            STACK_PIN,
+            "effective_swift_build_environment",
+            return_value={"sdk": {"path": "/SDKs/MacOSX26.6.sdk"}},
+        ):
+            changed = STACK_PIN.build_contract(options)
+
+        self.assertNotEqual(baseline, changed)
 
     def test_dependency_change_invalidates_downstream_pin(self) -> None:
         self.assertEqual(self.create_pin(), 0)

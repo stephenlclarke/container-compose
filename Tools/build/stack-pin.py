@@ -214,6 +214,21 @@ def normalize_gogccflags(value: str) -> str:
     return shlex.join(normalized)
 
 
+def checked_output(arguments: Sequence[str], description: str) -> str:
+    result = subprocess.run(
+        arguments,
+        check=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if result.returncode != 0:
+        diagnostic = result.stderr.strip() or f"exit {result.returncode}"
+        raise PinError(f"could not resolve {description}: {diagnostic}")
+    return result.stdout.strip()
+
+
 def effective_go_build_environment(tool: Path) -> dict[str, str]:
     result = subprocess.run(
         [str(tool), "env", "-json", *GO_BUILD_ENVIRONMENT],
@@ -238,6 +253,71 @@ def effective_go_build_environment(tool: Path) -> dict[str, str]:
         raise PinError("effective Go build target is incomplete")
     environment["GOGCCFLAGS"] = normalize_gogccflags(environment["GOGCCFLAGS"])
     return {name: environment[name] for name in sorted(environment)}
+
+
+def effective_swift_build_environment(tool: Path) -> dict[str, Any]:
+    try:
+        target_info = json.loads(
+            checked_output([str(tool), "-print-target-info"], "Swift target")
+        )
+    except json.JSONDecodeError as error:
+        raise PinError("effective Swift target is not valid JSON") from error
+    if not isinstance(target_info, dict):
+        raise PinError("effective Swift target is malformed")
+
+    compiler = tool
+    developer_directory = ""
+    sdk: dict[str, Any] = {}
+    if platform.system() == "Darwin":
+        xcrun = Path("/usr/bin/xcrun").resolve(strict=True)
+        if tool == Path("/usr/bin/swift"):
+            compiler = Path(
+                checked_output([str(xcrun), "--find", "swift"], "Swift compiler")
+            ).resolve(strict=True)
+        developer_selector = os.environ.get("DEVELOPER_DIR", "")
+        developer_directory = str(
+            (
+                Path(developer_selector)
+                if developer_selector
+                else Path(
+                    checked_output(
+                        ["/usr/bin/xcode-select", "-p"], "Xcode developer directory"
+                    )
+                )
+            ).resolve(strict=True)
+        )
+        sdk_selector = os.environ.get("SDKROOT", "")
+        sdk_path = (
+            Path(sdk_selector)
+            if sdk_selector
+            else Path(
+                checked_output(
+                    [str(xcrun), "--sdk", "macosx", "--show-sdk-path"],
+                    "Swift SDK",
+                )
+            )
+        ).resolve(strict=True)
+        metadata: list[dict[str, str]] = []
+        for relative_path in (
+            "SDKSettings.json",
+            "SDKSettings.plist",
+            "System/Library/CoreServices/SystemVersion.plist",
+        ):
+            metadata_path = sdk_path / relative_path
+            if metadata_path.is_file() and not metadata_path.is_symlink():
+                metadata.append(
+                    {"path": relative_path, "sha256": sha256_file(metadata_path)}
+                )
+        if not metadata:
+            raise PinError(f"effective Swift SDK has no identity metadata: {sdk_path}")
+        sdk = {"metadata": metadata, "path": str(sdk_path)}
+
+    return {
+        "compiler": {"path": str(compiler), "sha256": sha256_file(compiler)},
+        "developer_directory": developer_directory,
+        "sdk": sdk,
+        "target": target_info,
+    }
 
 
 def repository_record(repository_path: Path) -> dict[str, str]:
@@ -317,14 +397,19 @@ def build_contract(options: argparse.Namespace) -> str:
             "GOFLAGS",
             "LDFLAGS",
             "SDKROOT",
+            "SWIFT_EXEC",
             "SWIFTFLAGS",
+            "TOOLCHAINS",
         )
     }
-    effective_tool_environment = (
-        effective_go_build_environment(resolved_tool)
-        if resolved_tool.name == "go"
-        else {}
-    )
+    if resolved_tool.name == "go":
+        effective_tool_environment: dict[str, Any] = effective_go_build_environment(
+            resolved_tool
+        )
+    elif resolved_tool.name == "swift":
+        effective_tool_environment = effective_swift_build_environment(resolved_tool)
+    else:
+        effective_tool_environment = {}
     python_path = Path(sys.executable).resolve(strict=True)
     contract = {
         "configuration": options.configuration,
@@ -382,13 +467,27 @@ def verify_artifacts(receipt: dict[str, Any]) -> None:
         recorded_paths.append(path_value)
         path = Path(path_value)
         expected = validate_digest(artifact.get("sha256"), f"artifact {path} digest")
+        expected_mode = artifact.get("mode")
+        if (
+            isinstance(expected_mode, bool)
+            or not isinstance(expected_mode, int)
+            or expected_mode < 0
+            or expected_mode > 0o7777
+        ):
+            raise PinError(f"artifact {path} has an invalid file mode")
         try:
             actual = sha256_file(path)
+            actual_mode = stat.S_IMODE(path.stat(follow_symlinks=False).st_mode)
         except (OSError, PinError) as error:
             raise PinError(f"build artifact is unavailable: {path}: {error}") from error
         if actual != expected:
             raise PinError(
                 f"build artifact digest changed: {path} (expected {expected}, got {actual})"
+            )
+        if actual_mode != expected_mode:
+            raise PinError(
+                f"build artifact mode changed: {path} "
+                f"(expected {expected_mode:#o}, got {actual_mode:#o})"
             )
     if recorded_paths != sorted(set(recorded_paths)):
         raise PinError("build receipt artifact paths are duplicated or not canonical")
@@ -545,13 +644,14 @@ def dependency_record(path: Path) -> dict[str, str]:
     }
 
 
-def artifact_record(path: Path) -> dict[str, str]:
+def artifact_record(path: Path) -> dict[str, str | int]:
     if not path.is_absolute():
         raise PinError(f"artifact path must be absolute: {path}")
     if path.is_symlink():
         raise PinError(f"artifact path must not be a symbolic link: {path}")
     resolved = path.resolve(strict=True)
-    return {"path": str(resolved), "sha256": sha256_file(resolved)}
+    mode = stat.S_IMODE(resolved.stat(follow_symlinks=False).st_mode)
+    return {"mode": mode, "path": str(resolved), "sha256": sha256_file(resolved)}
 
 
 def write_json_atomically(path: Path, value: dict[str, Any]) -> None:
