@@ -84,6 +84,33 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
 
         self.assertEqual(baseline, changed)
 
+    def test_github_retry_metadata_does_not_invalidate_proof(self) -> None:
+        root = Path("/")
+        baseline = self.module.fingerprint_environment(
+            {
+                "PATH": "/usr/bin",
+                "GITHUB_RUN_ATTEMPT": "1",
+                "GITHUB_ENV": "/runner/_temp/first/environment",
+                "GITHUB_OUTPUT": "/runner/_temp/first/output",
+                "GITHUB_PATH": "/runner/_temp/first/path",
+                "GITHUB_STEP_SUMMARY": "/runner/_temp/first/summary",
+            },
+            root,
+        )
+        retry = self.module.fingerprint_environment(
+            {
+                "PATH": "/usr/bin",
+                "GITHUB_RUN_ATTEMPT": "2",
+                "GITHUB_ENV": "/runner/_temp/second/environment",
+                "GITHUB_OUTPUT": "/runner/_temp/second/output",
+                "GITHUB_PATH": "/runner/_temp/second/path",
+                "GITHUB_STEP_SUMMARY": "/runner/_temp/second/summary",
+            },
+            root,
+        )
+
+        self.assertEqual(baseline, retry)
+
     def test_staged_init_archive_uses_content_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

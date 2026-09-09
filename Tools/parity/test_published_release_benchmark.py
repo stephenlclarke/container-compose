@@ -456,12 +456,18 @@ class PublishedReportTests(unittest.TestCase):
                 manifest["assets"]["guest"]["reconstruction"] = {
                     "artifactDigest": "sha256:" + "d" * 64,
                     "artifactId": 123,
-                    "cctlArtifactSha256": "e" * 64,
-                    "cctlBuildCommandSha256": "1" * 64,
-                    "cctlBuildSourceMetadataSha256": "2" * 64,
-                    "cctlBuildSourceSha256": "3" * 64,
-                    "cctlBuildToolsSha256": "4" * 64,
-                    "cctlReceiptSha256": "5" * 64,
+                    "cctlBuildPinSchema": 1,
+                    "cctlBuildPinSha256": "e" * 64,
+                    "cctlBuildCommand": "swift build -c release --product cctl",
+                    "cctlBuildContractSha256": "1" * 64,
+                    "cctlBuildDurationSeconds": 12,
+                    "cctlBuildSourceCommit": manifest["stack"][
+                        "containerization"
+                    ]["ref"],
+                    "cctlBuildSourceRemote": (
+                        "https://github.com/stephenlclarke/containerization"
+                    ),
+                    "cctlBuildSourceTree": "2" * 40,
                     "cctlSha256": "f" * 64,
                     "containerizationRef": manifest["stack"]["containerization"][
                         "ref"
@@ -488,6 +494,8 @@ class PublishedReportTests(unittest.TestCase):
         self.assertIn("# Historical reconstruction benchmark", report)
         self.assertIn("exact retained Containerization CI initfs artifact", report)
         self.assertIn("Guest initfs authority:", report)
+        self.assertIn("atomic build pin", report)
+        self.assertIn("duration `12` seconds", report)
         self.assertNotIn("No source product was built", report)
 
     def test_report_labels_unpromoted_maintenance_backfill(self) -> None:

@@ -58,11 +58,16 @@ NON_RESULT_VARIABLES = frozenset(
 )
 
 # Interactive shell and task-runner session identities change when the same
-# immutable release is resumed in a new terminal or Codex task. They do not
-# reach the build, test, parity, packaging, or publication contracts.
+# immutable release is resumed in a new terminal, Codex task, or GitHub Actions
+# attempt. GitHub's result-bearing source and candidate identities are bound by
+# the checked-out Git trees and the static release fingerprint; its GITHUB_*
+# values are execution metadata and ephemeral command-file destinations. None
+# of these values reach the build, test, parity, packaging, or publication
+# contracts.
 NON_RESULT_PREFIXES = (
     "ATUIN_",
     "CODEX_",
+    "GITHUB_",
     "STARSHIP_",
     "ZSH_TMUX_",
 )

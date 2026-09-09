@@ -533,6 +533,25 @@ jobs:
               --receipt "${cctl_pin}" --repository containerization \
               --repository-path "${source_worktree}" \
               --build-contract "${cctl_contract}"
+            cctl_result="${version_root}/cctl-result.json"
+            jq -e '
+              if .schema == 1 and
+                .repository == "containerization" and
+                (.artifacts | length) == 1
+              then {
+                cctlBuildPinSchema: .schema,
+                cctlBuildPinSha256: .receipt_sha256,
+                cctlBuildCommand: .build.command,
+                cctlBuildContractSha256: .build.contract,
+                cctlBuildDurationSeconds: .build.duration_seconds,
+                cctlBuildSourceCommit: .source.commit,
+                cctlBuildSourceTree: .source.tree,
+                cctlBuildSourceRemote: .source.remote,
+                cctlSha256: .artifacts[0].sha256
+              }
+              else error("invalid containerization cctl build pin")
+              end
+            ' "${cctl_pin}" > "${cctl_result}"
 
             cctl_home="${version_root}/cctl-home"
             install -d -m 0700 "${cctl_home}/Library/Application Support" \

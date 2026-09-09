@@ -228,6 +228,38 @@ class HistoricalReconstructionTests(unittest.TestCase):
                     Path(directory) / "output",
                 )
 
+    def test_accepts_an_atomic_cctl_build_pin_without_exposing_paths(self) -> None:
+        provenance = {
+            "artifactDigest": "sha256:" + "1" * 64,
+            "artifactId": 123,
+            "cctlBuildPinSchema": 1,
+            "cctlBuildPinSha256": "2" * 64,
+            "cctlBuildCommand": "swift build -c release --product cctl",
+            "cctlBuildContractSha256": "3" * 64,
+            "cctlBuildDurationSeconds": 42.5,
+            "cctlBuildSourceCommit": self.revision,
+            "cctlBuildSourceTree": "4" * 40,
+            "cctlBuildSourceRemote": (
+                "https://github.com/stephenlclarke/containerization"
+            ),
+            "cctlSha256": "5" * 64,
+            "containerizationRef": self.revision,
+            "runId": self.run_id,
+            "runUrl": (
+                "https://github.com/stephenlclarke/containerization/"
+                f"actions/runs/{self.run_id}"
+            ),
+        }
+
+        MODULE.validate_guest_provenance(provenance)
+        self.assertNotIn("cctlBuildSourcePath", provenance)
+
+        provenance["cctlBuildSourceTree"] = "not-a-tree"
+        with self.assertRaisesRegex(
+            MODULE.ReconstructionInputError, "build pin provenance is invalid"
+        ):
+            MODULE.validate_guest_provenance(provenance)
+
 
 class HistoricalWorkflowTests(unittest.TestCase):
     def test_workflow_uses_exact_recoverable_authorities(self) -> None:
@@ -246,6 +278,9 @@ class HistoricalWorkflowTests(unittest.TestCase):
         self.assertIn("artifactDigest", workflow)
         self.assertIn("Tools/build/stack-pin.py create", workflow)
         self.assertIn("Tools/build/stack-pin.py verify", workflow)
+        self.assertIn('cctl_result="${version_root}/cctl-result.json"', workflow)
+        self.assertIn("cctlBuildPinSha256: .receipt_sha256", workflow)
+        self.assertNotIn("cctlBuildSourcePath: .source.path", workflow)
         self.assertIn("validate-oci-image-layout.py", workflow)
         self.assertIn("actions: write", workflow)
         self.assertIn('-f documentation_pr="${pr_number}"', workflow)
