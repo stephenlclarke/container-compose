@@ -1,5 +1,5 @@
 {
-  "originHash" : "255429417efd5cd4ffc1bf02451349f78a3c67d6b9e5fb3f0d5092f5465a75c1",
+  "originHash" : "6773a68847fc5ad034c4b7a8d01af2e26568ace0301bdc5551ee1397b133619e",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/stephenlclarke/container.git",
       "state" : {
-        "revision" : "d9d0fd80d38db1f332c854d91f9a479f5e149431"
+        "revision" : "39c6ec7ae63b3896bdfb396749f98a3aaac898ca"
       }
     },
     {
