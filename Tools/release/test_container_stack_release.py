@@ -2308,6 +2308,13 @@ github_cli() {{
         self.assertIn("name: Checkout immutable release control tools", fail_fast)
         self.assertIn("ref: ${{ github.sha }}", fail_fast)
         self.assertIn("name: Require Current stack pins to match fork mains", fail_fast)
+        self.assertIn("name: Require exact Current VM-init authority", fail_fast)
+        self.assertIn("run-candidates", fail_fast)
+        self.assertIn("validate-initfs", fail_fast)
+        self.assertIn(
+            "no exact, retained initfs artifact exists for Containerization",
+            fail_fast,
+        )
         self.assertIn(
             "for component in container-builder-shim containerization container",
             fail_fast,
