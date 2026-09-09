@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `9a8917ca2da5cd6ba059b9ba5ca5a74892e9bb7d` | `a702f22b0e76daf74c0c2ec3009ccf4a2150c0e9` | 0 | 818 | 679 |
+| `container` | `8ca5c80c380cdd925d87b497fb23eddb6b58843f` | `cc424d2be1cdcefcec57e1d138c3a4cead278d5a` | 0 | 820 | 679 |
 | `containerization` | `9eacc197d7c3663eb29cbab6d51244ede6d1cd7d` | `5372b36a691cbb392c4027ccf0ea2b6af7284b5b` | 0 | 315 | 244 |
 | `container-builder-shim` | `5dc4286e5adbeb7dac189b22b7d5aab336942fe2` | `5373d9b4363c6e536dc6401199da269c7045abf9` | 0 | 59 | 46 |
-| **Total** | | | **0** | **1192** | **969** |
+| **Total** | | | **0** | **1194** | **969** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -345,3 +345,8 @@ The subsequent 0.14.3 release-gate correction advances Containerization to
 `79d5eb1ec231` restores the fork's guest-device `stat` protocol adapter while
 retaining Apple's confined implementation; signed Container commit
 `8dc1d66f4f5c` advances the exact dependency pin. Both are support maintenance.
+
+Apple's subsequent v1.0 compatibility-policy update is preserved through the
+signed Container merge at `36db202b7a42` and reviewed fork merge
+`cc424d2be1cd`. It adds no new fork-only semantic commit, so the classification
+count is unchanged.
