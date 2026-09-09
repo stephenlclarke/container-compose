@@ -437,6 +437,7 @@ jobs:
           set -euo pipefail
           checkpoint_root="${RELEASE_BUILD_STATE_ROOT}/checkpoints"
           mkdir -p "${checkpoint_root}"
+          HAWKEYE="${GITHUB_WORKSPACE}/container-compose/.local/bin/hawkeye" \
           CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR="${checkpoint_root}" \
           STACK_SOURCE_ROOT="${GITHUB_WORKSPACE}" \
           CONTAINER_BUILDER_SHIM_STACK_REPO="${GITHUB_WORKSPACE}/container-builder-shim" \

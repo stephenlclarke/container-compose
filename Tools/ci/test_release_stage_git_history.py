@@ -151,6 +151,10 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
         self.assertIn(
             "make -C release-tools release-gate-hosted", STABLE_RELEASE_WORKFLOW
         )
+        self.assertIn(
+            'HAWKEYE="${GITHUB_WORKSPACE}/container-compose/.local/bin/hawkeye"',
+            STABLE_RELEASE_WORKFLOW,
+        )
         self.assertNotIn("nextflow", STABLE_RELEASE_WORKFLOW.lower())
 
 
