@@ -726,9 +726,17 @@ jobs:
           ref: ${{ needs.resolve-publish-context.outputs.checkout_ref }}
           token: ${{ github.token }}
 
+      - name: Checkout immutable release control tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: release-tools
+          fetch-depth: 1
+          ref: ${{ github.sha }}
+
       - name: Verify exact container-compose checkout
         env:
           PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+          RELEASE_CONTROL_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -738,6 +746,7 @@ jobs:
               "${PUBLISH_SHA}" "${actual}" >&2
             exit 1
           fi
+          [[ "$(git -C release-tools rev-parse HEAD)" == "${RELEASE_CONTROL_SHA}" ]]
 
       - name: Select release lane
         id: lane
@@ -1125,7 +1134,8 @@ jobs:
             git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git \
               refs/heads/main | awk '{print $1}' | tail -n 1
           )"
-          python3 container-compose/Tools/release/stable-release-authority.py verify \
+          [[ "$(git -C release-tools rev-parse HEAD)" == "${GITHUB_SHA}" ]]
+          python3 release-tools/Tools/release/stable-release-authority.py verify \
             --evidence-dir "${authority_root}/bundle" \
             --receipt "${receipt}" \
             --release-tag "${PUBLISH_REF_NAME}" \

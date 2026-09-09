@@ -3801,6 +3801,15 @@ github_cli() {{
         self.assertIn(".workflow_run.id", receipt)
         self.assertIn('"sha256:${AUTHORITY_ARTIFACT_DIGEST}"', receipt)
         self.assertIn("stable-release-authority.py verify", receipt)
+        self.assertIn(
+            "python3 release-tools/Tools/release/stable-release-authority.py verify",
+            receipt,
+        )
+        self.assertNotIn(
+            "python3 container-compose/Tools/release/stable-release-authority.py verify",
+            receipt,
+        )
+        self.assertIn('git -C release-tools rev-parse HEAD', receipt)
         self.assertIn("--candidate-sha \"${PUBLISH_SHA}\"", receipt)
         self.assertIn("stable-release-authority.tar.gz", receipt)
 

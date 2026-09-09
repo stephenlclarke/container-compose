@@ -223,7 +223,7 @@ STACK_SWIFT_CONTRACT = $(shell "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
 	--configuration $(call SHELL_QUOTE,$(STACK_CONFIGURATION)) \
 	--controller "$(abspath Makefile)" --controller "$(STACK_PIN_TOOL)" \
 	--controller "$(abspath Tools/ci/run-with-local-swift-stack.py)")
-STACK_GO_CONTRACT = $(shell "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
+STACK_GO_CONTRACT = $(shell GOWORK=off "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
 	--tool $(call SHELL_QUOTE,$(STACK_GO)) \
 	--configuration $(call SHELL_QUOTE,$(STACK_CONFIGURATION)) \
 	--controller "$(abspath Makefile)" --controller "$(STACK_PIN_TOOL)")
@@ -608,7 +608,7 @@ stack-builder-build:
 		/usr/bin/install -d -m 0700 "$$(dirname "$$artifact")"; \
 		cd "$(CONTAINER_BUILDER_SHIM_STACK_REPO)"; \
 		started=$$SECONDS; \
-		"$(STACK_GO)" build -trimpath -o "$$artifact" .; \
+		GOWORK=off "$(STACK_GO)" build -trimpath -o "$$artifact" .; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-builder-shim \
 			--repository-path "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" \
 			--output "$(STACK_BUILDER_PIN)" --artifact "$$artifact" \

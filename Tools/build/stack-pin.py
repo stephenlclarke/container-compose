@@ -68,6 +68,7 @@ GO_BUILD_ENVIRONMENT = (
     "GORISCV64",
     "GOTOOLCHAIN",
     "GOWASM",
+    "GOWORK",
     "PKG_CONFIG",
 )
 

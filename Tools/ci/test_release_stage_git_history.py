@@ -60,6 +60,13 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
         self.assertIn('"$(STACK_PIN_TOOL)" bundle', locked)
         self.assertIn('"$(STACK_PIN_TOOL)" verify-bundle', locked)
 
+    def test_recoverable_builder_ignores_ambient_go_workspaces(self) -> None:
+        self.assertIn(
+            'STACK_GO_CONTRACT = $(shell GOWORK=off "$(PYTHON)"', MAKEFILE
+        )
+        builder = make_target("stack-builder-build", "stack-compose-build")
+        self.assertIn('GOWORK=off "$(STACK_GO)" build', builder)
+
     def test_individual_stack_stages_reject_unlocked_execution(self) -> None:
         self.assertEqual(MAKEFILE.count("\n\t$(STACK_REQUIRE_LOCK)\n"), 5)
         self.assertIn("stack stage requires the stack-build lock", MAKEFILE)
