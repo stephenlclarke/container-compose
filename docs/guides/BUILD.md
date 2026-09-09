@@ -83,10 +83,12 @@ compatibility.
 
 | Target | Output |
 | --- | --- |
+| `make` or `make all` | Recoverable build of the complete Container-family source stack; writes exact pins and JSONL timings. |
+| `make local-build` | Quick repository-local debug builds of `compose` and `compose-normalizer`. |
 | `make build` | Debug Swift `compose` executable. |
 | `make build-release` | Release Swift `compose` executable. |
 | `make go-build` | Static, trimmed release `compose-normalizer`. |
-| `make stack-build` | Recoverable local build of the complete Container-family source stack with exact pins. |
+| `make stack-build` | Explicit form of the default recoverable full-stack build. |
 | `make stack-status` | Verify every retained source, dependency, and artifact pin plus the final bundle. |
 | `make package` | Release plugin archive and relocatable checksum sidecar. |
 
@@ -142,13 +144,27 @@ Useful focused targets are:
 | `make stack-preflight` | Validate native tools, state ownership, and clean sibling source repositories before expensive work. |
 | `make stack-self-test` | Prove atomic pin publication, transitive invalidation, artifact verification, and bundle recovery. |
 
-The source-build recovery contract is documented in [Recoverable Container-family builds](../architecture/recoverable-container-family-builds.md). Make declares the repository graph; SwiftPM and Go retain their native compiler caches. Each successful repository build atomically publishes a source-, dependency-, and artifact-addressed JSON pin. Downstream repositories read those pins automatically, and any source, dependency, artifact, or receipt drift invalidates the affected transitive path before reuse.
+The source-build recovery contract and diagrams are documented in
+[Recoverable Container-family builds](../architecture/recoverable-container-family-builds.md).
+Make declares the repository graph; SwiftPM and Go retain their native compiler
+caches. Each successful repository build atomically publishes a source-,
+dependency-, and artifact-addressed JSON pin. Downstream repositories read
+those pins automatically, and any source, dependency, artifact, or receipt
+drift invalidates the affected transitive path before reuse. Unrelated Makefile
+changes do not invalidate native caches because the stack contract has its own
+versioned manifest.
 
 The final pin bundle is verified while the single build lock is held. After a
-failure or interruption, rerun `make stack-build`: valid independent pins are
+failure or interruption, rerun `make`: valid independent pins are
 reused and the first missing or stale stage continues from its native build
 cache. The hosted release gate uses candidate-keyed stage checkpoints and
 durable logs under the same principle. Never repair a success receipt by hand.
+
+Each full stack invocation writes a unique JSONL file below
+`$(STACK_STATE_ROOT)/timings`. It records the end-to-end duration plus each
+native compiler and bin-path operation, including failures. Compare a clean
+run, the immediate no-op rerun, and a fail-once recovery using these durable
+records rather than terminal timestamps.
 
 Every stage has a wall-clock deadline and terminates its complete process
 session, including descendant process groups, when that deadline expires. A
@@ -414,7 +430,13 @@ prior SHA.
 
 ### Scheduled Stable Releases
 
-**Scheduled Stable Release** runs every Monday at 09:17 UTC and promotes the next minor version with `-+-` when the Current build has soaked for seven days and `main` contains source newer than the latest semantic tag. It ends successfully without allocating the release runner when either condition is not met, so an unready week is not a failed release. A manual dispatch of the same workflow permits either `-+-` (minor) or `+--` (major); patch, exact-version, and documented security releases remain explicit local helper invocations.
+**Scheduled Stable Release** runs every Monday at 09:17 UTC. When the Current
+build has soaked for seven days and `main` contains source newer than the latest
+semantic tag, it derives the next version from first-parent Conventional Commit
+history. It ends successfully without allocating the release runner when there
+is no release-producing commit or the soak is incomplete, so an unready week is
+not a failed release. Manual dispatch can use the same automatic decision or an
+explicit patch, minor, or major override.
 
 The scheduled stable-release workflow and the Current package workflow run only from `main` on the dedicated `container-compose-release` Apple-silicon self-hosted runner. It creates clean, disposable stack checkouts, reconstructs the read-only Apple remotes and Stephen-owned push remotes, and invokes the existing helper unchanged. That preserves the required local runtime and Docker Compose parity gate, signed semantic tag, source-promotion pull request, hosted stable gate, immutable package assets, and paired Homebrew update. The separate Current Demo workflow consumes the already-published exact-SHA signed packages on the same hardware-virtualization-capable runner, uses a stable internal-volume runtime path, and applies a process-group deadline. Its mutable visual asset is recoverable and deliberately outside the package, attestation, release, and Homebrew critical path. GitHub-hosted macOS workers cannot provide the nested virtualization needed to record Container guest startup, so they must never publish that recording.
 
@@ -432,6 +454,8 @@ From clean `~/github/container-compose`, `~/github/container-builder-shim`,
 
 ```sh
 make release-plan
+make release-version
+make release-plan VERSION_SELECTOR=--+ # reviewed maintenance plan
 ```
 
 ### Promote The Current Build
@@ -444,13 +468,13 @@ formulae, and release notes deterministic. The current prerelease is recreated
 by its workflow after the matching Homebrew formulae update, so its GitHub
 published time always identifies the build users are viewing.
 
-After `make release-plan` confirms the intended next version, promote the
-validated `main` source with one selector. The selector is resolved from the
-latest semantic tag—not from the working-tree version. The explicit intent
-makes a stable release a conscious boundary rather than an automatic response to
-every green slice:
+`make release-version` reports the latest reachable semantic tag, selected
+bump, and next version. `make release-plan` includes that decision. After the
+plan confirms the intended version, promote validated `main`; omission of
+`VERSION_SELECTOR` uses the Conventional Commit decision:
 
 ```sh
+CONTAINER_STACK_RELEASE_INTENT=milestone make release
 CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=--+   # patch: X.Y.Z -> X.Y.(Z+1)
 CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=-+-   # minor: X.Y.Z -> X.(Y+1).0
 CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=+--   # major: X.Y.Z -> (X+1).0.0
@@ -460,6 +484,15 @@ CONTAINER_STACK_RELEASE_INTENT=milestone \\
   make release VERSION_SELECTOR=0.7.0
 CONTAINER_STACK_RELEASE_INTENT=security CONTAINER_STACK_SECURITY_REASON='CVE-2026-12345' make release VERSION_SELECTOR=--+
 ```
+
+The automatic resolver treats `fix`, `perf`, and `revert` as patch changes,
+`feat` as minor, and a `!` marker or `BREAKING CHANGE:` footer as major. Other
+valid Conventional Commit types do not create a release by themselves.
+Non-conventional first-parent subjects fail closed. For a GitHub merge commit,
+the Conventional pull-request title recorded as its first body line supplies
+the decision. Explicit selectors remain available for reviewed maintenance
+promotions, security releases, and exact recovery retries; they are not a way
+to bypass release evidence.
 
 Before source promotion, the helper requires the mutable `current` tag to point
 at the validated `main` head. Milestones also require that Current build's

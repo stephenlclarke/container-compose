@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import signal
 import subprocess
@@ -172,6 +173,57 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertEqual(result.stdout, "complete\n")
+
+    def test_optional_timing_log_records_the_label_duration_and_status(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            timing_log = Path(directory) / "timings/run.jsonl"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--seconds",
+                    "5",
+                    "--timing-log",
+                    str(timing_log),
+                    "--timing-label",
+                    "fixture-build",
+                    "--",
+                    "/usr/bin/true",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            record = json.loads(timing_log.read_text(encoding="utf-8"))
+            self.assertEqual(record["label"], "fixture-build")
+            self.assertEqual(record["exit_status"], 0)
+            self.assertGreaterEqual(record["duration_seconds"], 0)
+
+    def test_timing_log_does_not_follow_a_symbolic_link(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            destination = root / "outside.jsonl"
+            destination.write_text("preserve\n", encoding="utf-8")
+            timing_log = root / "timing.jsonl"
+            timing_log.symlink_to(destination)
+
+            with self.assertRaises(OSError):
+                self.module.run(
+                    [
+                        "--seconds",
+                        "5",
+                        "--timing-log",
+                        str(timing_log),
+                        "--timing-label",
+                        "fixture-build",
+                        "--",
+                        "/usr/bin/true",
+                    ]
+                )
+
+            self.assertEqual(destination.read_text(encoding="utf-8"), "preserve\n")
 
     def test_no_deadline_returns_the_child_status_and_output(self) -> None:
         result = subprocess.run(

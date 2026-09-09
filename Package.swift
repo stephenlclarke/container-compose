@@ -15,17 +15,32 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import Foundation
 import PackageDescription
 
-let containerDependency: Package.Dependency = .package(
-    url: "https://github.com/stephenlclarke/container.git",
-    revision: "24dec751bd12e3cbaca8e954075f534a2be53586",
-)
+let containerDependency: Package.Dependency = {
+    if let path = ProcessInfo.processInfo.environment["CONTAINER_PACKAGE_PATH"],
+       !path.isEmpty
+    {
+        return .package(name: "container", path: path)
+    }
+    return .package(
+        url: "https://github.com/stephenlclarke/container.git",
+        revision: "d9d0fd80d38db1f332c854d91f9a479f5e149431",
+    )
+}()
 
-let containerizationDependency: Package.Dependency = .package(
-    url: "https://github.com/stephenlclarke/containerization.git",
-    revision: "a4abc86ce7f2c4169c805ff38b018297b166880a",
-)
+let containerizationDependency: Package.Dependency = {
+    if let path = ProcessInfo.processInfo.environment[
+        "CONTAINERIZATION_PACKAGE_PATH"
+    ], !path.isEmpty {
+        return .package(name: "containerization", path: path)
+    }
+    return .package(
+        url: "https://github.com/stephenlclarke/containerization.git",
+        revision: "6702ebb6e17196d5b7b195b2de4b1d69b0251d01",
+    )
+}()
 
 let nioSSLDependency: Package.Dependency = .package(
     url: "https://github.com/stephenlclarke/swift-nio-ssl.git",

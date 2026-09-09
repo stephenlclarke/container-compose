@@ -5278,7 +5278,11 @@ github_cli() {{
         workflow = SCHEDULED_STABLE_RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn('cron: "17 9 * * 1"', workflow)
-        self.assertIn('default: "-+-"', workflow)
+        self.assertIn('default: "auto"', workflow)
+        self.assertIn('--format selector --allow-no-release', workflow)
+        self.assertIn('Conventional Commit history contains no release-producing change', workflow)
+        self.assertIn('  - "--+"', workflow)
+        self.assertIn('  - "-+-"', workflow)
         self.assertIn('  - "+--"', workflow)
         self.assertIn("container-compose-plugin-current-[0-9a-f]{12}-arm64", workflow)
         self.assertIn(".updated_at", workflow)

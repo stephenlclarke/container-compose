@@ -2,135 +2,177 @@
 
 ## Decision
 
-The Container-family source build uses Make to declare repository order and
-each repository's native build tool to do the work. Swift packages are built
-with SwiftPM and `container-builder-shim` is built with Go. There is no separate
-workflow runtime and no duplicated build graph.
+Make declares the Container-family repository graph. SwiftPM builds the Swift
+packages, and Go builds `container-builder-shim`. There is no second build
+graph or separate workflow runtime.
 
-This keeps the normal path visible from the command line:
+The default command builds the complete local stack:
 
 ```sh
-make stack-preflight
-make stack-build
-make stack-status
+make
 ```
 
-`make` remains the quick, repository-local Compose build. `make stack-build`
-builds the complete local family and records the exact source and dependency
-pins that produced every executable.
+Use `make local-build` for a quick repository-local Compose build. Use
+`make stack-status` to verify retained output without rebuilding it.
 
-## Repository Graph
+## Build Workflow
 
-Make starts the three independent roots concurrently:
+The three independent roots start concurrently. A consumer starts only after
+its dependencies have published and verified exact build pins.
 
-```text
-containerization ─┐
-                  ├─> container ─> container-compose
-container-engine-api ─┘
-
-container-builder-shim ────────────────────────┐
-                                               ├─> final stack pin bundle
-container-compose ─────────────────────────────┘
+```mermaid
+flowchart LR
+  preflight[Fail-fast preflight] --> lock[Single non-blocking lock]
+  lock --> cz[containerization<br/>SwiftPM]
+  lock --> api[container-engine-api<br/>SwiftPM]
+  lock --> shim[container-builder-shim<br/>Go]
+  cz --> container[container<br/>SwiftPM]
+  api --> container
+  container --> compose[container-compose<br/>SwiftPM]
+  cz --> compose
+  api --> compose
+  cz --> bundle[Verified stack pin bundle]
+  api --> bundle
+  shim --> bundle
+  container --> bundle
+  compose --> bundle
 ```
-
-`container` cannot start until the `containerization` and
-`container-engine-api` pins verify. Compose cannot start until the Container
-pin and its transitive pins verify. The builder is independent, so it runs in
-parallel and joins only at final bundle publication.
-
-## Recovery Contract
 
 Generated state defaults to
 `/Volumes/SSD/github/.container-compose-build`. If that development volume is
-not mounted, the local fallback is `.build/stack`. A marker prevents the build
-from treating an arbitrary directory as owned state, and one non-blocking
-`lockf` lock prevents concurrent writers.
+not mounted, the fallback is `.build/stack`. SwiftPM scratch directories, Go
+artifacts, pins, timing logs, and the final bundle all live below that managed
+state root rather than in source checkouts.
 
-Each repository has a durable JSON build pin. A pin records:
+Every compiler command has a wall-clock deadline and complete process-session
+cleanup. Every full invocation records concurrency-safe JSONL timing evidence
+under `timings/`. The log includes the end-to-end `stack-total` duration and
+the duration and exit status of each native build and bin-path query. This
+makes clean, resumed, and warm no-op runs directly comparable.
 
-- the canonical source path, exact commit, Git tree, and origin;
-- the exact upstream pin receipts it consumed;
-- every published artifact path and SHA-256 digest;
-- the successful native build command, duration, and completion time; and
-- a build-contract digest covering configuration, tool binary and version,
-  relevant compiler environment, host type, Python runtime, and controller
-  source.
+The first real cold and recovered runs are recorded in
+[Recoverable build workflow timings](../reviews/CONTAINER-FAMILY-BUILD-WORKFLOW-TIMINGS-2026-09-09.md).
 
-Pins are written to a temporary regular file, flushed, and atomically renamed
-only after the native build succeeds. Failed or interrupted builds therefore
-cannot publish success. SwiftPM scratch directories and Go output storage are
-retained, so the next invocation can continue through the native compiler
-cache.
+## Recovery Contract
 
-Before a pin is reused, `Tools/build/stack-pin.py` recursively verifies its
-own digest, the clean source commit and tree, every dependency receipt, and
-every artifact digest. A changed source checkout, dependency pin, executable,
-or receipt invalidates that repository and all downstream repositories. A
-configuration, toolchain, operating-system, environment, or controller change
-also selects a different native scratch identity. Work that is still exact is
-reused automatically.
+A marker prevents the build from claiming an arbitrary state directory, and
+one `lockf` lock prevents concurrent writers. Each successful repository build
+atomically publishes a durable JSON pin containing:
 
-The final `stack.json` bundle is published while the global build lock is
-still held. `verify-bundle` then recursively validates every component before
-the lock is released. `make stack-status` reports `valid`, `stale`, or
-`missing`; it never repairs or silently carries a receipt forward.
+- canonical source path, exact commit, Git tree, and origin;
+- exact dependency-pin receipts;
+- artifact paths, modes, and SHA-256 digests;
+- successful native command, duration, and completion time; and
+- a build-contract digest covering configuration, toolchain, effective target,
+  SDK identity, relevant environment, host, Python runtime, and the dedicated
+  build-controller contract.
 
-## What Happens After Failure
+The controller identity hashes a narrow manifest and two marked Makefile
+sections containing only stack configuration and recipes. Unrelated Make
+targets therefore do not invalidate native caches, while any stack recipe
+change automatically changes the contract. Tooling that enforces or records
+the contract is itself hashed into the build identity.
 
-Run the same command again:
+Pins are flushed and atomically renamed only after success. Before reuse,
+`Tools/build/stack-pin.py` recursively verifies its own digest, clean source
+identity, dependencies, and artifacts. Source, dependency, artifact, toolchain,
+SDK, environment, or controller drift invalidates only the affected transitive
+path.
 
-```sh
-make stack-build
+```mermaid
+stateDiagram-v2
+  [*] --> VerifyPin
+  VerifyPin --> Reuse: exact source, contract,<br/>dependencies and artifact
+  VerifyPin --> NativeBuild: missing or stale
+  NativeBuild --> Failed: command fails or times out
+  NativeBuild --> PublishPin: command succeeds
+  PublishPin --> VerifyPin: atomic receipt installed
+  Failed --> VerifyPin: rerun same make command
+  Reuse --> Bundle
+  Bundle --> [*]: every component verifies
 ```
 
-The result depends on the failure boundary:
+After a failure, run `make` again. Successful independent roots are reused;
+the failed stage continues from its retained native cache; downstream work is
+rebuilt only when its verified input changed. If final bundle publication was
+interrupted, component pins are reused and only the bundle is republished. A
+live previous invocation makes the lock fail immediately.
 
-- If a native compile failed, its success pin is absent and that command runs
-  again against the retained native scratch directory.
-- If an upstream source or artifact changed, its pin and every transitive
-  consumer are rebuilt.
-- If an independent repository already has an exact valid pin, it is skipped.
-- If final bundle publication was interrupted, all valid component pins are
-  reused and only the bundle is republished.
-- If the previous process is still running, the lock fails immediately rather
-  than creating a second writer.
+## Test Workflow
 
-Manual editing, copying, or renaming of success pins is unsupported. A modified
-receipt fails its digest check.
+Development keeps feedback proportional to the change. Release-only work does
+not run during ordinary builds.
+
+```mermaid
+flowchart TD
+  edit[Source change] --> focused[Focused unit or policy tests]
+  focused --> review[Exact-diff review]
+  review -->|finding| fix[Fix finding]
+  fix --> focused
+  review -->|clean| ci[Repository CI and coverage]
+  ci -->|feature slice complete| integration[Matched-stack integration and parity]
+  integration --> release{Stable release?}
+  release -->|no| done[Merge-ready evidence]
+  release -->|yes| releaseOnly[CodeQL, package, signing,<br/>notarisation and DocC]
+```
+
+`make stack-self-test` executes the complete five-repository graph with fake
+native builders. It proves fail-once recovery, transitive invalidation,
+parallel-root reuse, external Compose scratch storage, final bundle
+publication, and timing evidence. `Tools/build/test_stack_pin.py` separately
+covers receipt and artifact integrity, including real macOS SDK metadata in the
+Swift build contract.
+
+## GitHub Actions And Release
+
+Conventional Commit history selects the next semantic version:
+
+- `fix`, `perf`, or `revert` produces a patch;
+- `feat` produces a minor;
+- `!` or a `BREAKING CHANGE:` footer produces a major; and
+- documentation, test, build, CI, and maintenance commits alone do not release.
+
+Non-conventional first-parent commits fail closed. For GitHub merge commits,
+the wrapper subject is ignored and the Conventional pull-request title on the
+first body line remains the authority. Use `make release-version` to inspect
+the decision. An explicit
+`VERSION_SELECTOR` remains available for a reviewed maintenance release or an
+exact recovery retry.
+
+```mermaid
+flowchart TD
+  main[Reviewed immutable main] --> version[Resolve Conventional Commit semver]
+  version --> preflight[Homebrew and release fail-fast checks]
+  preflight --> local[Recoverable local release gate]
+  local --> hosted[Candidate-keyed hosted gate]
+  hosted --> codeql[Release-only CodeQL]
+  codeql --> package[Package, sign and notarise]
+  package --> publish[GitHub release and Homebrew]
+  publish --> docc[DocC sites last]
+  local -. retry .-> local
+  hosted -. checkpoint retry .-> hosted
+```
+
+The hosted gate stores stage checkpoints below the immutable release-candidate
+commit. Each checkpoint records exact inputs, status, duration, output name,
+and output digest. A corrected retry starts at the first missing or invalid
+stage. The stable-release authority receipt binds component commits to the
+verified checkpoint and log.
 
 ## Unattended Operation
 
 Build recipes disable Git credential prompting, SSH askpass, inherited shell
-hooks, and dynamic-loader injection. Normal Make parsing never queries the
-macOS Keychain for a signing identity. Source builds do not sign applications,
-start VMs, access removable-volume data, publish artifacts, run CodeQL, build
-DocC, or record performance benchmarks.
+hooks, and dynamic-loader injection. Ordinary builds do not sign applications,
+start VMs, read removable volumes, access the Keychain, publish artifacts, run
+CodeQL, build DocC, or record performance benchmarks.
 
 Release signing receives an explicit 40-character Developer ID fingerprint at
-its release-only boundary. Missing credentials or privacy grants fail there
-with a diagnostic rather than being requested by an ordinary build.
-
-## Release Validation
-
-Release validation remains broader than a source build. Its stages use the
-same Make targets plus `Tools/ci/run-release-checkpoint.py` for bounded,
-content-addressed success checkpoints and durable output logs. Each checkpoint
-records the exact-input fingerprint before and after the stage, status,
-duration, output name, and output digest.
-
-The hosted stable gate retains checkpoints below a directory keyed by the
-immutable release candidate commit. A corrected retry starts with the first
-missing or invalid stage. Its stable-release authority receipt binds the
-candidate and component commits to the verified hosted-gate checkpoint and
-output log; it does not rely on an orchestration session.
-
-CodeQL, full parity, packaging, signing, notarisation, documentation, and
-publication stay in release-specific jobs. Their inclusion is explicit and
-does not widen `make`, `make build`, or `make stack-build`.
+its release-only boundary. Missing credentials or privacy grants fail with a
+diagnostic rather than opening an approval dialog during an unattended build.
 
 ## Verification
 
-Run the focused recovery tests with:
+Run the focused build-system proof with:
 
 ```sh
 make stack-self-test
@@ -138,7 +180,6 @@ python3 -m unittest Tools.ci.test_release_stage_git_history
 python3 -m unittest Tools.release.test_stable_release_authority
 ```
 
-The tests cover atomic replacement, source and artifact drift, transitive pin
-invalidation, bundle corruption, unsafe output links, the declared repository
-graph, lock scope, release-only exclusions, noninteractive identity handling,
-and candidate-keyed hosted checkpoints.
+The final release still runs the repository CI, matched-stack integration,
+Docker parity, CodeQL, packaging, Homebrew, and DocC gates required by the
+release workflow.

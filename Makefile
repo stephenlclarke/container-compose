@@ -84,6 +84,7 @@ GO_COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
 PLUGIN_ICON ?= docs/images/container-compose-icon-octopus.png
+CONVENTIONAL_VERSION_TOOL := $(abspath Tools/release/conventional-version.py)
 DOCS_OUTPUT_DIR ?= _site
 DOCS_SERVER_DIR ?= _serve
 DOCS_HOSTING_BASE_PATH ?= container-compose
@@ -204,9 +205,18 @@ CONTAINER_RUNTIME_START_DEADLINE_SECONDS ?= 300
 # development volume is available. A local fallback keeps ordinary source
 # builds usable when that volume is intentionally disconnected.
 STACK_STATE_ROOT ?= $(if $(wildcard /Volumes/SSD/github/.),/Volumes/SSD/github/.container-compose-build,$(abspath .build/stack))
+# BEGIN RECOVERABLE STACK CONFIGURATION
 STACK_MARKER_VALUE := container-compose recoverable build v1
 STACK_PIN_TOOL := $(abspath Tools/build/stack-pin.py)
+STACK_BUILD_CONTRACT := $(abspath Tools/build/stack-build-contract.json)
+STACK_DEADLINE_TOOL := $(abspath Tools/ci/run-command-with-deadline.py)
+STACK_SWIFT_STACK_TOOL := $(abspath Tools/ci/run-with-local-swift-stack.py)
 STACK_CONFIGURATION ?= debug
+STACK_BUILD_STAGE_TIMEOUT_SECONDS ?= 3600
+STACK_BUILD_TIMEOUT_SECONDS ?= 14400
+STACK_LOCK_TOOL ?= /usr/bin/lockf
+STACK_TIMING_ROOT := $(STACK_STATE_ROOT)/timings
+STACK_TIMING_LOG ?= $(STACK_TIMING_ROOT)/direct-stage.jsonl
 STACK_PIN_DIR := $(STACK_STATE_ROOT)/pins/$(STACK_CONFIGURATION)
 STACK_SCRATCH_ROOT := $(STACK_STATE_ROOT)/scratch
 STACK_ARTIFACT_ROOT := $(STACK_STATE_ROOT)/artifacts/$(STACK_CONFIGURATION)
@@ -221,12 +231,18 @@ STACK_GO ?= $(GO)
 STACK_SWIFT_CONTRACT = $(shell "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
 	--tool $(call SHELL_QUOTE,$(STACK_SWIFT)) \
 	--configuration $(call SHELL_QUOTE,$(STACK_CONFIGURATION)) \
-	--controller "$(abspath Makefile)" --controller "$(STACK_PIN_TOOL)" \
-	--controller "$(abspath Tools/ci/run-with-local-swift-stack.py)")
+	--controller "$(STACK_BUILD_CONTRACT)" --controller "$(STACK_PIN_TOOL)" \
+	--controller "$(STACK_DEADLINE_TOOL)" --controller "$(STACK_SWIFT_STACK_TOOL)" \
+	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK CONFIGURATION::END RECOVERABLE STACK CONFIGURATION" \
+	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK TARGETS::END RECOVERABLE STACK TARGETS")
 STACK_GO_CONTRACT = $(shell GOWORK=off "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
 	--tool $(call SHELL_QUOTE,$(STACK_GO)) \
 	--configuration $(call SHELL_QUOTE,$(STACK_CONFIGURATION)) \
-	--controller "$(abspath Makefile)" --controller "$(STACK_PIN_TOOL)")
+	--controller "$(STACK_BUILD_CONTRACT)" --controller "$(STACK_PIN_TOOL)" \
+	--controller "$(STACK_DEADLINE_TOOL)" \
+	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK CONFIGURATION::END RECOVERABLE STACK CONFIGURATION" \
+	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK TARGETS::END RECOVERABLE STACK TARGETS")
+# END RECOVERABLE STACK CONFIGURATION
 RELEASE_GATE_CHECKPOINT_DIR = $(if $(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR),$(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR)/compose-release-gate,)
 PARITY_GATE_CHECKPOINT_DIR = $(if $(RELEASE_GATE_CHECKPOINT_DIR),$(RELEASE_GATE_CHECKPOINT_DIR)/parity,)
 RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT = $(shell if [[ -z "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then printf unset; elif [[ -f "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then shasum -a 256 "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" | awk '{print $$1}'; else printf missing; fi)
@@ -354,7 +370,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 SWIFT_TEST_FLAGS ?=
 SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -F -Xswiftc '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' -Xlinker -rpath -Xlinker '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' $(if $(strip $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)),-Xlinker -rpath -Xlinker '$(SWIFT_TEST_RUNTIME_LIBRARY_PATH)'))
 
-.PHONY: all workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-test-direct swift-runtime-test-build swift-runtime-test swift-coverage swift-coverage-check go-test go-coverage-check go-build go-release-check cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit swift-style-tools swift-style-paths swift-style-check swift-style-format local-swift-stack-clean
+.PHONY: all local-build workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-test-direct swift-runtime-test-build swift-runtime-test swift-coverage swift-coverage-check go-test go-coverage-check go-build go-release-check cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan release-version package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit swift-style-tools swift-style-paths swift-style-check swift-style-format local-swift-stack-clean
 
 .PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint
 .PHONY: worktree-audit worktree-audit-strict
@@ -368,16 +384,19 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle docker-rest-logging-oracle docker-rest-logging-candidate docker-rest-logging-parity docker-rest-discovery-oracle docker-rest-discovery-candidate docker-rest-discovery-parity docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate docker-rest-image-discovery-parity docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate docker-rest-image-mutation-parity
 .PHONY: stack-help stack-state-init stack-preflight stack-status stack-self-test stack-build stack-build-locked stack-containerization-build stack-engine-api-build stack-container-build stack-builder-build stack-compose-build
 
+# BEGIN RECOVERABLE STACK TARGETS
 STACK_REQUIRE_LOCK = @[[ "$(STACK_LOCK_HELD)" == 1 ]] || { printf 'stack stage requires the stack-build lock\n' >&2; exit 2; }
 
 stack-help:
 	@printf '%s\n' \
 		'Recoverable Container-family source build:' \
-		'  make                 Build Compose with SwiftPM and Go only.' \
+		'  make                 Build the complete source stack and publish exact pins.' \
+		'  make local-build     Build Compose with SwiftPM and Go only.' \
 		'  make stack-preflight Verify tools and clean sibling source repositories.' \
 		'  make stack-build     Build the complete source stack and publish exact pins.' \
 		'  make stack-status    Verify each retained build pin and artifact.' \
 		'  make stack-self-test Run the focused receipt/recovery regression tests.' \
+		'  Each full run writes durable JSONL stage timings under the state root.' \
 		'' \
 		'Stack build order:' \
 		'  containerization + container-engine-api + container-builder-shim (parallel)' \
@@ -424,7 +443,7 @@ stack-state-init:
 		/bin/mv "$$temporary" "$$marker"; \
 		trap - EXIT; \
 	fi; \
-	for managed in "$(STACK_PIN_DIR)" "$(STACK_SCRATCH_ROOT)" "$(STACK_ARTIFACT_ROOT)"; do \
+	for managed in "$(STACK_PIN_DIR)" "$(STACK_SCRATCH_ROOT)" "$(STACK_ARTIFACT_ROOT)" "$(STACK_TIMING_ROOT)"; do \
 		if [[ -L "$$managed" ]] || [[ -e "$$managed" && ! -d "$$managed" ]]; then \
 			printf 'build state path must be a direct directory: %s\n' "$$managed" >&2; \
 			exit 2; \
@@ -435,7 +454,7 @@ stack-state-init:
 	done
 
 stack-preflight: stack-state-init
-	@for tool in /usr/bin/git "$(STACK_SWIFT)" "$(STACK_GO)" "$(PYTHON)"; do \
+	@for tool in /usr/bin/git "$(STACK_LOCK_TOOL)" "$(STACK_SWIFT)" "$(STACK_GO)" "$(PYTHON)"; do \
 		if [[ "$$tool" == */* ]]; then [[ -x "$$tool" ]] || { printf 'required build tool is unavailable: %s\n' "$$tool" >&2; exit 2; }; \
 		else command -v "$$tool" >/dev/null 2>&1 || { printf 'required build tool is unavailable: %s\n' "$$tool" >&2; exit 2; }; fi; \
 	done; \
@@ -451,6 +470,12 @@ stack-preflight: stack-state-init
 	done; \
 	for contract in "$(STACK_SWIFT_CONTRACT)" "$(STACK_GO_CONTRACT)"; do \
 		[[ "$$contract" =~ ^[0-9a-f]{64}$$ ]] || { printf 'could not establish an exact build contract\n' >&2; exit 2; }; \
+	done; \
+	for timeout in "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" "$(STACK_BUILD_TIMEOUT_SECONDS)"; do \
+		awk 'BEGIN { exit !(ARGV[1] + 0 > 0) }' "$$timeout" || { \
+			printf 'stack build timeouts must be greater than zero: %s\n' "$$timeout" >&2; \
+			exit 2; \
+		}; \
 	done
 
 stack-status:
@@ -491,9 +516,16 @@ stack-self-test:
 	"$(PYTHON)" -m unittest discover Tools/build
 
 stack-build: stack-preflight
-	@/usr/bin/lockf -t 0 "$(STACK_STATE_ROOT)/stack-build.lock" \
+	@timing_log="$(STACK_TIMING_ROOT)/$$(date -u +%Y%m%dT%H%M%SZ)-$$$$.jsonl"; \
+	"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_TIMEOUT_SECONDS)" \
+		--timing-log "$$timing_log" --timing-label stack-total -- \
+		"$(STACK_LOCK_TOOL)" -t 0 "$(STACK_STATE_ROOT)/stack-build.lock" \
 		$(MAKE) --no-print-directory stack-build-locked STACK_LOCK_HELD=1 \
-			STACK_STATE_ROOT="$(STACK_STATE_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)"
+			STACK_STATE_ROOT="$(STACK_STATE_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)" \
+			STACK_TIMING_LOG="$$timing_log"; \
+	exit_status=$$?; \
+	printf 'Stack timing evidence: %s\n' "$$timing_log"; \
+	exit $$exit_status
 
 stack-build-locked:
 	@[[ "$(STACK_LOCK_HELD)" == 1 ]] || { printf 'stack-build-locked requires the stack-build lock\n' >&2; exit 2; }
@@ -522,9 +554,13 @@ stack-containerization-build:
 		scratch="$(STACK_SCRATCH_ROOT)/$(STACK_SWIFT_CONTRACT)/containerization"; \
 		started=$$SECONDS; \
 		cd "$(CONTAINERIZATION_STACK_REPO)"; \
-		"$(STACK_SWIFT)" build --disable-automatic-resolution \
+		"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label containerization-build -- \
+			"$(STACK_SWIFT)" build --disable-automatic-resolution \
 			--scratch-path "$$scratch" -c "$(STACK_CONFIGURATION)" --product cctl; \
-		bin_path="$$($(STACK_SWIFT) build --scratch-path "$$scratch" \
+		bin_path="$$($(PYTHON) "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label containerization-bin-path -- \
+			"$(STACK_SWIFT)" build --scratch-path "$$scratch" \
 			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository containerization \
 			--repository-path "$(CONTAINERIZATION_STACK_REPO)" \
@@ -548,9 +584,13 @@ stack-engine-api-build:
 		scratch="$(STACK_SCRATCH_ROOT)/$(STACK_SWIFT_CONTRACT)/container-engine-api"; \
 		started=$$SECONDS; \
 		cd "$(CONTAINER_ENGINE_API_STACK_REPO)"; \
-		"$(STACK_SWIFT)" build --disable-automatic-resolution \
+		"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label engine-api-build -- \
+			"$(STACK_SWIFT)" build --disable-automatic-resolution \
 			--scratch-path "$$scratch" -c "$(STACK_CONFIGURATION)" --product container-engine; \
-		bin_path="$$($(STACK_SWIFT) build --scratch-path "$$scratch" \
+		bin_path="$$($(PYTHON) "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label engine-api-bin-path -- \
+			"$(STACK_SWIFT)" build --scratch-path "$$scratch" \
 			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-engine-api \
 			--repository-path "$(CONTAINER_ENGINE_API_STACK_REPO)" \
@@ -578,10 +618,14 @@ stack-container-build: stack-containerization-build stack-engine-api-build
 		cd "$(CONTAINER_STACK_REPO)"; \
 		CONTAINERIZATION_PACKAGE_PATH="$(CONTAINERIZATION_STACK_REPO)" \
 		CONTAINER_ENGINE_API_PACKAGE_PATH="$(CONTAINER_ENGINE_API_STACK_REPO)" \
+			"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label container-build -- \
 			"$(STACK_SWIFT)" build --disable-automatic-resolution \
 			--scratch-path "$$scratch" -c "$(STACK_CONFIGURATION)" --product container; \
 		bin_path="$$(CONTAINERIZATION_PACKAGE_PATH="$(CONTAINERIZATION_STACK_REPO)" \
 			CONTAINER_ENGINE_API_PACKAGE_PATH="$(CONTAINER_ENGINE_API_STACK_REPO)" \
+			"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label container-bin-path -- \
 			"$(STACK_SWIFT)" build --scratch-path "$$scratch" \
 			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container \
@@ -608,7 +652,9 @@ stack-builder-build:
 		/usr/bin/install -d -m 0700 "$$(dirname "$$artifact")"; \
 		cd "$(CONTAINER_BUILDER_SHIM_STACK_REPO)"; \
 		started=$$SECONDS; \
-		GOWORK=off "$(STACK_GO)" build -trimpath -o "$$artifact" .; \
+		GOWORK=off "$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label builder-build -- \
+			"$(STACK_GO)" build -trimpath -o "$$artifact" .; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-builder-shim \
 			--repository-path "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" \
 			--output "$(STACK_BUILDER_PIN)" --artifact "$$artifact" \
@@ -628,29 +674,34 @@ stack-compose-build: stack-container-build
 	else \
 		source_commit="$$(/usr/bin/git -C "$(CURDIR)" rev-parse 'HEAD^{commit}')"; \
 		source_tree="$$(/usr/bin/git -C "$(CURDIR)" rev-parse 'HEAD^{tree}')"; \
-		container_commit="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_CONTAINER_PIN)" --field source.commit)"; \
-		container_tree="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_CONTAINER_PIN)" --field source.tree)"; \
-		containerization_commit="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_CONTAINERIZATION_PIN)" --field source.commit)"; \
-		containerization_tree="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_CONTAINERIZATION_PIN)" --field source.tree)"; \
-		engine_commit="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_ENGINE_API_PIN)" --field source.commit)"; \
-		engine_tree="$$($(PYTHON) $(STACK_PIN_TOOL) value --receipt "$(STACK_ENGINE_API_PIN)" --field source.tree)"; \
+		scratch="$(STACK_SCRATCH_ROOT)/$(STACK_SWIFT_CONTRACT)/container-compose"; \
 		started=$$SECONDS; \
-		"$(PYTHON)" Tools/ci/run-with-local-swift-stack.py --swift "$(STACK_SWIFT)" --retain-edits \
-			--container "$(CONTAINER_STACK_REPO)" --container-commit "$$container_commit" --container-tree "$$container_tree" \
-			--containerization "$(CONTAINERIZATION_STACK_REPO)" --containerization-commit "$$containerization_commit" --containerization-tree "$$containerization_tree" \
-			--engine-api "$(CONTAINER_ENGINE_API_STACK_REPO)" --engine-api-commit "$$engine_commit" --engine-api-tree "$$engine_tree" \
-			-- "$(STACK_SWIFT)" build --disable-automatic-resolution -c "$(STACK_CONFIGURATION)" --product compose; \
+		CONTAINER_PACKAGE_PATH="$(CONTAINER_STACK_REPO)" \
+		CONTAINERIZATION_PACKAGE_PATH="$(CONTAINERIZATION_STACK_REPO)" \
+		CONTAINER_ENGINE_API_PACKAGE_PATH="$(CONTAINER_ENGINE_API_STACK_REPO)" \
+		"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+		--timing-log "$(STACK_TIMING_LOG)" --timing-label compose-build -- \
+		"$(STACK_SWIFT)" build --disable-automatic-resolution --scratch-path "$$scratch" -c "$(STACK_CONFIGURATION)" --product compose; \
+		bin_path="$$(CONTAINER_PACKAGE_PATH="$(CONTAINER_STACK_REPO)" \
+			CONTAINERIZATION_PACKAGE_PATH="$(CONTAINERIZATION_STACK_REPO)" \
+			CONTAINER_ENGINE_API_PACKAGE_PATH="$(CONTAINER_ENGINE_API_STACK_REPO)" \
+			"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label compose-bin-path -- \
+			"$(STACK_SWIFT)" build --scratch-path "$$scratch" -c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-compose \
 			--repository-path "$(CURDIR)" --output "$(STACK_COMPOSE_PIN)" \
 			--dependency "$(STACK_CONTAINERIZATION_PIN)" --dependency "$(STACK_ENGINE_API_PIN)" \
-			--dependency "$(STACK_CONTAINER_PIN)" --artifact "$(CURDIR)/.build/$(STACK_CONFIGURATION)/compose" \
+			--dependency "$(STACK_CONTAINER_PIN)" --artifact "$$bin_path/compose" \
 			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
 			--build-contract "$(STACK_SWIFT_CONTRACT)" \
 			--duration-seconds "$$((SECONDS - started))" \
 			--command-label 'swift build --product compose' >/dev/null; \
 	fi
+# END RECOVERABLE STACK TARGETS
 
-all: build go-build
+local-build: build go-build
+
+all: stack-build
 
 workflow: ci package
 
@@ -688,15 +739,24 @@ release-gate-hosted:
 ci-release: release-gate package-release
 
 release:
-	@test -n "$(VERSION_SELECTOR)" || { \
-		printf 'VERSION_SELECTOR is required, for example: make release VERSION_SELECTOR=--+\n' >&2; \
-		exit 2; \
-	}
+	@selector=$(call SHELL_QUOTE,$(VERSION_SELECTOR)); \
+	if [[ -z "$$selector" ]]; then \
+		selector="$$($(PYTHON) "$(CONVENTIONAL_VERSION_TOOL)" --format selector)"; \
+	fi; \
 	CONTAINER_RUNTIME_CODESIGN_IDENTITY="$(CONTAINER_RUNTIME_CODESIGN_IDENTITY)" \
-		./scripts/CONTAINER_STACK_RELEASE.sh release "$(VERSION_SELECTOR)" --execute
+		./scripts/CONTAINER_STACK_RELEASE.sh release "$$selector" --execute
 
 release-plan:
+	@selector=$(call SHELL_QUOTE,$(VERSION_SELECTOR)); \
+	if [[ -z "$$selector" ]]; then \
+		"$(PYTHON)" "$(CONVENTIONAL_VERSION_TOOL)"; \
+	else \
+		printf 'Explicit reviewed release selector: %s\n' "$$selector"; \
+	fi
 	./scripts/CONTAINER_STACK_RELEASE.sh plan
+
+release-version:
+	$(PYTHON) "$(CONVENTIONAL_VERSION_TOOL)" --format version
 
 resolve:
 	$(PYTHON) Tools/ci/run-with-local-swift-stack.py --swift "$(SWIFT)" -- \
@@ -2317,7 +2377,7 @@ package-built:
 	$(PYTHON) Tools/release/write-sha256-sidecar.py "$(PLUGIN_ARCHIVE)"
 
 coverage-tools-syntax:
-	$(PYTHON) -m py_compile Tools/coverage/*.py Tools/release/*.py Tools/ci/*.py
+	$(PYTHON) -m py_compile Tools/build/*.py Tools/coverage/*.py Tools/release/*.py Tools/ci/*.py
 
 coverage-python-tools-test: coverage-tools-syntax
 	$(PYTHON) -m unittest discover Tools/coverage

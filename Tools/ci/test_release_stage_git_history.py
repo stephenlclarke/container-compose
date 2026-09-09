@@ -36,8 +36,17 @@ def make_target(name: str, next_name: str) -> str:
 
 
 class RecoverableStackBuildPolicyTests(unittest.TestCase):
-    def test_default_make_is_only_the_native_compose_build(self) -> None:
-        self.assertIn("\nall: build go-build\n", MAKEFILE)
+    def test_release_supports_automatic_and_explicit_version_selection(self) -> None:
+        release = make_target("release", "release-plan")
+        plan = make_target("release-plan", "release-version")
+        self.assertIn("CONVENTIONAL_VERSION_TOOL", release)
+        self.assertIn("VERSION_SELECTOR", release)
+        self.assertIn("CONVENTIONAL_VERSION_TOOL", plan)
+        self.assertIn("Explicit reviewed release selector", plan)
+
+    def test_default_make_is_the_recoverable_stack_build(self) -> None:
+        self.assertIn("\nlocal-build: build go-build\n", MAKEFILE)
+        self.assertIn("\nall: stack-build\n", MAKEFILE)
         default = make_target("all", "workflow")
         for forbidden in ("codeql", "docs", "package", "release", "codesign"):
             self.assertNotIn(forbidden, default.lower())
@@ -50,7 +59,7 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
         )
         self.assertIn("stack-compose-build: stack-container-build", MAKEFILE)
         invocation = make_target("stack-build", "stack-build-locked")
-        self.assertIn("/usr/bin/lockf -t 0", invocation)
+        self.assertIn('"$(STACK_LOCK_TOOL)" -t 0', invocation)
         self.assertIn("stack-build-locked STACK_LOCK_HELD=1", invocation)
 
     def test_global_lock_covers_final_bundle_publication(self) -> None:
@@ -65,7 +74,24 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
             'STACK_GO_CONTRACT = $(shell GOWORK=off "$(PYTHON)"', MAKEFILE
         )
         builder = make_target("stack-builder-build", "stack-compose-build")
-        self.assertIn('GOWORK=off "$(STACK_GO)" build', builder)
+        self.assertIn('GOWORK=off "$(PYTHON)" "$(STACK_DEADLINE_TOOL)"', builder)
+        self.assertIn('"$(STACK_GO)" build -trimpath', builder)
+
+    def test_native_builds_are_bounded_and_compose_uses_durable_scratch(self) -> None:
+        stack = MAKEFILE.split("\nstack-build:", 1)[1].split("\nlocal-build:", 1)[0]
+        self.assertGreaterEqual(stack.count('"$(STACK_DEADLINE_TOOL)" --seconds'), 7)
+        compose = make_target("stack-compose-build", "local-build")
+        self.assertIn("/container-compose", compose)
+        self.assertIn('--scratch-path "$$scratch"', compose)
+        self.assertIn('--artifact "$$bin_path/compose"', compose)
+
+    def test_build_contract_does_not_hash_unrelated_make_targets(self) -> None:
+        contracts = MAKEFILE.split("STACK_SWIFT_CONTRACT =", 1)[1].split(
+            "RELEASE_GATE_CHECKPOINT_DIR", 1
+        )[0]
+        self.assertIn("STACK_BUILD_CONTRACT", contracts)
+        self.assertEqual(contracts.count("--controller-section"), 4)
+        self.assertNotIn("--controller \"$(abspath Makefile)\"", contracts)
 
     def test_individual_stack_stages_reject_unlocked_execution(self) -> None:
         self.assertEqual(MAKEFILE.count("\n\t$(STACK_REQUIRE_LOCK)\n"), 5)
@@ -77,7 +103,7 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
             ("stack-engine-api-build", "stack-container-build", "container-engine-api"),
             ("stack-container-build", "stack-builder-build", "container"),
             ("stack-builder-build", "stack-compose-build", "container-builder-shim"),
-            ("stack-compose-build", "all", "container-compose"),
+            ("stack-compose-build", "local-build", "container-compose"),
         ):
             with self.subTest(repository=repository):
                 target = make_target(current, following)
@@ -88,18 +114,34 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
                 self.assertIn("--expected-tree", target)
                 self.assertLess(target.index(" build"), target.index(" create "))
 
-    def test_downstream_stages_consume_upstream_pin_values(self) -> None:
+    def test_downstream_stages_bind_upstream_receipts_and_source_paths(self) -> None:
         container = make_target("stack-container-build", "stack-builder-build")
         self.assertIn('--dependency "$(STACK_CONTAINERIZATION_PIN)"', container)
         self.assertIn('--dependency "$(STACK_ENGINE_API_PIN)"', container)
-        compose = make_target("stack-compose-build", "all")
-        for pin in (
-            "STACK_CONTAINERIZATION_PIN",
-            "STACK_ENGINE_API_PIN",
-            "STACK_CONTAINER_PIN",
+        self.assertIn(
+            'CONTAINERIZATION_PACKAGE_PATH="$(CONTAINERIZATION_STACK_REPO)"',
+            container,
+        )
+        self.assertIn(
+            'CONTAINER_ENGINE_API_PACKAGE_PATH="$(CONTAINER_ENGINE_API_STACK_REPO)"',
+            container,
+        )
+        compose = make_target("stack-compose-build", "local-build")
+        for variable, source_path, repository in (
+            (
+                "STACK_CONTAINERIZATION_PIN",
+                "CONTAINERIZATION_PACKAGE_PATH",
+                "CONTAINERIZATION_STACK_REPO",
+            ),
+            (
+                "STACK_ENGINE_API_PIN",
+                "CONTAINER_ENGINE_API_PACKAGE_PATH",
+                "CONTAINER_ENGINE_API_STACK_REPO",
+            ),
+            ("STACK_CONTAINER_PIN", "CONTAINER_PACKAGE_PATH", "CONTAINER_STACK_REPO"),
         ):
-            self.assertIn(f'value --receipt "$({pin})"', compose)
-            self.assertIn(f'--dependency "$({pin})"', compose)
+            self.assertIn(f'--dependency "$({variable})"', compose)
+            self.assertIn(f'{source_path}="$({repository})"', compose)
 
     def test_recovery_state_is_durable_and_has_a_safe_local_fallback(self) -> None:
         self.assertIn("/Volumes/SSD/github/.container-compose-build", MAKEFILE)
@@ -115,7 +157,7 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
         self.assertNotIn("security find-identity", MAKEFILE)
 
     def test_stack_build_excludes_release_only_work(self) -> None:
-        stack = MAKEFILE.split("\nstack-build:", 1)[1].split("\nall:", 1)[0]
+        stack = MAKEFILE.split("\nstack-build:", 1)[1].split("\nlocal-build:", 1)[0]
         for forbidden in (
             "codeql",
             "docc",

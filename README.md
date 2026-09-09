@@ -215,6 +215,14 @@ commands. The supported Homebrew install uses the matched `stephenlclarke`
 runtime stack; [BUILD.md](docs/guides/BUILD.md) covers repository roles, branch policy, and
 deterministic release promotion.
 
+From a clean source checkout, `make` builds the complete local Container-family
+stack, automatically consumes exact upstream pins, and retains recoverable
+native caches and timing evidence. Use `make local-build` for a quick
+Compose-only build, `make stack-status` to verify retained pins, and
+`make release-version` to preview the Conventional Commit semantic-version
+decision. The complete build, test, Actions, recovery, and release diagrams are
+in [Recoverable Container-family builds](docs/architecture/recoverable-container-family-builds.md).
+
 ## Plugin Recognition
 
 When installed correctly, `container help` lists `compose` under `PLUGINS`.
@@ -226,7 +234,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [Container developer API collection](https://stephenlclarke.github.io/api/): browse the unified documentation for `container-engine-api`, `container`, `containerization`, `container-k8s`, `container-builder-shim`, `container-compose`, and `devcontainer`.
 - [container-compose API reference](https://stephenlclarke.github.io/api/container-compose/): browse the Compose plugin API reference generated from the Swift source.
 - [INSTALL.md](docs/guides/INSTALL.md): install, upgrade, verify, uninstall, recover bad installs, and diagnose runtime issues.
-- [BUILD.md](docs/guides/BUILD.md): build, test, package, validate parity, and promote the current build to a stable release, including the weekly minor-release scheduler and manual major-release dispatch.
+- [BUILD.md](docs/guides/BUILD.md): build, test, package, validate parity, and promote the current build using automatic Conventional Commit versioning or an explicit reviewed override.
 - [DESIGN.md](docs/project/DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](docs/project/STATUS.md): understand the functionality and explicit limitations in the current stable release and candidate.
 - [BACKLOG.md](docs/project/BACKLOG.md): understand the remaining parity contracts and follow their live GitHub issues.
