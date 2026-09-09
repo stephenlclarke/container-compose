@@ -289,14 +289,14 @@ class StackPinTests(unittest.TestCase):
         self.assertEqual(len(contracts), 1)
 
     def test_contract_changes_with_the_effective_swift_sdk(self) -> None:
-        swift = shutil.which("swift")
-        self.assertIsNotNone(swift)
-        assert swift is not None
+        swift = self.root / "swift"
+        swift.write_text("#!/bin/sh\nprintf 'Swift version test\\n'\n", encoding="utf-8")
+        swift.chmod(0o755)
         options = STACK_PIN.parse_arguments(
             [
                 "contract",
                 "--tool",
-                swift,
+                str(swift),
                 "--configuration",
                 "release",
             ]
