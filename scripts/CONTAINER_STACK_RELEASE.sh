@@ -1031,6 +1031,41 @@ validate_unpublished_release_commit() {
   return 1
 }
 
+# Recover the published Current base from a validated retained candidate. A
+# candidate may have been refreshed from canonical main more than once, so the
+# published base can be the main parent of an earlier refresh rather than the
+# latest remote head.
+published_base_for_retained_candidate() {
+  local path="$1" version="$2" remote_head="$3" commits="$4"
+  local current_head commit subject main_parent
+
+  current_head="$(git -C "${path}" rev-parse --verify -q 'refs/tags/current^{}' || true)"
+  if [[ ! "${current_head}" =~ ^[0-9a-f]{40}$ ]] ||
+    ! git -C "${path}" merge-base --is-ancestor "${current_head}" "${remote_head}"; then
+    printf '%s\n' "${remote_head}"
+    return 0
+  fi
+  if [[ "${current_head}" == "${remote_head}" ]]; then
+    printf '%s\n' "${current_head}"
+    return 0
+  fi
+
+  while IFS= read -r commit; do
+    [[ -n "${commit}" ]] || continue
+    subject="$(git -C "${path}" show -s --format=%s "${commit}")"
+    if [[ "${subject}" != "chore(release): refresh ${version} candidate from main" ]]; then
+      continue
+    fi
+    main_parent="$(git -C "${path}" rev-parse --verify -q "${commit}^2" || true)"
+    if [[ "${main_parent}" == "${current_head}" ]]; then
+      printf '%s\n' "${current_head}"
+      return 0
+    fi
+  done <<<"${commits}"
+
+  printf '%s\n' "${remote_head}"
+}
+
 recover_unpublished_release_candidate() {
   local version="$1" path remote local_head remote_head local_tree remote_tree current_head promotion_parent commit commits
   RECOVERED_UNPUBLISHED_RELEASE_BASE=""
@@ -1121,7 +1156,10 @@ recover_unpublished_release_candidate() {
       "${path}" "${commit}" "${version}" "${remote_head}" || exit 1
   done <<<"${commits}"
 
-  RECOVERED_UNPUBLISHED_RELEASE_BASE="${remote_head}"
+  RECOVERED_UNPUBLISHED_RELEASE_BASE="$(
+    published_base_for_retained_candidate \
+      "${path}" "${version}" "${remote_head}" "${commits}"
+  )"
   printf 'retaining unpublished release candidate %s after an earlier local gate failure\n' "${local_head}"
 }
 

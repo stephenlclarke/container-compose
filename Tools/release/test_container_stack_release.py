@@ -8024,6 +8024,11 @@ esac
             self.commit_file(updater, "FIRST.md", "first\n", "fix: first main repair")
             self.run_command("git", "-C", str(updater), "push", "origin", "main")
             first_remote_head = self.git(updater, "rev-parse", "main")
+            published_head = first_remote_head
+            self.run_command("git", "-C", str(local), "fetch", "origin", "main")
+            self.run_command(
+                "git", "-C", str(local), "tag", "--no-sign", "current", published_head
+            )
             first = self.run_release_function(
                 root / "github", "recover_unpublished_release_candidate 0.6.71"
             )
@@ -8063,6 +8068,29 @@ esac
             )
             self.assertEqual(self.git(local, "show", "main:SECOND.md"), "second")
             self.assertEqual(self.git(local, "status", "--short"), "")
+
+            restarted = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "ensure_current_release_source_identity",
+            )
+            self.assertEqual(restarted.returncode, 0, restarted.stderr)
+            self.assertIn(
+                f"current tag targets published parent {published_head}",
+                restarted.stdout,
+            )
+
+            earlier_main = self.git(local, "rev-parse", f"{candidate_head}^")
+            self.run_command(
+                "git", "-C", str(local), "tag", "--force", "current", earlier_main
+            )
+            stale = self.run_release_function(
+                root / "github",
+                "recover_unpublished_release_candidate 0.6.71; "
+                "ensure_current_release_source_identity",
+            )
+            self.assertNotEqual(stale.returncode, 0)
+            self.assertIn(f"current tag targets {earlier_main}", stale.stderr)
 
     def test_release_helper_refreshes_superseded_classification_authority(
         self,
