@@ -39,6 +39,36 @@ from typing import Any
 SCHEMA_VERSION = 1
 OBJECT_ID_PATTERN = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 REPOSITORY_PATTERN = re.compile(r"[a-z0-9][a-z0-9._-]*")
+GO_BUILD_ENVIRONMENT = (
+    "AR",
+    "CC",
+    "CGO_CFLAGS",
+    "CGO_CPPFLAGS",
+    "CGO_CXXFLAGS",
+    "CGO_ENABLED",
+    "CGO_FFLAGS",
+    "CGO_LDFLAGS",
+    "CXX",
+    "FC",
+    "GCCGO",
+    "GO386",
+    "GOAMD64",
+    "GOARCH",
+    "GOARM",
+    "GOARM64",
+    "GOEXPERIMENT",
+    "GOFIPS140",
+    "GOFLAGS",
+    "GOGCCFLAGS",
+    "GOMIPS",
+    "GOMIPS64",
+    "GOOS",
+    "GOPPC64",
+    "GORISCV64",
+    "GOTOOLCHAIN",
+    "GOWASM",
+    "PKG_CONFIG",
+)
 
 
 class PinError(RuntimeError):
@@ -165,6 +195,31 @@ def validate_repository_name(name: str) -> str:
     return name
 
 
+def effective_go_build_environment(tool: Path) -> dict[str, str]:
+    result = subprocess.run(
+        [str(tool), "env", "-json", *GO_BUILD_ENVIRONMENT],
+        check=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if result.returncode != 0:
+        diagnostic = result.stderr.strip() or f"exit {result.returncode}"
+        raise PinError(f"could not resolve the effective Go build target: {diagnostic}")
+    try:
+        environment = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise PinError("effective Go build target is not valid JSON") from error
+    if (
+        not isinstance(environment, dict)
+        or set(environment) != set(GO_BUILD_ENVIRONMENT)
+        or any(not isinstance(value, str) for value in environment.values())
+    ):
+        raise PinError("effective Go build target is incomplete")
+    return {name: environment[name] for name in sorted(environment)}
+
+
 def repository_record(repository_path: Path) -> dict[str, str]:
     if not repository_path.is_absolute():
         raise PinError(f"repository path must be absolute: {repository_path}")
@@ -245,6 +300,11 @@ def build_contract(options: argparse.Namespace) -> str:
             "SWIFTFLAGS",
         )
     }
+    effective_tool_environment = (
+        effective_go_build_environment(resolved_tool)
+        if resolved_tool.name == "go"
+        else {}
+    )
     python_path = Path(sys.executable).resolve(strict=True)
     contract = {
         "configuration": options.configuration,
@@ -262,6 +322,7 @@ def build_contract(options: argparse.Namespace) -> str:
         },
         "schema": SCHEMA_VERSION,
         "tool": {
+            "effective_environment": effective_tool_environment,
             "path": str(resolved_tool),
             "selector": tool_selector,
             "sha256": tool_sha256,

@@ -19,12 +19,15 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).with_name("stack-pin.py")
 SPEC = importlib.util.spec_from_file_location("stack_pin", SCRIPT)
@@ -226,6 +229,35 @@ class StackPinTests(unittest.TestCase):
         self.assertRegex(debug, r"^[0-9a-f]{64}$")
         self.assertNotEqual(debug, release)
         self.assertNotEqual(release, changed_controller)
+
+    def test_contract_changes_with_the_effective_go_target(self) -> None:
+        go = shutil.which("go")
+        self.assertIsNotNone(go)
+        assert go is not None
+        options = STACK_PIN.parse_arguments(
+            [
+                "contract",
+                "--tool",
+                go,
+                "--configuration",
+                "release",
+            ]
+        )
+        with patch.dict(
+            os.environ,
+            {"GOOS": "linux", "GOARCH": "amd64", "GOAMD64": "v1"},
+            clear=False,
+        ):
+            baseline = STACK_PIN.build_contract(options)
+        with patch.dict(
+            os.environ,
+            {"GOOS": "linux", "GOARCH": "amd64", "GOAMD64": "v3"},
+            clear=False,
+        ):
+            changed = STACK_PIN.build_contract(options)
+
+        self.assertRegex(baseline, r"^[0-9a-f]{64}$")
+        self.assertNotEqual(baseline, changed)
 
     def test_dependency_change_invalidates_downstream_pin(self) -> None:
         self.assertEqual(self.create_pin(), 0)
