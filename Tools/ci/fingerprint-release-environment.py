@@ -94,10 +94,14 @@ MAKE_ASSIGNMENT = re.compile(
     r"(?P<operator>:::=|::=|:=|\+=|\?=|=)(?P<value>.*)$"
 )
 
-# These roots are freshly allocated for each release attempt, but their
-# contents can affect the result. Bind the proof to the directory tree rather
-# than its random absolute location.
-CONTENT_ROOT_VARIABLES = frozenset({"XDG_CONFIG_HOME"})
+# These roots are freshly allocated for each release attempt. Bind only their
+# declared immutable inputs: the managed runtime legitimately creates caches,
+# credentials, and other working state beside them while a release gate runs.
+# Hashing the whole root would reject a successful proof because of its own
+# outputs, while hashing the selected files still rejects changed policy.
+CONTENT_ROOT_INPUT_FILES = {
+    "XDG_CONFIG_HOME": ("container/config.toml",),
+}
 
 # The runtime wrapper copies retained OCI archives into a fresh staging
 # directory for every attempt. Their bytes and modes affect the proof, but the
@@ -150,31 +154,6 @@ def sha256_file(path: Path) -> str:
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
-    return digest.hexdigest()
-
-
-def sha256_directory(path: Path) -> str:
-    digest = hashlib.sha256()
-    for candidate in sorted(
-        path.rglob("*"), key=lambda item: item.relative_to(path).as_posix()
-    ):
-        relative = candidate.relative_to(path).as_posix()
-        metadata = candidate.lstat()
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(f"{stat.S_IMODE(metadata.st_mode):04o}".encode("ascii"))
-        digest.update(b"\0")
-        if candidate.is_symlink():
-            digest.update(b"symlink\0")
-            digest.update(os.readlink(candidate).encode("utf-8"))
-        elif candidate.is_file():
-            digest.update(b"file\0")
-            digest.update(sha256_file(candidate).encode("ascii"))
-        elif candidate.is_dir():
-            digest.update(b"directory\0")
-        else:
-            digest.update(b"other\0")
-        digest.update(b"\0")
     return digest.hexdigest()
 
 
@@ -468,14 +447,42 @@ def value_entry(
             "selected_file_state": "missing",
             "value_sha256": sha256_bytes(value.encode("utf-8")),
         }
-    if name in CONTENT_ROOT_VARIABLES:
+    if name in CONTENT_ROOT_INPUT_FILES:
         try:
             content_root = Path(value).expanduser()
             if not content_root.is_absolute():
                 content_root = working_directory / content_root
             if content_root.is_dir():
+                selected_inputs: list[dict[str, str]] = []
+                for relative in CONTENT_ROOT_INPUT_FILES[name]:
+                    artifact = content_root / relative
+                    if artifact.is_file() and not artifact.is_symlink():
+                        selected_inputs.append(
+                            {
+                                "mode": f"{stat.S_IMODE(artifact.stat().st_mode):04o}",
+                                "name_sha256": sha256_bytes(
+                                    relative.encode("utf-8")
+                                ),
+                                "sha256": sha256_file(artifact),
+                            }
+                        )
+                    else:
+                        selected_inputs.append(
+                            {
+                                "name_sha256": sha256_bytes(
+                                    relative.encode("utf-8")
+                                ),
+                                "state": "missing",
+                            }
+                        )
                 entry = {
-                    "selected_directory_sha256": sha256_directory(content_root)
+                    "selected_root_inputs_sha256": sha256_bytes(
+                        json.dumps(
+                            selected_inputs,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode("utf-8")
+                    )
                 }
                 if not relocatable_directories:
                     entry["value_sha256"] = sha256_bytes(value.encode("utf-8"))
