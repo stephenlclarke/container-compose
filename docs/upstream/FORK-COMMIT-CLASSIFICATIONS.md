@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `9a8917ca2da5cd6ba059b9ba5ca5a74892e9bb7d` | `7da98fd3c8e03d491672ca8c069e8bee02dd9074` | 0 | 816 | 678 |
-| `containerization` | `9eacc197d7c3663eb29cbab6d51244ede6d1cd7d` | `28ad7c77a2a5ec7c2a1bdbff5e1e6a588958bb3c` | 0 | 313 | 243 |
+| `container` | `9a8917ca2da5cd6ba059b9ba5ca5a74892e9bb7d` | `a702f22b0e76daf74c0c2ec3009ccf4a2150c0e9` | 0 | 818 | 679 |
+| `containerization` | `9eacc197d7c3663eb29cbab6d51244ede6d1cd7d` | `5372b36a691cbb392c4027ccf0ea2b6af7284b5b` | 0 | 315 | 244 |
 | `container-builder-shim` | `5dc4286e5adbeb7dac189b22b7d5aab336942fe2` | `5373d9b4363c6e536dc6401199da269c7045abf9` | 0 | 59 | 46 |
-| **Total** | | | **0** | **1188** | **967** |
+| **Total** | | | **0** | **1192** | **969** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -339,3 +339,9 @@ deterministic protobuf and image publishing, retained VSOCK and VM-init
 authority, and strict upstream-aware signature verification. All are support
 maintenance; no generic primitive, temporary upstream port, or rejected
 Compose-policy disposition changed.
+
+The subsequent 0.14.3 release-gate correction advances Containerization to
+`5372b36a691c` and Container to `a702f22b0e76`. Signed Containerization commit
+`79d5eb1ec231` restores the fork's guest-device `stat` protocol adapter while
+retaining Apple's confined implementation; signed Container commit
+`8dc1d66f4f5c` advances the exact dependency pin. Both are support maintenance.
