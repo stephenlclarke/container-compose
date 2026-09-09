@@ -61,13 +61,8 @@ class ClassifyCIChangesTests(unittest.TestCase):
         self.assertTrue(scope.runtime)
         self.assertFalse(scope.tools)
 
-    def test_build_pipeline_fixtures_select_tool_tests(self) -> None:
-        scope = CLASSIFIER.classify(
-            [
-                "Tests/BuildPipeline/recovery-proof.nf",
-                "Tests/BuildPipeline/recovery-proof.config",
-            ]
-        )
+    def test_recoverable_stack_tools_select_tool_tests(self) -> None:
+        scope = CLASSIFIER.classify(["Tools/build/stack-pin.py"])
 
         self.assertTrue(scope.heavy)
         self.assertTrue(scope.tools)

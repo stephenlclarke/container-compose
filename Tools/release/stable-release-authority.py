@@ -22,15 +22,18 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 from pathlib import Path
 from typing import Any
 
 
+CHECKPOINT_SCHEMA = 4
 OBJECT_ID = re.compile(r"[0-9a-f]{40}")
 DIGEST = re.compile(r"[0-9a-f]{64}")
 SEMVER = re.compile(r"[0-9]+[.][0-9]+[.][0-9]+")
+STAGE = "hosted-sibling-stack"
 
 
 def sha256_file(path: Path) -> str:
@@ -47,21 +50,10 @@ def require_file(path: Path) -> Path:
     return path
 
 
-def parse_pairs(path: Path) -> list[tuple[str, ...]]:
-    rows: list[tuple[str, ...]] = []
-    for line in require_file(path).read_text(encoding="utf-8").splitlines():
-        fields = tuple(line.split("\t"))
-        if len(fields) < 2 or any(not field for field in fields):
-            raise SystemExit(f"stable release authority input is malformed: {path}")
-        rows.append(fields)
-    return rows
-
-
-def unique_value(rows: list[tuple[str, ...]], name: str, path: Path) -> str:
-    values = [row[1] for row in rows if len(row) == 2 and row[0] == name]
-    if len(values) != 1:
-        raise SystemExit(f"stable release authority input has no unique {name}: {path}")
-    return values[0]
+def require_digest(value: object, label: str) -> str:
+    if not isinstance(value, str) or not DIGEST.fullmatch(value):
+        raise SystemExit(f"stable release authority {label} is invalid")
+    return value
 
 
 def validated_inputs(arguments: argparse.Namespace) -> dict[str, str]:
@@ -90,6 +82,50 @@ def validated_inputs(arguments: argparse.Namespace) -> dict[str, str]:
     return values
 
 
+def load_checkpoint(evidence: Path) -> tuple[dict[str, Any], Path, Path]:
+    checkpoint_path = require_file(evidence / f"{STAGE}.success.json")
+    try:
+        checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise SystemExit(
+            f"stable release authority checkpoint is malformed: {error.msg}"
+        ) from error
+    if not isinstance(checkpoint, dict):
+        raise SystemExit("stable release authority checkpoint is not an object")
+    if checkpoint.get("schema") != CHECKPOINT_SCHEMA:
+        raise SystemExit("stable release authority checkpoint schema is unsupported")
+    if checkpoint.get("stage") != STAGE or checkpoint.get("status") != 0:
+        raise SystemExit("stable release authority checkpoint did not pass")
+    if checkpoint.get("fingerprint_before") != checkpoint.get("fingerprint_after"):
+        raise SystemExit("stable release authority inputs changed during validation")
+    require_digest(checkpoint.get("digest"), "checkpoint digest")
+    output_digest = require_digest(
+        checkpoint.get("output_sha256"), "checkpoint output digest"
+    )
+    output_file = checkpoint.get("output_file")
+    if (
+        not isinstance(output_file, str)
+        or not output_file
+        or Path(output_file).name != output_file
+    ):
+        raise SystemExit("stable release authority checkpoint output name is unsafe")
+    output_path = require_file(evidence / output_file)
+    if sha256_file(output_path) != output_digest:
+        raise SystemExit("stable release authority checkpoint output changed")
+    duration = checkpoint.get("duration_seconds")
+    if (
+        isinstance(duration, bool)
+        or not isinstance(duration, (int, float))
+        or not math.isfinite(duration)
+        or duration < 0
+    ):
+        raise SystemExit("stable release authority checkpoint duration is invalid")
+    fingerprint = checkpoint.get("fingerprint")
+    if not isinstance(fingerprint, str) or not fingerprint:
+        raise SystemExit("stable release authority checkpoint fingerprint is invalid")
+    return checkpoint, checkpoint_path, output_path
+
+
 def build_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
     values = validated_inputs(arguments)
     evidence_input = Path(arguments.evidence_dir)
@@ -99,92 +135,7 @@ def build_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
             f"{evidence_input}"
         )
     evidence = evidence_input.resolve()
-    preflight = evidence / "preflight"
-    if preflight.is_symlink() or not preflight.is_dir():
-        raise SystemExit(
-            f"stable release authority preflight is indirect or missing: {preflight}"
-        )
-    summary = evidence / "pipeline-summary.tsv"
-    attempt = evidence / "attempt.tsv"
-    session = evidence / "session.uuid"
-    summary_rows = parse_pairs(summary)
-    attempt_rows = parse_pairs(attempt)
-    session_value = require_file(session).read_text(encoding="utf-8").strip()
-    if unique_value(summary_rows, "schema", summary) != "1":
-        raise SystemExit("stable release authority pipeline summary schema is unsupported")
-    if unique_value(summary_rows, "profile", summary) != "release-hosted":
-        raise SystemExit("stable release authority pipeline profile is not release-hosted")
-    if unique_value(summary_rows, "complete", summary) != "true":
-        raise SystemExit("stable release authority pipeline summary is incomplete")
-    if unique_value(attempt_rows, "profile", attempt) != "release-hosted":
-        raise SystemExit("stable release authority attempt profile is not release-hosted")
-    for status in ("orchestrator-exit", "tee-exit", "evidence-exit", "exit"):
-        if unique_value(attempt_rows, status, attempt) != "0":
-            raise SystemExit(f"stable release authority attempt did not pass: {status}")
-    if not re.fullmatch(
-        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-        session_value,
-    ):
-        raise SystemExit("stable release authority session UUID is invalid")
-
-    evidence_entries: list[dict[str, str]] = []
-    for row in summary_rows:
-        if row[0] not in {
-            "repository-receipt",
-            "stage-artifact",
-            "stage-output",
-            "stage-receipt",
-        }:
-            continue
-        if len(row) != 3 or not DIGEST.fullmatch(row[2]):
-            raise SystemExit(
-                f"stable release authority pipeline evidence is malformed: {row[0]}"
-            )
-        evidence_entries.append(
-            {"kind": row[0], "name": row[1], "sha256": row[2]}
-        )
-    if not evidence_entries:
-        raise SystemExit("stable release authority pipeline evidence is empty")
-    if len({(item["kind"], item["name"]) for item in evidence_entries}) != len(
-        evidence_entries
-    ):
-        raise SystemExit("stable release authority pipeline evidence contains duplicates")
-
-    repository_digests = {
-        item["name"]: item["sha256"]
-        for item in evidence_entries
-        if item["kind"] == "repository-receipt"
-    }
-    expected_commits = {
-        "container-compose": values["candidateSha"],
-        "container-builder-shim": values["containerBuilderShim"],
-        "containerization": values["containerization"],
-        "container": values["container"],
-        "homebrew-tap": values["homebrewTap"],
-    }
-    for repository, commit in expected_commits.items():
-        for kind in ("identity", "provenance"):
-            name = f"{repository}.{kind}.tsv"
-            repository_receipt = preflight / name
-            if repository_digests.get(name) != sha256_file(
-                require_file(repository_receipt)
-            ):
-                raise SystemExit(
-                    f"stable release authority repository receipt changed: {name}"
-                )
-            repository_rows = parse_pairs(repository_receipt)
-            if unique_value(repository_rows, "repository", repository_receipt) != repository:
-                raise SystemExit(
-                    f"stable release authority repository name changed: {name}"
-                )
-            if unique_value(repository_rows, "commit", repository_receipt) != commit:
-                raise SystemExit(
-                    f"stable release authority repository commit changed: {name}"
-                )
-            if unique_value(repository_rows, "clean", repository_receipt) != "true":
-                raise SystemExit(
-                    f"stable release authority repository was not clean: {name}"
-                )
+    checkpoint, checkpoint_path, output_path = load_checkpoint(evidence)
 
     package_inputs = {
         "candidateSha": values["candidateSha"],
@@ -199,21 +150,20 @@ def build_receipt(arguments: argparse.Namespace) -> dict[str, Any]:
     package_inputs_sha256 = hashlib.sha256(
         json.dumps(package_inputs, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    host_tools_sha256 = unique_value(summary_rows, "host-tools-sha256", summary)
-    if not DIGEST.fullmatch(host_tools_sha256):
-        raise SystemExit("stable release authority host toolchain digest is invalid")
+    fingerprint = str(checkpoint["fingerprint"])
     return {
-        "schema": 1,
+        "schema": 2,
         "result": "success",
         "releaseTag": values["releaseTag"],
         **package_inputs,
         "packageInputsSha256": package_inputs_sha256,
-        "pipeline": {
-            "attemptSha256": sha256_file(attempt),
-            "evidence": evidence_entries,
-            "hostToolsSha256": host_tools_sha256,
-            "session": session_value,
-            "summarySha256": sha256_file(summary),
+        "buildEvidence": {
+            "checkpointSha256": sha256_file(checkpoint_path),
+            "durationSeconds": checkpoint["duration_seconds"],
+            "fingerprintSha256": hashlib.sha256(fingerprint.encode()).hexdigest(),
+            "outputFile": output_path.name,
+            "outputSha256": sha256_file(output_path),
+            "stage": STAGE,
         },
     }
 
@@ -228,8 +178,15 @@ def write_receipt(receipt: dict[str, Any], output: Path) -> None:
     try:
         with temporary.open("x", encoding="utf-8") as stream:
             stream.write(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
         os.chmod(temporary, 0o444)
         os.replace(temporary, output)
+        directory_descriptor = os.open(output.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
     finally:
         temporary.unlink(missing_ok=True)
 

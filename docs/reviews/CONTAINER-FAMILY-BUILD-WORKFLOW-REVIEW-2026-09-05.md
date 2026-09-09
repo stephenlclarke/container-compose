@@ -1,5 +1,12 @@
 # Container-family build workflow review — 5 September 2026
 
+> [!NOTE]
+> This is the retained review of the former Nextflow implementation. Issue
+> [#593](../upstream/container-compose/ISSUE-593.md) supersedes its build-system
+> recommendations. The current Make, SwiftPM, Go, pin, and checkpoint contract
+> is documented in
+> [Recoverable Container-family builds](../architecture/recoverable-container-family-builds.md).
+
 ## Purpose
 
 This record captures observed build defects, elapsed timings, and the first

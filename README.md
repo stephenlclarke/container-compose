@@ -215,6 +215,14 @@ commands. The supported Homebrew install uses the matched `stephenlclarke`
 runtime stack; [BUILD.md](docs/guides/BUILD.md) covers repository roles, branch policy, and
 deterministic release promotion.
 
+From a clean source checkout, `make` builds the complete local Container-family
+stack, automatically consumes exact upstream pins, and retains recoverable
+native caches and timing evidence. Use `make local-build` for a quick
+Compose-only build, `make stack-status` to verify retained pins, and
+`make release-version` to preview the Conventional Commit semantic-version
+decision. The complete build, test, Actions, recovery, and release diagrams are
+in [Recoverable Container-family builds](docs/architecture/recoverable-container-family-builds.md).
+
 ## Plugin Recognition
 
 When installed correctly, `container help` lists `compose` under `PLUGINS`.
@@ -226,7 +234,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [Container developer API collection](https://stephenlclarke.github.io/api/): browse the unified documentation for `container-engine-api`, `container`, `containerization`, `container-k8s`, `container-builder-shim`, `container-compose`, and `devcontainer`.
 - [container-compose API reference](https://stephenlclarke.github.io/api/container-compose/): browse the Compose plugin API reference generated from the Swift source.
 - [INSTALL.md](docs/guides/INSTALL.md): install, upgrade, verify, uninstall, recover bad installs, and diagnose runtime issues.
-- [BUILD.md](docs/guides/BUILD.md): build, test, package, validate parity, and promote the current build to a stable release, including the weekly minor-release scheduler and manual major-release dispatch.
+- [BUILD.md](docs/guides/BUILD.md): build, test, package, validate parity, and promote the current build using automatic Conventional Commit versioning or an explicit reviewed override.
 - [DESIGN.md](docs/project/DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](docs/project/STATUS.md): understand the functionality and explicit limitations in the current stable release and candidate.
 - [BACKLOG.md](docs/project/BACKLOG.md): understand the remaining parity contracts and follow their live GitHub issues.
@@ -234,7 +242,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [Docker logging-driver design](docs/architecture/docker-logging-driver-semantics-design.md): review the released logging architecture, retained evidence, and remaining provider and certification gaps.
 - [Container-family parity architecture](docs/architecture/coherent-container-family-parity-design.md): understand the integrated authority, runtime topology, dependency order, and devcontainer/shared Engine design.
 - [Container-family parity development cycle](docs/architecture/container-family-development-cycle.md): deliver vertical slices with local-first validation, review-to-clean convergence, MBP runners, clean GitHub state, upstream monitoring, and comparable-or-better performance.
-- [Recoverable Container-family builds](docs/architecture/recoverable-container-family-builds.md): use the pinned OSS Nextflow graph for immutable source capture, noninteractive native macOS checks, durable evidence, and exact-session recovery.
+- [Recoverable Container-family builds](docs/architecture/recoverable-container-family-builds.md): use the Make, SwiftPM, and Go graph for automatic dependency pins, durable native caches, verified artifacts, and checkpoint recovery.
 - [Archived macOS parity closure review](docs/archive/remaining-macos-parity-closure-design.md): retain the 31 July 2026 analysis that preceded the GitHub-backed 1.0 backlog.
 - [macOS Compose parity and performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md): review the current parity, performance, design, and SonarQube-quality gaps.
 - [External resources](docs/guides/external-resources.md): provision Compose-owned external config files and Keychain secrets.
