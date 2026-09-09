@@ -119,6 +119,7 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     contract.add_argument("--tool", required=True)
     contract.add_argument("--configuration", required=True)
     contract.add_argument("--controller", type=Path, action="append", default=[])
+    contract.add_argument("--controller-section", action="append", default=[])
 
     return parser.parse_args(arguments)
 
@@ -269,12 +270,16 @@ def effective_swift_build_environment(tool: Path) -> dict[str, Any]:
     developer_directory = ""
     sdk: dict[str, Any] = {}
     if platform.system() == "Darwin":
-        xcrun = Path("/usr/bin/xcrun").resolve(strict=True)
+        developer_selector = os.environ.get("DEVELOPER_DIR", "")
+        sdk_selector = os.environ.get("SDKROOT", "")
+        xcrun: Path | None = None
+        if tool == Path("/usr/bin/swift") or not sdk_selector:
+            xcrun = Path("/usr/bin/xcrun").resolve(strict=True)
         if tool == Path("/usr/bin/swift"):
+            assert xcrun is not None
             compiler = Path(
                 checked_output([str(xcrun), "--find", "swift"], "Swift compiler")
             ).resolve(strict=True)
-        developer_selector = os.environ.get("DEVELOPER_DIR", "")
         developer_directory = str(
             (
                 Path(developer_selector)
@@ -286,13 +291,17 @@ def effective_swift_build_environment(tool: Path) -> dict[str, Any]:
                 )
             ).resolve(strict=True)
         )
-        sdk_selector = os.environ.get("SDKROOT", "")
         sdk_path = (
             Path(sdk_selector)
             if sdk_selector
             else Path(
                 checked_output(
-                    [str(xcrun), "--sdk", "macosx", "--show-sdk-path"],
+                    [
+                        str(xcrun),
+                        "--sdk",
+                        "macosx",
+                        "--show-sdk-path",
+                    ],
                     "Swift SDK",
                 )
             )
@@ -384,6 +393,38 @@ def build_contract(options: argparse.Namespace) -> str:
             {
                 "path": str(resolved_controller),
                 "sha256": sha256_file(resolved_controller),
+            }
+        )
+    for specification in options.controller_section:
+        fields = specification.split("::", 2)
+        if len(fields) != 3 or not all(fields):
+            raise PinError(
+                "build controller section must be PATH::BEGIN-MARKER::END-MARKER"
+            )
+        path_value, begin_marker, end_marker = fields
+        section_path = Path(path_value)
+        if not section_path.is_absolute():
+            raise PinError(f"build controller path must be absolute: {section_path}")
+        resolved_section = section_path.resolve(strict=True)
+        try:
+            contents = regular_file_bytes(resolved_section).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise PinError(
+                f"build controller section is not UTF-8: {resolved_section}"
+            ) from error
+        begin_token = begin_marker + "\n"
+        end_token = end_marker + "\n"
+        if contents.count(begin_token) != 1 or contents.count(end_token) != 1:
+            raise PinError(
+                f"build controller section markers must occur once: {resolved_section}"
+            )
+        begin = contents.index(begin_token)
+        end = contents.index(end_token, begin) + len(end_token)
+        controllers.append(
+            {
+                "path": str(resolved_section),
+                "section": f"{begin_marker}..{end_marker}",
+                "sha256": sha256_bytes(contents[begin:end].encode("utf-8")),
             }
         )
     relevant_environment = {

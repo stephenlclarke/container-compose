@@ -241,6 +241,56 @@ class StackPinTests(unittest.TestCase):
         self.assertNotEqual(debug, release)
         self.assertNotEqual(release, changed_controller)
 
+    def test_contract_hashes_only_the_declared_controller_section(self) -> None:
+        controller = self.root / "Makefile"
+        controller.write_text(
+            "unrelated = one\nBEGIN STACK\nbuild = one\nEND STACK\n",
+            encoding="utf-8",
+        )
+        options = STACK_PIN.parse_arguments(
+            [
+                "contract",
+                "--tool",
+                "/usr/bin/git",
+                "--configuration",
+                "debug",
+                "--controller-section",
+                f"{controller}::BEGIN STACK::END STACK",
+            ]
+        )
+        baseline = STACK_PIN.build_contract(options)
+        controller.write_text(
+            "unrelated = two\nBEGIN STACK\nbuild = one\nEND STACK\n",
+            encoding="utf-8",
+        )
+        unrelated = STACK_PIN.build_contract(options)
+        controller.write_text(
+            "unrelated = two\nBEGIN STACK\nbuild = two\nEND STACK\n",
+            encoding="utf-8",
+        )
+        changed = STACK_PIN.build_contract(options)
+
+        self.assertEqual(baseline, unrelated)
+        self.assertNotEqual(unrelated, changed)
+
+    def test_contract_rejects_ambiguous_controller_sections(self) -> None:
+        controller = self.root / "Makefile"
+        controller.write_text("BEGIN STACK\nBEGIN STACK\nEND STACK\n", encoding="utf-8")
+        options = STACK_PIN.parse_arguments(
+            [
+                "contract",
+                "--tool",
+                "/usr/bin/git",
+                "--configuration",
+                "debug",
+                "--controller-section",
+                f"{controller}::BEGIN STACK::END STACK",
+            ]
+        )
+
+        with self.assertRaisesRegex(STACK_PIN.PinError, "must occur once"):
+            STACK_PIN.build_contract(options)
+
     def test_contract_changes_with_the_effective_go_target(self) -> None:
         go = shutil.which("go")
         self.assertIsNotNone(go)
@@ -315,6 +365,76 @@ class StackPinTests(unittest.TestCase):
             changed = STACK_PIN.build_contract(options)
 
         self.assertNotEqual(baseline, changed)
+
+    def test_swift_contract_fingerprints_the_selected_macos_sdk(self) -> None:
+        swift = self.root / "swift"
+        swift.write_text(
+            """#!/bin/sh
+if [ "${1:-}" = "-print-target-info" ]; then
+  printf '%s\n' '{"target":{"triple":"arm64-apple-macosx26.0"}}'
+else
+  printf '%s\n' 'Swift version test'
+fi
+""",
+            encoding="utf-8",
+        )
+        swift.chmod(0o755)
+        developer = self.root / "Xcode/Contents/Developer"
+        developer.mkdir(parents=True)
+        sdk = self.root / "MacOSX.sdk"
+        metadata = sdk / "SDKSettings.json"
+        metadata.parent.mkdir()
+        metadata.write_text('{"Version":"26.0"}\n', encoding="utf-8")
+        options = STACK_PIN.parse_arguments(
+            [
+                "contract",
+                "--tool",
+                str(swift),
+                "--configuration",
+                "release",
+            ]
+        )
+
+        with (
+            patch.object(STACK_PIN.platform, "system", return_value="Darwin"),
+            patch.dict(
+                os.environ,
+                {"DEVELOPER_DIR": str(developer), "SDKROOT": str(sdk)},
+                clear=False,
+            ),
+        ):
+            baseline = STACK_PIN.build_contract(options)
+            metadata.write_text('{"Version":"26.1"}\n', encoding="utf-8")
+            changed = STACK_PIN.build_contract(options)
+
+        self.assertNotEqual(baseline, changed)
+
+    def test_swift_environment_rejects_bad_target_and_unidentified_sdk(self) -> None:
+        swift = self.root / "swift"
+        swift.write_text("binary\n", encoding="utf-8")
+        developer = self.root / "Developer"
+        developer.mkdir()
+        sdk = self.root / "MacOSX.sdk"
+        sdk.mkdir()
+        with (
+            patch.object(STACK_PIN.platform, "system", return_value="Darwin"),
+            patch.dict(
+                os.environ,
+                {"DEVELOPER_DIR": str(developer), "SDKROOT": str(sdk)},
+                clear=False,
+            ),
+            patch.object(
+                STACK_PIN, "checked_output", return_value='{"target":{}}'
+            ),
+        ):
+            with self.assertRaisesRegex(STACK_PIN.PinError, "no identity metadata"):
+                STACK_PIN.effective_swift_build_environment(swift)
+        with patch.object(STACK_PIN, "checked_output", return_value="not-json"):
+            with self.assertRaisesRegex(STACK_PIN.PinError, "not valid JSON"):
+                STACK_PIN.effective_swift_build_environment(swift)
+        with patch.object(STACK_PIN, "checked_output", return_value="[]"):
+            with self.assertRaisesRegex(STACK_PIN.PinError, "malformed"):
+                STACK_PIN.effective_swift_build_environment(swift)
 
     def test_dependency_change_invalidates_downstream_pin(self) -> None:
         self.assertEqual(self.create_pin(), 0)

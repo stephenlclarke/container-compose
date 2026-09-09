@@ -136,6 +136,13 @@ Common types include:
 - `ci` for workflow or automation changes.
 - `chore` for maintenance that does not affect runtime behavior.
 
+Stable-release automation reads these subjects from first-parent history.
+`fix`, `perf`, and `revert` select a patch release; `feat` selects a minor
+release. Add `!` after the type or scope, or a `BREAKING CHANGE:` footer, only
+for an intentional major release. Other valid types do not request a release
+on their own. A non-conventional subject fails the automatic version decision
+rather than guessing.
+
 Examples:
 
 ```text

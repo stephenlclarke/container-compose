@@ -1,0 +1,19 @@
+{
+  "contract": "recoverable-container-family-build",
+  "controllers": [
+    "Make stack targets",
+    "Tools/build/stack-pin.py",
+    "Tools/ci/run-command-with-deadline.py",
+    "Tools/ci/run-with-local-swift-stack.py"
+  ],
+  "features": [
+    "bounded native build stages",
+    "durable per-operation and end-to-end timing evidence",
+    "durable external SwiftPM scratch paths",
+    "exact transitive source and artifact pins",
+    "parallel independent roots",
+    "verified final bundle"
+  ],
+  "revision": 3,
+  "schema": 1
+}
