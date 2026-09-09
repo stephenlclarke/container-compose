@@ -2497,11 +2497,11 @@ format: update-licenses swift-style-format
 	cd Tools/compose-normalizer && $(GO) fmt ./...
 
 check-licenses:
-	@HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh
+	@HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh --auto-install
 	@$(HAWKEYE) check --fail-if-unknown
 
 update-licenses:
-	@HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh
+	@HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh --auto-install
 	@$(HAWKEYE) format --fail-if-unknown --fail-if-updated false
 
 pre-commit:

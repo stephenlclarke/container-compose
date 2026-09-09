@@ -79,11 +79,11 @@ the repository-pinned Hawkeye is missing or incompatible in this checkout.
 
 scripts/install-hawkeye.sh will install a repository-local fallback by running:
 
-    curl -LsSf https://github.com/korandoru/hawkeye/releases/download/<version>/hawkeye-installer.sh | sh
+    scripts/install-hawkeye.sh
 
-and performs the installation by passing the downloaded content to \`sh\`.
-
-See scripts/install-hawkeye.sh for the pinned version.
+The installer downloads the pinned platform archive over TLS, verifies its
+checked-in SHA-256 digest, and installs only the verified Hawkeye binary under
+.local/bin. See scripts/install-hawkeye.sh for the pinned version and digest.
 EOF
 
 if [[ "${auto_install}" -eq 1 ]]; then
