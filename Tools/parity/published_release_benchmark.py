@@ -967,13 +967,23 @@ def render_report(
         )
         reconstruction = manifest["assets"]["guest"].get("reconstruction")
         if reconstruction:
-            lines.extend(
-                [
-                    f"- Guest initfs authority: [{reconstruction['runUrl']}]({reconstruction['runUrl']}); artifact `{reconstruction['artifactId']}` at `{reconstruction['artifactDigest']}`.",
-                    f"- Guest packager: `containerization@{reconstruction['containerizationRef']}`; recoverable receipt `{reconstruction['cctlReceiptSha256']}`; stage artifact `{reconstruction['cctlArtifactSha256']}`; extracted `cctl` `{reconstruction['cctlSha256']}`.",
-                    f"- Guest packager inputs: source `{reconstruction['cctlBuildSourceSha256']}`; source metadata `{reconstruction['cctlBuildSourceMetadataSha256']}`; command `{reconstruction['cctlBuildCommandSha256']}`; tools `{reconstruction['cctlBuildToolsSha256']}`.",
-                ]
+            lines.append(
+                f"- Guest initfs authority: [{reconstruction['runUrl']}]({reconstruction['runUrl']}); artifact `{reconstruction['artifactId']}` at `{reconstruction['artifactDigest']}`."
             )
+            if "cctlBuildPinSchema" in reconstruction:
+                lines.extend(
+                    [
+                        f"- Guest packager: `containerization@{reconstruction['containerizationRef']}`; atomic build pin `{reconstruction['cctlBuildPinSha256']}`; `cctl` `{reconstruction['cctlSha256']}`.",
+                        f"- Guest packager inputs: source tree `{reconstruction['cctlBuildSourceTree']}` from `{reconstruction['cctlBuildSourceRemote']}`; contract `{reconstruction['cctlBuildContractSha256']}`; command `{reconstruction['cctlBuildCommand']}`; duration `{reconstruction['cctlBuildDurationSeconds']}` seconds.",
+                    ]
+                )
+            else:
+                lines.extend(
+                    [
+                        f"- Guest packager: `containerization@{reconstruction['containerizationRef']}`; recoverable receipt `{reconstruction['cctlReceiptSha256']}`; stage artifact `{reconstruction['cctlArtifactSha256']}`; extracted `cctl` `{reconstruction['cctlSha256']}`.",
+                        f"- Guest packager inputs: source `{reconstruction['cctlBuildSourceSha256']}`; source metadata `{reconstruction['cctlBuildSourceMetadataSha256']}`; command `{reconstruction['cctlBuildCommandSha256']}`; tools `{reconstruction['cctlBuildToolsSha256']}`.",
+                    ]
+                )
         for component in ("runtime", "compose"):
             asset = manifest["assets"][component]
             homebrew_commit = asset.get("homebrewCommit")

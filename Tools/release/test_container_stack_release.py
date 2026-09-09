@@ -59,7 +59,6 @@ STABLE_RELEASE_LANE_CLASSIFIER = (
 )
 RUNNER_INSTALLER = ROOT / "scripts" / "install-scheduled-release-runner.sh"
 HAWKEYE_INSTALLER = ROOT / "scripts" / "install-hawkeye.sh"
-PIPELINE_MAIN = ROOT / "main.nf"
 HOST_STATE_TOOL = ROOT / "Tools" / "release" / "release-host-state.py"
 
 
@@ -3802,6 +3801,15 @@ github_cli() {{
         self.assertIn(".workflow_run.id", receipt)
         self.assertIn('"sha256:${AUTHORITY_ARTIFACT_DIGEST}"', receipt)
         self.assertIn("stable-release-authority.py verify", receipt)
+        self.assertIn(
+            "python3 release-tools/Tools/release/stable-release-authority.py verify",
+            receipt,
+        )
+        self.assertNotIn(
+            "python3 container-compose/Tools/release/stable-release-authority.py verify",
+            receipt,
+        )
+        self.assertIn('git -C release-tools rev-parse HEAD', receipt)
         self.assertIn("--candidate-sha \"${PUBLISH_SHA}\"", receipt)
         self.assertIn("stable-release-authority.tar.gz", receipt)
 
@@ -4080,7 +4088,7 @@ github_cli() {{
         ).read_text(encoding="utf-8")
         self.assertIn("check-licenses vet lint coverage build", validation)
         self.assertIn("run-stack-release-validation.sh full", makefile)
-        self.assertIn("PIPELINE_PROFILE=release-hosted", makefile)
+        self.assertIn("run-release-checkpoint.py", makefile)
         direct_full_gate = subprocess.run(
             [
                 "make",
@@ -4108,7 +4116,11 @@ github_cli() {{
             validation,
         )
         self.assertIn("release-gate-hosted:", makefile)
-        self.assertIn("release-gate-hosted: pipeline-bootstrap", makefile)
+        hosted_gate = makefile.split("release-gate-hosted:", 1)[1].split(
+            "\nci-release:", 1
+        )[0]
+        self.assertIn("--stage hosted-sibling-stack", hosted_gate)
+        self.assertIn("container-stack-hosted-release-validation", hosted_gate)
         self.assertNotIn("--stage sibling-stack-hosted", makefile)
         self.assertNotIn("--stage compose-ci-hosted", makefile)
         self.assertIn(
@@ -5038,7 +5050,7 @@ github_cli() {{
             workflow,
         )
         self.assertIn("git -C homebrew-tap rev-parse HEAD", workflow)
-        self.assertIn("Provision checksum-pinned release tools", workflow)
+        self.assertIn("Provision checksum-pinned repository tools", workflow)
         self.assertNotIn("Select supported Bash 5 runtime", workflow)
         self.assertNotIn("brew install bash", workflow)
         self.assertIn("working-directory: container-compose", workflow)
@@ -5053,9 +5065,8 @@ github_cli() {{
             "Run Compose application CI from immutable source lockfile", workflow
         )
         self.assertIn("Run recoverable hosted release graph", workflow)
-        self.assertIn("PIPELINE_PROFILE=release-hosted", workflow)
-        self.assertIn("make -C release-tools pipeline", workflow)
-        self.assertIn("make -C ../release-tools pipeline-bootstrap", workflow)
+        self.assertIn("CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR", workflow)
+        self.assertIn("make -C release-tools release-gate-hosted", workflow)
         self.assertIn("Resolve persistent release state root", workflow)
         self.assertIn(
             'state_root="${state_parent}/${CANDIDATE_SHA}"',
@@ -5066,12 +5077,11 @@ github_cli() {{
             workflow,
         )
         self.assertNotIn(
-            "RELEASE_PIPELINE_STATE_ROOT: ${{ github.workspace }}",
+            "RELEASE_BUILD_STATE_ROOT: ${{ github.workspace }}",
             workflow,
         )
-        self.assertNotIn("RELEASE_PIPELINE_STATE_ROOT: /Volumes/", workflow)
-        self.assertIn("make -C release-tools pipeline-resume", workflow)
-        self.assertIn('PIPELINE_SESSION="${resume_session}"', workflow)
+        self.assertNotIn("RELEASE_BUILD_STATE_ROOT: /Volumes/", workflow)
+        self.assertNotIn("nextflow", workflow.lower())
         self.assertNotIn("make -C container-compose ci", workflow)
         self.assertNotIn("Use pinned container dependency", workflow)
         self.assertNotIn("Use pinned containerization dependency", workflow)
@@ -5091,14 +5101,15 @@ github_cli() {{
             workflow.index("Run recoverable hosted release graph"),
         )
         self.assertLess(
-            workflow.index("Provision checksum-pinned release tools"),
+            workflow.index("Provision checksum-pinned repository tools"),
             workflow.index("Run recoverable hosted release graph"),
         )
 
-    def test_pipeline_preflight_rejects_unsupported_bash(self) -> None:
-        pipeline = PIPELINE_MAIN.read_text(encoding="utf-8")
-        self.assertIn("'(( BASH_VERSINFO[0] >= 5 ))'", pipeline)
-        self.assertIn("stable release gate requires Bash 5 or newer", pipeline)
+    def test_build_uses_the_system_bash_without_a_bootstrap_runtime(self) -> None:
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn("override SHELL := /bin/bash -p -euo pipefail", makefile)
+        self.assertNotIn("BASH_VERSINFO", makefile)
+        self.assertFalse((ROOT / "nextflow.config").exists())
 
     def test_hawkeye_installer_rejects_symlinked_cache_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
