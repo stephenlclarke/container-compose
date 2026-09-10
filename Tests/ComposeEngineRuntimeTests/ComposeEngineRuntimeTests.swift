@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 @testable import ComposeEngineRuntime
 import ComposeRuntimeSPI
 import ContainerEngineWire
@@ -133,6 +134,56 @@ struct ComposeEngineRuntimeTests {
         }
         try await server.shutdown()
     }
+
+    @Test
+    func `image volume initialization seeds only an empty Engine volume`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let source = fixture.root.appendingPathComponent("source/state", isDirectory: true)
+        let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
+        try Data("from-image\n".utf8).write(to: source.appendingPathComponent("message.txt"))
+        let archive = try await ProcessRunner().run(
+            "/usr/bin/tar",
+            ["-cf", "-", "-C", source.deletingLastPathComponent().path, "state"],
+        )
+        #expect(archive.succeeded)
+
+        let recorder = RequestRecorder()
+        let server = fixture.server(ImageVolumeResponder(
+            recorder: recorder,
+            mountpoint: volume.path,
+            archive: archive.stdoutData,
+        ))
+        try await server.start()
+        do {
+            let provider = EngineRuntimeProvider(socketPath: fixture.socketPath)
+            let request = ComposeImageVolumeInitializationRequest(
+                image: "example/image:latest",
+                platform: "linux/arm64",
+                imageSubpath: "/state",
+                volumeName: "project_state",
+            )
+            try await provider.initializeImageVolume(request)
+            let message = volume.appendingPathComponent("message.txt")
+            #expect(try String(contentsOf: message, encoding: .utf8) == "from-image\n")
+
+            try Data("preserved\n".utf8).write(to: message)
+            try await provider.initializeImageVolume(request)
+            #expect(try String(contentsOf: message, encoding: .utf8) == "preserved\n")
+
+            let requests = await recorder.requests
+            #expect(requests.filter { $0.target.contains("/containers/create?") }.count == 1)
+            #expect(requests.filter { $0.target.contains("/archive?") }.count == 1)
+            #expect(requests.filter { $0.method == .delete }.count == 1)
+            #expect(requests.contains { $0.target.contains("platform=linux/arm64") })
+        } catch {
+            try? await server.shutdown()
+            throw error
+        }
+        try await server.shutdown()
+    }
 }
 
 private struct EngineFixture {
@@ -225,6 +276,43 @@ private struct EngineFixtureResponder: DockerHTTPResponder {
     private static let imageInspect = #"{"Id":"sha256:img","RepoTags":["alpine:3.22"],"RepoDigests":["alpine@sha256:digest"],"Created":"2026-09-10T00:00:00Z","Size":42,"VirtualSize":42,"Architecture":"arm64","Variant":"v8","Os":"linux","Config":{"User":"1000:1000","Env":["A=B"],"Entrypoint":["/bin/sh"],"Cmd":["sleep","1"],"Labels":{"purpose":"test"},"WorkingDir":"/workspace","ExposedPorts":{"8080/tcp":{}},"Volumes":{"/data":{}},"StopSignal":"SIGTERM","Healthcheck":{"Test":["CMD","true"],"Interval":1000,"Timeout":500,"StartPeriod":0,"Retries":3}}}"#
     private static let imageList = #"[{"Containers":-1,"Created":1,"Id":"sha256:img","Labels":{"purpose":"test"},"ParentId":"","RepoDigests":["alpine@sha256:digest"],"RepoTags":["alpine:3.22"],"SharedSize":-1,"Size":42,"VirtualSize":42}]"#
     // swiftlint:enable line_length
+}
+
+private struct ImageVolumeResponder: DockerHTTPResponder {
+    let recorder: RequestRecorder
+    let mountpoint: String
+    let archive: Data
+
+    func respond(to request: DockerHTTPRequest) async -> DockerHTTPResponse {
+        await recorder.append(request)
+        switch (request.method, request.target) {
+        case let (.get, target) where target.contains("/volumes/project_state"):
+            let body = try? JSONSerialization.data(withJSONObject: [
+                "CreatedAt": "2026-09-11T00:00:00Z",
+                "Driver": "local",
+                "Labels": [:],
+                "Mountpoint": mountpoint,
+                "Name": "project_state",
+                "Options": [:],
+                "Scope": "local",
+            ], options: [.sortedKeys])
+            return DockerHTTPResponse(
+                status: 200,
+                headers: ["Content-Type": "application/json"],
+                body: .bytes(body ?? Data()),
+            )
+        case let (.post, target) where target.contains("/containers/create?"):
+            return .fixture(#"{"Id":"helper-id","Warnings":[]}"#, status: 201)
+        case let (.get, target) where target.contains("/archive?"):
+            return DockerHTTPResponse(
+                status: 200,
+                headers: ["Content-Type": "application/x-tar"],
+                body: .bytes(archive),
+            )
+        default:
+            return .empty(status: 204)
+        }
+    }
 }
 
 private extension DockerHTTPResponse {

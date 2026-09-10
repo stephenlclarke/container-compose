@@ -41,6 +41,7 @@ public enum ComposeEngineRuntime {
             options: options,
             runtime: ComposeOrchestratorRuntimeDependencies(
                 services: .init(
+                    imageVolumeInitializer: provider,
                     lifecycleManager: provider,
                     resourceManager: provider,
                 ),
@@ -107,12 +108,40 @@ public final class EngineRuntimeProvider: @unchecked Sendable {
         )
     }
 
+    private func rawRequest(
+        _ method: DockerHTTPMethod,
+        _ target: String,
+        body: (any Encodable)? = nil,
+        maximumBodyBytes: Int = 16 * 1024 * 1024,
+    ) async throws -> Data {
+        let payload: Data
+        let headers: DockerHTTPHeaders
+        if let body {
+            payload = try JSONEncoder.engine.encode(AnyEncodable(body))
+            headers = try DockerHTTPHeaders(uniqueFields: ["Content-Type": "application/json"])
+        } else {
+            payload = Data()
+            headers = DockerHTTPHeaders()
+        }
+        return try await client.get().send(
+            DockerHTTPRequest(method: method, target: target, headers: headers, body: payload),
+            maximumBodyBytes: maximumBodyBytes,
+        ).body
+    }
+
     private func escaped(_ component: String) -> String {
         component.addingPercentEncoding(withAllowedCharacters: .urlPathSegmentAllowed) ?? component
     }
 
     private func query(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? value
+    }
+
+    private func target(_ path: String, queryFields: [(String, String?)]) -> String {
+        let fields = queryFields.compactMap { key, value in
+            value.map { "\(key)=\(query($0))" }
+        }
+        return fields.isEmpty ? path : path + "?" + fields.joined(separator: "&")
     }
 }
 
@@ -241,6 +270,88 @@ extension EngineRuntimeProvider: ComposeRuntimeResourceManaging {
 
     public func deleteVolume(name: String) async throws {
         try await request(.delete, "/v1.53/volumes/\(escaped(name))")
+    }
+}
+
+extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
+    public func initializeImageVolume(_ request: ComposeImageVolumeInitializationRequest) async throws {
+        let volume: EngineVolume = try await self.request(
+            .get,
+            "/v1.53/volumes/\(escaped(request.volumeName))",
+        )
+        let destination = URL(fileURLWithPath: volume.mountpoint, isDirectory: true)
+        guard try volumeIsEmpty(destination) else {
+            return
+        }
+
+        let helperName = "compose-volume-init-\(UUID().uuidString.lowercased())"
+        let helper: EngineContainerCreateResponse = try await self.request(
+            .post,
+            target(
+                "/v1.53/containers/create",
+                queryFields: [("name", helperName), ("platform", request.platform)],
+            ),
+            body: EngineContainerCreateRequest(
+                image: request.image,
+                labels: ["com.apple.container.compose.internal": "image-volume-init"],
+            ),
+        )
+        try await seedVolume(request, destination: destination, helperID: helper.id)
+    }
+
+    private func seedVolume(
+        _ request: ComposeImageVolumeInitializationRequest,
+        destination: URL,
+        helperID: String,
+    ) async throws {
+        do {
+            let archive: Data
+            do {
+                archive = try await rawRequest(
+                    .get,
+                    "/v1.53/containers/\(escaped(helperID))/archive?path=\(query(request.imageSubpath))",
+                    maximumBodyBytes: 1024 * 1024 * 1024,
+                )
+            } catch ContainerUnixHTTPClientError.server(status: 404, message: _) {
+                try await removeInitializationHelper(helperID)
+                return
+            }
+            guard try volumeIsEmpty(destination) else {
+                try await removeInitializationHelper(helperID)
+                return
+            }
+            let extraction = try await ProcessRunner().run(
+                "/usr/bin/tar",
+                ["--no-same-owner", "-xf", "-", "--strip-components", "1", "-C", destination.path],
+                environment: ["COPYFILE_DISABLE": "1", "PATH": "/usr/bin:/bin"],
+                input: archive,
+            )
+            guard extraction.succeeded else {
+                throw ComposeError.commandFailed(
+                    command: "/usr/bin/tar -xf - --strip-components 1 -C <engine-volume>",
+                    status: extraction.status,
+                    stderr: extraction.stderr,
+                )
+            }
+            try await removeInitializationHelper(helperID)
+        } catch {
+            try? await removeInitializationHelper(helperID)
+            throw error
+        }
+    }
+
+    private func removeInitializationHelper(_ id: String) async throws {
+        try await request(.delete, "/v1.53/containers/\(escaped(id))?force=1&v=1")
+    }
+
+    private func volumeIsEmpty(_ destination: URL) throws -> Bool {
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: destination.path, isDirectory: &isDirectory),
+              isDirectory.boolValue
+        else {
+            throw ComposeError.invalidProject("runtime volume mountpoint is not a directory")
+        }
+        return try FileManager.default.contentsOfDirectory(atPath: destination.path).isEmpty
     }
 }
 
@@ -620,6 +731,21 @@ private struct EngineVolume: Decodable {
     enum CodingKeys: String, CodingKey {
         case driver = "Driver", labels = "Labels", mountpoint = "Mountpoint", name = "Name", options = "Options"
     }
+}
+
+private struct EngineContainerCreateRequest: Encodable {
+    let image: String
+    let labels: [String: String]
+    let command = ["/bin/sh", "-c", "while :; do sleep 3600; done"]
+
+    enum CodingKeys: String, CodingKey {
+        case image = "Image", labels = "Labels", command = "Cmd"
+    }
+}
+
+private struct EngineContainerCreateResponse: Decodable {
+    let id: String
+    enum CodingKeys: String, CodingKey { case id = "Id" }
 }
 
 private struct EngineImageInspect: Decodable {
