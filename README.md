@@ -29,6 +29,13 @@ images and publish Compose YAML, env-file layers, and optional image digest
 override layers or application image indexes as OCI project artifacts. Swift owns
 orchestration and maps supported Compose behavior to the matched runtime stack.
 
+For Docker-free Dev Containers, the package also provides a separately compiled
+stock profile. It pins tagged `apple/container` dependencies, uses the native
+Container Engine Unix socket for discovery and lifecycle operations, and never
+falls back to Docker, Docker Compose, or Colima. The enhanced release profile
+remains the default for the independently installed Compose plugin. See the
+[installation guide](docs/guides/INSTALL.md#build-the-stock-apple-engine-adapter).
+
 ## 0.14.2 Current candidate
 
 [`0.14.1`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.1)

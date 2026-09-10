@@ -111,7 +111,7 @@ jobs:
                 ;;
             esac
             case "$path" in
-              Package.swift|Package.resolved|Sources/**|Tests/**|*.swift)
+              Package.swift|Package.resolved|Package.stock.resolved|Sources/**|Tests/**|*.swift)
                 swift=true
                 ;;
             esac

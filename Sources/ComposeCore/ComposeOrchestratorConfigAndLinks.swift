@@ -267,11 +267,13 @@ extension ComposeOrchestrator {
     func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) throws -> String {
         var argument = networkRuntimeName(project: project, composeName: network)
         var options: [String] = []
-        for alias in try networkAliasValues(service: service, network: network) {
-            options.append("alias=\(alias)")
-        }
-        for mapping in try networkScopedLinkAliasValues(project: project, service: service, network: network) {
-            options.append("dns-alias=\(mapping)")
+        if self.options.runtimeCapabilities.supportsNetworkScopedAliasesV1 {
+            for alias in try networkAliasValues(service: service, network: network) {
+                options.append("alias=\(alias)")
+            }
+            for mapping in try networkScopedLinkAliasValues(project: project, service: service, network: network) {
+                options.append("dns-alias=\(mapping)")
+            }
         }
         if let macAddress = networkMACAddress(service: service, network: network) {
             options.append("mac=\(macAddress)")
@@ -279,16 +281,18 @@ extension ComposeOrchestrator {
         if let mtu = try service.networkOptions?[network]?.networkMTU() {
             options.append("mtu=\(mtu)")
         }
-        if let interfaceName = try networkGuestInterfaceName(service: service, network: network) {
-            options.append("interface=\(interfaceName)")
-        }
-        try options.append(contentsOf: networkStaticAddressOptions(
-            project: project,
-            service: service,
-            network: network,
-        ))
-        for address in try networkLinkLocalIPValues(service: service, network: network) {
-            options.append("address=\(address)")
+        if self.options.runtimeCapabilities.supportsNetworkScopedAliasesV1 {
+            if let interfaceName = try networkGuestInterfaceName(service: service, network: network) {
+                options.append("interface=\(interfaceName)")
+            }
+            try options.append(contentsOf: networkStaticAddressOptions(
+                project: project,
+                service: service,
+                network: network,
+            ))
+            for address in try networkLinkLocalIPValues(service: service, network: network) {
+                options.append("address=\(address)")
+            }
         }
         if !options.isEmpty {
             argument += "," + options.joined(separator: ",")

@@ -18,16 +18,31 @@
 import Foundation
 import PackageDescription
 
+let runtimeProfile = ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_BUILD_PROFILE"] ?? "enhanced"
+let enhancedRuntime: Bool = {
+    switch runtimeProfile {
+    case "enhanced": true
+    case "stock": false
+    default: fatalError("CONTAINER_COMPOSE_BUILD_PROFILE must be stock or enhanced")
+    }
+}()
+
+let runtimeSwiftSettings: [SwiftSetting] = enhancedRuntime
+    ? [.define("CONTAINER_COMPOSE_ENHANCED_RUNTIME")]
+    : []
+
 let containerDependency: Package.Dependency = {
     if let path = ProcessInfo.processInfo.environment["CONTAINER_PACKAGE_PATH"],
        !path.isEmpty
     {
         return .package(name: "container", path: path)
     }
-    return .package(
-        url: "https://github.com/stephenlclarke/container.git",
-        revision: "228897171d71975988ccdc690f1982e7433952af",
-    )
+    return enhancedRuntime
+        ? .package(
+            url: "https://github.com/stephenlclarke/container.git",
+            revision: "ccf99d73b75626ed49a0d638c640bd3b9851e2de",
+        )
+        : .package(url: "https://github.com/apple/container.git", exact: "1.4.1")
 }()
 
 let containerizationDependency: Package.Dependency = {
@@ -36,60 +51,27 @@ let containerizationDependency: Package.Dependency = {
     {
         return .package(name: "containerization", path: path)
     }
-    return .package(
-        url: "https://github.com/stephenlclarke/containerization.git",
-        revision: "b404e03bb914904107a6a9305ba1f0e44c79a59c",
-    )
+    return enhancedRuntime
+        ? .package(
+            url: "https://github.com/stephenlclarke/containerization.git",
+            revision: "bd8130fea851f6ee264f00fc684e2543a7d2faa3",
+        )
+        : .package(url: "https://github.com/apple/containerization.git", exact: "0.45.0")
 }()
 
-let nioSSLDependency: Package.Dependency = .package(
-    url: "https://github.com/stephenlclarke/swift-nio-ssl.git",
-    revision: "3e13ce5f6dd5b7e89fff9ab55ab7caed39fe7285",
-)
+let runtimeOnlyDependencies: [Package.Dependency] = enhancedRuntime
+    ? [.package(
+        url: "https://github.com/stephenlclarke/swift-nio-ssl.git",
+        revision: "3e13ce5f6dd5b7e89fff9ab55ab7caed39fe7285",
+    )]
+    : []
 
-let package = Package(
-    name: "container-compose",
-    platforms: [.macOS(.v15)],
-    products: [
-        .executable(name: "compose", targets: ["ComposePlugin"]),
-        .library(name: "ComposeCore", targets: ["ComposeCore"]),
-        .library(name: "ComposeContainerRuntime", targets: ["ComposeContainerRuntime"]),
-        .library(name: "ComposeRuntimeSPI", targets: ["ComposeRuntimeSPI"]),
-    ],
-    dependencies: [
-        containerDependency,
-        containerizationDependency,
-        nioSSLDependency,
-        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
-        .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.4.0"),
-        .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
-    ],
-    targets: [
-        .executableTarget(
-            name: "ComposePlugin",
-            dependencies: [
-                .product(name: "ArgumentParser", package: "swift-argument-parser"),
-                .product(name: "ContainerAPIClient", package: "container"),
-                .product(name: "ContainerBuild", package: "container"),
-                .product(name: "ContainerCommands", package: "container"),
-                .product(name: "ContainerLog", package: "container"),
-                .product(name: "ContainerResource", package: "container"),
-                "ComposeCore",
-                "ComposeContainerRuntime",
-            ],
-            path: "Sources/ComposePlugin",
-        ),
-        .target(
-            name: "ComposeRuntimeSPI",
-            path: "Sources/ComposeRuntimeSPI",
-        ),
-        .target(
-            name: "ComposeCore",
-            dependencies: [
-                "ComposeRuntimeSPI",
-            ],
-            path: "Sources/ComposeCore",
-        ),
+let pluginRuntimeDependencies: [Target.Dependency] = enhancedRuntime
+    ? ["ComposeContainerRuntime"]
+    : ["ComposeEngineRuntime"]
+
+let runtimeTargets: [Target] = enhancedRuntime
+    ? [
         .target(
             name: "ComposeContainerRuntime",
             dependencies: [
@@ -108,13 +90,7 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
             ],
             path: "Sources/ComposeContainerRuntime",
-        ),
-        .testTarget(
-            name: "ComposeRuntimeSPITests",
-            dependencies: [
-                "ComposeRuntimeSPI",
-            ],
-            path: "Tests/ComposeRuntimeSPITests",
+            swiftSettings: runtimeSwiftSettings,
         ),
         .testTarget(
             name: "ComposeCoreTests",
@@ -131,12 +107,104 @@ let package = Package(
             ],
         ),
         .testTarget(
+            name: "ComposeContainerRuntimeTests",
+            dependencies: [
+                "ComposeContainerRuntime",
+                "ComposeRuntimeSPI",
+                .product(name: "ContainerResource", package: "container"),
+                .product(name: "ContainerizationEXT4", package: "containerization"),
+                .product(name: "ContainerizationOCI", package: "containerization"),
+            ],
+            path: "Tests/ComposeContainerRuntimeTests",
+        ),
+    ]
+    : [
+        .target(
+            name: "ComposeEngineRuntime",
+            dependencies: [
+                "ComposeCore",
+                "ComposeRuntimeSPI",
+                .product(name: "ContainerEngineWire", package: "container-engine-api"),
+                .product(name: "ContainerUnixHTTPClient", package: "container-engine-api"),
+            ],
+            path: "Sources/ComposeEngineRuntime",
+        ),
+        .testTarget(
+            name: "ComposeEngineRuntimeTests",
+            dependencies: [
+                "ComposeEngineRuntime",
+                "ComposeRuntimeSPI",
+                .product(name: "ContainerEngineWire", package: "container-engine-api"),
+                .product(name: "ContainerUnixHTTPServer", package: "container-engine-api"),
+                .product(name: "Logging", package: "swift-log"),
+            ],
+            path: "Tests/ComposeEngineRuntimeTests",
+        ),
+    ]
+
+let package = Package(
+    name: "container-compose",
+    platforms: [.macOS(.v15)],
+    products: [
+        .executable(name: "compose", targets: ["ComposePlugin"]),
+        .library(name: "ComposeCore", targets: ["ComposeCore"]),
+        enhancedRuntime
+            ? .library(name: "ComposeContainerRuntime", targets: ["ComposeContainerRuntime"])
+            : .library(name: "ComposeEngineRuntime", targets: ["ComposeEngineRuntime"]),
+        .library(name: "ComposeRuntimeSPI", targets: ["ComposeRuntimeSPI"]),
+    ],
+    dependencies: [
+        containerDependency,
+        containerizationDependency,
+        .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
+        .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.4.0"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
+        .package(
+            url: "https://github.com/stephenlclarke/container-engine-api.git",
+            revision: "276a7cfdba91fef60c232177a44c054e5de9ae8f",
+        ),
+    ] + runtimeOnlyDependencies,
+    targets: [
+        .executableTarget(
+            name: "ComposePlugin",
+            dependencies: [
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "ContainerAPIClient", package: "container"),
+                .product(name: "ContainerBuild", package: "container"),
+                .product(name: "ContainerCommands", package: "container"),
+                .product(name: "ContainerLog", package: "container"),
+                .product(name: "ContainerResource", package: "container"),
+                "ComposeCore",
+            ] + pluginRuntimeDependencies,
+            path: "Sources/ComposePlugin",
+            swiftSettings: runtimeSwiftSettings,
+        ),
+        .target(
+            name: "ComposeRuntimeSPI",
+            path: "Sources/ComposeRuntimeSPI",
+        ),
+        .target(
+            name: "ComposeCore",
+            dependencies: [
+                "ComposeRuntimeSPI",
+            ],
+            path: "Sources/ComposeCore",
+        ),
+        .testTarget(
+            name: "ComposeRuntimeSPITests",
+            dependencies: [
+                "ComposeRuntimeSPI",
+            ],
+            path: "Tests/ComposeRuntimeSPITests",
+        ),
+        .testTarget(
             name: "ComposePluginTests",
             dependencies: [
                 "ComposeCore",
                 "ComposePlugin",
             ],
             path: "Tests/ComposePluginTests",
+            swiftSettings: runtimeSwiftSettings,
         ),
         .testTarget(
             name: "ComposeRuntimeTests",
@@ -148,16 +216,5 @@ let package = Package(
                 .copy("Fixtures"),
             ],
         ),
-        .testTarget(
-            name: "ComposeContainerRuntimeTests",
-            dependencies: [
-                "ComposeContainerRuntime",
-                "ComposeRuntimeSPI",
-                .product(name: "ContainerResource", package: "container"),
-                .product(name: "ContainerizationEXT4", package: "containerization"),
-                .product(name: "ContainerizationOCI", package: "containerization"),
-            ],
-            path: "Tests/ComposeContainerRuntimeTests",
-        ),
-    ],
+    ] + runtimeTargets,
 )

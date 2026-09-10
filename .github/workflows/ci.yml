@@ -220,6 +220,44 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HAWKEYE_AUTO_INSTALL: "1"
 
+  stock_runtime:
+    name: Stock Apple Runtime
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      CONTAINER_COMPOSE_BUILD_PROFILE: stock
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Checkout container-compose
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: container-compose
+          fetch-depth: 0
+
+      - name: Select the stock dependency lock
+        working-directory: container-compose
+        run: cp Package.stock.resolved Package.resolved
+
+      - name: Verify stock dependency authority
+        working-directory: container-compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift package show-dependencies --format json > "${RUNNER_TEMP}/stock-dependencies.json"
+          jq -e '
+            [.. | objects | .url? // empty]
+            | any(test("github.com/stephenlclarke/(container|containerization)(\\.git)?$"))
+            | not
+          ' "${RUNNER_TEMP}/stock-dependencies.json"
+
+      - name: Build and test the stock runtime
+        working-directory: container-compose
+        run: |
+          swift test --disable-automatic-resolution -Xswiftc -warnings-as-errors
+          swift build --disable-automatic-resolution -c release --product compose -Xswiftc -warnings-as-errors
+
   tool_tests:
     name: Tool Tests (${{ matrix.suite }})
     needs: changes

@@ -15,14 +15,28 @@
 //===----------------------------------------------------------------------===//
 
 import ArgumentParser
-import ComposeContainerRuntime
+#if CONTAINER_COMPOSE_ENHANCED_RUNTIME
+    import ComposeContainerRuntime
+#else
+    import ComposeEngineRuntime
+#endif
 import ComposeCore
 #if canImport(Darwin)
-import Darwin
+    import Darwin
 #elseif canImport(Glibc)
-import Glibc
+    import Glibc
 #endif
 import Foundation
+
+private func selectedRuntimeDependencies(
+    options: ComposeExecutionOptions,
+) -> ComposeOrchestratorDependencies {
+    #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
+        ComposeContainerRuntime.dependencies(options: options)
+    #else
+        ComposeEngineRuntime.dependencies(options: options)
+    #endif
+}
 
 private let composeBuildInfo = ComposeBuildInfo.load()
 private let composePluginVersionNumber = composeBuildInfo.version
@@ -53,7 +67,8 @@ struct ComposeBuildInfo: Codable {
 
     static func load() -> ComposeBuildInfo {
         if let path = ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_BUILD_INFO"],
-           let info = decode(path: path) {
+           let info = decode(path: path)
+        {
             return info
         }
         if let info = decode(path: packagedBuildInfoPath()) {
@@ -64,9 +79,9 @@ struct ComposeBuildInfo: Codable {
 
     private static var defaultBuildType: String {
         #if DEBUG
-        "debug"
+            "debug"
         #else
-        "release"
+            "release"
         #endif
     }
 
@@ -81,15 +96,15 @@ struct ComposeBuildInfo: Codable {
 
     private static func executablePath() -> String {
         #if canImport(Darwin)
-        var size: UInt32 = 0
-        _NSGetExecutablePath(nil, &size)
-        var buffer = [CChar](repeating: 0, count: Int(size))
-        if _NSGetExecutablePath(&buffer, &size) == 0 {
-            return FileManager.default.string(
-                withFileSystemRepresentation: buffer,
-                length: Int(strlen(buffer))
-            )
-        }
+            var size: UInt32 = 0
+            _NSGetExecutablePath(nil, &size)
+            var buffer = [CChar](repeating: 0, count: Int(size))
+            if _NSGetExecutablePath(&buffer, &size) == 0 {
+                return FileManager.default.string(
+                    withFileSystemRepresentation: buffer,
+                    length: Int(strlen(buffer)),
+                )
+            }
         #endif
 
         return CommandLine.arguments.first ?? ""
@@ -104,20 +119,20 @@ struct ComposeBuildInfo: Codable {
 
     static func localBuildInfo(
         root explicitRoot: String? = nil,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
     ) -> ComposeBuildInfo {
         let root =
             explicitRoot
-            ?? git(["rev-parse", "--show-toplevel"])
-            ?? FileManager.default.currentDirectoryPath
+                ?? git(["rev-parse", "--show-toplevel"])
+                ?? FileManager.default.currentDirectoryPath
         let branch = git(["branch", "--show-current"], root: root) ?? "unspecified"
         let localContainer = localDependencyMetadata(
             path: environment["CONTAINER_PACKAGE_PATH"],
-            declaredSource: environment["CONTAINER_SOURCE"]
+            declaredSource: environment["CONTAINER_SOURCE"],
         )
         let localContainerization = localDependencyMetadata(
             path: environment["CONTAINERIZATION_PACKAGE_PATH"],
-            declaredSource: environment["CONTAINERIZATION_SOURCE"]
+            declaredSource: environment["CONTAINERIZATION_SOURCE"],
         )
         return ComposeBuildInfo(
             version: "0.14.2",
@@ -131,8 +146,8 @@ struct ComposeBuildInfo: Codable {
                     packageResolvedValue(
                         root: root,
                         identity: "container",
-                        key: "location"
-                    ) ?? "stephenlclarke/container"
+                        key: "location",
+                    ) ?? defaultContainerSource,
                 ),
             containerRef: localContainer?.ref
                 ?? packageResolvedState(root: root, identity: "container")
@@ -143,27 +158,47 @@ struct ComposeBuildInfo: Codable {
                     packageResolvedValue(
                         root: root,
                         identity: "containerization",
-                        key: "location"
-                    ) ?? "unspecified"
+                        key: "location",
+                    ) ?? "unspecified",
                 ),
             containerizationRef: localContainerization?.ref
                 ?? packageResolvedState(root: root, identity: "containerization")
                 ?? "unspecified",
             composeGoVersion: goModuleVersion(
                 root: root,
-                module: "github.com/compose-spec/compose-go/v2"
+                module: "github.com/compose-spec/compose-go/v2",
             ),
-            runtimeCapabilitySchemaVersion: ComposeRuntimeCapabilityManifest.required.schemaVersion,
-            runtimeCapabilities: ComposeRuntimeCapabilityManifest.required.identifiers
+            runtimeCapabilitySchemaVersion: defaultRuntimeCapabilityManifest.schemaVersion,
+            runtimeCapabilities: defaultRuntimeCapabilityManifest.identifiers,
         )
+    }
+
+    static var defaultRuntimeCapabilityManifest: ComposeRuntimeCapabilityManifest {
+        #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
+            .required
+        #else
+            ComposeRuntimeCapabilityManifest(
+                schemaVersion: ComposeRuntimeCapabilityManifest.currentSchemaVersion,
+                capabilities: [],
+            )
+        #endif
+    }
+
+    private static var defaultContainerSource: String {
+        #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
+            "stephenlclarke/container"
+        #else
+            "apple/container"
+        #endif
     }
 
     private static func localDependencyMetadata(
         path: String?,
-        declaredSource: String? = nil
+        declaredSource: String? = nil,
     ) -> (source: String, ref: String)? {
         guard let path, !path.isEmpty,
-              let ref = git(["rev-parse", "HEAD"], root: path) else {
+              let ref = git(["rev-parse", "HEAD"], root: path)
+        else {
             return nil
         }
         let source =
@@ -194,6 +229,7 @@ struct ComposeBuildInfo: Codable {
         return "custom"
     }
 }
+
 private struct ComposeVersionOutput: Encodable {
     let version: String
     let source: String
@@ -212,32 +248,31 @@ private struct ComposeVersionOutput: Encodable {
     let runtimeCapabilities: [String]
 
     init(_ info: ComposeBuildInfo) {
-        self.version = info.version
-        self.source = info.source
-        self.branch = info.branch
-        self.lane = info.lane
-        self.commit = info.commit
-        self.buildType = info.buildType
-        self.containerSource = info.containerSource
-        self.containerRef = info.containerRef
-        self.containerDistribution = info.containerDistribution
-        self.containerizationSource = info.containerizationSource
-        self.containerizationRef = info.containerizationRef
-        self.containerizationDistribution = info.containerizationDistribution
-        self.composeGoVersion = info.composeGoVersion ?? "unspecified"
-        self.runtimeCapabilitySchemaVersion =
+        version = info.version
+        source = info.source
+        branch = info.branch
+        lane = info.lane
+        commit = info.commit
+        buildType = info.buildType
+        containerSource = info.containerSource
+        containerRef = info.containerRef
+        containerDistribution = info.containerDistribution
+        containerizationSource = info.containerizationSource
+        containerizationRef = info.containerizationRef
+        containerizationDistribution = info.containerizationDistribution
+        composeGoVersion = info.composeGoVersion ?? "unspecified"
+        runtimeCapabilitySchemaVersion =
             info.runtimeCapabilitySchemaVersion
-            ?? ComposeRuntimeCapabilityManifest.required.schemaVersion
-        self.runtimeCapabilities =
+                ?? ComposeBuildInfo.defaultRuntimeCapabilityManifest.schemaVersion
+        runtimeCapabilities =
             info.runtimeCapabilities
-            ?? ComposeRuntimeCapabilityManifest.required.identifiers
+                ?? ComposeBuildInfo.defaultRuntimeCapabilityManifest.identifiers
     }
 }
 
 private extension String {
     func normalizedGitHubSource() -> String {
-        self
-            .replacingOccurrences(of: GitMetadata.httpsSourcePrefix, with: "")
+        replacingOccurrences(of: GitMetadata.httpsSourcePrefix, with: "")
             .replacingOccurrences(of: GitMetadata.sshSourcePrefix, with: "")
             .replacingOccurrences(of: GitMetadata.repositorySuffix, with: "")
     }
@@ -310,7 +345,8 @@ private extension ComposeBuildInfo {
     static func packageResolvedPin(root: String, identity: String) -> [String: Any]? {
         guard let data = FileManager.default.contents(atPath: "\(root)/Package.resolved"),
               let rootObject = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let pins = rootObject["pins"] as? [[String: Any]] else {
+              let pins = rootObject["pins"] as? [[String: Any]]
+        else {
             return nil
         }
         return pins.first { $0["identity"] as? String == identity }
@@ -322,10 +358,10 @@ private extension ComposeBuildInfo {
         }
         for line in text.split(whereSeparator: \.isNewline) {
             let fields = line.split { $0 == " " || $0 == "\t" }
-            if fields.count >= 3 && String(fields[0]) == "require" && String(fields[1]) == module {
+            if fields.count >= 3, String(fields[0]) == "require", String(fields[1]) == module {
                 return String(fields[2])
             }
-            if fields.count >= 2 && String(fields[0]) == module {
+            if fields.count >= 2, String(fields[0]) == module {
                 return String(fields[1])
             }
         }
@@ -379,7 +415,7 @@ struct ComposePlugin: AsyncParsableCommand {
             Unpause.self,
             Wait.self,
             Version.self,
-        ]
+        ],
     )
 }
 
@@ -404,7 +440,7 @@ struct ComposePluginMain {
                 lane: composeBuildInfo.lane,
                 expectedContainerRef: composeBuildInfo.containerRef,
                 expectedContainerizationRef: composeBuildInfo.containerizationRef,
-                onCompatibleRuntime: { installedRuntimeCapabilities.replace(with: $0) }
+                onCompatibleRuntime: { installedRuntimeCapabilities.replace(with: $0) },
             ) {
                 FileHandle.standardError.write(Data((failure + "\n").utf8))
                 exit(1)
@@ -461,7 +497,7 @@ struct GlobalOptions: ParsableArguments {
             projectName: projectName,
             profiles: profile,
             envFiles: envFile,
-            projectDirectory: projectDirectory
+            projectDirectory: projectDirectory,
         )
     }
 
@@ -517,7 +553,7 @@ struct GlobalOptions: ParsableArguments {
         try await loadProject(
             options: options,
             progress: progressReporter(),
-            normalize: { try await ComposeNormalizer().normalize(options: $0) }
+            normalize: { try await ComposeNormalizer().normalize(options: $0) },
         )
     }
 
@@ -532,7 +568,7 @@ struct GlobalOptions: ParsableArguments {
     func loadProject(
         options: ComposeOptions,
         progress: ComposeProgressReporter,
-        normalize: (ComposeOptions) async throws -> ComposeProject
+        normalize: (ComposeOptions) async throws -> ComposeProject,
     ) async throws -> ComposeProject {
         try await progress.activity("Loading Compose model") {
             try await normalize(options)
@@ -544,7 +580,7 @@ struct GlobalOptions: ParsableArguments {
         try await loadVariables(
             options: options,
             progress: progressReporter(),
-            variables: { try await ComposeNormalizer().variables(options: $0) }
+            variables: { try await ComposeNormalizer().variables(options: $0) },
         )
     }
 
@@ -552,7 +588,7 @@ struct GlobalOptions: ParsableArguments {
     func loadVariables(
         options: ComposeOptions,
         progress: ComposeProgressReporter,
-        variables: (ComposeOptions) async throws -> [ComposeVariable]
+        variables: (ComposeOptions) async throws -> [ComposeVariable],
     ) async throws -> [ComposeVariable] {
         try await progress.activity("Loading Compose variables") {
             try await variables(options)
@@ -576,7 +612,7 @@ struct GlobalOptions: ParsableArguments {
         }
         return ComposeOrchestrator(
             options: options,
-            dependencies: ComposeContainerRuntime.dependencies(options: options),
+            dependencies: selectedRuntimeDependencies(options: options),
         )
     }
 
@@ -624,7 +660,7 @@ struct GlobalOptions: ParsableArguments {
         return ComposeProgressReporter(
             style: progressStyle(),
             colorEnabled: shouldColorProgress(),
-            emitData: { destination.write($0) }
+            emitData: { destination.write($0) },
         )
     }
 
@@ -644,17 +680,17 @@ struct GlobalOptions: ParsableArguments {
     func progressStyle(environment: ComposeEnvironment = ComposeEnvironment()) -> ComposeProgressStyle {
         switch effectiveProgress(environment: environment)?.lowercased() {
         case "quiet", "none":
-            return .quiet
+            .quiet
         case "plain":
-            return .plain
+            .plain
         case "json":
-            return .json
+            .json
         case "tty":
-            return .tty
+            .tty
         case "auto", "", nil:
-            return stderrSupportsANSI() ? .tty : .plain
+            stderrSupportsANSI() ? .tty : .plain
         default:
-            return stderrSupportsANSI() ? .tty : .plain
+            stderrSupportsANSI() ? .tty : .plain
         }
     }
 
@@ -662,11 +698,11 @@ struct GlobalOptions: ParsableArguments {
     func shouldColorProgress(environment: ComposeEnvironment = ComposeEnvironment()) -> Bool {
         switch effectiveANSI(environment: environment)?.lowercased() {
         case "always", "0":
-            return true
+            true
         case "never":
-            return false
+            false
         default:
-            return stderrSupportsANSI()
+            stderrSupportsANSI()
         }
     }
 
@@ -703,38 +739,38 @@ private func composeMenuEnvironmentEnabled() -> Bool {
 
 /// Returns whether stdin is an interactive terminal.
 private func stdinIsTerminal() -> Bool {
-#if canImport(Darwin) || canImport(Glibc)
-    isatty(STDIN_FILENO) == 1
-#else
-    false
-#endif
+    #if canImport(Darwin) || canImport(Glibc)
+        isatty(STDIN_FILENO) == 1
+    #else
+        false
+    #endif
 }
 
 /// Returns whether stdout is an interactive terminal.
 private func stdoutIsTerminal() -> Bool {
-#if canImport(Darwin) || canImport(Glibc)
-    isatty(STDOUT_FILENO) == 1
-#else
-    false
-#endif
+    #if canImport(Darwin) || canImport(Glibc)
+        isatty(STDOUT_FILENO) == 1
+    #else
+        false
+    #endif
 }
 
 /// Returns whether stdout is an interactive terminal that can display ANSI color.
 private func stdoutSupportsANSI() -> Bool {
-#if canImport(Darwin) || canImport(Glibc)
-    isatty(STDOUT_FILENO) == 1
-#else
-    false
-#endif
+    #if canImport(Darwin) || canImport(Glibc)
+        isatty(STDOUT_FILENO) == 1
+    #else
+        false
+    #endif
 }
 
 /// Returns whether stderr is an interactive terminal that can display ANSI progress.
 private func stderrSupportsANSI() -> Bool {
-#if canImport(Darwin) || canImport(Glibc)
-    isatty(STDERR_FILENO) == 1
-#else
-    false
-#endif
+    #if canImport(Darwin) || canImport(Glibc)
+        isatty(STDERR_FILENO) == 1
+    #else
+        false
+    #endif
 }
 
 /// Shared contract for subcommands that operate on a Compose project.
@@ -756,7 +792,7 @@ extension ComposeProjectCommand {
     /// Prints the canonical normalized project JSON.
     func printCanonicalProject() async throws {
         let loadedProject = try await project()
-        print(try orchestrator().config(project: loadedProject))
+        try print(orchestrator().config(project: loadedProject))
     }
 }
 
@@ -773,7 +809,7 @@ struct BridgeRuntimeOptions: ParsableArguments {
         }
         return ComposeOrchestrator(
             options: options,
-            dependencies: ComposeContainerRuntime.dependencies(options: options),
+            dependencies: selectedRuntimeDependencies(options: options),
         )
     }
 
@@ -791,7 +827,7 @@ struct Alpha: AsyncParsableCommand {
             AlphaDryRun.self,
             AlphaScale.self,
             AlphaWatch.self,
-        ]
+        ],
     )
     @OptionGroup var global: GlobalOptions
 
@@ -805,7 +841,7 @@ struct Alpha: AsyncParsableCommand {
 struct AlphaDryRun: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "dry-run",
-        abstract: "Execute a command in dry run mode."
+        abstract: "Execute a command in dry run mode.",
     )
     @OptionGroup var global: GlobalOptions
     @Argument(parsing: .allUnrecognized, help: "Compose command to execute in dry-run mode.")
@@ -843,7 +879,7 @@ struct AlphaScale: AsyncParsableCommand, ComposeProjectCommand {
             options: ComposeScaleOptions {
                 $0.scales = scales
                 $0.noDeps = noDeps
-            }
+            },
         )
     }
 }
@@ -852,7 +888,7 @@ struct AlphaScale: AsyncParsableCommand, ComposeProjectCommand {
 struct AlphaWatch: AsyncParsableCommand, ComposeProjectCommand {
     static let configuration = CommandConfiguration(
         commandName: "watch",
-        abstract: "Watch build context and service files."
+        abstract: "Watch build context and service files.",
     )
     @OptionGroup var global: GlobalOptions
     @Flag(name: .customLong("no-up"), help: "Do not build and start services before watching.")
@@ -871,8 +907,8 @@ struct AlphaWatch: AsyncParsableCommand, ComposeProjectCommand {
                 services: services,
                 noUp: noUp,
                 prune: true,
-                quiet: quiet
-            )
+                quiet: quiet,
+            ),
         )
     }
 }
@@ -885,7 +921,7 @@ struct Bridge: AsyncParsableCommand {
         subcommands: [
             BridgeConvert.self,
             BridgeTransformations.self,
-        ]
+        ],
     )
     @OptionGroup var global: GlobalOptions
 
@@ -916,8 +952,8 @@ struct BridgeConvert: AsyncParsableCommand, ComposeProjectCommand {
             options: ComposeBridgeConvertOptions(
                 output: output,
                 templates: templates,
-                transformations: transformations
-            )
+                transformations: transformations,
+            ),
         )
     }
 }
@@ -930,7 +966,7 @@ struct BridgeTransformations: AsyncParsableCommand {
         subcommands: [
             BridgeTransformationsCreate.self,
             BridgeTransformationsList.self,
-        ]
+        ],
     )
     @OptionGroup var global: GlobalOptions
 
@@ -953,7 +989,7 @@ struct BridgeTransformationsCreate: AsyncParsableCommand {
     /// Creates a local transformer source directory from an image.
     func run() async throws {
         try await global.orchestrator().bridgeTransformationsCreate(
-            options: ComposeBridgeTransformationsCreateOptions(destination: path, from: from)
+            options: ComposeBridgeTransformationsCreateOptions(destination: path, from: from),
         )
     }
 }
@@ -963,7 +999,7 @@ struct BridgeTransformationsList: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "list",
         abstract: "List available transformations.",
-        aliases: ["ls"]
+        aliases: ["ls"],
     )
 
     @OptionGroup var global: BridgeRuntimeOptions
@@ -975,7 +1011,7 @@ struct BridgeTransformationsList: AsyncParsableCommand {
     /// Lists local transformer images.
     func run() async throws {
         try await global.orchestrator().bridgeTransformationsList(
-            options: ComposeBridgeTransformationsListOptions(format: format, quiet: quiet)
+            options: ComposeBridgeTransformationsListOptions(format: format, quiet: quiet),
         )
     }
 }
@@ -1066,11 +1102,10 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
             $0.servicesOnly = servicesOnly
             $0.volumes = volumes
         }
-        let rendered: String
-        if lockImageDigests || resolveImageDigests {
-            rendered = try await orchestrator().config(project: loadedProject, resolvingImageDigests: configOptions)
+        let rendered: String = if lockImageDigests || resolveImageDigests {
+            try await orchestrator().config(project: loadedProject, resolvingImageDigests: configOptions)
         } else {
-            rendered = try orchestrator().config(project: loadedProject, options: configOptions)
+            try orchestrator().config(project: loadedProject, options: configOptions)
         }
         if let output {
             try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
@@ -1135,11 +1170,10 @@ struct Convert: AsyncParsableCommand, ComposeProjectCommand {
             $0.servicesOnly = servicesOnly
             $0.volumes = volumes
         }
-        let rendered: String
-        if resolveImageDigests {
-            rendered = try await orchestrator().config(project: loadedProject, resolvingImageDigests: configOptions)
+        let rendered: String = if resolveImageDigests {
+            try await orchestrator().config(project: loadedProject, resolvingImageDigests: configOptions)
         } else {
-            rendered = try orchestrator().config(project: loadedProject, options: configOptions)
+            try orchestrator().config(project: loadedProject, options: configOptions)
         }
         if let output {
             try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
@@ -1193,7 +1227,7 @@ struct Create: AsyncParsableCommand, ComposeProjectCommand {
                 $0.scales = scales
                 $0.quietPull = quietPull
                 $0.assumeYes = yes
-            }
+            },
         )
     }
 }
@@ -1269,13 +1303,13 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
     /// Creates resources and starts selected services.
     func run() async throws {
         let formatsAttachedOutput = !(detach || wait || noStart)
-        if watch && detach {
+        if watch, detach {
             throw ComposeError.unsupported("up --detach cannot be combined with --watch")
         }
-        if watch && wait {
+        if watch, wait {
             throw ComposeError.unsupported("up --wait cannot be combined with --watch")
         }
-        if watch && (abortOnContainerExit || abortOnContainerFailure || exitCodeFrom != nil) {
+        if watch, abortOnContainerExit || abortOnContainerFailure || exitCodeFrom != nil {
             throw ComposeError.unsupported("up --watch cannot be combined with exit-control options")
         }
         let menuRequested = global.shouldRequestUpMenu(menu: menu, menuDisabled: menuDisabled)
@@ -1320,7 +1354,7 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
             $0.menu = menuEnabled || dryRunMenuWatch
             $0.menuWatch = interactiveMenuWatch
         }
-        if watch && !interactiveMenuWatch && !dryRunMenuWatch {
+        if watch, !interactiveMenuWatch, !dryRunMenuWatch {
             try await orchestrator().watch(
                 project: loadedProject,
                 options: ComposeWatchOptions(
@@ -1328,8 +1362,8 @@ struct Up: AsyncParsableCommand, ComposeProjectCommand {
                     noUp: false,
                     prune: true,
                     quiet: quietBuild,
-                    initialUpOptions: upOptions
-                )
+                    initialUpOptions: upOptions,
+                ),
             )
             return
         }
@@ -1360,7 +1394,7 @@ struct Down: AsyncParsableCommand, ComposeProjectCommand {
         let loadedProject = try await project()
         try await orchestrator().down(
             project: loadedProject,
-            options: ComposeDownOptions(services: services, volumes: volumes, removeOrphans: global.effectiveRemoveOrphans(removeOrphans), timeout: timeout, rmi: rmi)
+            options: ComposeDownOptions(services: services, volumes: volumes, removeOrphans: global.effectiveRemoveOrphans(removeOrphans), timeout: timeout, rmi: rmi),
         )
     }
 }
@@ -1419,7 +1453,7 @@ struct Build: AsyncParsableCommand, ComposeProjectCommand {
                 $0.sbom = sbom
                 $0.ssh = ssh
                 $0.withDependencies = withDependencies
-            }
+            },
         )
     }
 }
@@ -1454,7 +1488,7 @@ struct Pull: AsyncParsableCommand, ComposeProjectCommand {
                 $0.includeDependencies = includeDeps
                 $0.policy = policy
                 $0.quiet = quiet
-            }
+            },
         )
     }
 }
@@ -1483,7 +1517,7 @@ struct Push: AsyncParsableCommand, ComposeProjectCommand {
                 $0.ignorePushFailures = ignorePushFailures
                 $0.includeDependencies = includeDeps
                 $0.quiet = quiet
-            }
+            },
         )
     }
 }
@@ -1522,7 +1556,7 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
     @Flag(
         name: .customLong("orphans"),
         inversion: .prefixedNo,
-        help: "Include orphaned services. Enabled by default for Compose compatibility."
+        help: "Include orphaned services. Enabled by default for Compose compatibility.",
     )
     var orphans = true
     @Flag(name: [.customShort("q"), .customLong("quiet")], help: "Only display container IDs.")
@@ -1551,7 +1585,7 @@ struct Ps: AsyncParsableCommand, ComposeProjectCommand {
                 $0.format = format
                 $0.noTrunc = noTrunc
                 $0.orphans = orphans
-            }
+            },
         )
     }
 }
@@ -1595,7 +1629,7 @@ struct Logs: AsyncParsableCommand, ComposeProjectCommand {
                 $0.timestamps = timestamps
                 $0.noLogPrefix = noLogPrefix
                 $0.colorPrefixes = global.shouldColorLogs(noColor: noColor)
-            }
+            },
         )
     }
 }
@@ -1608,13 +1642,13 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
     @Flag(
         name: .shortAndLong,
         inversion: .prefixedNo,
-        help: "Keep stdin open. Enabled by default for Compose compatibility."
+        help: "Keep stdin open. Enabled by default for Compose compatibility.",
     )
     var interactive = true
     @Flag(
         name: .shortAndLong,
         inversion: .prefixedNo,
-        help: "Allocate a TTY. Enabled by default for Compose compatibility."
+        help: "Allocate a TTY. Enabled by default for Compose compatibility.",
     )
     var tty = true
     @Flag(name: .customShort("T"), help: "Disable pseudo-TTY allocation.")
@@ -1652,7 +1686,7 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
                 $0.privileged = privileged
                 $0.user = user
                 $0.workingDirectory = workdir
-            }
+            },
         )
     }
 }
@@ -1748,7 +1782,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                     $0.capAdd = capAdd
                     $0.capDrop = capDrop
                     $0.useAliases = useAliases
-                }
+                },
             )
         } catch {
             try throwRunCommandError(error)
@@ -1782,7 +1816,7 @@ struct Start: AsyncParsableCommand, ComposeProjectCommand {
                 $0.services = services
                 $0.wait = wait
                 $0.waitTimeout = waitTimeout
-            }
+            },
         )
     }
 }
@@ -1819,7 +1853,7 @@ struct Restart: AsyncParsableCommand, ComposeProjectCommand {
                 $0.services = services
                 $0.noDeps = noDeps
                 $0.timeout = timeout
-            }
+            },
         )
     }
 }
@@ -1883,8 +1917,8 @@ struct Stats: AsyncParsableCommand, ComposeProjectCommand {
                 all: all,
                 format: format,
                 noStream: noStream,
-                noTrunc: noTrunc
-            )
+                noTrunc: noTrunc,
+            ),
         )
     }
 }
@@ -1929,7 +1963,7 @@ struct Cp: AsyncParsableCommand, ComposeProjectCommand {
                 $0.archive = archive
                 $0.followLink = followLink
                 $0.index = index
-            }
+            },
         )
     }
 }
@@ -1968,8 +2002,8 @@ struct Events: AsyncParsableCommand, ComposeProjectCommand {
                 services: services,
                 json: json,
                 since: since,
-                until: until
-            )
+                until: until,
+            ),
         )
     }
 }
@@ -1994,7 +2028,7 @@ struct Port: AsyncParsableCommand, ComposeProjectCommand {
             serviceName: service,
             privatePort: privatePort,
             protocolName: portProtocol,
-            index: index
+            index: index,
         )
     }
 }
@@ -2020,8 +2054,8 @@ struct Watch: AsyncParsableCommand, ComposeProjectCommand {
                 services: services,
                 noUp: noUp,
                 prune: prune,
-                quiet: quiet
-            )
+                quiet: quiet,
+            ),
         )
     }
 }
@@ -2045,7 +2079,7 @@ struct Scale: AsyncParsableCommand, ComposeProjectCommand {
             options: ComposeScaleOptions {
                 $0.scales = scales
                 $0.noDeps = noDeps
-            }
+            },
         )
     }
 }
@@ -2075,7 +2109,7 @@ struct Attach: AsyncParsableCommand, ComposeProjectCommand {
                 $0.detachKeys = detachKeys
                 $0.index = index
                 $0.sigProxy = sigProxy
-            }
+            },
         )
     }
 }
@@ -2095,7 +2129,7 @@ struct Commit: AsyncParsableCommand, ComposeProjectCommand {
     @Flag(
         name: .customLong("pause"),
         inversion: .prefixedNo,
-        help: "Use a filesystem-consistent snapshot for a running container (default true). Set --pause=false for a best-effort snapshot without freezing its filesystem."
+        help: "Use a filesystem-consistent snapshot for a running container (default true). Set --pause=false for a best-effort snapshot without freezing its filesystem.",
     )
     var pause = true
     @Argument(help: "Service name.")
@@ -2114,8 +2148,8 @@ struct Commit: AsyncParsableCommand, ComposeProjectCommand {
                 changes: changes,
                 index: index,
                 message: message,
-                pause: pause
-            )
+                pause: pause,
+            ),
         )
     }
 }
@@ -2136,7 +2170,7 @@ struct Export: AsyncParsableCommand, ComposeProjectCommand {
         try await orchestrator().export(
             project: loadedProject,
             serviceName: service,
-            options: ComposeExportOptions(output: output, index: index)
+            options: ComposeExportOptions(output: output, index: index),
         )
     }
 }
@@ -2168,7 +2202,7 @@ struct Publish: AsyncParsableCommand, ComposeProjectCommand {
                 },
                 pushImages: {
                     try await pushImagesForPublish(options: composeOptions)
-                }
+                },
             )
         }
         renderPublishResult(result)
@@ -2180,7 +2214,7 @@ struct Publish: AsyncParsableCommand, ComposeProjectCommand {
             project: loadedProject,
             options: ComposePushOptions {
                 $0.ignorePushFailures = true
-            }
+            },
         )
     }
 
@@ -2198,7 +2232,7 @@ struct Publish: AsyncParsableCommand, ComposeProjectCommand {
     /// artifact publish. The closures keep the sequence easy to unit test.
     func executePublish(
         normalizerPublish: (ComposePublishOptions) async throws -> ComposePublishResult,
-        pushImages: () async throws -> Void
+        pushImages: () async throws -> Void,
     ) async throws -> ComposePublishResult {
         let shouldResolveImageDigests = resolveImageDigests || app
         let preflight = try await normalizerPublish(publishOptions(dryRun: true, app: false, resolveImageDigests: false))
@@ -2258,7 +2292,7 @@ struct Volumes: AsyncParsableCommand, ComposeProjectCommand {
         let loadedProject = try await project()
         try await orchestrator().volumes(
             project: loadedProject,
-            options: ComposeVolumesOptions(services: services, quiet: quiet, format: format)
+            options: ComposeVolumesOptions(services: services, quiet: quiet, format: format),
         )
     }
 }
@@ -2332,10 +2366,10 @@ struct Version: ParsableCommand {
             print("  containerization: \(composeBuildInfo.containerizationSource)@\(composeBuildInfo.containerizationRef) (\(composeBuildInfo.containerizationDistribution))")
             print("  compose-go: \(composeBuildInfo.composeGoVersion ?? "unspecified")")
             print(
-                "  runtime-capability-schema: \(composeBuildInfo.runtimeCapabilitySchemaVersion ?? ComposeRuntimeCapabilityManifest.required.schemaVersion)"
+                "  runtime-capability-schema: \(composeBuildInfo.runtimeCapabilitySchemaVersion ?? ComposeBuildInfo.defaultRuntimeCapabilityManifest.schemaVersion)",
             )
             for capability in composeBuildInfo.runtimeCapabilities
-                ?? ComposeRuntimeCapabilityManifest.required.identifiers
+                ?? ComposeBuildInfo.defaultRuntimeCapabilityManifest.identifiers
             {
                 print("  runtime-capability: \(capability)")
             }

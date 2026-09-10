@@ -1,6 +1,6 @@
 # Installing container-compose
 
-This guide explains how to install, upgrade, verify, and uninstall the `container-compose` plugin with the matched `stephenlclarke/container` runtime. Source build, package, branch, tag, and release policy live in [BUILD.md](BUILD.md).
+This guide explains how to install, upgrade, verify, and uninstall `container-compose`. The normal release uses the matched `stephenlclarke/container` runtime. A separately compiled Engine adapter supports an unmodified Apple `container` installation for Docker-free Dev Containers integration. Source build, package, branch, tag, and release policy live in [BUILD.md](BUILD.md).
 
 ## Homebrew Formulae
 
@@ -30,7 +30,7 @@ instructions instead.
 - Apple silicon Mac.
 - macOS 26 or newer.
 - Homebrew.
-- If Apple's signed `container` package is already installed, replace it with the Homebrew stack below. The Compose plugin requires the matched `stephenlclarke/container` runtime for runtime-backed commands.
+- The stable Homebrew formula uses the matched enhanced runtime. Keep Apple's signed package when using the separately compiled stock Engine adapter described below.
 
 ## Install The Matched Stack
 
@@ -69,7 +69,29 @@ container system status
 
 The `container` formula owns the plugin registration link inside its Homebrew install root. The `brew postinstall` command refreshes that link after installing or upgrading `container-compose`.
 
-Installing only `container-compose` against a stock Apple `container` install is not the supported release path while the plugin depends on `stephenlclarke` runtime surfaces. If you deliberately test against Apple `container`, install the plugin archive into Apple's plugin directory and expect compatibility gaps.
+The stable enhanced formula must not be mixed with a stock Apple runtime. Use the stock Engine build below instead; it has a separate dependency lock and contains no enhanced Container or Containerization package.
+
+## Build The Stock Apple Engine Adapter
+
+The stock profile is the Docker-free Compose frontend used by `devcontainer`.
+It pins tagged `apple/container` and `apple/containerization` releases and sends
+runtime discovery and mutations to the current user's `devcontainer-engine`
+Unix socket. Container creation remains on the stock Apple CLI.
+
+```sh
+cp Package.stock.resolved Package.resolved
+CONTAINER_COMPOSE_BUILD_PROFILE=stock \
+  swift build --disable-automatic-resolution -c release --product compose
+install -m 0755 .build/release/compose /usr/local/bin/container-compose
+/usr/local/bin/container system start
+brew services start stephenlclarke/tap/devcontainer
+CONTAINER_COMPOSE_RUNTIME_PROFILE=stock container-compose version
+```
+
+The runtime profile is compiled into the executable; the final environment
+assignment is optional and shown only to make the selection explicit. Override
+`CONTAINER_COMPOSE_ENGINE_SOCKET` when the Dev Containers engine uses a
+non-default socket. Docker, Docker Compose, and Colima are not consulted.
 
 If the machine has a mixed Homebrew/Apple install, use the [reset flow](#troubleshooting) instead of the normal install path.
 
