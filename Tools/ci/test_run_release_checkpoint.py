@@ -1040,7 +1040,6 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             "hawkeye": {"hawkeye": "/usr/bin/false"},
             "llvm-cov": {"llvm_cov": "/usr/bin/false"},
             "llvm-profdata": {"llvm_profdata": "/usr/bin/false"},
-            "docker-compose": {"docker_compose": "/usr/bin/false compose"},
         }
 
         for name, overrides in selectors.items():
@@ -1048,6 +1047,14 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 self.assertNotEqual(
                     self.release_gate_tool_fingerprint(**overrides), baseline
                 )
+
+        self.assertEqual(
+            self.release_gate_tool_fingerprint(
+                docker_compose="/usr/bin/false compose"
+            ),
+            baseline,
+            "normal tool observation must not probe or depend on Docker applications",
+        )
 
     def test_outer_fingerprint_tracks_runtime_compose_binary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

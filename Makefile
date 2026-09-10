@@ -241,8 +241,7 @@ STACK_COMPOSE_PIN := $(STACK_PIN_DIR)/container-compose.json
 STACK_BUNDLE := $(STACK_PIN_DIR)/stack.json
 STACK_SWIFT ?= /usr/bin/swift
 STACK_GO ?= $(GO)
-ifeq ($(origin STACK_SWIFT_CONTRACT),undefined)
-STACK_SWIFT_CONTRACT := $(shell "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
+STACK_SWIFT_CONTRACT = $(shell "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
 	--tool $(call SHELL_QUOTE,$(STACK_SWIFT)) \
 	--configuration $(call SHELL_QUOTE,$(STACK_CONFIGURATION)) \
 	--controller "$(STACK_BUILD_CONTRACT)" --controller "$(STACK_PIN_TOOL)" \
@@ -250,23 +249,18 @@ STACK_SWIFT_CONTRACT := $(shell "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
 	--controller "$(STACK_DEADLINE_TOOL)" --controller "$(STACK_SWIFT_STACK_TOOL)" \
 	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK CONFIGURATION::END RECOVERABLE STACK CONFIGURATION" \
 	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK TARGETS::END RECOVERABLE STACK TARGETS")
-endif
-ifeq ($(origin STACK_GO_CONTRACT),undefined)
-STACK_GO_CONTRACT := $(shell GOWORK=off "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
+STACK_GO_CONTRACT = $(shell GOWORK=off "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
 	--tool $(call SHELL_QUOTE,$(STACK_GO)) \
 	--configuration $(call SHELL_QUOTE,$(STACK_CONFIGURATION)) \
 	--controller "$(STACK_BUILD_CONTRACT)" --controller "$(STACK_PIN_TOOL)" \
 	--controller "$(STACK_DEADLINE_TOOL)" \
 	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK CONFIGURATION::END RECOVERABLE STACK CONFIGURATION" \
 	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK TARGETS::END RECOVERABLE STACK TARGETS")
-endif
-ifeq ($(origin STACK_COMPOSE_CONTRACT),undefined)
-STACK_COMPOSE_CONTRACT := $(shell { printf 'swift=%s\ngo=%s\nprofile=%s\n' \
+STACK_COMPOSE_CONTRACT = $(shell { printf 'swift=%s\ngo=%s\nprofile=%s\n' \
 	$(call SHELL_QUOTE,$(STACK_SWIFT_CONTRACT)) $(call SHELL_QUOTE,$(STACK_GO_CONTRACT)) \
 	$(call SHELL_QUOTE,$(CONTAINER_COMPOSE_BUILD_PROFILE)); \
 	shasum -a 256 config.toml "$(PLUGIN_ICON)" Tools/release/runtime-capabilities.json; \
 	} | shasum -a 256 | awk '{print $$1}')
-endif
 # END RECOVERABLE STACK CONFIGURATION
 RELEASE_GATE_CHECKPOINT_DIR = $(if $(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR),$(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR)/compose-release-gate,)
 PARITY_GATE_CHECKPOINT_DIR = $(if $(RELEASE_GATE_CHECKPOINT_DIR),$(RELEASE_GATE_CHECKPOINT_DIR)/parity,)
@@ -465,9 +459,6 @@ stack-preflight: stack-state-init
 			exit 2; \
 		fi; \
 	done; \
-	for contract in "$(STACK_SWIFT_CONTRACT)" "$(STACK_GO_CONTRACT)"; do \
-		[[ "$$contract" =~ ^[0-9a-f]{64}$$ ]] || { printf 'could not establish an exact build contract\n' >&2; exit 2; }; \
-	done; \
 	for timeout in "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" "$(STACK_BUILD_TIMEOUT_SECONDS)"; do \
 		awk 'BEGIN { exit !(ARGV[1] + 0 > 0) }' "$$timeout" || { \
 			printf 'stack build timeouts must be greater than zero: %s\n' "$$timeout" >&2; \
@@ -529,7 +520,16 @@ stack-transient-clean:
 	fi
 
 stack-build: stack-preflight
-	@timing_log="$(STACK_TIMING_ROOT)/$$(date -u +%Y%m%dT%H%M%SZ)-$$$$.jsonl"; \
+	@swift_contract="$(STACK_SWIFT_CONTRACT)"; \
+	go_contract="$(STACK_GO_CONTRACT)"; \
+	for contract in "$$swift_contract" "$$go_contract"; do \
+		[[ "$$contract" =~ ^[0-9a-f]{64}$$ ]] || { printf 'could not establish an exact build contract\n' >&2; exit 2; }; \
+	done; \
+	compose_contract="$$( { printf 'swift=%s\ngo=%s\nprofile=%s\n' \
+		"$$swift_contract" "$$go_contract" "$(CONTAINER_COMPOSE_BUILD_PROFILE)"; \
+		shasum -a 256 config.toml "$(PLUGIN_ICON)" Tools/release/runtime-capabilities.json; \
+	} | shasum -a 256 | awk '{print $$1}')"; \
+	timing_log="$(STACK_TIMING_ROOT)/$$(date -u +%Y%m%dT%H%M%SZ)-$$$$.jsonl"; \
 	TMPDIR="$(STACK_PROCESS_TEMP_ROOT)" TMP="$(STACK_PROCESS_TEMP_ROOT)" \
 	TEMP="$(STACK_PROCESS_TEMP_ROOT)" GOTMPDIR="$(STACK_PROCESS_TEMP_ROOT)" \
 	"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_TIMEOUT_SECONDS)" \
@@ -537,6 +537,8 @@ stack-build: stack-preflight
 		"$(STACK_LOCK_TOOL)" -t 0 "$(STACK_LOCK_ROOT)/stack-build.lock" \
 		$(MAKE) --no-print-directory stack-build-locked STACK_LOCK_HELD=1 \
 			STACK_RETAINED_ROOT="$(STACK_RETAINED_ROOT)" STACK_TRANSIENT_ROOT="$(STACK_TRANSIENT_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)" \
+			STACK_SWIFT_CONTRACT="$$swift_contract" STACK_GO_CONTRACT="$$go_contract" \
+			STACK_COMPOSE_CONTRACT="$$compose_contract" \
 			STACK_TIMING_LOG="$$timing_log"; \
 	exit_status=$$?; \
 	printf 'Stack timing evidence: %s\n' "$$timing_log"; \

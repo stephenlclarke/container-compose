@@ -23,6 +23,9 @@ import unittest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
+STACK_STORAGE = (REPOSITORY_ROOT / "Tools/build/stack-storage.py").read_text(
+    encoding="utf-8"
+)
 STABLE_RELEASE_WORKFLOW = (
     REPOSITORY_ROOT / ".github/workflows/stable-release-gate.yml"
 ).read_text(encoding="utf-8")
@@ -84,7 +87,7 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
         self.assertIn("/container-compose", compose)
         self.assertIn('--scratch-path "$$scratch"', compose)
         self.assertIn('--source "$$bin_path/compose"', compose)
-        self.assertIn('--artifact "$$artifact"', compose)
+        self.assertIn('--artifact-map "compose/bin/compose=$$compose_artifact"', compose)
         self.assertIn('STACK_ARTIFACT_ROOT := $(STACK_RETAINED_ROOT)', MAKEFILE)
 
     def test_build_contract_does_not_hash_unrelated_make_targets(self) -> None:
@@ -149,12 +152,13 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
         self.assertIn("Library/Application Support/ContainerFamily/retained/build", MAKEFILE)
         self.assertIn("STACK_TRANSIENT_ROOT ?= /Volumes/SSD/cf/build", MAKEFILE)
         state_init = make_target("stack-state-init", "stack-preflight")
-        self.assertIn("stack storage root must be absolute", state_init)
-        self.assertIn("must be on separate filesystems", state_init)
-        self.assertIn("must not be a symbolic link", state_init)
+        self.assertIn('"$(STACK_STORAGE_TOOL)"', state_init)
+        self.assertIn("stack storage path must be absolute", STACK_STORAGE)
+        self.assertIn("separate filesystems", STACK_STORAGE)
+        self.assertIn("symbolic link", STACK_STORAGE)
         self.assertIn(".container-family-retained-root", state_init)
         self.assertIn(".container-family-transient-root", state_init)
-        self.assertIn("/bin/mv", state_init)
+        self.assertIn("initialize_root", STACK_STORAGE)
 
     def test_unattended_make_never_discovers_a_keychain_identity(self) -> None:
         self.assertIn("CONTAINER_RUNTIME_CODESIGN_IDENTITY ?=\n", MAKEFILE)
