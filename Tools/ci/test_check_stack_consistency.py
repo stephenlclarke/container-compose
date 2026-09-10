@@ -344,11 +344,11 @@ class StackConsistencyTests(unittest.TestCase):
             compose_resolved = root / "compose" / "Package.resolved"
             write_resolved(compose_resolved, include_container=True)
             resolved = json.loads(compose_resolved.read_text(encoding="utf-8"))
-            resolved["originHash"] = "0" * 64
+            resolved["originHash"] = "not-a-swiftpm-origin-hash"
             compose_resolved.write_text(json.dumps(resolved), encoding="utf-8")
             write_resolved(root / "container" / "Package.resolved")
 
-            with self.assertRaisesRegex(SystemExit, "Package.resolved originHash mismatch"):
+            with self.assertRaisesRegex(SystemExit, "originHash is not a SwiftPM SHA-256"):
                 self.run_checker(root)
 
     def test_accepts_identity_preserving_local_override_with_remote_revision(self) -> None:
