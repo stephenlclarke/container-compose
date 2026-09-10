@@ -31,6 +31,7 @@ permissions:
 concurrency:
   group: documentation-${{ inputs.ref }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   resolve-release:
@@ -187,7 +188,9 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
-      fail-fast: true
+      # Preserve every independently successful immutable site when a sibling
+      # fails so a retry can restore it instead of rebuilding all four.
+      fail-fast: false
       matrix:
         include:
           - site: compose
@@ -218,7 +221,26 @@ jobs:
           set -euo pipefail
           [[ "$(git -C source rev-parse HEAD)" == "${EXPECTED_REF}" ]]
 
+      - name: Restore SwiftPM documentation cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            source/.build
+            source/.swiftpm
+            ~/Library/Caches/org.swift.swiftpm
+          key: docs-swiftpm-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.site }}-${{ matrix.ref }}
+          restore-keys: |
+            docs-swiftpm-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.site }}-
+
+      - name: Restore exact DocC site
+        id: site-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: _site
+          key: docs-site-v2-${{ github.sha }}-${{ inputs.ref }}-${{ matrix.site }}-${{ matrix.ref }}
+
       - name: Build static API documentation
+        if: steps.site-cache.outputs.cache-hit != 'true'
         env:
           DOCS_SOURCE_REFERENCE: ${{ matrix.ref }}
           SITE: ${{ matrix.site }}
@@ -278,6 +300,17 @@ jobs:
               exit 1
               ;;
           esac
+
+      - name: Verify reusable DocC site
+        env:
+          SITE: ${{ matrix.site }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -s _site/index.html ]]
+          [[ -s _site/theme-settings.json ]]
+          printf 'DocC site ready for %s (cache hit: %s).\n' \
+            "${SITE}" "${{ steps.site-cache.outputs.cache-hit }}"
 
       - name: Verify documentation source remained exact
         env:

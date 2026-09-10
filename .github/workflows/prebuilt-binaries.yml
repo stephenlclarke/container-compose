@@ -15,7 +15,7 @@
 #===----------------------------------------------------------------------===#
 
 name: Prebuilt Binaries
-run-name: Prebuilt Binaries · ${{ inputs.ref || github.event.workflow_run.head_branch || github.ref_name }}
+run-name: Prebuilt Binaries · ${{ inputs.ref || github.event.workflow_run.head_branch || github.ref_name }} · ${{ inputs.repair_tap && 'tap-repair' || 'package' }}
 
 on:
   workflow_run:
@@ -50,6 +50,7 @@ concurrency:
   # stable promotion and a current promotion from racing the shared tap branch.
   group: container-stack-package-and-tap
   cancel-in-progress: false
+  queue: max
 
 jobs:
   resolve-publish-context:
@@ -1193,10 +1194,12 @@ jobs:
             jq -r '.message' <<< "${init_authority}" |
               sed -nE 's/^Guest init image SHA-256: ([0-9a-f]{64})[.]$/\1/p'
           )"
-          homebrew_tap_ref="$(
-            git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git \
-              refs/heads/main | awk '{print $1}' | tail -n 1
-          )"
+          # Build authority is immutable. A later Current publication may move
+          # the tap before this package consumes the receipt, so verify the
+          # snapshot recorded by the gate and handle tap movement only in the
+          # conflict-checked formula publication transaction.
+          homebrew_tap_ref="$(jq -er '.components["homebrew-tap"]' "${receipt}")"
+          [[ "${homebrew_tap_ref}" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git -C release-tools rev-parse HEAD)" == "${GITHUB_SHA}" ]]
           python3 release-tools/Tools/release/stable-release-authority.py verify \
             --evidence-dir "${authority_root}/bundle" \

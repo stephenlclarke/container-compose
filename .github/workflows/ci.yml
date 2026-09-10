@@ -237,7 +237,7 @@ jobs:
       - changes
       - resolve-canonical-main
     if: >
-      (needs.changes.outputs.runtime == 'true' || github.ref == 'refs/heads/main') &&
+      needs.changes.outputs.runtime == 'true' &&
       needs.resolve-canonical-main.result == 'success'
     # This lane compiles and exercises unit/CLI coverage only. Keep VM-backed
     # integration in the recoverable release graph and use a managed runner
@@ -765,7 +765,7 @@ jobs:
   resolve-canonical-main:
     name: Resolve Canonical Main
     needs: changes
-    if: needs.changes.outputs.runtime == 'true' || github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.runtime == 'true'
     runs-on: ubuntu-24.04
     outputs:
       artifact_run_id: ${{ steps.main.outputs.artifact_run_id }}
@@ -901,7 +901,7 @@ jobs:
       - name: Check parallel validation jobs
         env:
           RESOLVE_CANONICAL_MAIN_RESULT: ${{ needs.resolve-canonical-main.result }}
-          RUNTIME_SELECTED: ${{ needs.changes.outputs.runtime == 'true' || github.ref == 'refs/heads/main' }}
+          RUNTIME_SELECTED: ${{ needs.changes.outputs.runtime == 'true' }}
           SOURCE_CHECKS_RESULT: ${{ needs.source_checks.result }}
           TOOLS_SELECTED: ${{ needs.changes.outputs.tools }}
           TOOL_TESTS_RESULT: ${{ needs.tool_tests.result }}

@@ -15,6 +15,7 @@
 #===----------------------------------------------------------------------===#
 
 name: Stable Release Gate
+run-name: Stable Release Gate · ${{ inputs.ref }}
 
 on:
   workflow_dispatch:
@@ -31,6 +32,7 @@ permissions:
 concurrency:
   group: stable-release-gate-${{ inputs.ref }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   resolve-candidate:

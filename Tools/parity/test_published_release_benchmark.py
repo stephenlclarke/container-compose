@@ -96,7 +96,7 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
             },
             {
                 "databaseId": 12,
-                "displayTitle": "Prebuilt Binaries · 0.13.0",
+                "displayTitle": "Prebuilt Binaries · 0.13.0 · package",
                 "event": "workflow_dispatch",
                 "status": "completed",
                 "conclusion": "success",

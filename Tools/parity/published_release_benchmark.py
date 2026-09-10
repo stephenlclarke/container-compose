@@ -123,11 +123,14 @@ def packaging_run_candidates(
     runs: Iterable[dict[str, object]], version: str
 ) -> list[dict[str, object]]:
     version_tuple(version)
-    title = f"Prebuilt Binaries · {version}"
+    titles = {
+        f"Prebuilt Binaries · {version}",
+        f"Prebuilt Binaries · {version} · package",
+    }
     candidates: list[tuple[str, int, str, str]] = []
     for run in runs:
         if (
-            run.get("displayTitle") != title
+            run.get("displayTitle") not in titles
             or run.get("event") != "workflow_dispatch"
             or run.get("status") != "completed"
             or run.get("conclusion") != "success"

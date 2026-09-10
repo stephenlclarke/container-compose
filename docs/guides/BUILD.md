@@ -397,7 +397,7 @@ their live engines. The release helper no longer accepts
 
 There are two package lanes, with no manual asset copying:
 
-- Every successful CI run that originates from a push to `main` refreshes the explicit `current` tag and a newly published mutable GitHub prerelease named **Current build**, plus the opt-in `container-current` / `container-compose-current` Homebrew pair. A commit superseded before promotion is skipped so the subsequent successful run publishes the newest `main` head.
+- Every successful runtime-affecting CI run that originates from a push to `main` refreshes the explicit `current` tag and a newly published mutable GitHub prerelease named **Current build**, plus the opt-in `container-current` / `container-compose-current` Homebrew pair. Documentation, workflow-control, and other changes classified outside runtime validation do not rebuild or republish the unchanged product. A commit superseded before promotion is skipped so the subsequent successful runtime run publishes the newest eligible `main` head.
 - A semantic release is an immutable `x.y.z` tag and becomes Homebrew's default `container` / `container-compose` pair.
 
 `current` is deliberately an unsigned, movable pointer; signing it would make
@@ -535,7 +535,9 @@ publishes the immutable stable assets and atomically updates both stable
 Homebrew formulae. Do not create a semantic tag, copy a prerelease asset, or
 edit either stable formula by hand.
 
-If a hosted gate fails before the semantic GitHub release is created, correct the release automation on `main` and rerun the same explicit version, for example `make release VERSION_SELECTOR=X.Y.Z`. The helper reuses only the latest existing GitHub-verified signed source tag, reruns the gates and package workflow, and refuses to change a tag or overwrite an existing semantic release. The package job checks out and verifies the workflow commit's immutable release-control tools before it stages notes or publishes assets, while compiling package content only from the signed source tag. A stable retry can therefore repair release automation on `main` without retagging or changing the release payload. If the semantic GitHub release is published but its stable Homebrew formula pair is absent or incomplete, the same command dispatches formula-only recovery. It validates the existing immutable Compose and runtime assets and updates only the paired stable formulae; it never rebuilds a package, changes a signed tag, or replaces release assets.
+If a hosted gate fails before the semantic GitHub release is created, correct the release automation on `main` and rerun the same explicit version, for example `make release VERSION_SELECTOR=X.Y.Z`. The helper reuses a successful gate or package run only when its semantic tag, operation mode, and immutable release-control SHA all match; an active matching run is joined instead of duplicated. Failed or superseded controls dispatch a new run without changing the signed source tag. The package job checks out and verifies the workflow commit's immutable release-control tools before it stages notes or publishes assets, while compiling package content only from the signed source tag. If the semantic GitHub release is already published, the helper first verifies its package, signed guest image, and Homebrew pair. A complete release skips packaging entirely; missing formulae dispatch formula-only recovery, while missing binary assets dispatch package recovery. Published guest-image recovery downloads and validates the immutable release asset when the original local archive is no longer present.
+
+Stable gate, package, and documentation concurrency groups retain a full pending queue rather than replacing an earlier pending release. Candidate-bound gate receipts verify the immutable Homebrew snapshot recorded by the gate; later tap movement is handled only by the serial, conflict-checked formula publication transaction and does not invalidate compiled release evidence.
 
 After the tag is published, the one mutable `current` prerelease continues to
 follow later green `main` commits. Homebrew users without `-current` always use
@@ -616,6 +618,8 @@ not compile a product or delay a release. The report is evidence only for its
 listed warm-image lifecycle and logging fixtures; `develop.watch` sync,
 build-context transfer, and other missing lanes remain in the
 [performance backlog](../project/BACKLOG.md#comparable-or-better-performance).
+
+Released DocC sites are built independently with fail-fast disabled. Each job restores its source-specific SwiftPM cache and an exact site cache keyed by the release controls, semantic release, site, and immutable source ref. A successful site is therefore retained when a sibling site fails, and an exact retry archives the verified cached output instead of rebuilding it. Pages assembly and authority checks remain the final release operation.
 
 The standalone local comparator remains available for focused performance
 development:

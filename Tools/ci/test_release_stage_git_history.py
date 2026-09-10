@@ -188,6 +188,18 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
         )
         self.assertNotIn("self-hosted", runtime_validation)
 
+    def test_control_only_main_changes_do_not_repeat_runtime_validation(self) -> None:
+        runtime_validation = CI_WORKFLOW.split("  validate_runtime:", 1)[1].split(
+            "  prebuilt_binaries:", 1
+        )[0]
+        canonical_main = CI_WORKFLOW.split("  resolve-canonical-main:", 1)[1].split(
+            "  validate:", 1
+        )[0]
+
+        self.assertIn("needs.changes.outputs.runtime == 'true' &&", runtime_validation)
+        self.assertNotIn("|| github.ref == 'refs/heads/main'", runtime_validation)
+        self.assertIn("if: needs.changes.outputs.runtime == 'true'", canonical_main)
+
     def test_stable_gate_uses_candidate_keyed_checkpoint_state(self) -> None:
         self.assertIn("RELEASE_BUILD_STATE_ROOT", STABLE_RELEASE_WORKFLOW)
         self.assertIn(

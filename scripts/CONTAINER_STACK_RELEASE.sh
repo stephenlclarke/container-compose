@@ -5740,38 +5740,45 @@ github_cli() {
 
 # Return the newest workflow-dispatch package run for one stable semantic tag.
 latest_compose_package_dispatch_run() {
-  local version="$1" title
-  title="Prebuilt Binaries · ${version}"
+  local version="$1" repair_tap="$2" control_sha="$3" title mode
+  if [[ "${repair_tap}" == "true" ]]; then
+    mode=tap-repair
+  else
+    mode=package
+  fi
+  title="Prebuilt Binaries · ${version} · ${mode}"
   github_cli run list \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --workflow "Prebuilt Binaries" \
     --event workflow_dispatch \
     --limit 100 \
-    --json databaseId,displayTitle \
-    --jq "map(select(.displayTitle == \"${title}\")) | .[0].databaseId // \"\""
+    --json databaseId,displayTitle,headSha,status,conclusion \
+    --jq "map(select(.displayTitle == \"${title}\" and .headSha == \"${control_sha}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
 }
 
 latest_stable_release_gate_dispatch_run() {
+  local version="$1" control_sha="$2" title
+  title="Stable Release Gate · ${version}"
   github_cli run list \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --workflow stable-release-gate.yml \
     --event workflow_dispatch \
-    --limit 1 \
-    --json databaseId \
-    --jq '.[0].databaseId // ""'
+    --limit 100 \
+    --json databaseId,displayTitle,headSha,status,conclusion \
+    --jq "map(select(.displayTitle == \"${title}\" and .headSha == \"${control_sha}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
 }
 
 # Return the newest run for one immutable stable documentation manifest.
 latest_stable_documentation_dispatch() {
-  local version="$1" title
+  local version="$1" control_sha="$2" title
   title="Documentation · ${version}"
   github_cli run list \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --workflow Documentation \
     --event workflow_dispatch \
     --limit 100 \
-    --json databaseId,displayTitle,status,conclusion \
-    --jq "map(select(.displayTitle == \"${title}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
+    --json databaseId,displayTitle,headSha,status,conclusion \
+    --jq "map(select(.displayTitle == \"${title}\" and .headSha == \"${control_sha}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
 }
 
 # Resolve the newest published (draft-free) container-k8s release tag and its
@@ -5960,9 +5967,9 @@ publish_stable_init_image_asset() {
   repo="$(github_repo "${COMPOSE_REPO}")"
   archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
   asset="container-vminit-arm64.oci.tar"
-  if [[ "${archive}" != /* || ! -f "${archive}" ]]; then
-    printf 'stable guest publication requires the absolute retained release-gate archive via CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE: %s\n' \
-      "${archive:-unset}" >&2
+  if [[ -n "${archive}" && ( "${archive}" != /* || ! -f "${archive}" ) ]]; then
+    printf 'stable guest publication received an invalid retained release-gate archive: %s\n' \
+      "${archive}" >&2
     return 2
   fi
   if [[ ! "${expected_digest}" =~ ^[0-9a-f]{64}$ ]]; then
@@ -5979,10 +5986,19 @@ publish_stable_init_image_asset() {
   containerization_repository="${authority[0]}"
   containerization_reference="${authority[1]}"
   tmp="$(mktemp -d)"
-  if cp "${archive}" "${tmp}/${asset}"; then
+  if [[ -n "${archive}" ]]; then
+    if cp "${archive}" "${tmp}/${asset}"; then
+      status=0
+    else
+      status=$?
+    fi
+  elif github_cli release download "${version}" \
+    --repo "${repo}" --pattern "${asset}" --dir "${tmp}" --clobber; then
     status=0
   else
     status=$?
+    printf 'stable guest publication could not recover %s from the published release; provide the absolute gate archive via CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE\n' \
+      "${asset}" >&2
   fi
   if (( status == 0 )); then
     if "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${asset}" \
@@ -6207,9 +6223,84 @@ verify_compose_stable_package() {
     "${version}" "${asset_sha}" "${runtime_asset_sha}" "${init_asset_sha}"
 }
 
+# Complete local publication work after an exact stable package workflow passes.
+complete_compose_stable_workflow() {
+  local version="$1" promote_default_lane="$2" stable_formula_identities_before="$3"
+  local authority_record authority_object authority_init_digest
+  authority_record="$(ensure_published_stable_recovery_authority "${version}")"
+  IFS=$'\t' read -r authority_object authority_init_digest <<<"${authority_record}"
+  publish_stable_init_image_asset "${version}" "${authority_init_digest}"
+  verify_compose_stable_package \
+    "${version}" "${promote_default_lane}" \
+    "${stable_formula_identities_before}" "${authority_init_digest}"
+  require_stable_init_image_authority_unchanged \
+    "${version}" "${authority_object}" "${authority_init_digest}"
+}
+
+# Return success when stable binary assets exist and only tap repair can remain.
+stable_binary_assets_are_published() {
+  local version="$1" repo asset_names required_asset
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  asset_names="$(
+    github_cli release view "${version}" --repo "${repo}" --json assets \
+      --jq '.assets[].name'
+  )" || return 2
+  for required_asset in \
+    container-compose-plugin-release-arm64.tar.gz \
+    container-compose-plugin-release-arm64.tar.gz.sha256 \
+    container-release-arm64.tar.gz \
+    container-release-arm64.tar.gz.sha256; do
+    grep -Fxq "${required_asset}" <<<"${asset_names}" || return 1
+  done
+}
+
+# Distinguish formula-only recovery from asset or authority failures cheaply.
+stable_formula_pair_matches_release() {
+  local version="$1" repo tmp compose_asset runtime_asset compose_sha runtime_sha
+  local compose_formula runtime_formula compose_url runtime_url compose_formula_sha runtime_formula_sha
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  compose_asset=container-compose-plugin-release-arm64.tar.gz
+  runtime_asset=container-release-arm64.tar.gz
+  tmp="$(mktemp -d)"
+  if ! github_cli release download "${version}" --repo "${repo}" \
+    --pattern "${compose_asset}.sha256" \
+    --pattern "${runtime_asset}.sha256" --dir "${tmp}"; then
+    find "${tmp}" -depth -delete >/dev/null 2>&1 || true
+    return 2
+  fi
+  compose_sha="$(awk '{print $1}' "${tmp}/${compose_asset}.sha256")"
+  runtime_sha="$(awk '{print $1}' "${tmp}/${runtime_asset}.sha256")"
+  if [[ ! "${compose_sha}" =~ ^[0-9a-f]{64}$ || \
+    ! "${runtime_sha}" =~ ^[0-9a-f]{64}$ ]]; then
+    find "${tmp}" -depth -delete >/dev/null 2>&1 || true
+    return 2
+  fi
+  if ! compose_formula="$(
+    github_cli api repos/stephenlclarke/homebrew-tap/contents/Formula/container-compose.rb \
+      --jq '.content' | base64 --decode
+  )" || ! runtime_formula="$(
+    github_cli api repos/stephenlclarke/homebrew-tap/contents/Formula/container.rb \
+      --jq '.content' | base64 --decode
+  )"; then
+    find "${tmp}" -depth -delete >/dev/null 2>&1 || true
+    return 2
+  fi
+  find "${tmp}" -depth -delete >/dev/null 2>&1 || return 2
+  compose_url="$(sed -n 's/^  url "\(.*\)"/\1/p' <<<"${compose_formula}" | head -n 1)"
+  runtime_url="$(sed -n 's/^  url "\(.*\)"/\1/p' <<<"${runtime_formula}" | head -n 1)"
+  compose_formula_sha="$(sed -n 's/^  sha256 "\(.*\)"/\1/p' <<<"${compose_formula}" | head -n 1)"
+  runtime_formula_sha="$(sed -n 's/^  sha256 "\(.*\)"/\1/p' <<<"${runtime_formula}" | head -n 1)"
+  [[ "${compose_url}" == \
+    "https://github.com/${repo}/releases/download/${version}/${compose_asset}" && \
+    "${runtime_url}" == \
+    "https://github.com/${repo}/releases/download/${version}/${runtime_asset}" && \
+    "${compose_formula_sha}" == "${compose_sha}" && \
+    "${runtime_formula_sha}" == "${runtime_sha}" ]]
+}
+
 # Dispatch and verify one stable package workflow mode for a semantic tag.
 dispatch_compose_stable_workflow() {
-  local version="$1" mode="$2" repair_tap="$3" previous_run run_id deadline now label promote_default_lane authority_record authority_object authority_init_digest stable_formula_identities_before=""
+  local version="$1" mode="$2" repair_tap="$3" details previous_run run_id status conclusion deadline now label promote_default_lane stable_formula_identities_before="" control_sha
   print_header "dispatch container-compose ${version} ${mode}"
 
   if [[ "${repair_tap}" == "true" ]]; then
@@ -6240,7 +6331,28 @@ dispatch_compose_stable_workflow() {
       "${version}" >&2
     exit 1
   fi
-  previous_run="$(latest_compose_package_dispatch_run "${version}" || true)"
+  control_sha="$(remote_main_commit "${COMPOSE_REPO}")"
+  details="$(latest_compose_package_dispatch_run \
+    "${version}" "${repair_tap}" "${control_sha}" || true)"
+  IFS=$'\t' read -r previous_run status conclusion <<<"${details}"
+  if [[ -n "${previous_run}" && "${status}" == "completed" && \
+    "${conclusion}" == "success" ]]; then
+    printf '%s already passed for the exact release controls: %s\n' \
+      "${label}" "${previous_run}"
+    complete_compose_stable_workflow \
+      "${version}" "${promote_default_lane}" \
+      "${stable_formula_identities_before}"
+    return 0
+  fi
+  if [[ -n "${previous_run}" && "${status}" != "completed" ]]; then
+    printf '%s is already running for the exact release controls: %s\n' \
+      "${label}" "${previous_run}"
+    wait_for_github_run_success "${previous_run}" "${label}"
+    complete_compose_stable_workflow \
+      "${version}" "${promote_default_lane}" \
+      "${stable_formula_identities_before}"
+    return 0
+  fi
   if [[ "${repair_tap}" == "true" ]]; then
     run github_cli workflow run prebuilt-binaries.yml \
       --repo "$(github_repo "${COMPOSE_REPO}")" \
@@ -6256,18 +6368,15 @@ dispatch_compose_stable_workflow() {
 
   deadline=$((SECONDS + COMPOSE_PACKAGE_WAIT_SECONDS))
   while true; do
-    run_id="$(latest_compose_package_dispatch_run "${version}" || true)"
+    details="$(latest_compose_package_dispatch_run \
+      "${version}" "${repair_tap}" "${control_sha}" || true)"
+    IFS=$'\t' read -r run_id status conclusion <<<"${details}"
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
       printf '%s started: %s\n' "${label}" "${run_id}"
       wait_for_github_run_success "${run_id}" "${label}"
-      authority_record="$(ensure_published_stable_recovery_authority "${version}")"
-      IFS=$'\t' read -r authority_object authority_init_digest <<<"${authority_record}"
-      publish_stable_init_image_asset "${version}" "${authority_init_digest}"
-      verify_compose_stable_package \
+      complete_compose_stable_workflow \
         "${version}" "${promote_default_lane}" \
-        "${stable_formula_identities_before}" "${authority_init_digest}"
-      require_stable_init_image_authority_unchanged \
-        "${version}" "${authority_object}" "${authority_init_digest}"
+        "${stable_formula_identities_before}"
       return 0
     fi
 
@@ -6296,7 +6405,7 @@ dispatch_compose_stable_tap_repair() {
 }
 
 dispatch_stable_release_gate() {
-  local version="$1" previous_run run_id deadline now init_image_digest
+  local version="$1" details previous_run run_id status conclusion deadline now init_image_digest control_sha
   print_header "dispatch hosted stable release gate for ${version}"
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -6311,7 +6420,24 @@ dispatch_stable_release_gate() {
   need_command gh
   init_image_digest="$(retained_stable_init_image_gate_digest "${version}")"
   ensure_stable_init_image_authority_tag "${version}" "${init_image_digest}"
-  previous_run="$(latest_stable_release_gate_dispatch_run || true)"
+  control_sha="$(remote_main_commit "${COMPOSE_REPO}")"
+  details="$(latest_stable_release_gate_dispatch_run \
+    "${version}" "${control_sha}" || true)"
+  IFS=$'\t' read -r previous_run status conclusion <<<"${details}"
+  if [[ -n "${previous_run}" && "${status}" == "completed" && \
+    "${conclusion}" == "success" ]]; then
+    printf 'hosted stable release gate already passed for the exact release controls: %s\n' \
+      "${previous_run}"
+    return 0
+  fi
+  if [[ -n "${previous_run}" && "${status}" != "completed" ]]; then
+    printf 'hosted stable release gate is already running for the exact release controls: %s\n' \
+      "${previous_run}"
+    wait_for_github_run_success \
+      "${previous_run}" "hosted stable release gate" \
+      "${STABLE_RELEASE_GATE_WAIT_SECONDS}"
+    return 0
+  fi
   run github_cli workflow run stable-release-gate.yml \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --ref main \
@@ -6319,7 +6445,9 @@ dispatch_stable_release_gate() {
 
   deadline=$((SECONDS + STABLE_RELEASE_GATE_WAIT_SECONDS))
   while true; do
-    run_id="$(latest_stable_release_gate_dispatch_run || true)"
+    details="$(latest_stable_release_gate_dispatch_run \
+      "${version}" "${control_sha}" || true)"
+    IFS=$'\t' read -r run_id status conclusion <<<"${details}"
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
       printf 'stable release gate started: %s\n' "${run_id}"
       wait_for_github_run_success \
@@ -6344,7 +6472,7 @@ dispatch_stable_release_gate() {
 # recovery checkpoint; every retry reads the same refs from the immutable
 # stable source tag.
 dispatch_stable_documentation() {
-  local version="$1" details previous_run run_id status conclusion deadline now
+  local version="$1" details previous_run run_id status conclusion deadline now control_sha
   print_header "publish released documentation for ${version}"
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -6356,7 +6484,8 @@ dispatch_stable_documentation() {
   fi
 
   need_command gh
-  details="$(latest_stable_documentation_dispatch "${version}")"
+  control_sha="$(remote_main_commit "${COMPOSE_REPO}")"
+  details="$(latest_stable_documentation_dispatch "${version}" "${control_sha}")"
   IFS=$'\t' read -r previous_run status conclusion <<<"${details}"
   if [[ -n "${previous_run}" && "${status}" == "completed" && \
     "${conclusion}" == "success" ]]; then
@@ -6380,7 +6509,8 @@ dispatch_stable_documentation() {
 
   deadline=$((SECONDS + DOCUMENTATION_WAIT_SECONDS))
   while true; do
-    details="$(latest_stable_documentation_dispatch "${version}")"
+    details="$(latest_stable_documentation_dispatch \
+      "${version}" "${control_sha}")"
     IFS=$'\t' read -r run_id status conclusion <<<"${details}"
     if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
       printf 'stable documentation started: %s\n' "${run_id}"
@@ -6449,7 +6579,7 @@ tag_stable_version() {
 
 # Resume the latest signed tag without mutating its stable source identity.
 resume_stable_release() {
-  local version="$1" promote_default_lane stable_formula_identities_before
+  local version="$1" promote_default_lane stable_formula_identities_before recovery_status
   local authority_record authority_object authority_init_digest
   print_header "resume stable release ${version}"
   verify_github_stable_tag_signature "${version}"
@@ -6457,9 +6587,26 @@ resume_stable_release() {
     promote_default_lane="$(stable_version_promotes_default_lane "${version}")"
     if [[ "${promote_default_lane}" == "true" ]]; then
       ensure_latest_stable_retry "${version}"
-      dispatch_compose_stable_tap_repair "${version}"
+      if stable_binary_assets_are_published "${version}"; then
+        if stable_formula_pair_matches_release "${version}"; then
+          complete_compose_stable_workflow "${version}" "true" ""
+          printf 'stable package, guest image, and formula pair already verify; no package workflow required\n'
+        else
+          recovery_status=$?
+          if (( recovery_status != 1 )); then
+            return "${recovery_status}"
+          fi
+          dispatch_compose_stable_tap_repair "${version}"
+        fi
+      else
+        recovery_status=$?
+        if (( recovery_status != 1 )); then
+          return "${recovery_status}"
+        fi
+        dispatch_compose_stable_package "${version}"
+      fi
       dispatch_stable_documentation "${version}"
-      print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
+      print_stable_release_point "${version}" "verified recovery from immutable release assets"
     else
       authority_record="$(ensure_published_stable_recovery_authority "${version}")"
       IFS=$'\t' read -r authority_object authority_init_digest <<<"${authority_record}"

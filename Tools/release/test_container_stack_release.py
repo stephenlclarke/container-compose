@@ -1801,11 +1801,12 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("unedit --force", helper)
         self.assertIn("not in edit mode", helper)
 
-    def test_release_helper_has_no_existing_stable_package_mode(self) -> None:
+    def test_release_helper_recovers_published_stable_assets_idempotently(self) -> None:
         self.assertNotIn("package VERSION", self.script)
         self.assertNotIn("package_existing_stable", self.script)
         self.assertNotIn("sync_source_homebrew_formula", self.script)
-        self.assertIn("formula-only recovery from immutable release assets", self.script)
+        self.assertIn("verified recovery from immutable release assets", self.script)
+        self.assertIn("stable_binary_assets_are_published", self.script)
         self.assertIn('repair_tap=true', self.script)
 
     def test_release_formula_is_tap_owned_and_template_backed(self) -> None:
@@ -1924,7 +1925,6 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "# Dispatch and wait for a new stable package publication."
             )
         ]
-
         self.assertIn('"repos/${GITHUB_REPOSITORY}/releases/latest"', lane)
         self.assertIn('candidate_key >= latest_key else "false"', lane)
         self.assertIn('release_label="maintenance backfill"', lane)
@@ -1957,9 +1957,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             dispatcher,
         )
         self.assertIn(
-            '"${stable_formula_identities_before}" "${authority_init_digest}"',
+            '"${version}" "${promote_default_lane}"',
             dispatcher,
         )
+        self.assertIn('"${stable_formula_identities_before}"', dispatcher)
 
     def test_stable_release_publishes_and_verifies_guest_closure(self) -> None:
         asset_pair = self.script[
@@ -1975,6 +1976,11 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         dispatcher = self.script[
             self.script.index("dispatch_compose_stable_workflow() {") : self.script.index(
                 "# Dispatch and wait for a new stable package publication."
+            )
+        ]
+        completion = self.script[
+            self.script.index("complete_compose_stable_workflow() {") : self.script.index(
+                "# Return success when stable binary assets exist"
             )
         ]
         verifier = self.script[
@@ -1995,9 +2001,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('"${digest}" != "${expected_digest}"', publisher)
         self.assertIn('github_cli release upload "${version}"', asset_pair)
         self.assertIn("publish_stable_asset_pair", publisher)
+        self.assertIn("complete_compose_stable_workflow", dispatcher)
         self.assertLess(
-            dispatcher.index('publish_stable_init_image_asset "${version}"'),
-            dispatcher.index("verify_compose_stable_package"),
+            completion.index('publish_stable_init_image_asset "${version}"'),
+            completion.index("verify_compose_stable_package"),
         )
         self.assertIn('init_asset="container-vminit-arm64.oci.tar"', verifier)
         self.assertIn('expected_init_digest="$4"', verifier)
@@ -2087,6 +2094,39 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 17, result.stderr)
+
+    def test_stable_guest_publisher_recovers_the_published_asset_without_local_state(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote_archive = root / "published.oci.tar"
+            self.create_release_guest_archive(remote_archive)
+            digest = hashlib.sha256(remote_archive.read_bytes()).hexdigest()
+            upload_marker = root / "upload"
+            shell_setup = "\n".join(
+                [
+                    "unset CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE",
+                    f"export TEST_REMOTE_ARCHIVE={shlex.quote(str(remote_archive))}",
+                    f"export TEST_UPLOAD_MARKER={shlex.quote(str(upload_marker))}",
+                    "stable_containerization_authority() { printf '%s\\n' owner/containerization ref; }",
+                    "github_repo() { printf '%s\\n' owner/container-compose; }",
+                    "github_cli() {",
+                    "  [[ \"$1:$2\" == release:download ]] || return 99",
+                    "  command cp \"${TEST_REMOTE_ARCHIVE}\" \"$9/container-vminit-arm64.oci.tar\"",
+                    "}",
+                    "publish_stable_asset_pair() { touch \"${TEST_UPLOAD_MARKER}\"; }",
+                ]
+            )
+
+            recovered = self.run_release_function(
+                root,
+                f"publish_stable_init_image_asset 0.13.1 {digest}",
+                shell_setup=shell_setup,
+            )
+
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertTrue(upload_marker.exists())
 
     def test_stable_guest_asset_pair_recovers_each_missing_member(self) -> None:
         asset = "container-vminit-arm64.oci.tar"
@@ -2381,9 +2421,28 @@ github_cli() {{
         self.assertNotIn("Attest release package", repair)
 
     def test_release_helper_tracks_the_stable_package_dispatch_by_tag(self) -> None:
-        self.assertIn('title="Prebuilt Binaries · ${version}"', self.script)
-        self.assertIn("--json databaseId,displayTitle", self.script)
-        self.assertIn('latest_compose_package_dispatch_run "${version}"', self.script)
+        self.assertIn('title="Prebuilt Binaries · ${version} · ${mode}"', self.script)
+        self.assertIn("databaseId,displayTitle,headSha,status,conclusion", self.script)
+        self.assertIn('"${version}" "${repair_tap}" "${control_sha}"', self.script)
+
+    def test_release_helper_tracks_stable_gate_dispatch_by_tag(self) -> None:
+        workflow = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
+        lookup = self.script[
+            self.script.index("latest_stable_release_gate_dispatch_run() {") :
+            self.script.index("# Return the newest run for one immutable stable documentation manifest.")
+        ]
+
+        self.assertIn("run-name: Stable Release Gate · ${{ inputs.ref }}", workflow)
+        self.assertIn('title="Stable Release Gate · ${version}"', lookup)
+        self.assertIn("databaseId,displayTitle", lookup)
+        self.assertIn("map(select(.displayTitle", lookup)
+
+    def test_non_discardable_release_workflows_use_a_real_queue(self) -> None:
+        for workflow_path in (PACKAGE_WORKFLOW, STABLE_GATE_WORKFLOW, DOCS_WORKFLOW):
+            with self.subTest(workflow=workflow_path.name):
+                workflow = workflow_path.read_text(encoding="utf-8")
+                self.assertIn("  cancel-in-progress: false\n", workflow)
+                self.assertIn("  queue: max\n", workflow)
 
     def test_release_helper_runs_released_docc_last_from_a_durable_manifest(
         self,
@@ -2424,6 +2483,7 @@ github_cli() {{
                         "latest_stable_documentation_dispatch() { "
                         "printf '731\\tcompleted\\tsuccess\\n'; }"
                     ),
+                    "remote_main_commit() { printf '%s\\n' control; }",
                     "github_cli() { exit 99; }",
                 ]
             ),
@@ -2450,6 +2510,7 @@ github_cli() {{
                         "wait_for_github_run_success() { "
                         "printf 'wait %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }"
                     ),
+                    "remote_main_commit() { printf '%s\\n' control; }",
                     "github_cli() { exit 99; }",
                 ]
             ),
@@ -3305,7 +3366,8 @@ github_cli() {{
             workflow,
         )
         self.assertIn("strategy:", workflow)
-        self.assertIn("fail-fast: true", workflow)
+        self.assertIn("fail-fast: false", workflow)
+        self.assertIn("Restore exact DocC site", workflow)
         self.assertEqual(workflow.count("- site:"), 4)
         for site in ("compose", "container", "containerization", "k8s"):
             self.assertIn(f"- site: {site}", workflow)
@@ -3953,6 +4015,11 @@ github_cli() {{
         self.assertIn('git -C release-tools rev-parse HEAD', receipt)
         self.assertIn("--candidate-sha \"${PUBLISH_SHA}\"", receipt)
         self.assertIn("stable-release-authority.tar.gz", receipt)
+        self.assertIn("'.components[\"homebrew-tap\"]'", receipt)
+        self.assertNotIn(
+            "git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git",
+            receipt,
+        )
 
     def test_stable_gate_records_the_candidate_bound_guest_digest(self) -> None:
         workflow = STABLE_GATE_WORKFLOW.read_text(encoding="utf-8")
@@ -9227,6 +9294,9 @@ esac
                         "verify_github_stable_tag_signature() { :; }",
                         "stable_release_is_published() { return 0; }",
                         "ensure_stable_release_is_unpublished() { exit 71; }",
+                        "complete_compose_stable_workflow() { return 1; }",
+                        "stable_binary_assets_are_published() { return 0; }",
+                        "stable_formula_pair_matches_release() { return 1; }",
                         "dispatch_compose_stable_tap_repair() { printf 'repair %s\\n' \"$1\"; }",
                         "dispatch_stable_documentation() { printf 'docs %s\\n' \"$1\"; }",
                         "publish_stable_release() { exit 72; }",
@@ -9237,7 +9307,7 @@ esac
             self.assertEqual(published.returncode, 0, published.stderr)
             self.assertIn("repair 0.6.70", published.stdout)
             self.assertIn("docs 0.6.70", published.stdout)
-            self.assertIn("formula-only recovery from immutable release assets", published.stdout)
+            self.assertIn("verified recovery from immutable release assets", published.stdout)
 
             unpublished = self.run_release_function(
                 root,
@@ -9257,6 +9327,52 @@ esac
             )
             self.assertEqual(unpublished.returncode, 0, unpublished.stderr)
             self.assertIn("publish 0.6.70", unpublished.stdout)
+
+    def test_resume_skips_package_workflow_when_published_outputs_verify(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            resumed = self.run_release_function(
+                root,
+                "resume_stable_release 0.6.70",
+                shell_setup="\n".join(
+                    [
+                        "stable_version_promotes_default_lane() { printf '%s\\n' true; }",
+                        "ensure_latest_stable_retry() { :; }",
+                        "verify_github_stable_tag_signature() { :; }",
+                        "stable_release_is_published() { return 0; }",
+                        "stable_binary_assets_are_published() { return 0; }",
+                        "stable_formula_pair_matches_release() { return 0; }",
+                        "complete_compose_stable_workflow() { printf 'verified %s\\n' \"$1\"; }",
+                        "dispatch_compose_stable_tap_repair() { exit 71; }",
+                        "dispatch_compose_stable_package() { exit 72; }",
+                        "dispatch_stable_documentation() { printf 'docs %s\\n' \"$1\"; }",
+                        "print_stable_release_point() { printf 'point %s %s\\n' \"$1\" \"$2\"; }",
+                    ]
+                ),
+            )
+
+            self.assertEqual(resumed.returncode, 0, resumed.stderr)
+            self.assertIn("verified 0.6.70", resumed.stdout)
+            self.assertIn("no package workflow required", resumed.stdout)
+            self.assertIn("docs 0.6.70", resumed.stdout)
+
+    def test_stable_gate_reuses_exact_successful_control_run(self) -> None:
+        reused = self.run_release_function(
+            Path("/tmp/unused-release-root"),
+            "dispatch_stable_release_gate 0.15.0",
+            shell_setup="\n".join(
+                [
+                    "retained_stable_init_image_gate_digest() { printf '%s\\n' digest; }",
+                    "ensure_stable_init_image_authority_tag() { :; }",
+                    "remote_main_commit() { printf '%s\\n' control; }",
+                    "latest_stable_release_gate_dispatch_run() { printf '912\\tcompleted\\tsuccess\\n'; }",
+                    "github_cli() { exit 99; }",
+                ]
+            ),
+        )
+
+        self.assertEqual(reused.returncode, 0, reused.stderr)
+        self.assertIn("already passed for the exact release controls: 912", reused.stdout)
 
     def test_resume_recovers_published_maintenance_assets_without_moving_stable_formulae(
         self,
