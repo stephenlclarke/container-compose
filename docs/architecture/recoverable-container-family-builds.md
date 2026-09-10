@@ -38,11 +38,16 @@ flowchart LR
   compose --> bundle
 ```
 
-Generated state defaults to
-`/Volumes/SSD/github/.container-compose-build`. If that development volume is
-not mounted, the fallback is `.build/stack`. SwiftPM scratch directories, Go
-artifacts, pins, timing logs, and the final bundle all live below that managed
-state root rather than in source checkouts.
+Mutable work defaults to `/Volumes/SSD/cf/build`. Completed products, pins,
+timing logs and the final bundle are promoted into the internal
+`~/Library/Application Support/ContainerFamily/retained/build` store. There is
+no automatic fallback when the external volume is unavailable: retained
+outputs remain verifiable, while new builds fail before creating internal
+scratch. Both independently marked roots live outside source checkouts.
+The self-hosted release runner's `_work` link resolves to
+`/Volumes/SSD/cf/github-actions/container-compose-release-runner-work`, keeping
+Actions workspaces, downloaded actions, tools and runner temp data on the same
+external lifetime boundary.
 
 Every compiler command has a wall-clock deadline and complete process-session
 cleanup. Every full invocation records concurrency-safe JSONL timing evidence
@@ -59,7 +64,7 @@ A marker prevents the build from claiming an arbitrary state directory, and
 one `lockf` lock prevents concurrent writers. Each successful repository build
 atomically publishes a durable JSON pin containing:
 
-- canonical source path, exact commit, Git tree, and origin;
+- canonical build-time source path, exact commit, Git tree, and origin;
 - exact dependency-pin receipts;
 - artifact paths, modes, and SHA-256 digests;
 - successful native command, duration, and completion time; and
@@ -73,7 +78,9 @@ targets therefore do not invalidate native caches, while any stack recipe
 change automatically changes the contract. Tooling that enforces or records
 the contract is itself hashed into the build identity.
 
-Pins are flushed and atomically renamed only after success. Before reuse,
+Completed binaries are copied from external scratch into an immutable,
+content-addressed local object before their pins are written. Pins are flushed
+and atomically renamed only after success. Before reuse,
 `Tools/build/stack-pin.py` recursively verifies its own digest, clean source
 identity, dependencies, and artifacts. Source, dependency, artifact, toolchain,
 SDK, environment, or controller drift invalidates only the affected transitive
@@ -155,9 +162,18 @@ flowchart TD
 
 The hosted gate stores stage checkpoints below the immutable release-candidate
 commit. Each checkpoint records exact inputs, status, duration, output name,
-and output digest. A corrected retry starts at the first missing or invalid
-stage. The stable-release authority receipt binds component commits to the
-verified checkpoint and log.
+and output digest. Producer stages can additionally declare required product
+files; a missing, indirect, mode-changed, size-changed, or digest-changed
+product invalidates reuse even when the log remains. A corrected retry starts
+at the first missing or invalid stage. The stable-release authority receipt
+binds component commits to the verified checkpoint and log.
+
+Stable archives, checksum sidecars, authority bundles and verified DocC site
+archives are copied into the internal retained store before their transient
+download directories are removed. Workflow dispatch intent and the exact run
+ID are journalled there as well. Use `make release-status VERSION=X.Y.Z` or
+`make release-recovery-plan VERSION=X.Y.Z` to inspect that state without
+starting a build or changing GitHub, Homebrew, or Pages.
 
 ## Unattended Operation
 

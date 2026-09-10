@@ -160,11 +160,41 @@ reused and the first missing or stale stage continues from its native build
 cache. The hosted release gate uses candidate-keyed stage checkpoints and
 durable logs under the same principle. Never repair a success receipt by hand.
 
-Each full stack invocation writes a unique JSONL file below
-`$(STACK_STATE_ROOT)/timings`. It records the end-to-end duration plus each
+Each full stack invocation writes a unique JSONL file below the internal
+`$(STACK_RETAINED_ROOT)/timings` directory. Mutable compiler scratch lives
+under `$(STACK_TRANSIENT_ROOT)` on `/Volumes/SSD`; completed products, pins and
+timings are promoted to the local retained root before success is published.
+Cleaning an external workspace or scratch tree therefore leaves verified
+artifacts reusable. The timing log records the end-to-end duration plus each
 native compiler and bin-path operation, including failures. Compare a clean
 run, the immediate no-op rerun, and a fail-once recovery using these durable
 records rather than terminal timestamps.
+
+Stable packages, their checksum sidecars, the signed release-authority bundle,
+and each verified DocC site archive are likewise promoted into
+`~/Library/Application Support/ContainerFamily/retained`. Release workspaces,
+downloads, native build attempts, and disposable recovery directories remain
+under `/Volumes/SSD`. Inspect an existing semantic release without changing it
+using `make release-status VERSION=X.Y.Z`, or print its read-only recovery
+decision using `make release-recovery-plan VERSION=X.Y.Z`. An unknown dispatch
+is reported by request ID and must be reconciled; it is never treated as an
+absent run or permission to dispatch again.
+
+The self-hosted release runner's `_work` link must also resolve to the external
+volume so Actions checkouts, action caches, tool downloads, and `RUNNER_TEMP`
+cannot silently consume internal retained storage. On the release Mac it points
+to `/Volumes/SSD/cf/github-actions/container-compose-release-runner-work`.
+Verify both the resolved path and filesystem device after runner maintenance;
+the workflows' retained roots must continue to resolve to the internal volume.
+
+Published and historical benchmark attempts follow the same lifetime split:
+downloads, reconstructed distributions, fixtures, worktrees and compiler
+scratch are transient on `/Volumes/SSD`, while evidence, provenance and the
+small distribution manifests remain on the internal retained root after
+cleanup. Historical fixture and `cctl` caches are digest/receipt verified before
+reuse. Docker applications are confined to the explicitly comparative
+benchmark oracle and are not dependencies of normal builds, releases or the
+shipped product. Run timing lanes only after their quiet-host preflight passes.
 
 Every stage has a wall-clock deadline and terminates its complete process
 session, including descendant process groups, when that deadline expires. A
@@ -456,6 +486,8 @@ From clean `~/github/container-compose`, `~/github/container-builder-shim`,
 make release-plan
 make release-version
 make release-plan VERSION_SELECTOR=--+ # reviewed maintenance plan
+make release-status VERSION=0.14.3
+make release-recovery-plan VERSION=0.14.3
 ```
 
 ### Promote The Current Build
@@ -464,9 +496,11 @@ Do not copy, rename, or edit the mutable GitHub **Current build** prerelease.
 It is an installable view of green `main`, not a stable release candidate asset.
 Promotion always rebuilds the exact tagged source into immutable stable assets,
 which is what keeps the semantic version, runtime pin, checksums, Homebrew
-formulae, and release notes deterministic. The current prerelease is recreated
-by its workflow after the matching Homebrew formulae update, so its GitHub
-published time always identifies the build users are viewing.
+formulae, and release notes deterministic. Current finalization preserves the
+existing GitHub release object, uploads the complete replacement closure, then
+edits its metadata after the matching Homebrew formulae update. A failed refresh
+therefore leaves the prior Current release available; freshness is carried by
+explicit build metadata rather than destructive recreation for `published_at`.
 
 `make release-version` reports the latest reachable semantic tag, selected
 bump, and next version. `make release-plan` includes that decision. After the
@@ -505,7 +539,7 @@ behind Apple upstream, requires `kern.hv_support=1`, bootstraps the matched
 stack tools, fetches the required `containerization` integration kernel when it
 is absent, and runs the full local `make release-gate` inside one fresh,
 marker-protected, uniquely namespaced runtime lifecycle. Nested runtime targets
-reuse that owner without stopping it. Local runtime and parity checkpoints under the release evidence directory may be reused after an interrupted retry, subject to the legacy checkpoint limitations described above. An unpublished
+reuse that owner without stopping it. Local runtime and parity checkpoints under the internal retained release-evidence directory may be reused after an interrupted retry only when their exact inputs, durable log, and every declared product digest still verify. An unpublished
 helper-generated candidate commit is likewise retained rather than recommitted with a new identity after its signature, exact subject, ancestry, and changed files pass the fail-closed recovery policy. The hosted gate then runs the checkpointed sibling proof from its immutable release-control checkout against the immutable source, runtime, and tap checkouts before package publication. The helper waits up to three hours for
 that hosted gate, which exceeds its 120-minute workflow timeout; set
 `CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS` only when an operator needs a
@@ -619,7 +653,7 @@ listed warm-image lifecycle and logging fixtures; `develop.watch` sync,
 build-context transfer, and other missing lanes remain in the
 [performance backlog](../project/BACKLOG.md#comparable-or-better-performance).
 
-Released DocC sites are built independently with fail-fast disabled. Each job restores its source-specific SwiftPM cache and an exact site cache keyed by the release controls, semantic release, site, and immutable source ref. A successful site is therefore retained when a sibling site fails, and an exact retry archives the verified cached output instead of rebuilding it. Pages assembly and authority checks remain the final release operation.
+Released DocC sites are built independently with fail-fast disabled. Each job restores its source-specific SwiftPM cache and an exact site cache keyed by the toolchain contract, site, immutable source ref, lockfile, and relevant generation controls. A complete content manifest is verified before reuse; an invalid cache is discarded and only that site is rebuilt. The controller downloads and verifies all four successful site archives into the internal retained store before hosted artifacts can expire. Pages assembly remains separate, serialized for the single destination, and rechecks that the release is still latest after acquiring the deployment boundary so an older build cannot overwrite a newer portal.
 
 The standalone local comparator remains available for focused performance
 development:

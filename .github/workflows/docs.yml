@@ -24,14 +24,17 @@ on:
         description: "Published stable semantic tag"
         required: true
         type: string
+      expected_control_sha:
+        description: "Controller-observed main SHA for race-safe dispatch"
+        required: false
+        type: string
+      request_id:
+        description: "Durable controller request identifier"
+        required: false
+        type: string
 
 permissions:
   contents: read
-
-concurrency:
-  group: documentation-${{ inputs.ref }}
-  cancel-in-progress: false
-  queue: max
 
 jobs:
   resolve-release:
@@ -46,7 +49,26 @@ jobs:
       k8s_ref: ${{ steps.stack.outputs.k8s_ref }}
       k8s_release_id: ${{ steps.k8s-authority.outputs.release_id }}
       k8s_release_tag: ${{ steps.stack.outputs.k8s_release_tag }}
+      deploy: ${{ steps.release.outputs.deploy }}
     steps:
+      - name: Verify dispatch identity
+        env:
+          EXPECTED_CONTROL_SHA: ${{ inputs.expected_control_sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${EXPECTED_CONTROL_SHA}" && \
+            ( ! "${EXPECTED_CONTROL_SHA}" =~ ^[0-9a-f]{40}$ || \
+              "${GITHUB_SHA}" != "${EXPECTED_CONTROL_SHA}" ) ]]; then
+            printf 'documentation controls changed before execution: expected %s, got %s\n' \
+              "${EXPECTED_CONTROL_SHA:-missing}" "${GITHUB_SHA}" >&2
+            exit 1
+          fi
+          if [[ -n "${REQUEST_ID}" && ! "${REQUEST_ID}" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+            printf 'documentation request ID is invalid: %s\n' "${REQUEST_ID}" >&2
+            exit 1
+          fi
+
       - name: Require exact published release inputs
         id: release
         env:
@@ -88,6 +110,14 @@ jobs:
           printf 'compose_ref=%s\n' "${compose_ref}" >> "${GITHUB_OUTPUT}"
           printf 'release_id=%s\n' "$(jq -er '.id' <<<"${release}")" \
             >> "${GITHUB_OUTPUT}"
+          latest_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')"
+          if [[ "${latest_tag}" == "${RELEASE_TAG}" ]]; then
+            printf 'deploy=true\n' >> "${GITHUB_OUTPUT}"
+          else
+            printf 'deploy=false\n' >> "${GITHUB_OUTPUT}"
+            printf 'Retaining documentation artifacts without replacing Pages because latest stable is %s.\n' \
+              "${latest_tag}" >> "${GITHUB_STEP_SUMMARY}"
+          fi
           printf 'Released documentation input: %s at %s.\n' \
             "${RELEASE_TAG}" "${compose_ref}" >> "${GITHUB_STEP_SUMMARY}"
 
@@ -206,6 +236,13 @@ jobs:
             repository: stephenlclarke/container-k8s
             ref: ${{ needs.resolve-release.outputs.k8s_ref }}
     steps:
+      - name: Checkout immutable documentation controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          path: release-tools
+          ref: ${{ github.sha }}
+
       - name: Checkout ${{ matrix.site }} source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -221,6 +258,22 @@ jobs:
           set -euo pipefail
           [[ "$(git -C source rev-parse HEAD)" == "${EXPECTED_REF}" ]]
 
+      - name: Resolve documentation toolchain identity
+        id: toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          identity="$(
+            {
+              xcodebuild -version
+              /usr/bin/swift --version
+              xcrun --sdk macosx --show-sdk-path
+              xcrun --sdk macosx --show-sdk-version
+            } | shasum -a 256 | awk '{print $1}'
+          )"
+          [[ "${identity}" =~ ^[0-9a-f]{64}$ ]]
+          printf 'digest=%s\n' "${identity}" >> "${GITHUB_OUTPUT}"
+
       - name: Restore SwiftPM documentation cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -228,19 +281,34 @@ jobs:
             source/.build
             source/.swiftpm
             ~/Library/Caches/org.swift.swiftpm
-          key: docs-swiftpm-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.site }}-${{ matrix.ref }}
+          key: docs-swiftpm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.digest }}-${{ matrix.site }}-${{ matrix.ref }}-${{ hashFiles('source/Package.resolved') }}
           restore-keys: |
-            docs-swiftpm-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.site }}-
+            docs-swiftpm-v3-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.digest }}-${{ matrix.site }}-
 
       - name: Restore exact DocC site
         id: site-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: _site
-          key: docs-site-v2-${{ github.sha }}-${{ inputs.ref }}-${{ matrix.site }}-${{ matrix.ref }}
+          key: docs-site-v3-${{ matrix.site }}-${{ matrix.ref }}-${{ steps.toolchain.outputs.digest }}-${{ hashFiles('release-tools/.github/workflows/docs.yml', 'release-tools/Tools/ci/doc-site-manifest.py', 'source/Package.resolved', 'source/scripts/make-docs.sh') }}
+
+      - name: Inspect restored DocC site
+        id: site
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ steps.site-cache.outputs.cache-hit }}" == true ]] && \
+            python3 release-tools/Tools/ci/doc-site-manifest.py verify _site; then
+            printf 'reusable=true\n' >> "${GITHUB_OUTPUT}"
+          else
+            if [[ -d _site ]]; then
+              find _site -depth -delete
+            fi
+            printf 'reusable=false\n' >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Build static API documentation
-        if: steps.site-cache.outputs.cache-hit != 'true'
+        if: steps.site.outputs.reusable != 'true'
         env:
           DOCS_SOURCE_REFERENCE: ${{ matrix.ref }}
           SITE: ${{ matrix.site }}
@@ -301,16 +369,19 @@ jobs:
               ;;
           esac
 
+      - name: Record DocC site manifest
+        if: steps.site.outputs.reusable != 'true'
+        run: python3 release-tools/Tools/ci/doc-site-manifest.py create _site
+
       - name: Verify reusable DocC site
         env:
           SITE: ${{ matrix.site }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ -s _site/index.html ]]
-          [[ -s _site/theme-settings.json ]]
-          printf 'DocC site ready for %s (cache hit: %s).\n' \
-            "${SITE}" "${{ steps.site-cache.outputs.cache-hit }}"
+          python3 release-tools/Tools/ci/doc-site-manifest.py verify _site
+          printf 'DocC site ready for %s (verified reuse: %s).\n' \
+            "${SITE}" "${{ steps.site.outputs.reusable }}"
 
       - name: Verify documentation source remained exact
         env:
@@ -335,7 +406,10 @@ jobs:
 
   upload-pages-artifact:
     name: Assemble and Upload GitHub Pages Artifact
-    needs: build-sites
+    needs:
+      - resolve-release
+      - build-sites
+    if: needs.resolve-release.outputs.deploy == 'true'
     runs-on: ubuntu-24.04
     permissions:
       pages: write
@@ -370,7 +444,12 @@ jobs:
     needs:
       - resolve-release
       - upload-pages-artifact
+    if: needs.resolve-release.outputs.deploy == 'true'
     runs-on: ubuntu-24.04
+    concurrency:
+      group: documentation-pages
+      cancel-in-progress: false
+      queue: max
     permissions:
       contents: read
       id-token: write
@@ -395,8 +474,28 @@ jobs:
           [[ "$(git -C release-tools rev-parse HEAD)" == "${RELEASE_CONTROL_SHA}" ]]
           [[ -z "$(git -C release-tools status --porcelain --untracked-files=no)" ]]
 
+      - name: Confirm release still owns Pages
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest_tag="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name'
+          )"
+          if [[ "${latest_tag}" == "${RELEASE_TAG}" ]]; then
+            printf 'deploy=true\n' >> "${GITHUB_OUTPUT}"
+          else
+            printf 'deploy=false\n' >> "${GITHUB_OUTPUT}"
+            printf 'Skipping superseded Pages deployment for %s; latest stable is now %s.\n' \
+              "${RELEASE_TAG}" "${latest_tag}" >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
       - name: Re-resolve documentation authority before deployment
         id: authority
+        if: steps.latest.outputs.deploy == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -419,9 +518,11 @@ jobs:
 
       - name: Deploy to GitHub Pages
         id: deployment
+        if: steps.latest.outputs.deploy == 'true'
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
 
       - name: Verify documentation authority after deployment
+        if: steps.latest.outputs.deploy == 'true'
         env:
           EXPECTED_AUTHORITY: ${{ steps.authority.outputs.digest }}
           GH_TOKEN: ${{ github.token }}

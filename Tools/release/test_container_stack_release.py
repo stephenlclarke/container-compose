@@ -54,6 +54,9 @@ SONAR_RESTORE_WORKFLOW = ROOT / ".github" / "workflows" / "sonar-main-restore.ym
 CODEQL_WORKFLOW = ROOT / ".github" / "workflows" / "codeql.yml"
 STACK_RELEASE_VALIDATION = ROOT / "Tools" / "ci" / "run-stack-release-validation.sh"
 FORMULA_RENDERER = ROOT / "Tools" / "release" / "render-homebrew-stack-formulae.sh"
+FORMULA_PAIR_VALIDATOR = (
+    ROOT / "Tools" / "release" / "verify-homebrew-formula-pair.py"
+)
 STABLE_RELEASE_LANE_CLASSIFIER = (
     ROOT / "Tools" / "release" / "stable-release-default-lane.py"
 )
@@ -1879,9 +1882,10 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
                 "# Dispatch and verify one stable package workflow mode"
             )
         ]
+        validator = FORMULA_PAIR_VALIDATOR.read_text(encoding="utf-8")
 
-        self.assertIn('if [[ -n "${formula_version}" ]]', verifier)
-        self.assertIn("stable Homebrew formula must derive version", verifier)
+        self.assertIn('python3 "${FORMULA_PAIR_VALIDATOR}"', verifier)
+        self.assertIn("stable compose formula must derive its version", validator)
         self.assertNotIn('if [[ "${formula_version}" != "${version}" ]]', verifier)
 
     def test_stable_release_lane_classifier_preserves_newer_consumer_pointers(
@@ -2018,6 +2022,9 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('find "${tmp}" -depth -delete', unauthorized)
         self.assertLess(unauthorized.index('find "${tmp}"'), unauthorized.index("exit 1"))
         self.assertIn('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${tmp}/${init_asset}"', verifier)
+        self.assertIn("release-highlights.json", verifier)
+        self.assertIn("quality-snapshot.svg", verifier)
+        self.assertIn('python3 "${FORMULA_PAIR_VALIDATOR}"', verifier)
 
     def test_stable_guest_publisher_binds_the_validated_snapshot_to_gate_evidence(
         self,
@@ -2484,6 +2491,10 @@ github_cli() {{
                         "printf '731\\tcompleted\\tsuccess\\n'; }"
                     ),
                     "remote_main_commit() { printf '%s\\n' control; }",
+                    (
+                        "retain_stable_documentation_artifacts() { "
+                        "printf 'retained %s %s\\n' \"$1\" \"$2\"; }"
+                    ),
                     "github_cli() { exit 99; }",
                 ]
             ),
@@ -2495,6 +2506,7 @@ github_cli() {{
             "0.15.0 (run 731)",
             completed.stdout,
         )
+        self.assertIn("retained 0.15.0 731", completed.stdout)
 
     def test_release_helper_waits_for_an_active_exact_docc_checkpoint(self) -> None:
         active = self.run_release_function(
@@ -2511,6 +2523,10 @@ github_cli() {{
                         "printf 'wait %s %s %s\\n' \"$1\" \"$2\" \"$3\"; }"
                     ),
                     "remote_main_commit() { printf '%s\\n' control; }",
+                    (
+                        "retain_stable_documentation_artifacts() { "
+                        "printf 'retained %s %s\\n' \"$1\" \"$2\"; }"
+                    ),
                     "github_cli() { exit 99; }",
                 ]
             ),
@@ -2519,6 +2535,7 @@ github_cli() {{
         self.assertEqual(active.returncode, 0, active.stderr)
         self.assertIn("stable documentation is already running", active.stdout)
         self.assertIn("wait 812 stable documentation and Pages deployment", active.stdout)
+        self.assertIn("retained 0.15.0 812", active.stdout)
 
     def test_release_helper_writes_the_published_k8s_documentation_authority(
         self,
@@ -3337,14 +3354,8 @@ github_cli() {{
         )
         trigger = workflow[workflow.index("\non:") : workflow.index("\npermissions:")]
         self.assertNotIn("k8s_ref:", trigger)
-        concurrency = workflow[
-            workflow.index("concurrency:") : workflow.index("\njobs:")
-        ]
-        self.assertIn(
-            "group: documentation-${{ inputs.ref }}",
-            concurrency,
-        )
-        self.assertIn("cancel-in-progress: false", concurrency)
+        pre_jobs = workflow[: workflow.index("\njobs:")]
+        self.assertNotIn("concurrency:", pre_jobs)
         self.assertIn("name: Resolve Released Documentation Inputs", workflow)
         self.assertIn("stable release ref must be a bare semantic tag", workflow)
         self.assertIn(
@@ -3376,10 +3387,14 @@ github_cli() {{
         self.assertIn("name: Build ${{ matrix.site }} DocC Site", workflow)
         self.assertIn("DOCS_SOURCE_REFERENCE: ${{ matrix.ref }}", workflow)
         self.assertIn("runs-on: macos-26", workflow)
-        self.assertIn("needs: build-sites", workflow)
+        self.assertIn("      - build-sites", workflow)
         self.assertIn("merge-multiple: true", workflow)
         self.assertIn("Assemble DocC portal", workflow)
         self.assertIn("Re-resolve documentation authority before deployment", workflow)
+        self.assertIn("Confirm release still owns Pages", workflow)
+        self.assertIn("group: documentation-pages", workflow)
+        self.assertIn("queue: max", workflow)
+        self.assertEqual(workflow.count("if: steps.latest.outputs.deploy == 'true'"), 3)
         self.assertIn("Verify documentation authority after deployment", workflow)
         self.assertEqual(workflow.count("documentation-authority.py"), 2)
         self.assertLess(
@@ -5316,6 +5331,10 @@ github_cli() {{
             workflow,
         )
         self.assertNotIn("RELEASE_BUILD_STATE_ROOT: /Volumes/", workflow)
+        self.assertIn(
+            'state_parent="${retained_root}/release/checkpoints"', workflow
+        )
+        self.assertIn("path: ${{ env.RELEASE_AUTHORITY_ROOT }}", workflow)
         self.assertNotIn("nextflow", workflow.lower())
         self.assertNotIn("make -C container-compose ci", workflow)
         self.assertNotIn("Use pinned container dependency", workflow)
@@ -5434,7 +5453,12 @@ github_cli() {{
             self.script,
         )
         self.assertIn("CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS", self.script)
-        self.assertIn("deadline=$((SECONDS + STABLE_RELEASE_GATE_WAIT_SECONDS))", dispatch)
+        waiter = self.script[
+            self.script.index("wait_for_github_run_success() {") : self.script.index(
+                "# Print the Containerization repository",
+            )
+        ]
+        self.assertIn("deadline=$((SECONDS + wait_seconds))", waiter)
         self.assertIn(
             '"${run_id}" "hosted stable release gate" "${STABLE_RELEASE_GATE_WAIT_SECONDS}"',
             dispatch,
@@ -8900,7 +8924,8 @@ esac
         self.assertIn("github_cli() {", self.script)
         self.assertIn("github_cli pr create", self.script)
         self.assertIn('--add-assignee "@me"', self.script)
-        self.assertIn("run github_cli workflow run", self.script)
+        self.assertIn("github_cli api --method POST", self.script)
+        self.assertIn("--jq '.workflow_run_id'", self.script)
         self.assertNotIn("env -u GITHUB_TOKEN -u GH_TOKEN gh", self.script)
 
     def test_release_helper_describes_the_hosted_stable_gate(self) -> None:
@@ -9374,6 +9399,225 @@ esac
         self.assertEqual(reused.returncode, 0, reused.stderr)
         self.assertIn("already passed for the exact release controls: 912", reused.stdout)
 
+    def test_dispatch_api_returns_exact_run_id_and_binds_expected_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            arguments = root / "arguments"
+            dispatched = self.run_release_function(
+                root,
+                f"dispatch_github_workflow_run docs.yml 0.15.0 {'a' * 40}",
+                shell_setup="\n".join(
+                    [
+                        f"export TEST_ARGUMENTS={shlex.quote(str(arguments))}",
+                        "github_cli() { printf '%q ' \"$@\" > \"${TEST_ARGUMENTS}\"; printf '987\\n'; }",
+                    ]
+                ),
+            )
+
+            self.assertEqual(dispatched.returncode, 0, dispatched.stderr)
+            self.assertEqual(dispatched.stdout.strip(), "987")
+            recorded = arguments.read_text(encoding="utf-8")
+            self.assertIn("actions/workflows/docs.yml/dispatches", recorded)
+            self.assertIn(f"inputs\\[expected_control_sha\\]={'a' * 40}", recorded)
+            self.assertIn("inputs\\[request_id\\]=", recorded)
+            self.assertIn("X-GitHub-Api-Version", recorded)
+
+    def test_ambiguous_dispatch_is_journalled_and_never_blindly_retried(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dispatched = self.run_release_function(
+                root,
+                f"dispatch_github_workflow_run docs.yml 0.15.0 {'a' * 40}",
+                shell_setup="github_cli() { printf 'connection lost\\n' >&2; return 1; }",
+            )
+
+            self.assertEqual(dispatched.returncode, 75)
+            self.assertIn("result is unknown", dispatched.stderr)
+            journals = list((root / "retained/release/dispatches").glob("*.json"))
+            self.assertEqual(len(journals), 1)
+            record = json.loads(journals[0].read_text(encoding="utf-8"))
+            self.assertEqual(record["state"], "dispatch-unknown")
+            self.assertEqual(record["workflow"], "docs.yml")
+
+    def test_past_success_does_not_suppress_newly_needed_tap_repair(self) -> None:
+        repaired = self.run_release_function(
+            Path("/tmp/unused-release-root"),
+            "dispatch_compose_stable_tap_repair 0.15.0",
+            shell_setup="\n".join(
+                [
+                    "print_header() { :; }",
+                    "need_command() { :; }",
+                    "stable_version_promotes_default_lane() { printf 'true\\n'; }",
+                    "remote_main_commit() { printf 'control\\n'; }",
+                    "latest_compose_package_dispatch_run() { printf '123\\tcompleted\\tsuccess\\n'; }",
+                    "dispatch_github_workflow_run() { printf '124\\n'; }",
+                    "wait_for_github_run_success() { printf 'waited %s\\n' \"$1\"; }",
+                    "complete_compose_stable_workflow() { printf 'verified %s\\n' \"$1\"; }",
+                ]
+            ),
+        )
+
+        self.assertEqual(repaired.returncode, 0, repaired.stderr)
+        self.assertIn("started: 124", repaired.stdout)
+        self.assertIn("waited 124", repaired.stdout)
+        self.assertNotIn("already passed", repaired.stdout)
+
+    def test_formula_probe_distinguishes_absence_from_api_failure(self) -> None:
+        missing = self.run_release_function(
+            Path("/tmp/unused-release-root"),
+            f"github_formula_at_ref container-compose {'a' * 40}",
+            shell_setup="github_cli() { printf '%s\\n' 'gh: Not Found (HTTP 404)'; return 1; }",
+        )
+        outage = self.run_release_function(
+            Path("/tmp/unused-release-root"),
+            f"github_formula_at_ref container-compose {'a' * 40}",
+            shell_setup="github_cli() { printf '%s\\n' 'temporary service failure'; return 1; }",
+        )
+        present = self.run_release_function(
+            Path("/tmp/unused-release-root"),
+            f"github_formula_at_ref container-compose {'a' * 40}",
+            shell_setup="github_cli() { printf '%s\\n' 'Zm9ybXVsYQ=='; }",
+        )
+
+        self.assertEqual(missing.returncode, 1)
+        self.assertEqual(outage.returncode, 2)
+        self.assertIn("temporary service failure", outage.stderr)
+        self.assertEqual(present.returncode, 0, present.stderr)
+        self.assertEqual(present.stdout.strip(), "formula")
+
+    def test_published_recovery_restores_missing_archives_from_local_retention(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            retained = root / "retained"
+            candidates = root / "candidates"
+            candidates.mkdir()
+            compose = candidates / "container-compose-plugin-release-arm64.tar.gz"
+            runtime = candidates / "container-release-arm64.tar.gz"
+            highlights = candidates / "release-highlights.json"
+            quality = candidates / "quality-snapshot.svg"
+            compose.write_bytes(b"retained compose archive")
+            runtime.write_bytes(b"retained runtime archive")
+            highlights.write_text("{}\n", encoding="utf-8")
+            quality.write_text("<svg/>\n", encoding="utf-8")
+            retained_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "Tools/release/retain-local-release-assets.py"),
+                    "retain",
+                    "--root",
+                    str(retained),
+                    "--version",
+                    "0.15.0",
+                    "--asset",
+                    str(compose),
+                    "--asset",
+                    str(runtime),
+                    "--asset",
+                    str(highlights),
+                    "--asset",
+                    str(quality),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(retained_result.returncode, 0, retained_result.stderr)
+
+            recovered = self.run_release_function(
+                root,
+                "recover_published_stable_binary_assets 0.15.0",
+                shell_setup="\n".join(
+                    [
+                        "github_repo() { printf '%s\\n' owner/repo; }",
+                        "github_cli() {",
+                        "  case \"$1:$2\" in",
+                        "    release:view) : ;;",
+                        "    release:upload) printf 'uploaded:%s\\n' \"$*\" ;;",
+                        "    *) printf 'unexpected GitHub operation: %s\\n' \"$*\" >&2; return 64 ;;",
+                        "  esac",
+                        "}",
+                    ]
+                ),
+            )
+
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertEqual(recovered.stdout.count("uploaded:release upload"), 4)
+            self.assertIn(compose.name, recovered.stdout)
+            self.assertIn(runtime.name, recovered.stdout)
+            manifest = json.loads(
+                (retained / "release/releases/0.15.0/assets.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertIn(f"{compose.name}.sha256", manifest["assets"])
+            self.assertIn(f"{runtime.name}.sha256", manifest["assets"])
+            self.assertIn(highlights.name, manifest["assets"])
+            self.assertIn(quality.name, manifest["assets"])
+
+    def test_documentation_archives_are_retained_before_run_artifacts_expire(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fixtures = root / "documentation-fixtures"
+            fixtures.mkdir()
+            for site in ("compose", "container", "containerization", "k8s"):
+                source = root / f"{site}-site"
+                (source / "documentation/module").mkdir(parents=True)
+                (source / "index.html").write_text("index", encoding="utf-8")
+                (source / "theme-settings.json").write_text("{}", encoding="utf-8")
+                (source / "documentation/module/index.html").write_text(
+                    site, encoding="utf-8"
+                )
+                subprocess.run(
+                    [
+                        sys.executable,
+                        str(ROOT / "Tools/ci/doc-site-manifest.py"),
+                        "create",
+                        str(source),
+                    ],
+                    check=True,
+                )
+                with tarfile.open(fixtures / f"{site}.tgz", "w:gz") as archive:
+                    for path in source.rglob("*"):
+                        archive.add(
+                            path,
+                            arcname=f"./{path.relative_to(source)}",
+                            recursive=False,
+                        )
+            shell_setup = "\n".join(
+                [
+                    f"export TEST_DOCUMENTATION_FIXTURES={shlex.quote(str(fixtures))}",
+                    "github_repo() { printf '%s\\n' owner/repo; }",
+                    "github_cli() {",
+                    "  if [[ \"$1:$2\" != run:download ]]; then return 64; fi",
+                    "  local destination='' previous='' argument",
+                    "  for argument in \"$@\"; do",
+                    "    if [[ \"${previous}\" == --dir ]]; then destination=\"${argument}\"; fi",
+                    "    previous=\"${argument}\"",
+                    "  done",
+                    "  mkdir -p \"${destination}/downloaded\"",
+                    "  cp \"${TEST_DOCUMENTATION_FIXTURES}\"/*.tgz \"${destination}/downloaded/\"",
+                    "}",
+                ]
+            )
+            retained = self.run_release_function(
+                root,
+                "retain_stable_documentation_artifacts 1.2.3 987",
+                shell_setup=shell_setup,
+            )
+            self.assertEqual(retained.returncode, 0, retained.stderr)
+            shutil.rmtree(fixtures)
+            reused = self.run_release_function(
+                root,
+                "retain_stable_documentation_artifacts 1.2.3 987",
+                shell_setup="github_cli() { return 99; }",
+            )
+            self.assertEqual(reused.returncode, 0, reused.stderr)
+            self.assertIn("already retained locally", reused.stdout)
+
     def test_resume_recovers_published_maintenance_assets_without_moving_stable_formulae(
         self,
     ) -> None:
@@ -9432,10 +9676,25 @@ esac
             tag_sha = "a" * 40
             init_digest = "b" * 64
             authority_object = "c" * 40
+            authority_archive = root / "stable-release-authority.tar.gz"
+            authority_archive.write_bytes(b"verified authority fixture")
             shell_setup = "\n".join(
                 [
                     "repo_path() { printf '%s\\n' /tmp/container-compose-test; }",
                     "github_repo() { printf '%s\\n' owner/repo; }",
+                    (
+                        "stable_stack_component_refs() { printf '%s\\n%s\\n%s\\n' "
+                        f"{'1' * 40} {'2' * 40} {'3' * 40}; }}"
+                    ),
+                    "python3() {",
+                    "  if [[ \"$1\" == *retain-local-release-assets.py && \"$2\" == path ]]; then",
+                    f"    printf '%s\\n' {shlex.quote(str(authority_archive))}",
+                    "  elif [[ \"$1\" == *verify-stable-authority-bundle.py ]]; then",
+                    "    :",
+                    "  else",
+                    "    command python3 \"$@\"",
+                    "  fi",
+                    "}",
                     "git() {",
                     "  if [[ \"$*\" == *'rev-list -n 1 refs/tags/0.13.1'* ]]; then",
                     "    printf '%s\\n' \"${TEST_TAG_SHA:-" + tag_sha + "}\"",
@@ -9463,9 +9722,11 @@ esac
                         f'"${{TEST_SIGNED_DIGEST:-{init_digest}}}"'
                     ),
                     "  elif [[ \"$1\" == api ]]; then",
-                    "    printf '%s\\t%s\\n' \"${TEST_AUTHORITY_RUN_ID:-29288195238}\" \"${TEST_AUTHORITY_SUMMARY:-Guest init image SHA-256: " + init_digest + ".}\"",
+                    "    printf '%s\\t%s\\n' \"${TEST_AUTHORITY_RUN_ID:-29288195238}\" \"${TEST_AUTHORITY_SUMMARY:-Guest init image SHA-256: " + init_digest + ". Authority receipt SHA-256: " + "f" * 64 + ".}\"",
                     "  elif [[ \"$1:$2\" == run:view ]]; then",
                     "    printf '%s\\n' \"${TEST_GATE_CONCLUSION:-success}\"",
+                    "  elif [[ \"$1:$2\" == attestation:verify ]]; then",
+                    "    return \"${TEST_ATTESTATION_STATUS:-2}\"",
                     "  else",
                     "    return 2",
                     "  fi",
@@ -9490,7 +9751,23 @@ esac
                 shell_setup=f"export TEST_AUTHORITY_RUN_ID=missing\n{shell_setup}",
             )
             self.assertNotEqual(missing_gate.returncode, 0)
-            self.assertIn("candidate-bound Stable Release Authority", missing_gate.stderr)
+            self.assertIn("valid durable authority attestation", missing_gate.stderr)
+
+            durable_attestation = self.run_release_function(
+                root,
+                "ensure_published_stable_recovery_authority 0.13.1",
+                shell_setup=(
+                    "export TEST_AUTHORITY_RUN_ID=missing TEST_ATTESTATION_STATUS=0\n"
+                    + shell_setup
+                ),
+            )
+            self.assertEqual(
+                durable_attestation.returncode, 0, durable_attestation.stderr
+            )
+            self.assertEqual(
+                durable_attestation.stdout.strip().splitlines()[-1],
+                f"{authority_object}\t{init_digest}",
+            )
 
             missing_digest = self.run_release_function(
                 root,
@@ -10080,7 +10357,9 @@ gh() {
             "export CONTAINER_STACK_RELEASE_LIBRARY=1",
             f"source {shlex.quote(str(SCRIPT))}",
             f"ROOT={shlex.quote(str(root))}",
+            f"RELEASE_BUILD_ROOT={shlex.quote(str(root / 'transient'))}",
             f"RELEASE_HOST_STATE_ROOT={shlex.quote(str(root / 'host-state'))}",
+            f"RELEASE_RETAINED_ROOT={shlex.quote(str(root / 'retained'))}",
             "EXECUTE=1",
             "COMPOSE_MAIN_PROMOTION_MODE=pr",
             "COMPOSE_MAIN_MERGE_MODE=checked-admin",
@@ -10139,6 +10418,57 @@ gh() {
 
         for variable in recursive_make_environment:
             self.assertNotIn(variable, environment)
+
+    def test_release_storage_claims_only_an_exact_marked_build_child(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            retained = root / "retained"
+            build = retained / "build"
+            build.mkdir(parents=True)
+            (build / ".container-family-retained-root").write_text(
+                "container-compose retained build v2\n", encoding="utf-8"
+            )
+
+            accepted = self.run_release_function(
+                root,
+                'retained_release_root_is_claimable "${RELEASE_RETAINED_ROOT}"',
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+            (retained / "foreign").write_text("unowned\n", encoding="utf-8")
+            rejected = self.run_release_function(
+                root,
+                'retained_release_root_is_claimable "${RELEASE_RETAINED_ROOT}"',
+            )
+            self.assertNotEqual(rejected.returncode, 0, rejected.stderr)
+
+    def test_release_storage_accepts_only_the_exact_legacy_owner_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transient = root / "transient"
+            transient.mkdir()
+            marker = transient / ".container-compose-release-root.json"
+            marker.write_text(
+                json.dumps({"owner": "container-compose", "schemaVersion": 1}),
+                encoding="utf-8",
+            )
+            (transient / "legacy-workspace").mkdir()
+
+            accepted = self.run_release_function(
+                root,
+                'transient_release_root_is_claimable "${RELEASE_BUILD_ROOT}"',
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+            marker.write_text(
+                json.dumps({"owner": "someone-else", "schemaVersion": 1}),
+                encoding="utf-8",
+            )
+            rejected = self.run_release_function(
+                root,
+                'transient_release_root_is_claimable "${RELEASE_BUILD_ROOT}"',
+            )
+            self.assertNotEqual(rejected.returncode, 0, rejected.stderr)
 
 
 if __name__ == "__main__":

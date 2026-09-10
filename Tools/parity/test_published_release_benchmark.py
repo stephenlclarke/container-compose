@@ -983,29 +983,45 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         self.assertIn("if: always()", retain)
         self.assertIn("if-no-files-found: warn", retain)
 
-    def test_workflow_keeps_bind_mounted_fixtures_on_docker_shared_storage(
+    def test_workflow_refuses_to_time_on_a_busy_host(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        quiet = workflow.index("Require a quiet benchmark host")
+        benchmark = workflow.index("Run same-host published comparisons")
+
+        self.assertLess(quiet, benchmark)
+        self.assertIn('pgrep -x "${process_name}"', workflow)
+        self.assertIn("load <= cpus / 2", workflow)
+        self.assertIn("thermal-before.txt", workflow)
+        self.assertIn("thermal-after.txt", workflow)
+
+    def test_workflow_keeps_transient_and_retained_benchmark_data_separate(
         self,
     ) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         root_selection = workflow[
-            workflow.index("Select Docker-shared local benchmark root") :
+            workflow.index("Select separated Docker-oracle benchmark storage") :
             workflow.index("Checkout documentation and benchmark controls")
         ]
 
-        self.assertIn('case "${RUNNER_TEMP}"', root_selection)
-        self.assertIn('"${HOME}"/*', root_selection)
         self.assertIn(
-            '"${RUNNER_TEMP}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"',
+            "transient_base=/Volumes/SSD/cf/build", root_selection
+        )
+        self.assertIn(
+            'retained_base="${HOME}/Library/Application Support/'
+            'ContainerFamily/retained/build"',
             root_selection,
         )
         self.assertNotIn("/private/tmp", root_selection)
         self.assertIn(
-            "${{ runner.temp }}/container-compose-published-benchmark-",
+            "${{ env.BENCHMARK_RETAINED_ROOT }}/evidence",
             workflow,
         )
         self.assertNotIn(
             "BENCHMARK_ROOT: /private/tmp/container-compose-published-benchmark",
             workflow,
+        )
+        self.assertNotIn(
+            'find "${BENCHMARK_RETAINED_ROOT}" -depth -delete', workflow
         )
 
     def test_workflow_rejects_interactive_documentation_signing(self) -> None:

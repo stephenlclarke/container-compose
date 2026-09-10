@@ -125,9 +125,10 @@ esac
 #
 #   stage    upload immutable, commit-addressed assets while the existing tap
 #            formulae and current tag remain usable;
-#   finalize advance the current tag, then replace the mutable release object
-#            after the matching Homebrew formula pair has been committed. This
-#            gives GitHub a publication timestamp for the build being released.
+#   finalize advance the current tag and edit the existing mutable release
+#            after the matching Homebrew formula pair has been committed. The
+#            release object remains available throughout interruption recovery;
+#            build freshness is carried by explicit metadata, not published_at.
 #
 # GitHub releases and the Homebrew tap are separate repositories, so this is
 # not a distributed transaction. It does guarantee that an interrupted current
@@ -209,17 +210,16 @@ if [[ "${published_release_state}" == "exists" ]]; then
   fi
 
   move_current_tag
-  # GitHub retains `published_at` when a release is edited. Delete only the
-  # mutable release object (not its source tag), then create it from the staged
-  # assets so the release page shows when this Current build was published.
-  "${GH}" release delete "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" --yes
-  create_release
-  # `--verify-tag` preserves the already-validated source tag; set the release
-  # target explicitly too, so GitHub's release metadata records the commit.
+  # Re-uploading is idempotent and makes finalization recover from a partially
+  # staged asset set without creating an availability window.
+  "${GH}" release upload "${RELEASE_TAG}" "${release_assets[@]}" \
+    --repo "${RELEASE_REPOSITORY}" --clobber
   "${GH}" release edit "${RELEASE_TAG}" \
     --repo "${RELEASE_REPOSITORY}" \
     --target "${PUBLISH_SHA}" \
-    --prerelease
+    --title "${RELEASE_TITLE}" \
+    --notes-file "${RELEASE_NOTES_FILE}" \
+    "${release_flags[@]}"
   exit 0
 fi
 

@@ -59,13 +59,23 @@ class DocumentationWorkflowTests(unittest.TestCase):
         self.assertIn("      fail-fast: false\n", build_job)
         self.assertIn("Restore SwiftPM documentation cache", build_job)
         self.assertIn("Restore exact DocC site", build_job)
-        self.assertIn("steps.site-cache.outputs.cache-hit != 'true'", build_job)
+        self.assertIn("Resolve documentation toolchain identity", build_job)
+        self.assertIn("Inspect restored DocC site", build_job)
+        self.assertIn("steps.site.outputs.reusable != 'true'", build_job)
+        self.assertIn("doc-site-manifest.py create _site", build_job)
+        self.assertIn("doc-site-manifest.py verify _site", build_job)
         self.assertIn("Verify reusable DocC site", build_job)
 
     def test_release_work_is_queued_instead_of_discarding_pending_runs(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
 
+        self.assertNotIn("concurrency:", workflow[: workflow.index("\njobs:")])
+        self.assertIn("group: documentation-pages", workflow)
         self.assertIn("  queue: max\n", workflow)
+        self.assertIn("Confirm release still owns Pages", workflow)
+        self.assertEqual(
+            workflow.count("if: steps.latest.outputs.deploy == 'true'"), 3
+        )
 
 
 if __name__ == "__main__":

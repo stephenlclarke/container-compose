@@ -201,13 +201,20 @@ RELEASE_GATE_STACK_TIMEOUT_SECONDS ?= 14400
 RELEASE_GATE_PARITY_TIMEOUT_SECONDS ?= 14400
 PARITY_STAGE_TIMEOUT_SECONDS ?= 900
 CONTAINER_RUNTIME_START_DEADLINE_SECONDS ?= 300
-# Durable stack state lives beside the disposable worktrees when the external
-# development volume is available. A local fallback keeps ordinary source
-# builds usable when that volume is intentionally disconnected.
-STACK_STATE_ROOT ?= $(if $(wildcard /Volumes/SSD/github/.),/Volumes/SSD/github/.container-compose-build,$(abspath .build/stack))
+# Completed artifacts and evidence survive disposal of external workspaces and
+# build scratch. New transient work fails closed when the external volume is
+# unavailable; verification of retained outputs remains local.
+STACK_RETAINED_ROOT ?= $(HOME)/Library/Application Support/ContainerFamily/retained/build
+STACK_TRANSIENT_ROOT ?= /Volumes/SSD/cf/build
+STACK_REQUIRE_SEPARATE_FILESYSTEMS ?= 1
 # BEGIN RECOVERABLE STACK CONFIGURATION
-STACK_MARKER_VALUE := container-compose recoverable build v1
+STACK_RETAINED_MARKER_VALUE := container-compose retained build v2
+STACK_TRANSIENT_MARKER_VALUE := container-compose transient build v2
 STACK_PIN_TOOL := $(abspath Tools/build/stack-pin.py)
+STACK_ARTIFACT_TOOL := $(abspath Tools/build/stack-artifact.py)
+STACK_TRANSIENT_CLEAN_TOOL := $(abspath Tools/build/stack-transient-clean.py)
+RELEASE_STATE_TOOL := $(abspath Tools/release/release-state.py)
+RELEASE_RETAINED_ROOT ?= $(HOME)/Library/Application Support/ContainerFamily/retained
 STACK_BUILD_CONTRACT := $(abspath Tools/build/stack-build-contract.json)
 STACK_DEADLINE_TOOL := $(abspath Tools/ci/run-command-with-deadline.py)
 STACK_SWIFT_STACK_TOOL := $(abspath Tools/ci/run-with-local-swift-stack.py)
@@ -215,11 +222,11 @@ STACK_CONFIGURATION ?= debug
 STACK_BUILD_STAGE_TIMEOUT_SECONDS ?= 3600
 STACK_BUILD_TIMEOUT_SECONDS ?= 14400
 STACK_LOCK_TOOL ?= /usr/bin/lockf
-STACK_TIMING_ROOT := $(STACK_STATE_ROOT)/timings
+STACK_TIMING_ROOT := $(STACK_RETAINED_ROOT)/timings
 STACK_TIMING_LOG ?= $(STACK_TIMING_ROOT)/direct-stage.jsonl
-STACK_PIN_DIR := $(STACK_STATE_ROOT)/pins/$(STACK_CONFIGURATION)
-STACK_SCRATCH_ROOT := $(STACK_STATE_ROOT)/scratch
-STACK_ARTIFACT_ROOT := $(STACK_STATE_ROOT)/artifacts/$(STACK_CONFIGURATION)
+STACK_PIN_DIR := $(STACK_RETAINED_ROOT)/pins/$(STACK_CONFIGURATION)
+STACK_SCRATCH_ROOT := $(STACK_TRANSIENT_ROOT)/scratch
+STACK_ARTIFACT_ROOT := $(STACK_RETAINED_ROOT)/artifacts
 STACK_CONTAINERIZATION_PIN := $(STACK_PIN_DIR)/containerization.json
 STACK_ENGINE_API_PIN := $(STACK_PIN_DIR)/container-engine-api.json
 STACK_CONTAINER_PIN := $(STACK_PIN_DIR)/container.json
@@ -232,6 +239,7 @@ STACK_SWIFT_CONTRACT = $(shell "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
 	--tool $(call SHELL_QUOTE,$(STACK_SWIFT)) \
 	--configuration $(call SHELL_QUOTE,$(STACK_CONFIGURATION)) \
 	--controller "$(STACK_BUILD_CONTRACT)" --controller "$(STACK_PIN_TOOL)" \
+	--controller "$(STACK_ARTIFACT_TOOL)" \
 	--controller "$(STACK_DEADLINE_TOOL)" --controller "$(STACK_SWIFT_STACK_TOOL)" \
 	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK CONFIGURATION::END RECOVERABLE STACK CONFIGURATION" \
 	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK TARGETS::END RECOVERABLE STACK TARGETS")
@@ -372,7 +380,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 
 .PHONY: all local-build workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-test-direct swift-runtime-test-build swift-runtime-test swift-coverage swift-coverage-check go-test go-coverage-check go-build go-release-check cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan release-version package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit swift-style-tools swift-style-paths swift-style-check swift-style-format local-swift-stack-clean
 
-.PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint
+.PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint actions-lint
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: core-runtime-neutrality
 .PHONY: codeql-local codeql-sarif-upload codeql-sarif-upload-dry-run
@@ -382,7 +390,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity docker-compose-deploy-job-modes-parity
 .PHONY: docker-compose-up-exit-code-from-parity docker-compose-api-socket-client-fixture docker-compose-api-socket-client-parity docker-compose-performance-matrix performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
 .PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle docker-rest-logging-oracle docker-rest-logging-candidate docker-rest-logging-parity docker-rest-discovery-oracle docker-rest-discovery-candidate docker-rest-discovery-parity docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate docker-rest-image-discovery-parity docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate docker-rest-image-mutation-parity
-.PHONY: stack-help stack-state-init stack-preflight stack-status stack-self-test stack-build stack-build-locked stack-containerization-build stack-engine-api-build stack-container-build stack-builder-build stack-compose-build
+.PHONY: stack-help stack-state-init stack-preflight stack-status stack-self-test stack-transient-clean-plan stack-transient-clean stack-build stack-build-locked stack-containerization-build stack-engine-api-build stack-container-build stack-builder-build stack-compose-build
 
 # BEGIN RECOVERABLE STACK TARGETS
 STACK_REQUIRE_LOCK = @[[ "$(STACK_LOCK_HELD)" == 1 ]] || { printf 'stack stage requires the stack-build lock\n' >&2; exit 2; }
@@ -395,6 +403,8 @@ stack-help:
 		'  make stack-preflight Verify tools and clean sibling source repositories.' \
 		'  make stack-build     Build the complete source stack and publish exact pins.' \
 		'  make stack-status    Verify each retained build pin and artifact.' \
+		'  make stack-transient-clean-plan  List disposable external build data.' \
+		'  make stack-transient-clean       Remove only disposable external build data.' \
 		'  make stack-self-test Run the focused receipt/recovery regression tests.' \
 		'  Each full run writes durable JSONL stage timings under the state root.' \
 		'' \
@@ -403,54 +413,41 @@ stack-help:
 		'  container (consumes the first two pins)' \
 		'  container-compose (consumes all Swift pins)' \
 		'' \
-		'All generated state defaults to: $(STACK_STATE_ROOT)'
+		'Retained artifacts and evidence: $(STACK_RETAINED_ROOT)' \
+		'Transient build scratch: $(STACK_TRANSIENT_ROOT)'
 
 stack-state-init:
 	@case "$(STACK_CONFIGURATION)" in debug|release) ;; *) printf 'STACK_CONFIGURATION must be debug or release: %s\n' "$(STACK_CONFIGURATION)" >&2; exit 2 ;; esac; \
-	state_root="$(STACK_STATE_ROOT)"; \
-	case "$$state_root" in /*) ;; *) printf 'STACK_STATE_ROOT must be absolute: %s\n' "$$state_root" >&2; exit 2 ;; esac; \
-	[[ "$$state_root" != / ]] || { printf 'STACK_STATE_ROOT must not be /.\n' >&2; exit 2; }; \
-	if [[ -L "$$state_root" ]]; then \
-		printf 'STACK_STATE_ROOT must not be a symbolic link: %s\n' "$$state_root" >&2; \
-		exit 2; \
+	retained_root="$(STACK_RETAINED_ROOT)"; transient_root="$(STACK_TRANSIENT_ROOT)"; \
+	for specification in "$$retained_root|.container-family-retained-root|$(STACK_RETAINED_MARKER_VALUE)" "$$transient_root|.container-family-transient-root|$(STACK_TRANSIENT_MARKER_VALUE)"; do \
+		IFS='|' read -r root marker_name marker_value <<<"$$specification"; \
+		case "$$root" in /*) ;; *) printf 'stack storage root must be absolute: %s\n' "$$root" >&2; exit 2 ;; esac; \
+		[[ "$$root" != / ]] || { printf 'stack storage root must not be /.\n' >&2; exit 2; }; \
+		[[ ! -L "$$root" ]] || { printf 'stack storage root must not be a symbolic link: %s\n' "$$root" >&2; exit 2; }; \
+		[[ ! -e "$$root" || -d "$$root" ]] || { printf 'stack storage root is not a directory: %s\n' "$$root" >&2; exit 2; }; \
+		marker="$$root/$$marker_name"; \
+		if [[ -d "$$root" && ! -f "$$marker" ]] && [[ -n "$$(/usr/bin/find "$$root" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then \
+			printf 'refusing to claim non-empty unmarked stack storage root: %s\n' "$$root" >&2; exit 2; \
+		fi; \
+		/usr/bin/install -d -m 0700 "$$root"; root="$$(cd "$$root" && pwd -P)"; marker="$$root/$$marker_name"; \
+		[[ ! -L "$$marker" && ( ! -e "$$marker" || -f "$$marker" ) ]] || { printf 'stack storage marker must be a regular file: %s\n' "$$marker" >&2; exit 2; }; \
+		[[ ! -f "$$marker" || "$$(<"$$marker")" == "$$marker_value" ]] || { printf 'stack storage root has an unexpected ownership marker: %s\n' "$$marker" >&2; exit 2; }; \
+		if [[ ! -f "$$marker" ]]; then temporary="$$marker.$$$$.tmp"; printf '%s\n' "$$marker_value" >"$$temporary"; /bin/chmod 0600 "$$temporary"; /bin/mv "$$temporary" "$$marker"; fi; \
+	done; \
+	retained_root="$$(cd "$$retained_root" && pwd -P)"; transient_root="$$(cd "$$transient_root" && pwd -P)"; \
+	case "$$retained_root/" in "$$transient_root/"*) printf 'retained root is inside transient root: %s\n' "$$retained_root" >&2; exit 2 ;; esac; \
+	case "$$transient_root/" in "$$retained_root/"*) printf 'transient root is inside retained root: %s\n' "$$transient_root" >&2; exit 2 ;; esac; \
+	if [[ "$(STACK_REQUIRE_SEPARATE_FILESYSTEMS)" == 1 ]] && [[ "$$(/usr/bin/stat -f %d "$$retained_root")" == "$$(/usr/bin/stat -f %d "$$transient_root")" ]]; then \
+		printf 'retained and transient roots must be on separate filesystems: %s and %s\n' "$$retained_root" "$$transient_root" >&2; exit 2; \
 	fi; \
-	if [[ -e "$$state_root" && ! -d "$$state_root" ]]; then \
-		printf 'STACK_STATE_ROOT is not a directory: %s\n' "$$state_root" >&2; \
-		exit 2; \
-	fi; \
-	marker="$$state_root/.container-compose-build-root"; \
-	if [[ -d "$$state_root" && ! -f "$$marker" ]] \
-		&& [[ -n "$$(/usr/bin/find "$$state_root" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then \
-		printf 'refusing to claim non-empty unmarked STACK_STATE_ROOT: %s\n' "$$state_root" >&2; \
-		exit 2; \
-	fi; \
-	/usr/bin/install -d -m 0700 "$$state_root"; \
-	state_root="$$(cd "$$state_root" && pwd -P)"; \
-	marker="$$state_root/.container-compose-build-root"; \
-	if [[ -L "$$marker" ]] || [[ -e "$$marker" && ! -f "$$marker" ]]; then \
-		printf 'build state marker must be a regular file: %s\n' "$$marker" >&2; \
-		exit 2; \
-	fi; \
-	if [[ -f "$$marker" ]] && [[ "$$(<"$$marker")" != "$(STACK_MARKER_VALUE)" ]]; then \
-		printf 'STACK_STATE_ROOT has an unexpected ownership marker: %s\n' "$$marker" >&2; \
-		exit 2; \
-	fi; \
-	if [[ ! -f "$$marker" ]]; then \
-		temporary="$$marker.$$$$.tmp"; \
-		trap '/bin/rm -f "$$temporary"' EXIT; \
-		printf '%s\n' "$(STACK_MARKER_VALUE)" >"$$temporary"; \
-		/bin/chmod 0600 "$$temporary"; \
-		/bin/mv "$$temporary" "$$marker"; \
-		trap - EXIT; \
-	fi; \
-	for managed in "$(STACK_PIN_DIR)" "$(STACK_SCRATCH_ROOT)" "$(STACK_ARTIFACT_ROOT)" "$(STACK_TIMING_ROOT)"; do \
+	for managed in "$(STACK_PIN_DIR)" "$(STACK_ARTIFACT_ROOT)" "$(STACK_TIMING_ROOT)" "$(STACK_SCRATCH_ROOT)"; do \
 		if [[ -L "$$managed" ]] || [[ -e "$$managed" && ! -d "$$managed" ]]; then \
 			printf 'build state path must be a direct directory: %s\n' "$$managed" >&2; \
 			exit 2; \
 		fi; \
 		/usr/bin/install -d -m 0700 "$$managed"; \
 		managed="$$(cd "$$managed" && pwd -P)"; \
-		case "$$managed" in "$$state_root"/*) ;; *) printf 'build state path escaped its root: %s\n' "$$managed" >&2; exit 2 ;; esac; \
+		case "$$managed" in "$$retained_root"/*|"$$transient_root"/*) ;; *) printf 'build state path escaped its roots: %s\n' "$$managed" >&2; exit 2 ;; esac; \
 	done
 
 stack-preflight: stack-state-init
@@ -515,13 +512,29 @@ stack-status:
 stack-self-test:
 	"$(PYTHON)" -m unittest discover Tools/build
 
+stack-transient-clean-plan:
+	@if [[ -d "$(STACK_TRANSIENT_ROOT)" ]]; then \
+		"$(PYTHON)" "$(STACK_TRANSIENT_CLEAN_TOOL)" --root "$(STACK_TRANSIENT_ROOT)"; \
+	else \
+		printf 'No transient stack root exists: %s\n' "$(STACK_TRANSIENT_ROOT)"; \
+	fi
+
+stack-transient-clean:
+	@if [[ -d "$(STACK_TRANSIENT_ROOT)" ]]; then \
+		"$(STACK_LOCK_TOOL)" -t 0 "$(STACK_TRANSIENT_ROOT)/stack-build.lock" \
+			"$(PYTHON)" "$(STACK_TRANSIENT_CLEAN_TOOL)" \
+			--root "$(STACK_TRANSIENT_ROOT)" --execute; \
+	else \
+		printf 'No transient stack root exists: %s\n' "$(STACK_TRANSIENT_ROOT)"; \
+	fi
+
 stack-build: stack-preflight
 	@timing_log="$(STACK_TIMING_ROOT)/$$(date -u +%Y%m%dT%H%M%SZ)-$$$$.jsonl"; \
 	"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_TIMEOUT_SECONDS)" \
 		--timing-log "$$timing_log" --timing-label stack-total -- \
-		"$(STACK_LOCK_TOOL)" -t 0 "$(STACK_STATE_ROOT)/stack-build.lock" \
+		"$(STACK_LOCK_TOOL)" -t 0 "$(STACK_TRANSIENT_ROOT)/stack-build.lock" \
 		$(MAKE) --no-print-directory stack-build-locked STACK_LOCK_HELD=1 \
-			STACK_STATE_ROOT="$(STACK_STATE_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)" \
+			STACK_RETAINED_ROOT="$(STACK_RETAINED_ROOT)" STACK_TRANSIENT_ROOT="$(STACK_TRANSIENT_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)" \
 			STACK_TIMING_LOG="$$timing_log"; \
 	exit_status=$$?; \
 	printf 'Stack timing evidence: %s\n' "$$timing_log"; \
@@ -530,7 +543,7 @@ stack-build: stack-preflight
 stack-build-locked:
 	@[[ "$(STACK_LOCK_HELD)" == 1 ]] || { printf 'stack-build-locked requires the stack-build lock\n' >&2; exit 2; }
 	@$(MAKE) --no-print-directory -j3 stack-builder-build stack-compose-build \
-		STACK_STATE_ROOT="$(STACK_STATE_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)"
+		STACK_RETAINED_ROOT="$(STACK_RETAINED_ROOT)" STACK_TRANSIENT_ROOT="$(STACK_TRANSIENT_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)"
 	@"$(PYTHON)" "$(STACK_PIN_TOOL)" bundle --output "$(STACK_BUNDLE)" \
 		--pin "$(STACK_CONTAINERIZATION_PIN)" --pin "$(STACK_ENGINE_API_PIN)" \
 		--pin "$(STACK_CONTAINER_PIN)" --pin "$(STACK_BUILDER_PIN)" \
@@ -562,9 +575,11 @@ stack-containerization-build:
 			--timing-log "$(STACK_TIMING_LOG)" --timing-label containerization-bin-path -- \
 			"$(STACK_SWIFT)" build --scratch-path "$$scratch" \
 			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
+		artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$bin_path/cctl" \
+			--root "$(STACK_ARTIFACT_ROOT)" --name cctl)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository containerization \
 			--repository-path "$(CONTAINERIZATION_STACK_REPO)" \
-			--output "$(STACK_CONTAINERIZATION_PIN)" --artifact "$$bin_path/cctl" \
+			--output "$(STACK_CONTAINERIZATION_PIN)" --artifact "$$artifact" \
 			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
 			--build-contract "$(STACK_SWIFT_CONTRACT)" \
 			--duration-seconds "$$((SECONDS - started))" \
@@ -592,9 +607,11 @@ stack-engine-api-build:
 			--timing-log "$(STACK_TIMING_LOG)" --timing-label engine-api-bin-path -- \
 			"$(STACK_SWIFT)" build --scratch-path "$$scratch" \
 			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
+		artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$bin_path/container-engine" \
+			--root "$(STACK_ARTIFACT_ROOT)" --name container-engine)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-engine-api \
 			--repository-path "$(CONTAINER_ENGINE_API_STACK_REPO)" \
-			--output "$(STACK_ENGINE_API_PIN)" --artifact "$$bin_path/container-engine" \
+			--output "$(STACK_ENGINE_API_PIN)" --artifact "$$artifact" \
 			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
 			--build-contract "$(STACK_SWIFT_CONTRACT)" \
 			--duration-seconds "$$((SECONDS - started))" \
@@ -628,10 +645,12 @@ stack-container-build: stack-containerization-build stack-engine-api-build
 			--timing-log "$(STACK_TIMING_LOG)" --timing-label container-bin-path -- \
 			"$(STACK_SWIFT)" build --scratch-path "$$scratch" \
 			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
+		artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$bin_path/container" \
+			--root "$(STACK_ARTIFACT_ROOT)" --name container)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container \
 			--repository-path "$(CONTAINER_STACK_REPO)" --output "$(STACK_CONTAINER_PIN)" \
 			--dependency "$(STACK_CONTAINERIZATION_PIN)" \
-			--dependency "$(STACK_ENGINE_API_PIN)" --artifact "$$bin_path/container" \
+			--dependency "$(STACK_ENGINE_API_PIN)" --artifact "$$artifact" \
 			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
 			--build-contract "$(STACK_SWIFT_CONTRACT)" \
 			--duration-seconds "$$((SECONDS - started))" \
@@ -648,13 +667,16 @@ stack-builder-build:
 	else \
 		source_commit="$$(/usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{commit}')"; \
 		source_tree="$$(/usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}')"; \
-		artifact="$(STACK_ARTIFACT_ROOT)/container-builder-shim/container-builder-shim"; \
-		/usr/bin/install -d -m 0700 "$$(dirname "$$artifact")"; \
+		scratch="$(STACK_SCRATCH_ROOT)/$(STACK_GO_CONTRACT)/container-builder-shim"; \
+		candidate="$$scratch/container-builder-shim"; \
+		/usr/bin/install -d -m 0700 "$$scratch"; \
 		cd "$(CONTAINER_BUILDER_SHIM_STACK_REPO)"; \
 		started=$$SECONDS; \
 		GOWORK=off "$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
 			--timing-log "$(STACK_TIMING_LOG)" --timing-label builder-build -- \
-			"$(STACK_GO)" build -trimpath -o "$$artifact" .; \
+			"$(STACK_GO)" build -trimpath -o "$$candidate" .; \
+		artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$candidate" \
+			--root "$(STACK_ARTIFACT_ROOT)" --name container-builder-shim)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-builder-shim \
 			--repository-path "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" \
 			--output "$(STACK_BUILDER_PIN)" --artifact "$$artifact" \
@@ -688,10 +710,12 @@ stack-compose-build: stack-container-build
 			"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
 			--timing-log "$(STACK_TIMING_LOG)" --timing-label compose-bin-path -- \
 			"$(STACK_SWIFT)" build --scratch-path "$$scratch" -c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
+		artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$bin_path/compose" \
+			--root "$(STACK_ARTIFACT_ROOT)" --name compose)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-compose \
 			--repository-path "$(CURDIR)" --output "$(STACK_COMPOSE_PIN)" \
 			--dependency "$(STACK_CONTAINERIZATION_PIN)" --dependency "$(STACK_ENGINE_API_PIN)" \
-			--dependency "$(STACK_CONTAINER_PIN)" --artifact "$$bin_path/compose" \
+			--dependency "$(STACK_CONTAINER_PIN)" --artifact "$$artifact" \
 			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
 			--build-contract "$(STACK_SWIFT_CONTRACT)" \
 			--duration-seconds "$$((SECONDS - started))" \
@@ -786,7 +810,15 @@ build-release:
 			$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS); \
 	fi
 
-.PHONY: release-parity-build-info
+.PHONY: release-status release-recovery-plan release-parity-build-info
+release-status:
+	@[[ "$(VERSION)" =~ ^[0-9]+\.[0-9]+\.[0-9]+$$ ]] || { printf 'VERSION must be a stable semantic version\n' >&2; exit 2; }
+	$(PYTHON) "$(RELEASE_STATE_TOOL)" inspect --root "$(RELEASE_RETAINED_ROOT)" --version "$(VERSION)"
+
+release-recovery-plan:
+	@[[ "$(VERSION)" =~ ^[0-9]+\.[0-9]+\.[0-9]+$$ ]] || { printf 'VERSION must be a stable semantic version\n' >&2; exit 2; }
+	$(PYTHON) "$(RELEASE_STATE_TOOL)" plan --root "$(RELEASE_RETAINED_ROOT)" --version "$(VERSION)"
+
 release-parity-build-info:
 	$(PYTHON) Tools/release/write-build-info.py \
 		--output "$(RELEASE_PARITY_BUILD_INFO)" \
@@ -2378,6 +2410,10 @@ package-built:
 
 coverage-tools-syntax:
 	$(PYTHON) -m py_compile Tools/build/*.py Tools/coverage/*.py Tools/release/*.py Tools/ci/*.py
+
+actions-lint:
+	$(PYTHON) Tools/ci/validate-actions-workflows.py \
+		.github/workflows/*.yml
 
 coverage-python-tools-test: coverage-tools-syntax
 	$(PYTHON) -m unittest discover Tools/coverage

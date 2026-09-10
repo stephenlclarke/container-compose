@@ -176,6 +176,27 @@ class StackPinTests(unittest.TestCase):
             2,
         )
 
+    def test_exact_source_recreated_at_new_path_reuses_retained_artifact(self) -> None:
+        self.assertEqual(self.create_pin(), 0)
+        moved = self.root / "recreated/containerization"
+        moved.parent.mkdir()
+        shutil.copytree(self.repository, moved)
+        shutil.rmtree(self.repository)
+
+        self.assertEqual(
+            self.invoke(
+                [
+                    "verify",
+                    "--receipt",
+                    str(self.receipt),
+                    "--repository-path",
+                    str(moved),
+                    "--quiet",
+                ]
+            ),
+            0,
+        )
+
     def test_source_change_during_build_refuses_to_publish_pin(self) -> None:
         arguments = [
             "create",

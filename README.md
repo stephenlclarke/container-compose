@@ -220,7 +220,13 @@ stack, automatically consumes exact upstream pins, and retains recoverable
 native caches and timing evidence. Use `make local-build` for a quick
 Compose-only build, `make stack-status` to verify retained pins, and
 `make release-version` to preview the Conventional Commit semantic-version
-decision. The complete build, test, Actions, recovery, and release diagrams are
+decision. Transient workspaces and build scratch live on `/Volumes/SSD`; verified
+artifacts, receipts, and reusable evidence live under
+`~/Library/Application Support/ContainerFamily/retained` and survive transient
+cleanup. Use `make release-status VERSION=X.Y.Z` or
+`make release-recovery-plan VERSION=X.Y.Z` to inspect recovery state without
+building, dispatching, or changing a published release. The complete build,
+test, Actions, recovery, and release diagrams are
 in [Recoverable Container-family builds](docs/architecture/recoverable-container-family-builds.md).
 
 ## Plugin Recognition

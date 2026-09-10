@@ -147,11 +147,10 @@ main_finalize_calls="${temporary_directory}/main-finalize.calls"
 run_publisher branch exists "${main_finalize_calls}" "" finalize
 grep -Fqx "tag --no-sign --force current 0123456789012345678901234567890123456789" "${main_finalize_calls}.git"
 grep -Fqx "push --force origin refs/tags/current" "${main_finalize_calls}.git"
-grep -Fqx "release delete current --repo stephenlclarke/container-compose --yes" "${main_finalize_calls}"
-grep -Fqx "release create current ${asset} ${checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --verify-tag --prerelease --latest=false" "${main_finalize_calls}"
-grep -Fqx "release edit current --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --prerelease" "${main_finalize_calls}"
-if grep -Eq 'release upload' "${main_finalize_calls}" || grep -Fq -- '--cleanup-tag' "${main_finalize_calls}"; then
-  printf 'current finalization unexpectedly changed staged assets or removed the current tag\n' >&2
+grep -Fqx "release upload current ${asset} ${checksum} --repo stephenlclarke/container-compose --clobber" "${main_finalize_calls}"
+grep -Fqx "release edit current --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --title Current build --notes-file ${notes} --prerelease --latest=false" "${main_finalize_calls}"
+if grep -Eq 'release (create|delete)' "${main_finalize_calls}" || grep -Fq -- '--cleanup-tag' "${main_finalize_calls}"; then
+  printf 'current finalization replaced the release object or removed the current tag\n' >&2
   exit 1
 fi
 

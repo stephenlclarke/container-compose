@@ -74,6 +74,14 @@ def classify(paths: list[str], *, full: bool = False) -> ValidationScope:
             runtime = True
             continue
 
+        if _under(path, "Tools") and (
+            value.startswith("Tools/build/")
+            or value == "Tools/release/stack-refs.json"
+        ):
+            tools = True
+            runtime = True
+            continue
+
         if (
             _under(path, "Sources")
             or _under(path, "Tests")

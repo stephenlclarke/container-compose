@@ -610,15 +610,12 @@ def verify_receipt(
         source = receipt.get("source")
         if not isinstance(source, dict) or not isinstance(source.get("path"), str):
             raise PinError(f"build pin has no source path: {resolved_receipt}")
-        source_path = Path(source["path"])
+        # The recorded path is build-time audit evidence, not artifact identity.
+        # A clean checkout may be recreated elsewhere after external workspace
+        # cleanup. When a caller supplies its current path, validate that exact
+        # repository against the recorded commit/tree/origin.
+        source_path = expected_path if expected_path is not None else Path(source["path"])
         current_source = repository_record(source_path)
-        if expected_path is not None and current_source["path"] != str(
-            expected_path.resolve(strict=True)
-        ):
-            raise PinError(
-                f"build pin source is {current_source['path']}, expected "
-                f"{expected_path.resolve(strict=True)}"
-            )
         for field in ("commit", "tree"):
             recorded = source.get(field)
             if not isinstance(recorded, str) or not OBJECT_ID_PATTERN.fullmatch(recorded):

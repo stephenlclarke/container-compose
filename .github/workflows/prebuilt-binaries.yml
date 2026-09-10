@@ -36,6 +36,14 @@ on:
         required: false
         default: false
         type: boolean
+      expected_control_sha:
+        description: "Controller-observed main SHA for race-safe dispatch"
+        required: false
+        type: string
+      request_id:
+        description: "Durable controller request identifier"
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -73,6 +81,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DISPATCH_REF: ${{ inputs.ref }}
           REPAIR_TAP: ${{ inputs.repair_tap }}
+          EXPECTED_CONTROL_SHA: ${{ inputs.expected_control_sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
           WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event }}
           WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -80,6 +90,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
+            if [[ -n "${EXPECTED_CONTROL_SHA}" && \
+              ( ! "${EXPECTED_CONTROL_SHA}" =~ ^[0-9a-f]{40}$ || \
+                "${GITHUB_SHA}" != "${EXPECTED_CONTROL_SHA}" ) ]]; then
+              printf 'package controls changed before dispatch execution: expected %s, got %s\n' \
+                "${EXPECTED_CONTROL_SHA:-missing}" "${GITHUB_SHA}" >&2
+              exit 1
+            fi
+          if [[ -n "${REQUEST_ID}" && ! "${REQUEST_ID}" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+              printf 'package request ID is invalid: %s\n' "${REQUEST_ID}" >&2
+              exit 1
+            fi
+          fi
 
           publish=false
           ref_type=""
@@ -1902,9 +1926,9 @@ jobs:
             fi
           done
 
-          # Finalizing Current recreates the mutable release. Carry the last
-          # successful, non-authoritative demo through that replacement so a
-          # failed asynchronous recording never leaves the README asset absent.
+          # Finalizing Current edits the mutable release in place. Carry the
+          # last successful, non-authoritative demo through the idempotent asset
+          # upload so a failed asynchronous recording never removes it.
           retained_demo="${RUNNER_TEMP}/container-compose-demo-current.gif"
           demo_asset_present="$(
             gh release view "${RELEASE_TAG}" \

@@ -25,6 +25,11 @@ readonly HOMEBREW_PREFLIGHT_TOOL="${SELF_DIRECTORY}/../Tools/release/homebrew-pr
 readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
 readonly RELEASE_COMMAND_DEADLINE_RUNNER="${SELF_DIRECTORY}/../Tools/ci/run-command-with-deadline.py"
 readonly RELEASE_HOST_STATE_TOOL="${SELF_DIRECTORY}/../Tools/release/release-host-state.py"
+readonly RELEASE_DISPATCH_JOURNAL_TOOL="${SELF_DIRECTORY}/../Tools/release/release-dispatch-journal.py"
+readonly RELEASE_ASSET_RETENTION_TOOL="${SELF_DIRECTORY}/../Tools/release/retain-local-release-assets.py"
+readonly FORMULA_PAIR_VALIDATOR="${CONTAINER_STACK_FORMULA_PAIR_VALIDATOR:-${SELF_DIRECTORY}/../Tools/release/verify-homebrew-formula-pair.py}"
+readonly STABLE_AUTHORITY_BUNDLE_VERIFIER="${SELF_DIRECTORY}/../Tools/release/verify-stable-authority-bundle.py"
+readonly DOC_SITE_MANIFEST_TOOL="${SELF_DIRECTORY}/../Tools/ci/doc-site-manifest.py"
 readonly RELEASE_WORKSPACE_TOOL="${SELF_DIRECTORY}/../Tools/release/release-workspace.py"
 readonly STABLE_RELEASE_LANE_CLASSIFIER="${SELF_DIRECTORY}/../Tools/release/stable-release-default-lane.py"
 # shellcheck disable=SC1091
@@ -180,9 +185,14 @@ Environment:
       live but definitively unready service.
 
   CONTAINER_STACK_RELEASE_HOST_STATE_ROOT
-      Override the private, marker-protected local restoration journal used by
-      focused tests. Production defaults to /private/tmp and records every
-      launch agent before the release controller can suspend or stop it.
+      Override the marker-protected durable restoration journal. Production
+      stores it below the internal retained root so external cleanup cannot
+      erase interrupted host-restoration state.
+
+  CONTAINER_FAMILY_RETAINED_ROOT
+      Override the internal root for retained artifacts, evidence, caches, and
+      recovery journals. Production defaults below ~/Library/Application
+      Support/ContainerFamily/retained. It must not be on /Volumes/SSD.
 
   CONTAINER_STACK_RELEASE_DEVCONTAINER_CLI
   CONTAINER_STACK_RELEASE_CURL
@@ -257,6 +267,7 @@ parse_arguments() {
 
 ROOT="${CONTAINER_STACK_RELEASE_ROOT:-${HOME}/github}"
 RELEASE_BUILD_ROOT="${CONTAINER_STACK_RELEASE_BUILD_ROOT:-/Volumes/SSD/github/container-compose-release-transactions}"
+RELEASE_RETAINED_ROOT="${CONTAINER_FAMILY_RETAINED_ROOT:-${HOME}/Library/Application Support/ContainerFamily/retained}"
 COMPOSE_REPO="container-compose"
 CONTAINER_REPO="container"
 COMPOSE_PACKAGE_WAIT_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS:-3600}"
@@ -280,7 +291,7 @@ RELEASE_RESTORE_WAIT_ATTEMPTS="${CONTAINER_STACK_RELEASE_RESTORE_WAIT_ATTEMPTS:-
 RELEASE_RESTORE_TIMEOUT_SECONDS="${CONTAINER_STACK_RELEASE_RESTORE_TIMEOUT_SECONDS:-60}"
 RELEASE_RESTORE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_RESTORE_POLL_SECONDS:-1}"
 RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS="${CONTAINER_STACK_RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS:-10}"
-RELEASE_HOST_STATE_ROOT="${CONTAINER_STACK_RELEASE_HOST_STATE_ROOT:-/private/tmp/container-compose-release-host-state-$(id -u)}"
+RELEASE_HOST_STATE_ROOT="${CONTAINER_STACK_RELEASE_HOST_STATE_ROOT:-${RELEASE_RETAINED_ROOT}/release/host-state}"
 RELEASE_DEVCONTAINER_CLI="${CONTAINER_STACK_RELEASE_DEVCONTAINER_CLI:-$(command -v devcontainer || true)}"
 RELEASE_CURL="${CONTAINER_STACK_RELEASE_CURL:-/usr/bin/curl}"
 RELEASE_GITHUB_CLI="${CONTAINER_STACK_RELEASE_GITHUB_CLI:-$(command -v gh || true)}"
@@ -295,7 +306,7 @@ RELEASE_CONTROLLER_RESTART_REQUIRED=0
 RELEASE_BOOTSTRAP_HEAD=""
 CURRENT_INIT_IMAGE_AUTHORITY_ROOT=""
 CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=0
-RELEASE_INIT_AUTHORITY_CACHE_ROOT="${CONTAINER_STACK_RELEASE_INIT_AUTHORITY_CACHE_ROOT:-$({ getconf DARWIN_USER_CACHE_DIR 2>/dev/null || printf '/private/tmp/'; })container-compose-release-authorities}"
+RELEASE_INIT_AUTHORITY_CACHE_ROOT="${CONTAINER_STACK_RELEASE_INIT_AUTHORITY_CACHE_ROOT:-${RELEASE_RETAINED_ROOT}/release/authorities}"
 readonly STABLE_CURRENT_SOAK_SECONDS=604800
 HOMEBREW_TAP_REPO="${ROOT}/homebrew-tap"
 REPOS=(
@@ -304,6 +315,180 @@ REPOS=(
   "container"
   "container-compose"
 )
+
+# Return whether an unmarked retained release root is empty or contains only
+# the independently marked build store created by `make stack-state-init`.
+retained_release_root_is_claimable() {
+  local retained_root="$1" child_marker
+  if [[ ! -d "${retained_root}" ]] || \
+    [[ -z "$(find "${retained_root}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    return 0
+  fi
+  if [[ -f "${retained_root}/.container-family-retained-root" ]] && \
+    [[ ! -L "${retained_root}/.container-family-retained-root" ]]; then
+    return 0
+  fi
+  child_marker="${retained_root}/build/.container-family-retained-root"
+  [[ -d "${retained_root}/build" && ! -L "${retained_root}/build" ]] && \
+    [[ -f "${child_marker}" && ! -L "${child_marker}" ]] && \
+    [[ "$(<"${child_marker}")" == "container-compose retained build v2" ]] && \
+    [[ -z "$(find "${retained_root}" -mindepth 1 -maxdepth 1 ! -name build -print -quit)" ]]
+}
+
+# Return whether a release transaction root is empty, currently marked, or
+# carries the exact legacy ownership marker used by the same controller.
+transient_release_root_is_claimable() {
+  local transient_root="$1" legacy_marker
+  if [[ ! -d "${transient_root}" ]] || \
+    [[ -z "$(find "${transient_root}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+    return 0
+  fi
+  if [[ -f "${transient_root}/.container-family-transient-root" ]] && \
+    [[ ! -L "${transient_root}/.container-family-transient-root" ]]; then
+    return 0
+  fi
+  legacy_marker="${transient_root}/.container-compose-release-root.json"
+  [[ -f "${legacy_marker}" && ! -L "${legacy_marker}" ]] || return 1
+  python3 - "${legacy_marker}" <<'PY'
+import json
+import pathlib
+import sys
+
+try:
+    value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError):
+    raise SystemExit(1)
+raise SystemExit(0 if value == {"owner": "container-compose", "schemaVersion": 1} else 1)
+PY
+}
+
+# Initialize and verify the separate retained and transient release stores.
+initialize_release_storage() {
+  local retained_parent retained_root transient_root transient_parent retained_device transient_device
+  local marker_specification marker_path marker_value
+  retained_root="${RELEASE_RETAINED_ROOT}"
+  case "${retained_root}" in
+    /*) ;;
+    *) printf 'retained release root must be absolute: %s\n' "${retained_root}" >&2; return 2 ;;
+  esac
+  case "${retained_root}/" in
+    /Volumes/SSD/*)
+      printf 'retained release root must be on the internal drive, not /Volumes/SSD: %s\n' \
+        "${retained_root}" >&2
+      return 2
+      ;;
+  esac
+  case "${RELEASE_BUILD_ROOT}/" in
+    /Volumes/SSD/*) ;;
+    *)
+      printf 'release transaction root must be on /Volumes/SSD: %s\n' \
+        "${RELEASE_BUILD_ROOT}" >&2
+      return 2
+      ;;
+  esac
+  if [[ ! -d /Volumes/SSD ]] || \
+    [[ "$(/usr/bin/stat -f %d /Volumes/SSD)" == "$(/usr/bin/stat -f %d /)" ]]; then
+    printf 'external /Volumes/SSD filesystem is unavailable; refusing new release work\n' >&2
+    return 2
+  fi
+  retained_parent="$(dirname "${retained_root}")"
+  mkdir -p "${retained_parent}"
+  [[ ! -L "${retained_root}" ]] || {
+    printf 'retained release root must not be a symbolic link: %s\n' \
+      "${retained_root}" >&2
+    return 2
+  }
+  if ! retained_release_root_is_claimable "${retained_root}"; then
+    printf 'refusing to claim non-empty unmarked retained release root: %s\n' \
+      "${retained_root}" >&2
+    return 2
+  fi
+  mkdir -p "${retained_root}"
+  retained_root="$(cd "${retained_root}" && pwd -P)"
+  case "${retained_root}/" in
+    /Volumes/SSD/*)
+      printf 'retained release root resolves onto /Volumes/SSD: %s\n' \
+        "${retained_root}" >&2
+      return 2
+      ;;
+  esac
+  retained_device="$(/usr/bin/stat -f %d "${retained_root}")"
+  transient_parent="$(dirname "${RELEASE_BUILD_ROOT}")"
+  mkdir -p "${transient_parent}"
+  [[ ! -L "${RELEASE_BUILD_ROOT}" ]] || {
+    printf 'release transaction root must not be a symbolic link: %s\n' \
+      "${RELEASE_BUILD_ROOT}" >&2
+    return 2
+  }
+  if ! transient_release_root_is_claimable "${RELEASE_BUILD_ROOT}"; then
+    printf 'refusing to claim non-empty unmarked release transaction root: %s\n' \
+      "${RELEASE_BUILD_ROOT}" >&2
+    return 2
+  fi
+  mkdir -p "${RELEASE_BUILD_ROOT}"
+  transient_root="$(cd "${RELEASE_BUILD_ROOT}" && pwd -P)"
+  case "${transient_root}/" in
+    /Volumes/SSD/*) ;;
+    *)
+      printf 'release transaction root resolves outside /Volumes/SSD: %s\n' \
+        "${transient_root}" >&2
+      return 2
+      ;;
+  esac
+  transient_device="$(/usr/bin/stat -f %d "${transient_root}")"
+  if [[ "${retained_device}" == "${transient_device}" ]]; then
+    printf 'retained release data and transient transactions must use separate filesystems\n' >&2
+    return 2
+  fi
+  for marker_specification in \
+    "${retained_root}/.container-family-retained-root|container-compose retained build v2" \
+    "${transient_root}/.container-family-transient-root|container-compose transient build v2"; do
+    marker_path="${marker_specification%%|*}"
+    marker_value="${marker_specification#*|}"
+    if [[ -L "${marker_path}" ]]; then
+      printf 'release storage marker must not be a symbolic link: %s\n' \
+        "${marker_path}" >&2
+      return 2
+    fi
+    if [[ -e "${marker_path}" ]]; then
+      if [[ ! -f "${marker_path}" ]] || \
+        [[ "$(<"${marker_path}")" != "${marker_value}" ]]; then
+        printf 'release storage marker is invalid: %s\n' "${marker_path}" >&2
+        return 2
+      fi
+    else
+      printf '%s\n' "${marker_value}" >"${marker_path}"
+    fi
+  done
+  RELEASE_RETAINED_ROOT="${retained_root}"
+  RELEASE_BUILD_ROOT="${transient_root}"
+  RELEASE_HOST_STATE_ROOT="${CONTAINER_STACK_RELEASE_HOST_STATE_ROOT:-${RELEASE_RETAINED_ROOT}/release/host-state}"
+  RELEASE_INIT_AUTHORITY_CACHE_ROOT="${CONTAINER_STACK_RELEASE_INIT_AUTHORITY_CACHE_ROOT:-${RELEASE_RETAINED_ROOT}/release/authorities}"
+}
+
+# Create disposable release data only beneath the external transaction root.
+release_transient_directory() {
+  local label="$1" temporary_root
+  if [[ ! "${label}" =~ ^[a-z0-9-]+$ ]]; then
+    printf 'invalid release temporary-directory label: %s\n' "${label}" >&2
+    return 2
+  fi
+  temporary_root="${RELEASE_BUILD_ROOT}/tmp"
+  mkdir -p "${temporary_root}"
+  mktemp -d "${temporary_root}/${label}.XXXXXX"
+}
+
+# Create a disposable release file only beneath the external transaction root.
+release_transient_file() {
+  local label="$1" temporary_root
+  if [[ ! "${label}" =~ ^[a-z0-9-]+$ ]]; then
+    printf 'invalid release temporary-file label: %s\n' "${label}" >&2
+    return 2
+  fi
+  temporary_root="${RELEASE_BUILD_ROOT}/tmp"
+  mkdir -p "${temporary_root}"
+  mktemp "${temporary_root}/${label}.XXXXXX"
+}
 
 # Map local checkout names to their stephenlclarke-owned GitHub repositories.
 github_repo() {
@@ -780,9 +965,7 @@ compute_release_candidate_refresh_tree() {
 
   authority_paths=$'docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json\ndocs/upstream/FORK-COMMIT-CLASSIFICATIONS.md'
 
-  index_root="$(
-    mktemp -d "${TMPDIR:-/tmp}/container-compose-refresh-index.XXXXXX"
-  )" || {
+  index_root="$(release_transient_directory refresh-index)" || {
     RELEASE_CANDIDATE_REFRESH_ERROR="could not create an isolated refresh index"
     return 1
   }
@@ -1855,7 +2038,7 @@ require_release_hawkeye_cli() {
 stage_container_runtime_candidate() {
   local container_path="$1" evidence_root="$2"
   local container_head artifact_parent artifact_root build_root archive archive_digest
-  local marker marker_value candidate_parent signing_identity expected_marker
+  local marker marker_value candidate_parent signing_identity expected_marker promotion_root
 
   signing_identity="${CONTAINER_RUNTIME_CODESIGN_IDENTITY:-}"
   if [[ ! "${signing_identity}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
@@ -1892,7 +2075,8 @@ stage_container_runtime_candidate() {
       return 1
     fi
   else
-    build_root="$(mktemp -d "${artifact_parent}/.build-${container_head}.XXXXXX")"
+    build_root="$(release_transient_directory runtime-candidate-build)"
+    promotion_root=""
     # shellcheck disable=SC2329
     cleanup_unpublished_runtime_candidate_build() {
       local trapped_status="${1:-$?}"
@@ -1900,12 +2084,24 @@ stage_container_runtime_candidate() {
       trap '' HUP INT QUIT TERM
       if [[ -n "${build_root:-}" && -d "${build_root}" ]]; then
         case "${build_root}" in
-          "${artifact_parent}/.build-${container_head}."*)
+          "${RELEASE_BUILD_ROOT}/tmp/runtime-candidate-build."*)
             find "${build_root}" -depth -delete
             ;;
           *)
-            printf 'refusing to remove a runtime candidate build outside its evidence root: %s\n' \
+            printf 'refusing to remove a runtime candidate build outside its transaction root: %s\n' \
               "${build_root}" >&2
+            return 1
+            ;;
+        esac
+      fi
+      if [[ -n "${promotion_root:-}" && -d "${promotion_root}" ]]; then
+        case "${promotion_root}" in
+          "${artifact_parent}/.promote-${container_head}."*)
+            find "${promotion_root}" -depth -delete
+            ;;
+          *)
+            printf 'refusing to remove runtime candidate promotion outside its retained root: %s\n' \
+              "${promotion_root}" >&2
             return 1
             ;;
         esac
@@ -1933,9 +2129,15 @@ stage_container_runtime_candidate() {
       cleanup_unpublished_runtime_candidate_build 1 || true
       return 1
     fi
+    promotion_root="$(mktemp -d \
+      "${artifact_parent}/.promote-${container_head}.XXXXXX")"
+    cp "${archive}" "${archive}.sha256" "${promotion_root}/"
     printf '%s\n' "${expected_marker}" \
-      >"${build_root}/.container-compose-runtime-candidate-artifact"
-    mv "${build_root}" "${artifact_root}"
+      >"${promotion_root}/.container-compose-runtime-candidate-artifact"
+    chmod -R a-w "${promotion_root}"
+    mv "${promotion_root}" "${artifact_root}"
+    promotion_root=""
+    find "${build_root}" -depth -delete
     build_root=""
     trap - EXIT HUP INT QUIT TERM
     archive="${artifact_root}/container-homebrew-release-arm64.tar.gz"
@@ -3570,7 +3772,7 @@ stable_init_image_gate_evidence_path() {
   fi
   path="$(repo_path "${COMPOSE_REPO}")"
   evidence_root="$(resolve_release_evidence_root "${path}" \
-    "${PARITY_EVIDENCE_DIR:-.build/release-evidence}")"
+    "${PARITY_EVIDENCE_DIR:-${RELEASE_RETAINED_ROOT}/release/evidence}")"
   authority_root="${evidence_root}/stable-init-image-authority"
   if [[ -L "${authority_root}" ]]; then
     printf 'stable init-image authority directory must not be a symlink: %s\n' \
@@ -3816,7 +4018,7 @@ PY
   fi
 
   evidence_root="$(resolve_release_evidence_root "${path}" \
-    "${PARITY_EVIDENCE_DIR:-.build/release-evidence}")"
+    "${PARITY_EVIDENCE_DIR:-${RELEASE_RETAINED_ROOT}/release/evidence}")"
   container_binary=""
   runtime_parent=""
   runtime_app_root=""
@@ -4289,10 +4491,46 @@ ensure_stable_retry_source_authority() {
 # immutable signed tag and its successful candidate-bound hosted gate. A
 # movable release branch must not make later recovery of immutable assets
 # time-dependent.
+stable_stack_component_refs() {
+  local version="$1" path
+  path="$(repo_path "${COMPOSE_REPO}")"
+  python3 - "${path}" "${version}" <<'PY'
+import json
+import re
+import subprocess
+import sys
+
+repository, version = sys.argv[1:]
+manifest = json.loads(
+    subprocess.run(
+        ["git", "-C", repository, "show", f"{version}:Tools/release/stack-refs.json"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+)
+components = manifest["components"]
+for name in ("container-builder-shim", "containerization", "container"):
+    component = components[name]
+    reference = component["ref"]
+    if component["repository"] != f"stephenlclarke/{name}" or re.fullmatch(
+        r"[0-9a-f]{40}", reference
+    ) is None:
+        raise SystemExit(f"invalid stable {name} authority")
+    print(reference)
+PY
+}
+
+# Authenticate recovery of an already-published stable release against the
+# immutable signed tag, candidate-bound hosted gate, and its retained receipt.
 ensure_published_stable_recovery_authority() {
   local version="$1" path repo tag_sha authority_name authority_filter authority_record
   local authority_run_id authority_summary authority_conclusion authority_init_digest
   local signed_authority_record signed_authority_object signed_authority_init_digest
+  local authority_receipt_sha authority_asset authority_archive authority_sidecar
+  local authority_archive_sha authority_sidecar_sha tmp status cleanup_status
+  local component_ref component_refs=() builder_ref containerization_ref container_ref
+  local verifier_receipt_args=() hosted_check_available=0
   path="$(repo_path "${COMPOSE_REPO}")"
   repo="$(github_repo "${COMPOSE_REPO}")"
   tag_sha="$(git -C "${path}" rev-list -n 1 "refs/tags/${version}")"
@@ -4315,37 +4553,137 @@ ensure_published_stable_recovery_authority() {
   authority_filter+=' | select((.external_id // "") | test("^[0-9]+$"))'
   authority_filter+=' | select((.output.summary // "") | test("Guest init image SHA-256: [0-9a-f]{64}[.]"))'
   authority_filter+=' | [.external_id, .output.summary] | @tsv'
-  authority_record="$(
+  if authority_record="$(
     github_cli api --paginate \
       "repos/${repo}/commits/${tag_sha}/check-runs?per_page=100" \
       --jq "${authority_filter}" |
       tail -n 1
-  )"
-  IFS=$'\t' read -r authority_run_id authority_summary <<<"${authority_record}"
-  if [[ ! "${authority_run_id}" =~ ^[0-9]+$ ]]; then
-    printf 'refusing published recovery without candidate-bound Stable Release Authority %s\n' \
-      "${authority_name}" >&2
-    return 1
-  fi
-  if [[ "${authority_summary}" =~ Guest\ init\ image\ SHA-256:\ ([0-9a-f]{64})[.] ]]; then
-    authority_init_digest="${BASH_REMATCH[1]}"
+  )"; then
+    :
   else
-    printf 'refusing published recovery without a candidate-bound guest init-image digest\n' >&2
-    return 1
+    printf 'could not inspect candidate-bound Stable Release Authority checks for %s\n' \
+      "${version}" >&2
+    return 2
+  fi
+  IFS=$'\t' read -r authority_run_id authority_summary <<<"${authority_record}"
+  authority_init_digest="${signed_authority_init_digest}"
+  authority_receipt_sha=""
+  if [[ "${authority_run_id}" =~ ^[0-9]+$ ]]; then
+    hosted_check_available=1
+    if [[ "${authority_summary}" =~ Guest\ init\ image\ SHA-256:\ ([0-9a-f]{64})[.] ]]; then
+      authority_init_digest="${BASH_REMATCH[1]}"
+    else
+      printf 'refusing published recovery without a candidate-bound guest init-image digest\n' >&2
+      return 1
+    fi
+    if [[ "${authority_summary}" =~ Authority\ receipt\ SHA-256:\ ([0-9a-f]{64})[.] ]]; then
+      authority_receipt_sha="${BASH_REMATCH[1]}"
+      verifier_receipt_args=(--receipt-sha256 "${authority_receipt_sha}")
+    else
+      printf 'refusing published recovery without a candidate-bound authority receipt digest\n' >&2
+      return 1
+    fi
+    authority_conclusion="$(
+      github_cli run view "${authority_run_id}" --repo "${repo}" \
+        --json workflowName,event,status,conclusion \
+        --jq 'select(.workflowName == "Stable Release Gate" and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .conclusion'
+    )"
+    if [[ "${authority_conclusion}" != "success" ]]; then
+      printf 'refusing published recovery without a successful Stable Release Gate authority\n' >&2
+      return 1
+    fi
+  else
+    printf 'candidate-bound check history is unavailable for %s; requiring durable artifact attestation\n' \
+      "${authority_name}"
   fi
   if [[ "${authority_init_digest}" != "${signed_authority_init_digest}" ]]; then
     printf 'refusing published recovery because hosted authority records %s instead of signed init-image digest %s\n' \
       "${authority_init_digest}" "${signed_authority_init_digest}" >&2
     return 1
   fi
-  authority_conclusion="$(
-    github_cli run view "${authority_run_id}" --repo "${repo}" \
-      --json workflowName,event,status,conclusion \
-      --jq 'select(.workflowName == "Stable Release Gate" and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success") | .conclusion'
-  )"
-  if [[ "${authority_conclusion}" != "success" ]]; then
-    printf 'refusing published recovery without a successful Stable Release Gate authority\n' >&2
+  while IFS= read -r component_ref; do
+    component_refs+=("${component_ref}")
+  done < <(stable_stack_component_refs "${version}")
+  if ((${#component_refs[@]} != 3)); then
+    printf 'stable tag %s has no complete component authority\n' "${version}" >&2
     return 1
+  fi
+  builder_ref="${component_refs[0]}"
+  containerization_ref="${component_refs[1]}"
+  container_ref="${component_refs[2]}"
+  authority_asset=stable-release-authority.tar.gz
+  authority_archive=""
+  if authority_archive="$(
+    python3 "${RELEASE_ASSET_RETENTION_TOOL}" path \
+      --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+      --name "${authority_asset}" 2>/dev/null
+  )"; then
+    :
+  else
+    authority_archive=""
+  fi
+  tmp="$(release_transient_directory stable-authority)"
+  status=0
+  if [[ -z "${authority_archive}" ]]; then
+    if github_cli release download "${version}" --repo "${repo}" \
+      --pattern "${authority_asset}" --pattern "${authority_asset}.sha256" \
+      --dir "${tmp}"; then
+      authority_archive="${tmp}/${authority_asset}"
+      authority_sidecar="${tmp}/${authority_asset}.sha256"
+      authority_archive_sha="$(shasum -a 256 "${authority_archive}" | awk '{print $1}')"
+      authority_sidecar_sha="$(awk '{print $1}' "${authority_sidecar}")"
+      if [[ ! "${authority_archive_sha}" =~ ^[0-9a-f]{64}$ || \
+        "${authority_archive_sha}" != "${authority_sidecar_sha}" ]]; then
+        printf 'published stable authority archive checksum is invalid for %s\n' \
+          "${version}" >&2
+        status=1
+      fi
+    else
+      status=$?
+    fi
+  fi
+  if (( status == 0 && hosted_check_available == 0 )); then
+    if github_cli attestation verify "${authority_archive}" --repo "${repo}"; then
+      status=0
+    else
+      status=$?
+      printf 'refusing published recovery without hosted check history or a valid durable authority attestation\n' >&2
+    fi
+  fi
+  if (( status == 0 )); then
+    if python3 "${STABLE_AUTHORITY_BUNDLE_VERIFIER}" \
+      --archive "${authority_archive}" \
+      --release-tag "${version}" \
+      --candidate-sha "${tag_sha}" \
+      --builder-ref "${builder_ref}" \
+      --containerization-ref "${containerization_ref}" \
+      --container-ref "${container_ref}" \
+      --init-image-sha256 "${authority_init_digest}" \
+      "${verifier_receipt_args[@]}" >/dev/null; then
+      status=0
+    else
+      status=$?
+    fi
+  fi
+  if (( status == 0 )) && [[ -n "${authority_sidecar:-}" ]]; then
+    if python3 "${RELEASE_ASSET_RETENTION_TOOL}" retain \
+      --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+      --asset "${authority_archive}" --asset "${authority_sidecar}"; then
+      status=0
+    else
+      status=$?
+    fi
+  fi
+  if find "${tmp}" -depth -delete; then
+    cleanup_status=0
+  else
+    cleanup_status=$?
+  fi
+  if (( status != 0 )); then
+    return "${status}"
+  fi
+  if (( cleanup_status != 0 )); then
+    return "${cleanup_status}"
   fi
   printf '%s\t%s\n' "${signed_authority_object}" "${authority_init_digest}"
 }
@@ -4613,7 +4951,7 @@ unedit_release_dependency() {
 
   if [[ -f "${path}/Package.resolved" ]]; then
     had_resolved=1
-    backup="$(mktemp "${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"
+    backup="$(release_transient_file package-resolved)"
     cp "${path}/Package.resolved" "${backup}"
   fi
 
@@ -4721,7 +5059,7 @@ resolve_release_dependency_pins() {
     return 0
   fi
 
-  backup="$(mktemp "${TMPDIR:-/tmp}/container-compose-package-resolved.XXXXXX")"
+  backup="$(release_transient_file package-resolved)"
   cp "${path}/Package.resolved" "${backup}"
   if ! run swift package --package-path "${path}" resolve; then
     cp "${backup}" "${path}/Package.resolved"
@@ -5781,6 +6119,68 @@ latest_stable_documentation_dispatch() {
     --jq "map(select(.displayTitle == \"${title}\" and .headSha == \"${control_sha}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
 }
 
+# Dispatch a workflow through the API that returns its exact run ID. The
+# expected control SHA is also an input, so a moving main branch fails before
+# expensive or mutating work instead of leaving title-based polling ambiguous.
+dispatch_github_workflow_run() {
+  local workflow="$1" version="$2" control_sha="$3" repair_tap="${4:-}"
+  local repo request_id run_id dispatch_status
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  run_id=""
+  request_id="$(/usr/bin/uuidgen | tr '[:upper:]' '[:lower:]')"
+  python3 "${RELEASE_DISPATCH_JOURNAL_TOOL}" intent \
+    --root "${RELEASE_RETAINED_ROOT}" \
+    --request-id "${request_id}" \
+    --workflow "${workflow}" \
+    --version "${version}" \
+    --control-sha "${control_sha}" >/dev/null
+  if [[ -n "${repair_tap}" ]]; then
+    if run_id="$(
+      github_cli api --method POST \
+        -H 'X-GitHub-Api-Version: 2026-03-10' \
+        "repos/${repo}/actions/workflows/${workflow}/dispatches" \
+        -f ref=main \
+        -f "inputs[ref]=${version}" \
+        -f "inputs[expected_control_sha]=${control_sha}" \
+        -f "inputs[request_id]=${request_id}" \
+        -F "inputs[repair_tap]=${repair_tap}" \
+        --jq '.workflow_run_id'
+    )"; then
+      dispatch_status=0
+    else
+      dispatch_status=$?
+    fi
+  else
+    if run_id="$(
+      github_cli api --method POST \
+        -H 'X-GitHub-Api-Version: 2026-03-10' \
+        "repos/${repo}/actions/workflows/${workflow}/dispatches" \
+        -f ref=main \
+        -f "inputs[ref]=${version}" \
+        -f "inputs[expected_control_sha]=${control_sha}" \
+        -f "inputs[request_id]=${request_id}" \
+        --jq '.workflow_run_id'
+    )"; then
+      dispatch_status=0
+    else
+      dispatch_status=$?
+    fi
+  fi
+  if (( dispatch_status != 0 )) || [[ ! "${run_id}" =~ ^[0-9]+$ ]]; then
+    python3 "${RELEASE_DISPATCH_JOURNAL_TOOL}" unknown \
+      --root "${RELEASE_RETAINED_ROOT}" \
+      --request-id "${request_id}" >/dev/null
+    printf 'workflow dispatch result is unknown for %s (request %s); reconcile this request before retrying\n' \
+      "${workflow}" "${request_id}" >&2
+    return 75
+  fi
+  python3 "${RELEASE_DISPATCH_JOURNAL_TOOL}" ack \
+    --root "${RELEASE_RETAINED_ROOT}" \
+    --request-id "${request_id}" \
+    --run-id "${run_id}" >/dev/null
+  printf '%s\n' "${run_id}"
+}
+
 # Resolve the newest published (draft-free) container-k8s release tag and its
 # exact Git object. The pair is committed into the stable source candidate,
 # so documentation recovery never relies on retained workflow history.
@@ -5897,7 +6297,7 @@ publish_stable_asset_pair() {
     github_cli release view "${version}" --repo "${repo}" --json assets \
       --jq '.assets[].name'
   )"
-  remote_tmp="$(mktemp -d)"
+  remote_tmp="$(release_transient_directory published-assets)"
   if grep -Fxq "${asset}" <<<"${asset_names}"; then
     github_cli release download "${version}" --repo "${repo}" \
       --pattern "${asset}" --dir "${remote_tmp}"
@@ -5968,7 +6368,7 @@ publish_stable_init_image_asset() {
   archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
   asset="container-vminit-arm64.oci.tar"
   if [[ -n "${archive}" && ( "${archive}" != /* || ! -f "${archive}" ) ]]; then
-    printf 'stable guest publication received an invalid retained release-gate archive: %s\n' \
+    printf 'stable guest publication received an invalid explicit release-gate archive: %s; unset CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE to recover the exact published copy\n' \
       "${archive}" >&2
     return 2
   fi
@@ -5985,7 +6385,7 @@ publish_stable_init_image_asset() {
   fi
   containerization_repository="${authority[0]}"
   containerization_reference="${authority[1]}"
-  tmp="$(mktemp -d)"
+  tmp="$(release_transient_directory stable-init-asset)"
   if [[ -n "${archive}" ]]; then
     if cp "${archive}" "${tmp}/${asset}"; then
       status=0
@@ -6041,7 +6441,7 @@ publish_stable_init_image_asset() {
 # Verify the stable release assets and Homebrew formula agree.
 verify_compose_stable_package() {
   local version="$1" promote_default_lane="${2:-true}" stable_formula_identities_before="${3:-}" expected_init_digest="$4"
-  local repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text formula_url formula_version formula_sha runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text container_formula_url container_formula_sha signature_verifier init_asset init_asset_sha init_checksum_sha stable_formula_identities_after
+  local repo asset expected_url tmp asset_names asset_sha checksum_sha formula_text runtime_asset runtime_url runtime_asset_sha runtime_checksum_sha runtime_formula_text signature_verifier init_asset init_asset_sha init_checksum_sha highlights_asset quality_asset stable_formula_identities_after tap_ref
   local authority=() containerization_repository containerization_reference
   repo="$(github_repo "${COMPOSE_REPO}")"
   asset="container-compose-plugin-release-arm64.tar.gz"
@@ -6053,7 +6453,7 @@ verify_compose_stable_package() {
     return 0
   fi
 
-  tmp="$(mktemp -d)"
+  tmp="$(release_transient_directory stable-package)"
   asset_names="$(
     github_cli release view "${version}" \
       --repo "${repo}" \
@@ -6088,6 +6488,15 @@ verify_compose_stable_package() {
     printf 'release %s is missing asset %s.sha256\n' "${version}" "${init_asset}" >&2
     exit 1
   fi
+  highlights_asset=release-highlights.json
+  quality_asset=quality-snapshot.svg
+  for required_asset in "${highlights_asset}" "${quality_asset}"; do
+    if ! grep -Fxq "${required_asset}" <<<"${asset_names}"; then
+      printf 'release %s is missing retained evidence asset %s\n' \
+        "${version}" "${required_asset}" >&2
+      exit 1
+    fi
+  done
 
   github_cli release download "${version}" \
     --repo "${repo}" \
@@ -6097,6 +6506,8 @@ verify_compose_stable_package() {
     --pattern "${runtime_asset}.sha256" \
     --pattern "${init_asset}" \
     --pattern "${init_asset}.sha256" \
+    --pattern "${highlights_asset}" \
+    --pattern "${quality_asset}" \
     --dir "${tmp}"
   asset_sha="$(shasum -a 256 "${tmp}/${asset}" | awk '{print $1}')"
   checksum_sha="$(awk '{print $1}' "${tmp}/${asset}.sha256")"
@@ -6150,7 +6561,12 @@ verify_compose_stable_package() {
   fi
   "${signature_verifier}" "${tmp}/${asset}"
   "${signature_verifier}" "${tmp}/${runtime_asset}"
-  rm -rf "${tmp}"
+  python3 "${RELEASE_ASSET_RETENTION_TOOL}" retain \
+    --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+    --asset "${tmp}/${asset}" --asset "${tmp}/${asset}.sha256" \
+    --asset "${tmp}/${runtime_asset}" --asset "${tmp}/${runtime_asset}.sha256" \
+    --asset "${tmp}/${init_asset}" --asset "${tmp}/${init_asset}.sha256" \
+    --asset "${tmp}/${highlights_asset}" --asset "${tmp}/${quality_asset}"
 
   if [[ "${promote_default_lane}" != "true" ]]; then
     if [[ -z "${stable_formula_identities_before}" ]]; then
@@ -6165,59 +6581,39 @@ verify_compose_stable_package() {
     fi
     printf 'stable stack %s maintenance backfill verified without moving stable Homebrew formulae %s: %s + %s + %s\n' \
       "${version}" "${stable_formula_identities_after}" "${asset_sha}" "${runtime_asset_sha}" "${init_asset_sha}"
+    rm -rf "${tmp}"
     return 0
   fi
 
+  tap_ref="$(
+    git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git \
+      refs/heads/main | awk '{print $1}' | tail -n 1
+  )"
+  if [[ ! "${tap_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'could not resolve an immutable Homebrew tap snapshot\n' >&2
+    exit 1
+  fi
   formula_text="$(
-    github_cli api \
+    github_cli api --method GET \
       repos/stephenlclarke/homebrew-tap/contents/Formula/container-compose.rb \
+      -f "ref=${tap_ref}" \
       --jq '.content' | base64 --decode
   )"
-  formula_url="$(sed -n 's/^  url "\(.*\)"/\1/p' <<<"${formula_text}" | head -n 1)"
-  formula_version="$(sed -n 's/^  version "\(.*\)"/\1/p' <<<"${formula_text}" | head -n 1)"
-  formula_sha="$(sed -n 's/^  sha256 "\(.*\)"/\1/p' <<<"${formula_text}" | head -n 1)"
-
-  if [[ "${formula_url}" != "${expected_url}" ]]; then
-    printf 'Homebrew formula URL mismatch: expected %s, got %s\n' "${expected_url}" "${formula_url}" >&2
-    exit 1
-  fi
-  if [[ -n "${formula_version}" ]]; then
-    printf 'stable Homebrew formula must derive version %s from its release URL; found explicit version %s\n' \
-      "${version}" "${formula_version}" >&2
-    exit 1
-  fi
-  if [[ "${formula_sha}" != "${asset_sha}" ]]; then
-    printf 'Homebrew formula SHA mismatch: expected %s, got %s\n' "${asset_sha}" "${formula_sha}" >&2
-    exit 1
-  fi
-
-  if ! grep -Fq 'depends_on "stephenlclarke/tap/container"' <<<"${formula_text}"; then
-    printf 'stable compose formula does not depend on stephenlclarke/tap/container\n' >&2
-    exit 1
-  fi
-
   runtime_url="https://github.com/${repo}/releases/download/${version}/${runtime_asset}"
   runtime_formula_text="$(
-    github_cli api \
+    github_cli api --method GET \
       repos/stephenlclarke/homebrew-tap/contents/Formula/container.rb \
+      -f "ref=${tap_ref}" \
       --jq '.content' | base64 --decode
   )"
-  container_formula_url="$(sed -n 's/^  url "\(.*\)"/\1/p' <<<"${runtime_formula_text}" | head -n 1)"
-  container_formula_sha="$(sed -n 's/^  sha256 "\(.*\)"/\1/p' <<<"${runtime_formula_text}" | head -n 1)"
-  if [[ "${container_formula_url}" != "${runtime_url}" ]]; then
-    printf 'stable container formula URL mismatch: expected %s, got %s\n' \
-      "${runtime_url}" "${container_formula_url}" >&2
-    exit 1
-  fi
-  if [[ "${container_formula_sha}" != "${runtime_asset_sha}" ]]; then
-    printf 'stable container formula SHA mismatch: expected %s, got %s\n' \
-      "${runtime_asset_sha}" "${container_formula_sha}" >&2
-    exit 1
-  fi
-  if ! grep -Fq 'opt/container-compose/libexec/container-plugins/compose' <<<"${runtime_formula_text}"; then
-    printf 'stable container formula does not register the stable compose plugin\n' >&2
-    exit 1
-  fi
+  printf '%s\n' "${formula_text}" >"${tmp}/container-compose.rb"
+  printf '%s\n' "${runtime_formula_text}" >"${tmp}/container.rb"
+  python3 "${FORMULA_PAIR_VALIDATOR}" \
+    --compose-formula "${tmp}/container-compose.rb" \
+    --runtime-formula "${tmp}/container.rb" \
+    --compose-url "${expected_url}" --runtime-url "${runtime_url}" \
+    --compose-sha256 "${asset_sha}" --runtime-sha256 "${runtime_asset_sha}"
+  rm -rf "${tmp}"
 
   printf 'stable stack %s package closure verified: %s + %s + %s\n' \
     "${version}" "${asset_sha}" "${runtime_asset_sha}" "${init_asset_sha}"
@@ -6249,19 +6645,154 @@ stable_binary_assets_are_published() {
     container-compose-plugin-release-arm64.tar.gz \
     container-compose-plugin-release-arm64.tar.gz.sha256 \
     container-release-arm64.tar.gz \
-    container-release-arm64.tar.gz.sha256; do
+    container-release-arm64.tar.gz.sha256 \
+    release-highlights.json \
+    quality-snapshot.svg; do
     grep -Fxq "${required_asset}" <<<"${asset_names}" || return 1
   done
 }
 
+# Recover missing immutable members from locally retained bytes or from the
+# exact published archive. Stable identities are never repaired by rebuilding.
+recover_published_stable_binary_assets() {
+  local version="$1" repo asset_names asset asset_path tmp digest status cleanup_status
+  local required_assets=(
+    container-compose-plugin-release-arm64.tar.gz
+    container-release-arm64.tar.gz
+  )
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  if ! asset_names="$(
+    github_cli release view "${version}" --repo "${repo}" --json assets \
+      --jq '.assets[].name'
+  )"; then
+    printf 'could not inspect immutable stable release assets for %s\n' \
+      "${version}" >&2
+    return 2
+  fi
+  for asset in "${required_assets[@]}"; do
+    if grep -Fxq "${asset}" <<<"${asset_names}" && \
+      grep -Fxq "${asset}.sha256" <<<"${asset_names}"; then
+      continue
+    fi
+    asset_path=""
+    if asset_path="$(
+      python3 "${RELEASE_ASSET_RETENTION_TOOL}" path \
+        --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+        --name "${asset}" 2>/dev/null
+    )"; then
+      :
+    else
+      asset_path=""
+    fi
+    tmp="$(release_transient_directory stable-recovery)"
+    status=0
+    if [[ -z "${asset_path}" ]]; then
+      if grep -Fxq "${asset}" <<<"${asset_names}"; then
+        if github_cli release download "${version}" --repo "${repo}" \
+          --pattern "${asset}" --dir "${tmp}"; then
+          asset_path="${tmp}/${asset}"
+        else
+          status=$?
+        fi
+      else
+        printf 'stable release %s is missing original archive %s and no exact retained copy is available; ordinary packaging cannot repair an immutable release\n' \
+          "${version}" "${asset}" >&2
+        status=2
+      fi
+    fi
+    if (( status == 0 )) && \
+      digest="$(shasum -a 256 "${asset_path}" | awk '{print $1}')" && \
+      [[ "${digest}" =~ ^[0-9a-f]{64}$ ]]; then
+      printf '%s  %s\n' "${digest}" "${asset}" >"${tmp}/${asset}.sha256"
+      if publish_stable_asset_pair \
+        "${version}" "${repo}" "${asset_path}" \
+        "${tmp}/${asset}.sha256" "${asset}" "${digest}"; then
+        if python3 "${RELEASE_ASSET_RETENTION_TOOL}" retain \
+          --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+          --asset "${asset_path}" --asset "${tmp}/${asset}.sha256"; then
+          status=0
+        else
+          status=$?
+        fi
+      else
+        status=$?
+      fi
+    elif (( status == 0 )); then
+      status=2
+    fi
+    if find "${tmp}" -depth -delete; then
+      cleanup_status=0
+    else
+      cleanup_status=$?
+    fi
+    if (( status != 0 )); then
+      return "${status}"
+    fi
+    if (( cleanup_status != 0 )); then
+      return "${cleanup_status}"
+    fi
+  done
+  for asset in release-highlights.json quality-snapshot.svg; do
+    if grep -Fxq "${asset}" <<<"${asset_names}"; then
+      continue
+    fi
+    if ! asset_path="$(
+      python3 "${RELEASE_ASSET_RETENTION_TOOL}" path \
+        --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+        --name "${asset}" 2>/dev/null
+    )"; then
+      printf 'stable release %s is missing original evidence asset %s and no exact retained copy is available\n' \
+        "${version}" "${asset}" >&2
+      return 2
+    fi
+    if github_cli release upload "${version}" --repo "${repo}" "${asset_path}"; then
+      continue
+    else
+      status=$?
+    fi
+    tmp="$(release_transient_directory stable-evidence-recovery)"
+    if github_cli release download "${version}" --repo "${repo}" \
+      --pattern "${asset}" --dir "${tmp}" && \
+      cmp -s "${asset_path}" "${tmp}/${asset}"; then
+      find "${tmp}" -depth -delete || return 2
+      continue
+    fi
+    find "${tmp}" -depth -delete >/dev/null 2>&1 || true
+    return "${status}"
+  done
+}
+
+# Read one formula at a pinned tap commit and distinguish absence from an API
+# failure so recovery never turns an outage into a blind repair dispatch.
+github_formula_at_ref() {
+  local formula="$1" tap_ref="$2" encoded
+  if encoded="$(
+    github_cli api --method GET \
+      "repos/stephenlclarke/homebrew-tap/contents/Formula/${formula}.rb" \
+      -f "ref=${tap_ref}" --jq '.content' 2>&1
+  )"; then
+    if ! base64 --decode <<<"${encoded}"; then
+      printf 'Homebrew formula content is not valid base64: %s.rb\n' \
+        "${formula}" >&2
+      return 2
+    fi
+    return 0
+  fi
+  if [[ "${encoded}" == *"HTTP 404"* || "${encoded}" == *"Not Found (HTTP 404)"* ]]; then
+    return 1
+  fi
+  printf '%s\n' "${encoded}" >&2
+  return 2
+}
+
 # Distinguish formula-only recovery from asset or authority failures cheaply.
 stable_formula_pair_matches_release() {
-  local version="$1" repo tmp compose_asset runtime_asset compose_sha runtime_sha
-  local compose_formula runtime_formula compose_url runtime_url compose_formula_sha runtime_formula_sha
+  local version="$1" repo tmp compose_asset runtime_asset compose_sha runtime_sha tap_ref status
+  local compose_formula runtime_formula compose_url runtime_url
   repo="$(github_repo "${COMPOSE_REPO}")"
   compose_asset=container-compose-plugin-release-arm64.tar.gz
   runtime_asset=container-release-arm64.tar.gz
-  tmp="$(mktemp -d)"
+  tmp="$(release_transient_directory stable-formula-probe)"
   if ! github_cli release download "${version}" --repo "${repo}" \
     --pattern "${compose_asset}.sha256" \
     --pattern "${runtime_asset}.sha256" --dir "${tmp}"; then
@@ -6275,32 +6806,48 @@ stable_formula_pair_matches_release() {
     find "${tmp}" -depth -delete >/dev/null 2>&1 || true
     return 2
   fi
-  if ! compose_formula="$(
-    github_cli api repos/stephenlclarke/homebrew-tap/contents/Formula/container-compose.rb \
-      --jq '.content' | base64 --decode
-  )" || ! runtime_formula="$(
-    github_cli api repos/stephenlclarke/homebrew-tap/contents/Formula/container.rb \
-      --jq '.content' | base64 --decode
-  )"; then
+  tap_ref="$(
+    git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git \
+      refs/heads/main | awk '{print $1}' | tail -n 1
+  )"
+  if [[ ! "${tap_ref}" =~ ^[0-9a-f]{40}$ ]]; then
     find "${tmp}" -depth -delete >/dev/null 2>&1 || true
     return 2
   fi
+  if compose_formula="$(github_formula_at_ref container-compose "${tap_ref}")"; then
+    :
+  else
+    status=$?
+    find "${tmp}" -depth -delete >/dev/null 2>&1 || true
+    return "${status}"
+  fi
+  if runtime_formula="$(github_formula_at_ref container "${tap_ref}")"; then
+    :
+  else
+    status=$?
+    find "${tmp}" -depth -delete >/dev/null 2>&1 || true
+    return "${status}"
+  fi
+  printf '%s\n' "${compose_formula}" >"${tmp}/container-compose.rb"
+  printf '%s\n' "${runtime_formula}" >"${tmp}/container.rb"
+  compose_url="https://github.com/${repo}/releases/download/${version}/${compose_asset}"
+  runtime_url="https://github.com/${repo}/releases/download/${version}/${runtime_asset}"
+  if python3 "${FORMULA_PAIR_VALIDATOR}" \
+    --compose-formula "${tmp}/container-compose.rb" \
+    --runtime-formula "${tmp}/container.rb" \
+    --compose-url "${compose_url}" --runtime-url "${runtime_url}" \
+    --compose-sha256 "${compose_sha}" --runtime-sha256 "${runtime_sha}"; then
+    status=0
+  else
+    status=1
+  fi
   find "${tmp}" -depth -delete >/dev/null 2>&1 || return 2
-  compose_url="$(sed -n 's/^  url "\(.*\)"/\1/p' <<<"${compose_formula}" | head -n 1)"
-  runtime_url="$(sed -n 's/^  url "\(.*\)"/\1/p' <<<"${runtime_formula}" | head -n 1)"
-  compose_formula_sha="$(sed -n 's/^  sha256 "\(.*\)"/\1/p' <<<"${compose_formula}" | head -n 1)"
-  runtime_formula_sha="$(sed -n 's/^  sha256 "\(.*\)"/\1/p' <<<"${runtime_formula}" | head -n 1)"
-  [[ "${compose_url}" == \
-    "https://github.com/${repo}/releases/download/${version}/${compose_asset}" && \
-    "${runtime_url}" == \
-    "https://github.com/${repo}/releases/download/${version}/${runtime_asset}" && \
-    "${compose_formula_sha}" == "${compose_sha}" && \
-    "${runtime_formula_sha}" == "${runtime_sha}" ]]
+  return "${status}"
 }
 
 # Dispatch and verify one stable package workflow mode for a semantic tag.
 dispatch_compose_stable_workflow() {
-  local version="$1" mode="$2" repair_tap="$3" details previous_run run_id status conclusion deadline now label promote_default_lane stable_formula_identities_before="" control_sha
+  local version="$1" mode="$2" repair_tap="$3" details previous_run run_id status conclusion label promote_default_lane stable_formula_identities_before="" control_sha
   print_header "dispatch container-compose ${version} ${mode}"
 
   if [[ "${repair_tap}" == "true" ]]; then
@@ -6332,10 +6879,14 @@ dispatch_compose_stable_workflow() {
     exit 1
   fi
   control_sha="$(remote_main_commit "${COMPOSE_REPO}")"
-  details="$(latest_compose_package_dispatch_run \
-    "${version}" "${repair_tap}" "${control_sha}" || true)"
+  if ! details="$(latest_compose_package_dispatch_run \
+    "${version}" "${repair_tap}" "${control_sha}")"; then
+    printf 'could not inspect existing %s runs; refusing a blind duplicate dispatch\n' \
+      "${label}" >&2
+    return 2
+  fi
   IFS=$'\t' read -r previous_run status conclusion <<<"${details}"
-  if [[ -n "${previous_run}" && "${status}" == "completed" && \
+  if [[ "${repair_tap}" != "true" && -n "${previous_run}" && "${status}" == "completed" && \
     "${conclusion}" == "success" ]]; then
     printf '%s already passed for the exact release controls: %s\n' \
       "${label}" "${previous_run}"
@@ -6353,43 +6904,13 @@ dispatch_compose_stable_workflow() {
       "${stable_formula_identities_before}"
     return 0
   fi
-  if [[ "${repair_tap}" == "true" ]]; then
-    run github_cli workflow run prebuilt-binaries.yml \
-      --repo "$(github_repo "${COMPOSE_REPO}")" \
-      --ref main \
-      -f "ref=${version}" \
-      -f "repair_tap=true"
-  else
-    run github_cli workflow run prebuilt-binaries.yml \
-      --repo "$(github_repo "${COMPOSE_REPO}")" \
-      --ref main \
-      -f "ref=${version}"
-  fi
-
-  deadline=$((SECONDS + COMPOSE_PACKAGE_WAIT_SECONDS))
-  while true; do
-    details="$(latest_compose_package_dispatch_run \
-      "${version}" "${repair_tap}" "${control_sha}" || true)"
-    IFS=$'\t' read -r run_id status conclusion <<<"${details}"
-    if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
-      printf '%s started: %s\n' "${label}" "${run_id}"
-      wait_for_github_run_success "${run_id}" "${label}"
-      complete_compose_stable_workflow \
-        "${version}" "${promote_default_lane}" \
-        "${stable_formula_identities_before}"
-      return 0
-    fi
-
-    now="${SECONDS}"
-    if (( now >= deadline )); then
-      printf 'timed out waiting for %s dispatch for %s\n' "${label}" "${version}" >&2
-      exit 1
-    fi
-
-    printf 'waiting for %s dispatch for %s; next check in %ss\n' \
-      "${label}" "${version}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
-    sleep "${COMPOSE_PACKAGE_POLL_SECONDS}"
-  done
+  run_id="$(dispatch_github_workflow_run \
+    prebuilt-binaries.yml "${version}" "${control_sha}" "${repair_tap}")"
+  printf '%s started: %s\n' "${label}" "${run_id}"
+  wait_for_github_run_success "${run_id}" "${label}"
+  complete_compose_stable_workflow \
+    "${version}" "${promote_default_lane}" \
+    "${stable_formula_identities_before}"
 }
 
 # Dispatch and wait for a new stable package publication.
@@ -6405,7 +6926,7 @@ dispatch_compose_stable_tap_repair() {
 }
 
 dispatch_stable_release_gate() {
-  local version="$1" details previous_run run_id status conclusion deadline now init_image_digest control_sha
+  local version="$1" details previous_run run_id status conclusion init_image_digest control_sha
   print_header "dispatch hosted stable release gate for ${version}"
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -6421,8 +6942,11 @@ dispatch_stable_release_gate() {
   init_image_digest="$(retained_stable_init_image_gate_digest "${version}")"
   ensure_stable_init_image_authority_tag "${version}" "${init_image_digest}"
   control_sha="$(remote_main_commit "${COMPOSE_REPO}")"
-  details="$(latest_stable_release_gate_dispatch_run \
-    "${version}" "${control_sha}" || true)"
+  if ! details="$(latest_stable_release_gate_dispatch_run \
+    "${version}" "${control_sha}")"; then
+    printf 'could not inspect existing stable gate runs; refusing a blind duplicate dispatch\n' >&2
+    return 2
+  fi
   IFS=$'\t' read -r previous_run status conclusion <<<"${details}"
   if [[ -n "${previous_run}" && "${status}" == "completed" && \
     "${conclusion}" == "success" ]]; then
@@ -6438,41 +6962,68 @@ dispatch_stable_release_gate() {
       "${STABLE_RELEASE_GATE_WAIT_SECONDS}"
     return 0
   fi
-  run github_cli workflow run stable-release-gate.yml \
-    --repo "$(github_repo "${COMPOSE_REPO}")" \
-    --ref main \
-    -f "ref=${version}"
-
-  deadline=$((SECONDS + STABLE_RELEASE_GATE_WAIT_SECONDS))
-  while true; do
-    details="$(latest_stable_release_gate_dispatch_run \
-      "${version}" "${control_sha}" || true)"
-    IFS=$'\t' read -r run_id status conclusion <<<"${details}"
-    if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
-      printf 'stable release gate started: %s\n' "${run_id}"
-      wait_for_github_run_success \
-        "${run_id}" "hosted stable release gate" "${STABLE_RELEASE_GATE_WAIT_SECONDS}"
-      return 0
-    fi
-
-    now="${SECONDS}"
-    if (( now >= deadline )); then
-      printf 'timed out waiting for stable release gate dispatch for %s\n' "${version}" >&2
-      exit 1
-    fi
-
-    printf 'waiting for stable release gate dispatch for %s; next check in %ss\n' \
-      "${version}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
-    sleep "${COMPOSE_PACKAGE_POLL_SECONDS}"
-  done
+  run_id="$(dispatch_github_workflow_run \
+    stable-release-gate.yml "${version}" "${control_sha}")"
+  printf 'stable release gate started: %s\n' "${run_id}"
+  wait_for_github_run_success \
+    "${run_id}" "hosted stable release gate" "${STABLE_RELEASE_GATE_WAIT_SECONDS}"
 }
 
-# Build and publish DocC only after the stable package, Homebrew pair, and all
-# earlier release gates have succeeded. A successful exact-input run is the
-# recovery checkpoint; every retry reads the same refs from the immutable
-# stable source tag.
+# Retain all four verified DocC site archives locally before a hosted run can
+# age out. A complete local set avoids downloading or rebuilding on retries.
+retain_stable_documentation_artifacts() {
+  local version="$1" run_id="$2" site retained_path tmp candidate count
+  local candidates=() complete=1
+  for site in compose container containerization k8s; do
+    if retained_path="$(
+      python3 "${RELEASE_ASSET_RETENTION_TOOL}" path \
+        --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+        --name "${site}.tgz" 2>/dev/null
+    )"; then
+      python3 "${DOC_SITE_MANIFEST_TOOL}" verify-archive "${retained_path}"
+    else
+      complete=0
+    fi
+  done
+  if (( complete == 1 )); then
+    printf 'stable documentation artifacts already retained locally: %s\n' \
+      "${version}"
+    return 0
+  fi
+
+  tmp="$(release_transient_directory stable-documentation)"
+  if ! github_cli run download "${run_id}" \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --pattern "api-docs-${version}-*" --dir "${tmp}"; then
+    find "${tmp}" -depth -delete >/dev/null 2>&1 || true
+    return 1
+  fi
+  for site in compose container containerization k8s; do
+    candidate=""
+    count=0
+    while IFS= read -r matched; do
+      [[ -n "${matched}" ]] || continue
+      candidate="${matched}"
+      ((count += 1))
+    done < <(find "${tmp}" -type f -name "${site}.tgz" -print)
+    if (( count != 1 )); then
+      printf 'documentation run %s produced %s copies of %s.tgz\n' \
+        "${run_id}" "${count}" "${site}" >&2
+      find "${tmp}" -depth -delete >/dev/null 2>&1 || true
+      return 1
+    fi
+    python3 "${DOC_SITE_MANIFEST_TOOL}" verify-archive "${candidate}"
+    candidates+=(--asset "${candidate}")
+  done
+  python3 "${RELEASE_ASSET_RETENTION_TOOL}" retain \
+    --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+    "${candidates[@]}"
+  find "${tmp}" -depth -delete
+}
+
+# Dispatch or reuse the exact documentation workflow for a stable release.
 dispatch_stable_documentation() {
-  local version="$1" details previous_run run_id status conclusion deadline now control_sha
+  local version="$1" details previous_run status conclusion control_sha run_id
   print_header "publish released documentation for ${version}"
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -6491,6 +7042,7 @@ dispatch_stable_documentation() {
     "${conclusion}" == "success" ]]; then
     printf 'stable documentation already passed for the exact released inputs: %s (run %s)\n' \
       "${version}" "${previous_run}"
+    retain_stable_documentation_artifacts "${version}" "${previous_run}"
     return 0
   fi
   if [[ -n "${previous_run}" && "${status}" != "completed" ]]; then
@@ -6499,38 +7051,16 @@ dispatch_stable_documentation() {
     wait_for_github_run_success \
       "${previous_run}" "stable documentation and Pages deployment" \
       "${DOCUMENTATION_WAIT_SECONDS}"
+    retain_stable_documentation_artifacts "${version}" "${previous_run}"
     return 0
   fi
 
-  run github_cli workflow run docs.yml \
-    --repo "$(github_repo "${COMPOSE_REPO}")" \
-    --ref main \
-    -f "ref=${version}"
-
-  deadline=$((SECONDS + DOCUMENTATION_WAIT_SECONDS))
-  while true; do
-    details="$(latest_stable_documentation_dispatch \
-      "${version}" "${control_sha}")"
-    IFS=$'\t' read -r run_id status conclusion <<<"${details}"
-    if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
-      printf 'stable documentation started: %s\n' "${run_id}"
-      wait_for_github_run_success \
-        "${run_id}" "stable documentation and Pages deployment" \
-        "${DOCUMENTATION_WAIT_SECONDS}"
-      return 0
-    fi
-
-    now="${SECONDS}"
-    if (( now >= deadline )); then
-      printf 'timed out waiting for stable documentation dispatch for %s\n' \
-        "${version}" >&2
-      exit 1
-    fi
-
-    printf 'waiting for stable documentation dispatch for %s; next check in %ss\n' \
-      "${version}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
-    sleep "${COMPOSE_PACKAGE_POLL_SECONDS}"
-  done
+  run_id="$(dispatch_github_workflow_run docs.yml "${version}" "${control_sha}")"
+  printf 'stable documentation started: %s\n' "${run_id}"
+  wait_for_github_run_success \
+    "${run_id}" "stable documentation and Pages deployment" \
+    "${DOCUMENTATION_WAIT_SECONDS}"
+  retain_stable_documentation_artifacts "${version}" "${run_id}"
 }
 
 # Print the verified boundary for a stable release or its formula-only recovery.
@@ -6603,7 +7133,8 @@ resume_stable_release() {
         if (( recovery_status != 1 )); then
           return "${recovery_status}"
         fi
-        dispatch_compose_stable_package "${version}"
+        recover_published_stable_binary_assets "${version}"
+        complete_compose_stable_workflow "${version}" "true" ""
       fi
       dispatch_stable_documentation "${version}"
       print_stable_release_point "${version}" "verified recovery from immutable release assets"
@@ -6847,7 +7378,7 @@ require_release_bootstrap_authority() {
 # created by the release workspace controller. A failed child is retained for
 # the next invocation; only a completely successful publication is removed.
 run_isolated_release() {
-  local workspace bootstrap child child_pid status claim_status
+  local workspace bootstrap child child_pid status claim_status release_tmp
   if [[ "${EXECUTE}" != "1" ]]; then
     python3 "${RELEASE_WORKSPACE_TOOL}" plan
     printf 'would materialize and retain an exact isolated release workspace for %s\n' \
@@ -6863,7 +7394,12 @@ run_isolated_release() {
     printf 'isolated release controller is missing or unsafe: %s\n' "${child}" >&2
     return 1
   fi
+  release_tmp="${RELEASE_BUILD_ROOT}/tmp"
+  mkdir -p "${release_tmp}"
   status=0
+  TMPDIR="${release_tmp}" \
+  TMP="${release_tmp}" \
+  TEMP="${release_tmp}" \
   CONTAINER_STACK_RELEASE_ROOT="${workspace}" \
   CONTAINER_STACK_RELEASE_BUILD_ROOT="${RELEASE_BUILD_ROOT}" \
   CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE=1 \
@@ -6898,6 +7434,9 @@ main() {
     release)
       trap cleanup_current_init_image_authority EXIT
       ensure_compose_promotion_mode
+      if [[ "${EXECUTE}" == "1" && "${CONTAINER_STACK_RELEASE_LIBRARY:-0}" != "1" ]]; then
+        initialize_release_storage
+      fi
       if [[ "${CONTAINER_STACK_RELEASE_LIBRARY:-0}" == "1" ]]; then
         recover_release_host_state_on_startup
         release_current_stack

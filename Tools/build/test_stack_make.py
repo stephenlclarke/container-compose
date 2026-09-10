@@ -32,6 +32,7 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = REPOSITORY_ROOT / "Makefile"
 PIN_TOOL = REPOSITORY_ROOT / "Tools/build/stack-pin.py"
+ARTIFACT_TOOL = REPOSITORY_ROOT / "Tools/build/stack-artifact.py"
 DEADLINE_TOOL = REPOSITORY_ROOT / "Tools/ci/run-command-with-deadline.py"
 
 
@@ -40,7 +41,8 @@ class StackMakeRecoveryTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.state = self.root / "state"
+        self.retained = self.root / "local-retained"
+        self.transient = self.root / "external-transient"
         self.log = self.root / "build.log"
         self.fail = self.root / "fail-container"
         self.containerization = self.create_repository("containerization")
@@ -172,8 +174,11 @@ exec "$@"
                 "-f",
                 str(MAKEFILE),
                 "stack-container-build",
-                f"STACK_STATE_ROOT={self.state}",
+                f"STACK_RETAINED_ROOT={self.retained}",
+                f"STACK_TRANSIENT_ROOT={self.transient}",
+                "STACK_REQUIRE_SEPARATE_FILESYSTEMS=0",
                 f"STACK_PIN_TOOL={PIN_TOOL}",
+                f"STACK_ARTIFACT_TOOL={ARTIFACT_TOOL}",
                 f"STACK_DEADLINE_TOOL={DEADLINE_TOOL}",
                 f"STACK_SWIFT={self.swift}",
                 f"STACK_SWIFT_CONTRACT={'a' * 64}",
@@ -205,8 +210,11 @@ exec "$@"
                 "-f",
                 str(MAKEFILE),
                 "stack-build",
-                f"STACK_STATE_ROOT={self.state}",
+                f"STACK_RETAINED_ROOT={self.retained}",
+                f"STACK_TRANSIENT_ROOT={self.transient}",
+                "STACK_REQUIRE_SEPARATE_FILESYSTEMS=0",
                 f"STACK_PIN_TOOL={PIN_TOOL}",
+                f"STACK_ARTIFACT_TOOL={ARTIFACT_TOOL}",
                 f"STACK_DEADLINE_TOOL={DEADLINE_TOOL}",
                 f"STACK_SWIFT_STACK_TOOL={self.stack_wrapper}",
                 f"STACK_SWIFT={self.swift}",
@@ -235,15 +243,17 @@ exec "$@"
         return self.log.read_text(encoding="utf-8").splitlines()
 
     def test_state_initialization_refuses_to_claim_unmarked_data(self) -> None:
-        self.state.mkdir()
-        (self.state / "unrelated.txt").write_text("preserve\n", encoding="utf-8")
+        self.retained.mkdir()
+        (self.retained / "unrelated.txt").write_text("preserve\n", encoding="utf-8")
         result = subprocess.run(
             [
                 "/usr/bin/make",
                 "-f",
                 str(MAKEFILE),
                 "stack-state-init",
-                f"STACK_STATE_ROOT={self.state}",
+                f"STACK_RETAINED_ROOT={self.retained}",
+                f"STACK_TRANSIENT_ROOT={self.transient}",
+                "STACK_REQUIRE_SEPARATE_FILESYSTEMS=0",
             ],
             cwd=self.root,
             check=False,
@@ -254,18 +264,18 @@ exec "$@"
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("non-empty unmarked", result.stderr)
         self.assertEqual(
-            (self.state / "unrelated.txt").read_text(encoding="utf-8"),
+            (self.retained / "unrelated.txt").read_text(encoding="utf-8"),
             "preserve\n",
         )
-        self.assertFalse((self.state / ".container-compose-build-root").exists())
+        self.assertFalse((self.retained / ".container-family-retained-root").exists())
 
     def test_retry_reuses_successful_upstream_pins_after_failure(self) -> None:
         self.fail.write_text("fail once\n", encoding="utf-8")
         failed = self.run_build()
         self.assertEqual(failed.returncode, 2, failed.stderr)
-        self.assertTrue((self.state / "pins/debug/containerization.json").is_file())
-        self.assertTrue((self.state / "pins/debug/container-engine-api.json").is_file())
-        self.assertFalse((self.state / "pins/debug/container.json").exists())
+        self.assertTrue((self.retained / "pins/debug/containerization.json").is_file())
+        self.assertTrue((self.retained / "pins/debug/container-engine-api.json").is_file())
+        self.assertFalse((self.retained / "pins/debug/container.json").exists())
 
         resumed = self.run_build()
         self.assertEqual(resumed.returncode, 0, resumed.stderr)
@@ -273,7 +283,7 @@ exec "$@"
             self.logged_builds(),
             ["build:cctl", "build:container-engine", "build:container", "build:container"],
         )
-        self.assertTrue((self.state / "pins/debug/container.json").is_file())
+        self.assertTrue((self.retained / "pins/debug/container.json").is_file())
 
     def test_changed_upstream_rebuilds_only_its_transitive_path(self) -> None:
         first = self.run_build()
@@ -301,7 +311,7 @@ exec "$@"
         failed = self.run_full_build()
 
         self.assertNotEqual(failed.returncode, 0)
-        pin_root = self.state / "pins/debug"
+        pin_root = self.retained / "pins/debug"
         self.assertTrue((pin_root / "containerization.json").is_file())
         self.assertTrue((pin_root / "container-engine-api.json").is_file())
         self.assertTrue((pin_root / "container-builder-shim.json").is_file())
@@ -348,9 +358,10 @@ exec "$@"
         )
         self.assertEqual(verified.returncode, 0)
         compose_pin = (pin_root / "container-compose.json").read_text(encoding="utf-8")
-        self.assertIn(str(self.state / "scratch"), compose_pin)
+        self.assertIn(str(self.retained / "artifacts/objects/sha256"), compose_pin)
+        self.assertNotIn(str(self.transient / "scratch"), compose_pin)
         self.assertNotIn(str(self.compose / ".build/debug/compose"), compose_pin)
-        timing_logs = sorted((self.state / "timings").glob("*.jsonl"))
+        timing_logs = sorted((self.retained / "timings").glob("*.jsonl"))
         self.assertEqual(len(timing_logs), 2)
         records = [
             json.loads(line)
@@ -362,6 +373,22 @@ exec "$@"
         self.assertIn("container-build", labels)
         self.assertIn("compose-build", labels)
         self.assertTrue(all(record["duration_seconds"] >= 0 for record in records))
+
+        for transient_product in self.transient.glob("scratch/**/*"):
+            if transient_product.is_file():
+                transient_product.unlink()
+        verified_after_scratch_cleanup = subprocess.run(
+            [
+                sys.executable,
+                str(PIN_TOOL),
+                "verify-bundle",
+                "--quiet",
+                "--bundle",
+                str(bundle),
+            ],
+            check=False,
+        )
+        self.assertEqual(verified_after_scratch_cleanup.returncode, 0)
 
     def test_compose_build_uses_identity_preserving_manifest_overrides(self) -> None:
         makefile = MAKEFILE.read_text(encoding="utf-8")
