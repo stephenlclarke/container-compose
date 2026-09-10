@@ -41,6 +41,7 @@ jobs:
     outputs:
       sha: ${{ steps.candidate.outputs.sha }}
       authority_ref: ${{ steps.candidate.outputs.authority_ref }}
+      control_sha: ${{ steps.candidate.outputs.control_sha }}
       homebrew_tap_ref: ${{ steps.candidate.outputs.homebrew_tap_ref }}
       init_image_sha256: ${{ steps.candidate.outputs.init_image_sha256 }}
       init_image_authority_object: ${{ steps.candidate.outputs.init_image_authority_object }}
@@ -169,9 +170,12 @@ jobs:
             authority_ref="${release_branch}"
             candidate_ci_branch="${RELEASE_TAG}"
           else
-            printf 'stable tag %s is neither current main nor exact %s head\n' \
-              "${RELEASE_TAG}" "${release_branch}" >&2
-            exit 1
+            # An unpublished latest tag can outlive main when release-control
+            # automation is repaired after the tag was signed. Its payload
+            # authority remains the immutable tag and original main CI; the
+            # current main head independently owns the retry's control tools.
+            authority_ref="main"
+            candidate_ci_branch="main"
           fi
 
           semantic_tags="$(
@@ -268,6 +272,7 @@ jobs:
           {
             printf 'sha=%s\n' "${tag_sha}"
             printf 'authority_ref=%s\n' "${authority_ref}"
+            printf 'control_sha=%s\n' "${main_sha}"
             printf 'homebrew_tap_ref=%s\n' "${homebrew_tap_ref}"
             printf 'init_image_sha256=%s\n' "${INIT_IMAGE_SHA256}"
             printf 'init_image_authority_object=%s\n' "${init_image_authority_object}"
@@ -521,6 +526,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.ref }}
           CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
           AUTHORITY_REF: ${{ needs.resolve-candidate.outputs.authority_ref }}
+          CONTROL_SHA: ${{ needs.resolve-candidate.outputs.control_sha }}
           INIT_IMAGE_SHA256: ${{ needs.resolve-candidate.outputs.init_image_sha256 }}
           INIT_IMAGE_AUTHORITY_OBJECT: ${{ needs.resolve-candidate.outputs.init_image_authority_object }}
           AUTHORITY_ARTIFACT_DIGEST: ${{ needs.release-gate.outputs.authority_artifact_digest }}
@@ -535,14 +541,24 @@ jobs:
               awk '{ print $1 }' |
               tail -n 1
           )"
+          if [[ ! "${CONTROL_SHA}" =~ ^[0-9a-f]{40}$ ]] ||
+            [[ "${GITHUB_SHA}" != "${CONTROL_SHA}" ]]; then
+            printf 'stable release control identity changed: expected %s, got %s\n' \
+              "${CONTROL_SHA:-missing}" "${GITHUB_SHA}" >&2
+            exit 75
+          fi
+          expected_authority_sha="${CANDIDATE_SHA}"
+          if [[ "${AUTHORITY_REF}" == "main" ]]; then
+            expected_authority_sha="${CONTROL_SHA}"
+          fi
           tag_sha="$(
             git ls-remote --tags "${remote}" "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" |
               awk '$2 ~ /\^\{\}$/ { print $1 }' |
               tail -n 1
           )"
-          if [[ "${authority_sha}" != "${CANDIDATE_SHA}" ]]; then
+          if [[ "${authority_sha}" != "${expected_authority_sha}" ]]; then
             printf 'release authority %s moved after validation: expected %s, got %s\n' \
-              "${AUTHORITY_REF}" "${CANDIDATE_SHA}" "${authority_sha:-missing}" >&2
+              "${AUTHORITY_REF}" "${expected_authority_sha}" "${authority_sha:-missing}" >&2
             exit 75
           fi
           if [[ "${tag_sha}" != "${CANDIDATE_SHA}" ]]; then

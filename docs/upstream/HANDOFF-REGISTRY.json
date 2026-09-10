@@ -8471,6 +8471,25 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/625"
     },
     {
+      "id": "container-compose-626",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): preserve stable retry control authority",
+      "state": "active-draft",
+      "lastVerified": "2026-09-10",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-626.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-627.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/627"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",

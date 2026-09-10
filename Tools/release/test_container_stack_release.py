@@ -3600,7 +3600,12 @@ github_cli() {{
         self.assertIn('candidate_ci_branch="main"', stable_gate)
         self.assertIn('candidate_ci_branch="${RELEASE_TAG}"', stable_gate)
         self.assertIn('.headBranch == \\"${candidate_ci_branch}\\"', stable_gate)
-        self.assertIn("is neither current main nor exact %s head", stable_gate)
+        self.assertNotIn("is neither current main nor exact %s head", stable_gate)
+        self.assertIn(
+            "control_sha: ${{ steps.candidate.outputs.control_sha }}", stable_gate
+        )
+        self.assertIn("expected_authority_sha=\"${CONTROL_SHA}\"", stable_gate)
+        self.assertIn("stable release control identity changed", stable_gate)
         self.assertIn("timeout-minutes: 270", stable_gate)
         self.assertIn("deadline=$((SECONDS + 15600))", stable_gate)
         self.assertIn(
@@ -5164,7 +5169,12 @@ github_cli() {{
         )
         self.assertIn('release_branch="release-${release_series}"', workflow)
         self.assertIn('candidate_ci_branch="${RELEASE_TAG}"', workflow)
-        self.assertIn("is neither current main nor exact %s head", workflow)
+        self.assertNotIn("is neither current main nor exact %s head", workflow)
+        self.assertIn('printf \'control_sha=%s\\n\' "${main_sha}"', workflow)
+        self.assertIn(
+            "CONTROL_SHA: ${{ needs.resolve-candidate.outputs.control_sha }}", workflow
+        )
+        self.assertIn('expected_authority_sha="${CONTROL_SHA}"', workflow)
         self.assertIn(
             'select(.name == "Record successful SonarQube analysis")',
             workflow,
