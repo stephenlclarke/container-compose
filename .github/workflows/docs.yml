@@ -170,7 +170,7 @@ jobs:
             gh api \
               "repos/stephenlclarke/container-k8s/releases/tags/${K8S_RELEASE_TAG}"
           )"
-          if [[ "$(jq -r '.draft or .prerelease' <<<"${k8s_release}")" != "false" ]] || \
+          if [[ "$(jq -r '.draft' <<<"${k8s_release}")" != "false" ]] || \
             [[ "$(jq -r '.tag_name' <<<"${k8s_release}")" != "${K8S_RELEASE_TAG}" ]] || \
             [[ ! "$(jq -r '.id' <<<"${k8s_release}")" =~ ^[0-9]+$ ]] || \
             [[ "${k8s_tag_ref}" != "${K8S_REF}" ]]; then

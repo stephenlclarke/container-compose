@@ -67,7 +67,7 @@ class DocumentationAuthorityTests(unittest.TestCase):
         if "releases/tags/4.5.6" in joined:
             return (
                 '{"id":34,"tag_name":"4.5.6",'
-                '"draft":false,"prerelease":false}'
+                '"draft":false,"prerelease":true}'
             )
         if "commits/" in joined:
             return "b" * 40
@@ -108,6 +108,53 @@ class DocumentationAuthorityTests(unittest.TestCase):
 
         with mock.patch.object(AUTHORITY, "run_command", side_effect=moved):
             with self.assertRaisesRegex(ValueError, "published tag moved"):
+                AUTHORITY.authority_digest(self.options())
+
+    def test_compose_prerelease_is_rejected(self) -> None:
+        def prerelease(arguments):
+            if "releases/tags/1.2.3" in " ".join(arguments):
+                return (
+                    '{"id":12,"tag_name":"1.2.3",'
+                    '"draft":false,"prerelease":true}'
+                )
+            return self.command_result(arguments)
+
+        with mock.patch.object(
+            AUTHORITY, "run_command", side_effect=prerelease
+        ):
+            with self.assertRaisesRegex(ValueError, "release authority changed"):
+                AUTHORITY.authority_digest(self.options())
+
+    def test_k8s_prerelease_state_is_bound_into_authority(self) -> None:
+        with mock.patch.object(
+            AUTHORITY, "run_command", side_effect=self.command_result
+        ):
+            prerelease = AUTHORITY.authority_digest(self.options())
+
+        def stable(arguments):
+            if "releases/tags/4.5.6" in " ".join(arguments):
+                return (
+                    '{"id":34,"tag_name":"4.5.6",'
+                    '"draft":false,"prerelease":false}'
+                )
+            return self.command_result(arguments)
+
+        with mock.patch.object(AUTHORITY, "run_command", side_effect=stable):
+            release = AUTHORITY.authority_digest(self.options())
+
+        self.assertNotEqual(prerelease, release)
+
+    def test_k8s_draft_is_rejected(self) -> None:
+        def draft(arguments):
+            if "releases/tags/4.5.6" in " ".join(arguments):
+                return (
+                    '{"id":34,"tag_name":"4.5.6",'
+                    '"draft":true,"prerelease":true}'
+                )
+            return self.command_result(arguments)
+
+        with mock.patch.object(AUTHORITY, "run_command", side_effect=draft):
+            with self.assertRaisesRegex(ValueError, "release authority changed"):
                 AUTHORITY.authority_digest(self.options())
 
 
