@@ -155,3 +155,20 @@ target had not authorized its checksum-pinned non-interactive bootstrap. The
 corrected target installed verified Hawkeye 6.5.1 and completed the whole
 source preflight in 3.130 seconds. Subsequent runs reuse that local binary and
 do not need network access or an approval prompt.
+
+The retained 0.14.3 stable-release transaction then completed its full sibling
+stack gate in 4,726.982 seconds (78 minutes 46.982 seconds). The checkpoint is
+content-addressed, records digest `fd27b268cdd6`, and remains valid evidence for
+the exact candidate inputs. The following Compose CI stage stopped after
+673.138 seconds (11 minutes 13.138 seconds): 515 of its 516 release-policy tests
+passed, while one synthetic hosted-stack fixture inherited the outer managed
+runtime's ownership variables and tried to validate its fake CLI as the live
+release candidate.
+
+[`container-compose#619`](https://github.com/stephenlclarke/container-compose/issues/619)
+tracks that test-isolation defect. The focused reproduction failed in 0.611
+seconds with the managed environment and passed in 42.928 seconds after the
+fixture discarded candidate identity, managed-runtime ownership, and scratch
+state before invoking its fake stack. The same focused test passed from a clean
+environment in 41.905 seconds. Production candidate-path and ownership checks
+were not relaxed.

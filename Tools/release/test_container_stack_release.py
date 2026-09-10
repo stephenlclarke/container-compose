@@ -4611,14 +4611,36 @@ github_cli() {{
             environment["CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE"] = "/tmp/runtime-init.oci.tar"
             environment["CONTAINER_RUNTIME_BUILDER_IMAGE_TAR"] = "/tmp/runtime-builder.oci.tar"
             environment["CONTAINER_RUNTIME_CLI"] = str(candidate_tools_resolved / "container")
+            environment.update(
+                {
+                    "CONTAINER_RUNTIME_CLI_SHA256": "1" * 64,
+                    "CONTAINER_RUNTIME_CANDIDATE_SHA256": "2" * 64,
+                    "CONTAINER_STACK_VALIDATION_SCRATCH_ROOT": str(
+                        root / "live-scratch"
+                    ),
+                    "CONTAINER_RUNTIME_MANAGED": "1",
+                    "CONTAINER_RUNTIME_APP_ROOT": str(root / "live-app"),
+                    "CONTAINER_RUNTIME_SERVICE_NAMESPACE": "example.live-runtime",
+                    "CONTAINER_APP_ROOT": str(root / "live-app"),
+                    "CONTAINER_SERVICE_NAMESPACE": "example.live-runtime",
+                }
+            )
             # This fixture substitutes its own candidate CLI. A full release
-            # gate exports candidate identity and scratch locations for the
-            # real validation run before running the policy tests. Inheriting
+            # gate exports candidate identity, managed-runtime ownership, and
+            # scratch locations before running the policy tests. Inheriting
             # any of them would make the fixture validate its fake binary or
             # expected default paths against unrelated live state.
-            environment.pop("CONTAINER_RUNTIME_CLI_SHA256", None)
-            environment.pop("CONTAINER_RUNTIME_CANDIDATE_SHA256", None)
-            environment.pop("CONTAINER_STACK_VALIDATION_SCRATCH_ROOT", None)
+            for variable in (
+                "CONTAINER_RUNTIME_CLI_SHA256",
+                "CONTAINER_RUNTIME_CANDIDATE_SHA256",
+                "CONTAINER_STACK_VALIDATION_SCRATCH_ROOT",
+                "CONTAINER_RUNTIME_MANAGED",
+                "CONTAINER_RUNTIME_APP_ROOT",
+                "CONTAINER_RUNTIME_SERVICE_NAMESPACE",
+                "CONTAINER_APP_ROOT",
+                "CONTAINER_SERVICE_NAMESPACE",
+            ):
+                environment.pop(variable, None)
             environment["CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR"] = str(
                 root / "checkpoints"
             )
