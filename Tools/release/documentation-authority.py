@@ -79,17 +79,24 @@ def resolve_tag(repository: str, tag: str) -> str:
 
 
 def verify_release(
-    repository: str, tag: str, expected_id: int, expected_sha: str
+    repository: str,
+    tag: str,
+    expected_id: int,
+    expected_sha: str,
+    *,
+    allow_prerelease: bool = False,
 ) -> dict[str, object]:
     release = json.loads(
         run_command(("gh", "api", f"repos/{repository}/releases/tags/{tag}"))
     )
     actual_id = release.get("id")
+    prerelease = release.get("prerelease")
     if (
         actual_id != expected_id
         or release.get("tag_name") != tag
         or release.get("draft") is not False
-        or release.get("prerelease") is not False
+        or not isinstance(prerelease, bool)
+        or (prerelease and not allow_prerelease)
     ):
         raise ValueError(f"published release authority changed: {repository}@{tag}")
     actual_sha = resolve_tag(repository, tag)
@@ -100,6 +107,7 @@ def verify_release(
         )
     return {
         "id": actual_id,
+        "prerelease": prerelease,
         "repository": repository,
         "sha": actual_sha,
         "tag": tag,
@@ -175,6 +183,7 @@ def authority_digest(options: argparse.Namespace) -> str:
             options.k8s_tag,
             options.k8s_release_id,
             options.k8s_ref,
+            allow_prerelease=True,
         ),
         "schema": 1,
     }

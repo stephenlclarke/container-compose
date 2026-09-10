@@ -3289,6 +3289,14 @@ github_cli() {{
         self.assertIn(
             "container-k8s ref is not attached to a published release", workflow
         )
+        self.assertIn(
+            "if [[ \"$(jq -r '.draft' <<<\"${k8s_release}\")\" != \"false\" ]]",
+            workflow,
+        )
+        self.assertNotIn(
+            "'.draft or .prerelease' <<<\"${k8s_release}\"",
+            workflow,
+        )
         self.assertIn("Tools/release/stack-refs.json", workflow)
         self.assertIn("Tools/release/documentation-refs.json", workflow)
         self.assertIn("ref: ${{ matrix.ref }}", workflow)

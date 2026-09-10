@@ -8490,6 +8490,25 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/627"
     },
     {
+      "id": "container-compose-629",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(docs): preserve prerelease publication authority",
+      "state": "active-draft",
+      "lastVerified": "2026-09-10",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-629.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-630.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/630"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
