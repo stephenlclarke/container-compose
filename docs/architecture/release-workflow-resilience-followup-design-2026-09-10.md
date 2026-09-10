@@ -21,8 +21,12 @@ input indexes, output-manifest dependency identity, complete Compose package
 materialization, output-aware validation checkpoints, atomic logical dispatch
 claims and request-ID reconciliation, retained gate/package authority, resumable
 exact-byte stable drafts, context-bound independently retained DocC sites, and
-bounded typed release observation. Normal validation fingerprints no longer
-execute Docker applications; Docker remains confined to explicit oracle lanes.
+bounded typed release observation. Recovery inspection now proves the latest
+stable formula bodies against the retained archive URLs and digests, and binds
+the active Pages deployment to a successful exact-version Documentation run;
+superseded versions are classified explicitly. Normal validation fingerprints
+no longer execute Docker applications; Docker remains confined to explicit
+oracle lanes.
 
 For local/self-hosted work, build workspaces, compiler temporary directories,
 downloads, and runner work are required to resolve beneath `/Volumes/SSD`.

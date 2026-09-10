@@ -20,11 +20,13 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import importlib.util
 import json
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +36,13 @@ SPEC = importlib.util.spec_from_file_location("retain_local_release_assets", LOC
 assert SPEC is not None and SPEC.loader is not None
 LOCAL_STORE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(LOCAL_STORE)
+FORMULA_TOOL = Path(__file__).with_name("verify-homebrew-formula-pair.py")
+FORMULA_SPEC = importlib.util.spec_from_file_location(
+    "verify_homebrew_formula_pair", FORMULA_TOOL
+)
+assert FORMULA_SPEC is not None and FORMULA_SPEC.loader is not None
+FORMULA = importlib.util.module_from_spec(FORMULA_SPEC)
+FORMULA_SPEC.loader.exec_module(FORMULA)
 SEMVER = re.compile(r"[0-9]+[.][0-9]+[.][0-9]+")
 REQUEST_ID = re.compile(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}")
 EXPECTED_ASSETS = (
@@ -52,6 +61,7 @@ EXPECTED_ASSETS = (
     "containerization.tgz",
     "k8s.tgz",
 )
+UNREAD_MANIFEST = object()
 
 
 class StateError(RuntimeError):
@@ -96,13 +106,16 @@ def dispatch_records(root: Path, version: str) -> list[dict[str, Any]]:
 
 
 def retained_assets(
-    root: Path, version: str, deep: bool = False
+    root: Path,
+    version: str,
+    deep: bool = False,
+    manifest: dict[str, Any] | None | object = UNREAD_MANIFEST,
 ) -> tuple[list[str], list[str]]:
     present: list[str] = []
     missing: list[str] = []
-    try:
-        manifest = LOCAL_STORE.read_manifest(LOCAL_STORE.manifest_path(root, version))
-    except (LOCAL_STORE.RetentionError, OSError, json.JSONDecodeError):
+    if manifest is UNREAD_MANIFEST:
+        manifest = load_retained_manifest(root, version)
+    if not isinstance(manifest, dict):
         return present, list(EXPECTED_ASSETS)
     for name in EXPECTED_ASSETS:
         try:
@@ -125,6 +138,40 @@ def retained_assets(
         else:
             present.append(name)
     return present, missing
+
+
+def load_retained_manifest(root: Path, version: str) -> dict[str, Any] | None:
+    """Load and validate the retained manifest exactly once per inspection."""
+    try:
+        return LOCAL_STORE.read_manifest(LOCAL_STORE.manifest_path(root, version))
+    except (LOCAL_STORE.RetentionError, OSError, json.JSONDecodeError):
+        return None
+
+
+def formula_expectations(
+    manifest: dict[str, Any] | None, version: str, repo: str
+) -> dict[str, str] | None:
+    """Return formula inputs rooted in the retained release manifest."""
+    if manifest is None:
+        return None
+    names = {
+        "compose": "container-compose-plugin-release-arm64.tar.gz",
+        "runtime": "container-release-arm64.tar.gz",
+    }
+    values: dict[str, str] = {}
+    for label, name in names.items():
+        record = manifest["assets"].get(name)
+        if (
+            not isinstance(record, dict)
+            or re.fullmatch(r"[0-9a-f]{64}", str(record.get("sha256", ""))) is None
+        ):
+            return None
+        values[f"{label}_sha256"] = record["sha256"]
+        values[f"{label}_url"] = (
+            f"https://github.com/{repo}/releases/"
+            f"download/{version}/{name}"
+        )
+    return values
 
 
 def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
@@ -181,6 +228,49 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
         else "invalid",
     }
     result["missing_assets"] = sorted(set(EXPECTED_ASSETS) - set(names))
+    return result
+
+
+def reconcile_remote_digests(
+    remote: dict[str, Any], manifest: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Bind API-provided remote asset digests to the retained manifest."""
+    result = dict(remote)
+    if remote.get("state") != "published" or manifest is None:
+        return result
+    observed = remote.get("asset_digests")
+    if not isinstance(observed, dict):
+        result.update(
+            reason="remote release digest inventory is malformed",
+            state="unavailable",
+        )
+        return result
+    conflicts: dict[str, dict[str, str]] = {}
+    unavailable: list[str] = []
+    for name in EXPECTED_ASSETS:
+        record = manifest["assets"].get(name)
+        if not isinstance(record, dict) or not isinstance(record.get("sha256"), str):
+            continue
+        digest = observed.get(name)
+        if digest is None:
+            unavailable.append(name)
+        elif digest != f"sha256:{record['sha256']}":
+            conflicts[name] = {
+                "expected": f"sha256:{record['sha256']}",
+                "observed": str(digest),
+            }
+    result["digest_conflicts"] = conflicts
+    result["unverified_digests"] = unavailable
+    if conflicts:
+        result.update(
+            reason="remote release asset digests conflict with retained bytes",
+            state="conflicting",
+        )
+    elif unavailable and not result.get("missing_assets"):
+        result.update(
+            reason="remote release asset digests are unavailable",
+            state="unavailable",
+        )
     return result
 
 
@@ -253,12 +343,57 @@ def observe_dispatches(
     return observed
 
 
-def remote_postconditions(repo: str, offline: bool) -> dict[str, Any]:
+def remote_postconditions(
+    repo: str,
+    version: str,
+    offline: bool,
+    expected_formulae: dict[str, str] | None,
+) -> dict[str, Any]:
     if offline:
-        return {"formulae": {"state": "not-inspected"}, "pages": {"state": "not-inspected"}}
+        return {
+            "formulae": {"state": "not-inspected"},
+            "pages": {"state": "not-inspected"},
+        }
+    try:
+        latest_result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/releases/latest"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, OSError):
+        unavailable = {
+            "reason": "latest stable release observation unavailable",
+            "state": "unavailable",
+        }
+        return {"formulae": dict(unavailable), "pages": dict(unavailable)}
+    try:
+        latest = json.loads(latest_result.stdout) if latest_result.returncode == 0 else None
+    except json.JSONDecodeError:
+        latest = None
+    if not isinstance(latest, dict) or not isinstance(latest.get("tag_name"), str):
+        unavailable = {
+            "reason": f"latest stable release query failed with exit {latest_result.returncode}",
+            "state": "unavailable",
+        }
+        return {"formulae": dict(unavailable), "pages": dict(unavailable)}
+    latest_version = latest["tag_name"]
+    if latest_version != version:
+        superseded = {"latest_version": latest_version, "state": "superseded"}
+        return {"formulae": dict(superseded), "pages": dict(superseded)}
     observations: dict[str, Any] = {}
-    formulae: dict[str, Any] = {"members": {}}
+    if expected_formulae is None:
+        formulae: dict[str, Any] = {
+            "reason": "retained archive identities are unavailable",
+            "state": "unavailable",
+        }
+    else:
+        formulae = {"members": {}}
     for name in ("container.rb", "container-compose.rb"):
+        if expected_formulae is None:
+            break
         try:
             result = subprocess.run(
                 ["gh", "api", f"repos/stephenlclarke/homebrew-tap/contents/Formula/{name}"],
@@ -266,7 +401,10 @@ def remote_postconditions(repo: str, offline: bool) -> dict[str, Any]:
                 text=True, timeout=30,
             )
         except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, OSError):
-            formulae = {"reason": "Homebrew formula observation unavailable", "state": "unavailable"}
+            formulae = {
+                "reason": "Homebrew formula observation unavailable",
+                "state": "unavailable",
+            }
             break
         if result.returncode != 0:
             formulae = {
@@ -278,12 +416,41 @@ def remote_postconditions(repo: str, offline: bool) -> dict[str, Any]:
             value = json.loads(result.stdout)
         except json.JSONDecodeError:
             value = None
-        if not isinstance(value, dict) or not isinstance(value.get("sha"), str):
-            formulae = {"reason": "GitHub returned malformed formula metadata", "state": "unavailable"}
+        if (
+            not isinstance(value, dict)
+            or not isinstance(value.get("sha"), str)
+            or value.get("encoding") != "base64"
+            or not isinstance(value.get("content"), str)
+        ):
+            formulae = {
+                "reason": "GitHub returned malformed formula metadata",
+                "state": "unavailable",
+            }
             break
-        formulae["members"][name] = value["sha"]
+        try:
+            encoded = re.sub(r"\s+", "", value["content"])
+            body = base64.b64decode(encoded, validate=True).decode("utf-8")
+        except (ValueError, UnicodeError):
+            formulae = {
+                "reason": "GitHub returned malformed formula content",
+                "state": "unavailable",
+            }
+            break
+        formulae["members"][name] = {"blob_sha": value["sha"], "body": body}
     else:
-        formulae["state"] = "observed"
+        try:
+            FORMULA.verify_texts(
+                formulae["members"]["container-compose.rb"].pop("body"),
+                formulae["members"]["container.rb"].pop("body"),
+                expected_formulae["compose_url"],
+                expected_formulae["runtime_url"],
+                expected_formulae["compose_sha256"],
+                expected_formulae["runtime_sha256"],
+            )
+        except FORMULA.FormulaError as error:
+            formulae = {"reason": str(error), "state": "conflict"}
+        else:
+            formulae["state"] = "verified"
     observations["formulae"] = formulae
     try:
         result = subprocess.run(
@@ -291,7 +458,10 @@ def remote_postconditions(repo: str, offline: bool) -> dict[str, Any]:
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, OSError):
-        observations["pages"] = {"reason": "Pages observation unavailable", "state": "unavailable"}
+        observations["pages"] = {
+            "reason": "Pages observation unavailable",
+            "state": "unavailable",
+        }
     else:
         try:
             value = json.loads(result.stdout) if result.returncode == 0 else None
@@ -303,13 +473,307 @@ def remote_postconditions(repo: str, offline: bool) -> dict[str, Any]:
                 "state": "absent" if "HTTP 404" in result.stderr else "unavailable",
             }
         else:
-            observations["pages"] = {
+            pages: dict[str, Any] = {
                 "build_type": value.get("build_type"),
                 "html_url": value.get("html_url"),
-                "state": "observed",
                 "status": value.get("status"),
             }
+            try:
+                runs_result = subprocess.run(
+                    [
+                        "gh",
+                        "api",
+                        f"repos/{repo}/actions/workflows/docs.yml/runs"
+                        "?event=workflow_dispatch&per_page=100",
+                    ],
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=30,
+                )
+                deployments_result = subprocess.run(
+                    [
+                        "gh",
+                        "api",
+                        f"repos/{repo}/deployments"
+                        "?environment=github-pages&per_page=100",
+                    ],
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=30,
+                )
+            except (
+                subprocess.TimeoutExpired,
+                FileNotFoundError,
+                PermissionError,
+                OSError,
+            ):
+                pages.update(
+                    reason="documentation deployment observation unavailable",
+                    state="unavailable",
+                )
+            else:
+                try:
+                    runs_value = (
+                        json.loads(runs_result.stdout)
+                        if runs_result.returncode == 0
+                        else None
+                    )
+                    deployments = (
+                        json.loads(deployments_result.stdout)
+                        if deployments_result.returncode == 0
+                        else None
+                    )
+                except json.JSONDecodeError:
+                    runs_value = deployments = None
+                runs = runs_value.get("workflow_runs") if isinstance(runs_value, dict) else None
+                prefix = f"Documentation · {version} · "
+                matches = [
+                    run
+                    for run in runs or []
+                    if isinstance(run, dict)
+                    and isinstance(run.get("display_title"), str)
+                    and run["display_title"].startswith(prefix)
+                    and run.get("status") == "completed"
+                    and run.get("conclusion") == "success"
+                    and isinstance(run.get("head_sha"), str)
+                ]
+                if not isinstance(runs, list) or not isinstance(deployments, list):
+                    pages.update(
+                        reason="GitHub returned malformed documentation deployment data",
+                        state="unavailable",
+                    )
+                elif not matches:
+                    pages.update(
+                        reason="no successful exact-version Documentation run exists",
+                        state="absent",
+                    )
+                elif not deployments or not isinstance(deployments[0], dict):
+                    pages.update(reason="no active github-pages deployment exists", state="absent")
+                elif deployments[0].get("sha") != matches[0]["head_sha"]:
+                    pages.update(
+                        reason=(
+                            "active Pages deployment does not match the "
+                            "exact-version Documentation run"
+                        ),
+                        state="conflict",
+                    )
+                elif value.get("status") != "built":
+                    pages.update(reason="GitHub Pages is not built", state="conflict")
+                elif not isinstance(deployments[0].get("id"), (int, str)):
+                    pages.update(
+                        reason="active Pages deployment has no identity",
+                        state="unavailable",
+                    )
+                else:
+                    deployment_id = deployments[0]["id"]
+                    try:
+                        status_result = subprocess.run(
+                            [
+                                "gh",
+                                "api",
+                                f"repos/{repo}/deployments/{deployment_id}/statuses"
+                                "?per_page=1",
+                            ],
+                            check=False,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            timeout=30,
+                        )
+                    except (
+                        subprocess.TimeoutExpired,
+                        FileNotFoundError,
+                        PermissionError,
+                        OSError,
+                    ):
+                        pages.update(
+                            reason="Pages deployment status observation unavailable",
+                            state="unavailable",
+                        )
+                    else:
+                        try:
+                            statuses = (
+                                json.loads(status_result.stdout)
+                                if status_result.returncode == 0
+                                else None
+                            )
+                        except json.JSONDecodeError:
+                            statuses = None
+                        if not isinstance(statuses, list) or not statuses:
+                            pages.update(
+                                reason="Pages deployment status is unavailable",
+                                state="unavailable",
+                            )
+                        elif (
+                            not isinstance(statuses[0], dict)
+                            or statuses[0].get("state") != "success"
+                        ):
+                            pages.update(
+                                reason="Pages deployment did not complete successfully",
+                                state="conflict",
+                            )
+                        else:
+                            pages.update(
+                                control_sha=matches[0]["head_sha"],
+                                deployment_id=deployment_id,
+                                run_id=matches[0].get("id"),
+                                state="verified",
+                            )
+            observations["pages"] = pages
     return observations
+
+
+def recovery_action(
+    name: str,
+    summary: str,
+    *,
+    prerequisites: list[str],
+    side_effects: list[str],
+    authority: str,
+    invalidates: list[str] | None = None,
+) -> dict[str, Any]:
+    """Construct one deterministic recovery action record."""
+    return {
+        "invalidated_descendants": invalidates or [],
+        "name": name,
+        "prerequisites": prerequisites,
+        "reason": summary,
+        "required_authority": authority,
+        "side_effects": side_effects,
+        "summary": summary,
+    }
+
+
+def plan_recovery(
+    waiting: list[dict[str, Any]],
+    failed: list[dict[str, Any]],
+    missing: list[str],
+    remote: dict[str, Any],
+    postconditions: dict[str, Any],
+) -> dict[str, Any]:
+    """Return a pure, single-next-step recovery plan from typed observations."""
+    if any(record.get("state") == "dispatch-unknown" for record in waiting):
+        return recovery_action(
+            "reconcile-dispatch",
+            "reconcile the unknown request ID; do not redispatch",
+            prerequisites=["bounded request-ID workflow search"],
+            side_effects=[],
+            authority="recorded logical dispatch claim",
+        )
+    if waiting:
+        return recovery_action(
+            "inspect-run",
+            "inspect the acknowledged workflow run before resuming",
+            prerequisites=["recorded workflow run identity"],
+            side_effects=[],
+            authority="dispatch journal",
+        )
+    if failed:
+        return recovery_action(
+            "authorize-retry",
+            "record the failed operation and explicitly authorize a new attempt",
+            prerequisites=["terminal failed run evidence"],
+            side_effects=["create a linked dispatch attempt"],
+            authority="operator retry authorization",
+        )
+    if remote.get("state") == "unavailable":
+        return recovery_action(
+            "restore-observation",
+            "restore remote observation before planning a mutation",
+            prerequisites=["bounded authenticated GitHub observation"],
+            side_effects=[],
+            authority="read-only remote access",
+        )
+    if remote.get("state") in {"invalid", "conflicting"}:
+        return recovery_action(
+            "resolve-release-conflict",
+            "resolve the conflicting remote release state",
+            prerequisites=["retained manifest", "remote release identity and digests"],
+            side_effects=[],
+            authority="release maintainer decision",
+            invalidates=["formulae", "pages"],
+        )
+    if not missing and remote.get("state") == "published" and remote.get(
+        "missing_assets"
+    ):
+        return recovery_action(
+            "upload-missing-assets",
+            "reconcile the incomplete remote release from exact retained bytes",
+            prerequisites=["retained-complete manifest", "resumable release draft"],
+            side_effects=["upload missing byte-identical assets"],
+            authority="retained publication authority",
+            invalidates=["formulae", "pages"],
+        )
+    if missing and remote.get("state") == "published":
+        return recovery_action(
+            "import-published-assets",
+            "import and verify exact published bytes; do not rebuild",
+            prerequisites=["published immutable release assets"],
+            side_effects=["write verified objects to retained storage"],
+            authority="published release identity and checksums",
+        )
+    if missing and remote.get("state") == "absent":
+        return recovery_action(
+            "restore-retained-closure",
+            "produce or restore the missing retained release closure before publication",
+            prerequisites=["authenticated source or exact recovery objects"],
+            side_effects=["materialize only missing release nodes"],
+            authority="release build authority",
+        )
+    if missing:
+        return recovery_action(
+            "restore-exact-assets",
+            "restore exact authenticated bytes or report the release blocked",
+            prerequisites=["authenticated object source"],
+            side_effects=["repair missing retained objects"],
+            authority="retained or published checksum authority",
+        )
+    if remote.get("state") == "absent":
+        return recovery_action(
+            "publish-retained-release",
+            "publish the verified retained release closure",
+            prerequisites=["retained-complete manifest", "stable gate authority"],
+            side_effects=["create or resume draft", "publish stable release"],
+            authority="retained publication authority",
+            invalidates=["formulae", "pages"],
+        )
+    if any(
+        value.get("state") == "unavailable" for value in postconditions.values()
+    ):
+        return recovery_action(
+            "restore-postcondition-observation",
+            "restore formula and Pages observation before declaring recovery complete",
+            prerequisites=["authenticated tap and Pages read access"],
+            side_effects=[],
+            authority="read-only remote access",
+        )
+    if postconditions["formulae"].get("state") not in {"verified", "superseded"}:
+        return recovery_action(
+            "repair-formulae",
+            "restore or reconcile the paired Homebrew formulae; no build is required",
+            prerequisites=["retained archive URLs and digests"],
+            side_effects=["atomically update the paired stable formulae"],
+            authority="tap publication authority",
+        )
+    if postconditions["pages"].get("state") not in {"verified", "superseded"}:
+        return recovery_action(
+            "redeploy-pages",
+            "restore or reconcile Pages deployment; no build is required",
+            prerequisites=["retained context-bound DocC sites"],
+            side_effects=["assemble and deploy GitHub Pages"],
+            authority="latest-stable documentation authority",
+        )
+    return recovery_action(
+        "complete",
+        "release recovery state is complete; no mutation or rebuild is required",
+        prerequisites=[],
+        side_effects=[],
+        authority="verified retained and remote observations",
+    )
 
 
 def inspect(
@@ -319,10 +783,29 @@ def inspect(
         raise StateError(f"unsafe retained release root: {root}")
     if not SEMVER.fullmatch(version):
         raise StateError(f"invalid stable release version: {version}")
-    present, missing = retained_assets(root, version, deep)
+    observed_at = datetime.now(timezone.utc).isoformat()
+    manifest = load_retained_manifest(root, version)
+    present, missing = retained_assets(root, version, deep, manifest)
     records = observe_dispatches(dispatch_records(root, version), repo, offline)
-    remote = remote_release(repo, version, offline)
-    postconditions = remote_postconditions(repo, offline)
+    remote = reconcile_remote_digests(
+        remote_release(repo, version, offline), manifest
+    )
+    remote["evidence_source"] = "none" if offline else "github-api"
+    remote["observed_at"] = observed_at
+    if remote.get("state") == "published" and not missing:
+        postconditions = remote_postconditions(
+            repo, version, offline, formula_expectations(manifest, version, repo)
+        )
+    else:
+        postconditions = {
+            "formulae": {"state": "deferred"},
+            "pages": {"state": "deferred"},
+        }
+    for observation in postconditions.values():
+        observation["evidence_source"] = (
+            "none" if offline or observation.get("state") == "deferred" else "github-api"
+        )
+        observation["observed_at"] = observed_at
     waiting = [
         record
         for record in records
@@ -346,50 +829,24 @@ def inspect(
             and record["observed"].get("conclusion") != "success"
         )
     ]
-    if any(record.get("state") == "dispatch-unknown" for record in waiting):
-        next_action = "reconcile the unknown request ID; do not redispatch"
-    elif waiting:
-        next_action = "inspect the acknowledged workflow run before resuming"
-    elif failed:
-        next_action = "record the failed operation and explicitly authorize a new attempt"
-    elif remote.get("state") == "unavailable":
-        next_action = "restore remote observation before planning a mutation"
-    elif remote.get("state") == "invalid":
-        next_action = "resolve the conflicting remote release state"
-    elif (
-        not missing
-        and remote.get("state") == "published"
-        and remote.get("missing_assets")
-    ):
-        next_action = "reconcile the incomplete remote release from exact retained bytes"
-    elif missing and remote.get("state") == "published":
-        next_action = "import and verify exact published bytes; do not rebuild"
-    elif missing and remote.get("state") == "absent":
-        next_action = "produce or restore the missing retained release closure before publication"
-    elif missing:
-        next_action = "restore exact authenticated bytes or report the release blocked"
-    elif remote.get("state") == "absent":
-        next_action = "publish the verified retained release closure"
-    elif any(
-        value.get("state") == "unavailable" for value in postconditions.values()
-    ):
-        next_action = "restore formula and Pages observation before declaring recovery complete"
-    elif postconditions["formulae"].get("state") != "observed":
-        next_action = "restore or reconcile the paired Homebrew formulae; no build is required"
-    elif postconditions["pages"].get("state") != "observed":
-        next_action = "restore or reconcile Pages deployment; no build is required"
-    else:
-        next_action = "verify candidate-bound formula and Pages identities; no build is required"
+    action = plan_recovery(waiting, failed, missing, remote, postconditions)
     return {
+        "actions": [action],
         "dispatches": records,
         "failed": failed,
-        "next_action": next_action,
+        "next_action": action["summary"],
+        "observed_at": observed_at,
         "remote_release": remote,
         "remote_postconditions": postconditions,
-        "retained": {"missing": missing, "verified": present},
+        "retained": {
+            "evidence_source": "internal-retained-manifest",
+            "missing": missing,
+            "observed_at": observed_at,
+            "verified": present,
+        },
         "root": str(root),
         "verification": "deep" if deep else "shallow",
-        "schema": 1,
+        "schema": 2,
         "version": version,
         "waiting": waiting,
     }

@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import importlib.util
+import base64
 import json
 import subprocess
 import tempfile
@@ -34,6 +35,12 @@ SPEC.loader.exec_module(MODULE)
 
 
 class ReleaseStateTests(unittest.TestCase):
+    @staticmethod
+    def completed(value: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(value), stderr=""
+        )
+
     def test_unknown_dispatch_is_actionable_and_never_reported_absent(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "retained"
@@ -155,6 +162,7 @@ class ReleaseStateTests(unittest.TestCase):
                 "remote_release",
                 return_value={
                     "assets": [],
+                    "asset_digests": {},
                     "missing_assets": list(MODULE.EXPECTED_ASSETS),
                     "state": "published",
                 },
@@ -165,6 +173,188 @@ class ReleaseStateTests(unittest.TestCase):
             )
 
         self.assertIn("incomplete remote release", state["next_action"])
+        self.assertEqual(state["actions"][0]["name"], "upload-missing-assets")
+        self.assertIn("side_effects", state["actions"][0])
+
+    def test_latest_postconditions_are_bound_to_formulae_and_docs_run(self) -> None:
+        compose_url = (
+            "https://github.com/owner/repo/releases/download/1.2.3/"
+            "container-compose-plugin-release-arm64.tar.gz"
+        )
+        runtime_url = (
+            "https://github.com/owner/repo/releases/download/1.2.3/"
+            "container-release-arm64.tar.gz"
+        )
+        formulae = {
+            "compose_url": compose_url,
+            "runtime_url": runtime_url,
+            "compose_sha256": "a" * 64,
+            "runtime_sha256": "b" * 64,
+        }
+        compose = (
+            f'  url "{compose_url}"\n  sha256 "{"a" * 64}"\n'
+            '  depends_on "stephenlclarke/tap/container"\n'
+        )
+        runtime = (
+            f'  url "{runtime_url}"\n  sha256 "{"b" * 64}"\n'
+            "  plugin = opt/container-compose/libexec/container-plugins/compose\n"
+        )
+        def metadata(body: str, sha: str) -> dict[str, str]:
+            return {
+                "content": base64.encodebytes(body.encode()).decode(),
+                "encoding": "base64",
+                "sha": sha,
+            }
+        control_sha = "c" * 40
+        responses = [
+            self.completed({"tag_name": "1.2.3"}),
+            self.completed(metadata(runtime, "runtime-blob")),
+            self.completed(metadata(compose, "compose-blob")),
+            self.completed(
+                {
+                    "build_type": "workflow",
+                    "html_url": "https://docs.test",
+                    "status": "built",
+                }
+            ),
+            self.completed(
+                {
+                    "workflow_runs": [
+                        {
+                            "conclusion": "success",
+                            "display_title": "Documentation · 1.2.3 · request",
+                            "head_sha": control_sha,
+                            "id": 123,
+                            "status": "completed",
+                        }
+                    ]
+                }
+            ),
+            self.completed([{"id": 456, "sha": control_sha}]),
+            self.completed([{"state": "success"}]),
+        ]
+        with mock.patch.object(MODULE.subprocess, "run", side_effect=responses):
+            observed = MODULE.remote_postconditions(
+                "owner/repo", "1.2.3", False, formulae
+            )
+
+        self.assertEqual(observed["formulae"]["state"], "verified")
+        self.assertEqual(observed["pages"]["state"], "verified")
+        self.assertEqual(observed["pages"]["control_sha"], control_sha)
+        self.assertNotIn(
+            "body", observed["formulae"]["members"]["container-compose.rb"]
+        )
+
+    def test_superseded_release_does_not_compare_current_postconditions(
+        self,
+    ) -> None:
+        with mock.patch.object(
+            MODULE.subprocess,
+            "run",
+            return_value=self.completed({"tag_name": "2.0.0"}),
+        ) as run:
+            observed = MODULE.remote_postconditions(
+                "owner/repo", "1.2.3", False, None
+            )
+
+        self.assertEqual(observed["formulae"]["state"], "superseded")
+        self.assertEqual(observed["pages"]["latest_version"], "2.0.0")
+        run.assert_called_once()
+
+    def test_formula_conflict_fails_candidate_bound_postcondition(self) -> None:
+        wrong = '  url "https://wrong.test/archive"\n  sha256 "' + "a" * 64 + '"\n'
+        runtime = (
+            '  url "https://example.test/runtime"\n  sha256 "'
+            + "b" * 64
+            + '"\n  plugin = opt/container-compose/libexec/container-plugins/compose\n'
+        )
+        responses = [
+            self.completed({"tag_name": "1.2.3"}),
+            self.completed(
+                {
+                    "content": base64.b64encode(runtime.encode()).decode(),
+                    "encoding": "base64",
+                    "sha": "runtime-blob",
+                }
+            ),
+            self.completed(
+                {
+                    "content": base64.b64encode(wrong.encode()).decode(),
+                    "encoding": "base64",
+                    "sha": "compose-blob",
+                }
+            ),
+            self.completed({"status": "built"}),
+            self.completed({"workflow_runs": []}),
+            self.completed([]),
+        ]
+        expected = {
+            "compose_url": "https://example.test/compose",
+            "runtime_url": "https://example.test/runtime",
+            "compose_sha256": "a" * 64,
+            "runtime_sha256": "b" * 64,
+        }
+        with mock.patch.object(MODULE.subprocess, "run", side_effect=responses):
+            observed = MODULE.remote_postconditions(
+                "owner/repo", "1.2.3", False, expected
+            )
+
+        self.assertEqual(observed["formulae"]["state"], "conflict")
+        self.assertIn("URL", observed["formulae"]["reason"])
+
+    def test_remote_digest_conflict_is_not_reported_as_published(self) -> None:
+        name = MODULE.EXPECTED_ASSETS[0]
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_ASSETS
+        }
+        remote = {
+            "asset_digests": {name: "sha256:" + "b" * 64},
+            "state": "published",
+        }
+
+        observed = MODULE.reconcile_remote_digests(
+            remote, {"assets": assets}
+        )
+
+        self.assertEqual(observed["state"], "conflicting")
+        self.assertIn(name, observed["digest_conflicts"])
+        self.assertEqual(remote["state"], "published")
+
+    def test_missing_remote_digests_fail_closed_for_complete_inventory(self) -> None:
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_ASSETS
+        }
+
+        observed = MODULE.reconcile_remote_digests(
+            {"asset_digests": {}, "missing_assets": [], "state": "published"},
+            {"assets": assets},
+        )
+
+        self.assertEqual(observed["state"], "unavailable")
+        self.assertEqual(
+            observed["unverified_digests"], list(MODULE.EXPECTED_ASSETS)
+        )
+
+    def test_pure_plan_declares_authority_and_invalidated_descendants(self) -> None:
+        action = MODULE.plan_recovery(
+            [],
+            [],
+            [],
+            {
+                "missing_assets": ["asset"],
+                "state": "published",
+            },
+            {
+                "formulae": {"state": "deferred"},
+                "pages": {"state": "deferred"},
+            },
+        )
+
+        self.assertEqual(action["name"], "upload-missing-assets")
+        self.assertEqual(action["invalidated_descendants"], ["formulae", "pages"])
+        self.assertEqual(action["required_authority"], "retained publication authority")
 
 
 if __name__ == "__main__":

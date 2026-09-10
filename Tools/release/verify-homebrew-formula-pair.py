@@ -58,10 +58,27 @@ def verify(
     compose_sha: str,
     runtime_sha: str,
 ) -> None:
+    verify_texts(
+        regular_text(compose_path),
+        regular_text(runtime_path),
+        compose_url,
+        runtime_url,
+        compose_sha,
+        runtime_sha,
+    )
+
+
+def verify_texts(
+    compose: str,
+    runtime: str,
+    compose_url: str,
+    runtime_url: str,
+    compose_sha: str,
+    runtime_sha: str,
+) -> None:
+    """Verify formula bodies already obtained from an authenticated source."""
     if SHA256.fullmatch(compose_sha) is None or SHA256.fullmatch(runtime_sha) is None:
         raise FormulaError("expected formula digests must be lowercase SHA-256 values")
-    compose = regular_text(compose_path)
-    runtime = regular_text(runtime_path)
     if one_field(compose, "url", "compose formula") != compose_url:
         raise FormulaError("compose formula URL does not match the stable asset")
     if one_field(runtime, "url", "runtime formula") != runtime_url:
