@@ -2923,6 +2923,125 @@ github_cli() {{
             self.assertEqual(removed.returncode, 0, removed.stderr)
             self.assertFalse(authority.exists())
 
+    def test_vm_init_authority_retry_reuses_valid_staged_download(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compose = root / "container-compose"
+            manifest = compose / "Tools" / "release" / "stack-refs.json"
+            manifest.parent.mkdir(parents=True)
+            reference = "a" * 40
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "components": {
+                            "containerization": {"ref": reference},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            shutil.copy2(
+                ROOT / "Tools" / "release" / "write-sha256-sidecar.py",
+                manifest.parent / "write-sha256-sidecar.py",
+            )
+            self.run_command("git", "-C", str(compose), "init")
+            self.run_command("git", "-C", str(compose), "add", ".")
+            self.run_command(
+                "git",
+                "-C",
+                str(compose),
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.com",
+                "commit",
+                "-m",
+                "current stack",
+            )
+            current = self.git(compose, "rev-parse", "HEAD")
+            self.git(compose, "tag", "current")
+            self.git(compose, "remote", "add", "origin", str(compose))
+
+            cache = root / "authority-cache"
+            cache.mkdir()
+            stage = cache / f".{reference}.retained"
+            stage.mkdir()
+            asset_name = f"container-vminit-current-{current[:12]}-arm64.oci.tar"
+            archive = stage / asset_name
+            self.create_release_guest_archive(
+                archive,
+                qualified_reference=(
+                    "ghcr.io/stephenlclarke/containerization/vminit:" + reference
+                ),
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "Tools" / "release" / "write-sha256-sidecar.py"),
+                    str(archive),
+                ],
+                check=True,
+            )
+
+            sidecar = archive.with_name(archive.name + ".sha256")
+            with sidecar.open("a", encoding="utf-8") as stream:
+                stream.write(f"{'0' * 64}  unexpected\n")
+            rejected = self.run_release_function(
+                root,
+                "prepare_stable_init_image_authority",
+                shell_setup="\n".join(
+                    [
+                        "unset CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE",
+                        f"RELEASE_INIT_AUTHORITY_CACHE_ROOT={shlex.quote(str(cache))}",
+                        "need_command() { :; }",
+                        (
+                            "github_repo() { printf '%s\\n' "
+                            "'stephenlclarke/container-compose'; }"
+                        ),
+                    ]
+                ),
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("checksum is malformed", rejected.stderr)
+            self.assertTrue(stage.is_dir())
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "Tools" / "release" / "write-sha256-sidecar.py"),
+                    str(archive),
+                ],
+                check=True,
+            )
+
+            recovered = self.run_release_function(
+                root,
+                "prepare_stable_init_image_authority",
+                shell_setup="\n".join(
+                    [
+                        "unset CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE",
+                        f"RELEASE_INIT_AUTHORITY_CACHE_ROOT={shlex.quote(str(cache))}",
+                        "need_command() { :; }",
+                        (
+                            "github_repo() { printf '%s\\n' "
+                            "'stephenlclarke/container-compose'; }"
+                        ),
+                        (
+                            "github_cli() { "
+                            "if [[ \"$1:$2\" == \"release:download\" ]]; then "
+                            "printf 'unexpected download\\n' >&2; return 91; fi; "
+                            "[[ \"$1:$2\" == \"attestation:verify\" ]]; }"
+                        ),
+                    ]
+                ),
+            )
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            self.assertIn("resuming retained VM-init authority", recovered.stdout)
+            self.assertNotIn("unexpected download", recovered.stderr)
+            finalized = cache / reference
+            finalized_asset = finalized / f"container-vminit-{reference}-arm64.oci.tar"
+            self.assertTrue(finalized_asset.is_file())
+            self.assertFalse(stage.exists())
+
     def test_current_demo_is_recoverable_and_not_release_critical(self) -> None:
         package = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         release_critical = package[
