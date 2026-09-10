@@ -3914,6 +3914,8 @@ github_cli() {{
         self.assertIn("Stable Release Gate", tag_authority)
         self.assertIn("workflow_dispatch", tag_authority)
         self.assertIn(".output.summary", tag_authority)
+        self.assertIn('| jq -r "${authority_filter}"', tag_authority)
+        self.assertNotIn('--jq "${authority_filter}"', tag_authority)
         self.assertIn("Authority receipt SHA-256", tag_authority)
         self.assertIn("Authority artifact ID", tag_authority)
         self.assertIn("Authority artifact digest", tag_authority)
@@ -9850,7 +9852,21 @@ exit 64
         fake_gh = """\
 gh() {
   case "$1:$2" in
-    api:*) printf '%s\\t%s\\n' "${TEST_AUTHORITY_RUN_ID}" "${TEST_AUTHORITY_SUMMARY}" ;;
+    api:*)
+      jq -cn \
+        --arg name "Stable Release Authority (${PUBLISH_REF_NAME})" \
+        --arg run_id "${TEST_AUTHORITY_RUN_ID}" \
+        --arg summary "${TEST_AUTHORITY_SUMMARY}" \
+        '[{check_runs: [{
+          name: $name,
+          status: "completed",
+          conclusion: "success",
+          app: {slug: "github-actions"},
+          completed_at: "2026-09-10T00:00:00Z",
+          external_id: $run_id,
+          output: {summary: $summary}
+        }]}]'
+      ;;
     run:list) printf '%s\\n' "${TEST_GATE_CONCLUSION}" ;;
     run:view) printf '%s\\n' "${TEST_GATE_CONCLUSION}" ;;
     *) exit 64 ;;

@@ -1087,7 +1087,7 @@ jobs:
               authority_record="$(
                 gh api --paginate --slurp \
                   "repos/${GITHUB_REPOSITORY}/commits/${PUBLISH_SHA}/check-runs?per_page=100" \
-                  --jq "${authority_filter}"
+                  | jq -r "${authority_filter}"
               )"
               IFS=$'\t' read -r authority_run_id authority_summary <<< "${authority_record}"
               if [[ ! "${authority_run_id}" =~ ^[0-9]+$ ]]; then
