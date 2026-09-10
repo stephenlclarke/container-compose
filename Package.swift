@@ -46,9 +46,9 @@ let containerDependency: Package.Dependency = {
 }()
 
 let containerizationDependency: Package.Dependency = {
-    if let path = ProcessInfo.processInfo.environment["CONTAINERIZATION_PACKAGE_PATH"],
-       !path.isEmpty
-    {
+    if let path = ProcessInfo.processInfo.environment[
+        "CONTAINERIZATION_PACKAGE_PATH"
+    ], !path.isEmpty {
         return .package(name: "containerization", path: path)
     }
     return enhancedRuntime

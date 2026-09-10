@@ -74,6 +74,9 @@ def check(name: str, actual: float, minimum: float) -> bool:
 def main() -> int:
     """Parse arguments and check all configured coverage reports."""
     parser = argparse.ArgumentParser(description="Check generated coverage reports.")
+    parser.add_argument(
+        "--scope", choices=("all", "swift", "go"), default="all"
+    )
     parser.add_argument("--swift-core-minimum", type=float, default=90.0)
     parser.add_argument("--swift-runtime-spi-minimum", type=float, default=95.0)
     parser.add_argument("--swift-provider-minimum", type=float, default=75.0)
@@ -96,9 +99,11 @@ def main() -> int:
         ("ComposePlugin", args.swift_plugin, args.swift_plugin_minimum),
         ("First-party Swift aggregate", args.swift_aggregate, args.swift_aggregate_minimum),
     ]
-    for name, path, minimum in swift_checks:
-        ok = check(name, generic_line_coverage(path), minimum) and ok
-    ok = check("Go", go_statement_coverage(args.go), args.go_minimum) and ok
+    if args.scope in ("all", "swift"):
+        for name, path, minimum in swift_checks:
+            ok = check(name, generic_line_coverage(path), minimum) and ok
+    if args.scope in ("all", "go"):
+        ok = check("Go", go_statement_coverage(args.go), args.go_minimum) and ok
     return 0 if ok else 1
 
 

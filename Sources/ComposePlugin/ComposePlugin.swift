@@ -43,7 +43,7 @@ private let composePluginVersionNumber = composeBuildInfo.version
 private let composePluginVersionString = "container-compose \(composePluginVersionNumber)"
 
 struct ComposeBuildInfo: Codable {
-    var version: String = "0.14.2"
+    var version: String = "0.14.3"
     var source: String = "unspecified"
     var branch: String = "unspecified"
     var lane: String = "unspecified"
@@ -135,7 +135,7 @@ struct ComposeBuildInfo: Codable {
             declaredSource: environment["CONTAINERIZATION_SOURCE"],
         )
         return ComposeBuildInfo(
-            version: "0.14.2",
+            version: "0.14.3",
             source: remoteSource(root: root),
             branch: branch,
             lane: lane(for: branch),
@@ -942,6 +942,8 @@ struct BridgeConvert: AsyncParsableCommand, ComposeProjectCommand {
     var templates: String?
     @Option(name: [.customShort("t"), .customLong("transformation")], parsing: .upToNextOption, help: "Transformation to apply to compose model.")
     var transformations: [String] = []
+    @Flag(name: [.customShort("y"), .customLong("yes")], help: "Assume yes to the output directory overwrite prompt.")
+    var yes = false
 
     /// Runs the selected Bridge transformer image or images.
     func run() async throws {
@@ -953,7 +955,8 @@ struct BridgeConvert: AsyncParsableCommand, ComposeProjectCommand {
                 output: output,
                 templates: templates,
                 transformations: transformations,
-            ),
+                assumeYes: yes,
+            )
         )
     }
 }

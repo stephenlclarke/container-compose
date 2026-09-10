@@ -158,6 +158,10 @@ runtime_codesign_identity=${CONTAINER_RUNTIME_CODESIGN_IDENTITY:-}
 validation_environment_path=${PATH}
 runtime_make_args=()
 container_codesign_make_args=()
+managed_runtime_manager="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/manage-release-gate-runtime.sh"
+managed_runtime_app_root=${CONTAINER_APP_ROOT:-}
+managed_runtime_namespace=${CONTAINER_SERVICE_NAMESPACE:-}
+managed_runtime_enabled=false
 if [[ "${mode}" == "full" ]]; then
   if [[ -z "${runtime_cli}" ]]; then
     printf 'full stack validation requires an executable CONTAINER_RUNTIME_CLI: %s\n' \
@@ -251,6 +255,16 @@ PY
   container_codesign_make_args+=(
     "CODESIGN_OPTS=--force --sign ${runtime_codesign_identity} --timestamp=none"
   )
+  if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == 1 ]]; then
+    managed_runtime_enabled=true
+    if [[ ! -x "${managed_runtime_manager}" ]]; then
+      printf 'full stack validation requires its managed runtime lifecycle helper: %s\n' \
+        "${managed_runtime_manager}" >&2
+      exit 2
+    fi
+    "${managed_runtime_manager}" validate "${runtime_cli}" \
+      "${managed_runtime_app_root}" "${managed_runtime_namespace}"
+  fi
 fi
 
 # The full gate owns one namespace-scoped Container candidate. Pin PATH as a
@@ -287,6 +301,8 @@ if [[ -n "${checkpoint_directory}" ]]; then
     {
       printf 'mode=%s\n' "${mode}"
       printf 'validator=%s\n' "$(shasum -a 256 "$0" | awk '{print $1}')"
+      printf 'runtime_manager=%s\n' \
+        "$(shasum -a 256 "${managed_runtime_manager}" | awk '{print $1}')"
       printf 'environment=PATH=%s\n' "${validation_environment_path}"
       printf 'environment=DEVELOPER_DIR=%s\n' "${DEVELOPER_DIR:-}"
       printf 'environment=SDKROOT=%s\n' "${SDKROOT:-}"
@@ -380,10 +396,129 @@ if [[ -n "${checkpoint_directory}" ]]; then
   )
 fi
 
+# Re-resolve the mutable input closure at every independently resumable stage
+# boundary. The component fingerprints above declare the initial environment
+# and versions; this live identity catches a changed checkout, tool executable,
+# Docker CLI plugin, runtime, or init archive before a stale success is reused
+# or recorded.
+# Print a portable metadata identity for one resolved file.
+file_identity() {
+  local path="$1"
+  case "$(/usr/bin/uname -s)" in
+    Darwin)
+      /usr/bin/stat -L -f '%d:%i:%z:%m:%c' "${path}"
+      ;;
+    *)
+      /usr/bin/stat -L -c '%d:%i:%s:%Y:%Z' "${path}"
+      ;;
+  esac
+}
+
+# Re-resolve the mutable input closure for one stack-validation stage.
+live_validation_identity_for_stage() {
+  local stage="$1"
+  local repository label formula_sha256
+  case "${stage}" in
+    builder-*)
+      repository="${builder_repo}"
+      label=builder
+      ;;
+    containerization-*)
+      repository="${containerization_repo}"
+      label=containerization
+      ;;
+    container-*)
+      repository="${container_repo}"
+      label=container
+      ;;
+    homebrew-*)
+      repository="${homebrew_tap_repo}"
+      label=homebrew
+      ;;
+    *)
+      printf 'unknown stack validation checkpoint stage: %s\n' "${stage}" >&2
+      return 2
+      ;;
+  esac
+
+  local head=fixture
+  local tree=fixture
+  local describe=fixture
+  if git -C "${repository}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if ! git -C "${repository}" diff --quiet --ignore-submodules=none HEAD --; then
+      printf 'tracked stack input changed at a stage boundary: %s\n' \
+        "${label}" >&2
+      return 75
+    fi
+    head=$(git -C "${repository}" rev-parse HEAD)
+    tree=$(git -C "${repository}" rev-parse 'HEAD^{tree}')
+    describe=$(git -C "${repository}" describe --tags --always --dirty)
+  fi
+
+  local init_archive_fingerprint=unset
+  if [[ -n "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}" ]]; then
+    if [[ -f "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}" ]]; then
+      init_archive_fingerprint=$(shasum -a 256 \
+        "${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}" | awk '{print $1}')
+    else
+      init_archive_fingerprint="missing:${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE}"
+    fi
+  fi
+
+  {
+    printf 'validator=%s\n' "$(shasum -a 256 "$0" | awk '{print $1}')"
+    printf 'runtime_manager=%s\n' \
+      "$(shasum -a 256 "${managed_runtime_manager}" | awk '{print $1}')"
+    printf 'head=%s\n' "${head}"
+    printf 'tree=%s\n' "${tree}"
+    printf 'describe=%s\n' "${describe}"
+    printf 'init_archive=%s\n' "${init_archive_fingerprint}"
+    printf 'runtime_cli=%s\n' "${runtime_cli_fingerprint}"
+    if [[ "${label}" == homebrew ]]; then
+      formula_sha256=$(shasum -a 256 \
+        "${homebrew_tap_repo}/Formula/container-compose.rb" | awk '{print $1}')
+      printf 'formula=%s\n' "${formula_sha256}"
+    fi
+    local tool_name tool_path
+    for tool_name in git make swift clang go ruby python3 docker hawkeye shellcheck xcodebuild; do
+      tool_path=$(command -v "${tool_name}" 2>/dev/null || true)
+      printf 'tool=%s:path=%s\n' "${tool_name}" "${tool_path:-missing}"
+      if [[ -n "${tool_path}" && -f "${tool_path}" ]]; then
+        printf 'tool=%s:identity=%s\n' "${tool_name}" \
+          "$(file_identity "${tool_path}")"
+      fi
+    done
+    local docker_config_file="${DOCKER_CONFIG:-${HOME}/.docker}/config.json"
+    if [[ -f "${docker_config_file}" ]]; then
+      printf 'docker:config=%s\n' \
+        "$(shasum -a 256 "${docker_config_file}" | awk '{print $1}')"
+    else
+      printf 'docker:config=missing:%s\n' "${docker_config_file}"
+    fi
+    local plugin_name plugin_path
+    for plugin_name in buildx compose; do
+      for plugin_path in \
+        "${DOCKER_CONFIG:-${HOME}/.docker}/cli-plugins/docker-${plugin_name}" \
+        "/usr/local/lib/docker/cli-plugins/docker-${plugin_name}" \
+        "/usr/local/libexec/docker/cli-plugins/docker-${plugin_name}" \
+        "/opt/homebrew/lib/docker/cli-plugins/docker-${plugin_name}" \
+        "/opt/homebrew/libexec/docker/cli-plugins/docker-${plugin_name}" \
+        "/Applications/Docker.app/Contents/Resources/cli-plugins/docker-${plugin_name}"; do
+        if [[ -e "${plugin_path}" ]]; then
+          printf 'docker:plugin=%s:path=%s:identity=%s\n' \
+            "${plugin_name}" "${plugin_path}" \
+            "$(file_identity "${plugin_path}")"
+        fi
+      done
+    done
+    uname -a
+  } | shasum -a 256 | awk '{print $1}'
+}
+
 # Returns the exact-input fingerprint for one independently validated stage.
 validation_fingerprint_for_stage() {
   local stage="$1"
-  local base_fingerprint
+  local base_fingerprint live_identity
   case "${stage}" in
     builder-*)
       base_fingerprint="${builder_validation_fingerprint}"
@@ -402,8 +537,10 @@ validation_fingerprint_for_stage() {
       return 2
       ;;
   esac
+  live_identity=$(live_validation_identity_for_stage "${stage}")
   {
     printf 'base=%s\n' "${base_fingerprint}"
+    printf 'live=%s\n' "${live_identity}"
     printf 'stage=%s\n' "${stage}"
   } | shasum -a 256 | awk '{print $1}'
 }
@@ -421,13 +558,13 @@ run_checkpointed() {
 
   mkdir -p "${checkpoint_directory}"
   local stamp="${checkpoint_directory}/${mode}-${stage}.sha256"
-  local expected
-  expected="$(validation_fingerprint_for_stage "${stage}"):${stage}"
+  local expected_before
+  expected_before="$(validation_fingerprint_for_stage "${stage}"):${stage}"
   local actual=""
   if [[ -f "${stamp}" ]]; then
     IFS= read -r actual <"${stamp}" || true
   fi
-  if [[ "${actual}" == "${expected}" ]]; then
+  if [[ "${actual}" == "${expected_before}" ]]; then
     printf 'reusing exact-input validation checkpoint: %s\n' "${stage}"
     verify_runtime_cli_identity
     return
@@ -435,9 +572,16 @@ run_checkpointed() {
 
   "$@"
   verify_runtime_cli_identity
+  local expected_after
+  expected_after="$(validation_fingerprint_for_stage "${stage}"):${stage}"
+  if [[ "${expected_after}" != "${expected_before}" ]]; then
+    printf 'stack validation inputs changed while stage ran; refusing stale success: %s\n' \
+      "${stage}" >&2
+    return 75
+  fi
   local temporary_stamp
   temporary_stamp=$(mktemp "${checkpoint_directory}/.${mode}-${stage}.XXXXXX")
-  printf '%s\n' "${expected}" >"${temporary_stamp}"
+  printf '%s\n' "${expected_after}" >"${temporary_stamp}"
   mv -f "${temporary_stamp}" "${stamp}"
 }
 
@@ -467,6 +611,15 @@ fi
 run_checkpointed_make_targets builder "${builder_repo}" "${builder_targets[@]}"
 run_checkpointed_make_targets containerization "${containerization_repo}" \
   "${containerization_targets[@]}"
+# Containerization's macOS build uses the managed candidate for Linux build
+# containers. Quiesce that exact runtime before Container's independent
+# integration namespace starts its own VMs, then resume it for the remaining
+# Compose release gate. This lifecycle boundary is deliberately not
+# checkpointed: every resumed run must prove the host is uncontaminated again.
+if [[ "${managed_runtime_enabled}" == true ]]; then
+  "${managed_runtime_manager}" quiesce "${runtime_cli}" \
+    "${managed_runtime_app_root}" "${managed_runtime_namespace}"
+fi
 # The outer stable gate may select an already-running isolated runtime for
 # Containerization's image build. Container's unit tests exercise their own
 # default namespace contract, so do not let that selector rewrite the expected
@@ -480,5 +633,9 @@ for target in "${container_targets[@]}"; do
       make -C "${container_repo}" "${runtime_make_args[@]}" \
         "${container_codesign_make_args[@]}" "${container_make_args[@]}" "${target}"
 done
+if [[ "${managed_runtime_enabled}" == true ]]; then
+  "${managed_runtime_manager}" resume "${runtime_cli}" \
+    "${managed_runtime_app_root}" "${managed_runtime_namespace}"
+fi
 run_checkpointed homebrew-formula \
   ruby -c "${homebrew_tap_repo}/Formula/container-compose.rb"

@@ -36,17 +36,26 @@ class DocumentationWorkflowTests(unittest.TestCase):
         self.assertIn("    timeout-minutes: 60\n", build_job)
         self.assertNotIn("    timeout-minutes: 45\n", build_job)
 
-    def test_documentation_classification_is_api_aware_and_fail_fast(self) -> None:
+    def test_documentation_is_release_only_and_fans_out_fail_fast(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        classify_job = workflow[
-            workflow.index("  classify-changes:\n") : workflow.index("  build-sites:\n")
+        triggers = workflow[
+            workflow.index("on:\n") : workflow.index("permissions:\n")
+        ]
+        resolve_job = workflow[
+            workflow.index("  resolve-release:\n") : workflow.index("  build-sites:\n")
         ]
         build_job = workflow[
             workflow.index("  build-sites:\n") : workflow.index("  upload-pages-artifact:\n")
         ]
 
-        self.assertIn("classify-documentation-changes.py", classify_job)
-        self.assertIn("--github-output \"${GITHUB_OUTPUT}\"", classify_job)
+        self.assertIn("  workflow_dispatch:\n", triggers)
+        self.assertIn("        required: true\n", triggers)
+        self.assertNotIn("  schedule:\n", triggers)
+        self.assertNotIn("  push:\n", triggers)
+        self.assertNotIn("  pull_request:\n", triggers)
+        self.assertIn("Require exact published release inputs", resolve_job)
+        self.assertIn("Checkout tagged container-compose source", resolve_job)
+        self.assertIn("    needs: resolve-release\n", build_job)
         self.assertIn("      fail-fast: true\n", build_job)
 
 

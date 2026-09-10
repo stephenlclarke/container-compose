@@ -84,6 +84,33 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
 
         self.assertEqual(baseline, changed)
 
+    def test_github_retry_metadata_does_not_invalidate_proof(self) -> None:
+        root = Path("/")
+        baseline = self.module.fingerprint_environment(
+            {
+                "PATH": "/usr/bin",
+                "GITHUB_RUN_ATTEMPT": "1",
+                "GITHUB_ENV": "/runner/_temp/first/environment",
+                "GITHUB_OUTPUT": "/runner/_temp/first/output",
+                "GITHUB_PATH": "/runner/_temp/first/path",
+                "GITHUB_STEP_SUMMARY": "/runner/_temp/first/summary",
+            },
+            root,
+        )
+        retry = self.module.fingerprint_environment(
+            {
+                "PATH": "/usr/bin",
+                "GITHUB_RUN_ATTEMPT": "2",
+                "GITHUB_ENV": "/runner/_temp/second/environment",
+                "GITHUB_OUTPUT": "/runner/_temp/second/output",
+                "GITHUB_PATH": "/runner/_temp/second/path",
+                "GITHUB_STEP_SUMMARY": "/runner/_temp/second/summary",
+            },
+            root,
+        )
+
+        self.assertEqual(baseline, retry)
+
     def test_staged_init_archive_uses_content_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -479,6 +506,31 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
 
             self.assertNotEqual(baseline, changed_binary)
             self.assertNotEqual(changed_binary, changed_config)
+
+    def test_runtime_owned_config_state_does_not_invalidate_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "xdg" / "container" / "config.toml"
+            config.parent.mkdir(parents=True)
+            config.write_text("immutable release policy\n", encoding="utf-8")
+            environment = {
+                "PATH": "/usr/bin",
+                "XDG_CONFIG_HOME": str(config.parents[1]),
+            }
+
+            baseline = self.module.fingerprint_environment(environment, root)
+            runtime_state = config.parent / "runtime-state.json"
+            runtime_state.write_text("first runtime output\n", encoding="utf-8")
+            with_runtime_state = self.module.fingerprint_environment(
+                environment, root
+            )
+            runtime_state.write_text("changed runtime output\n", encoding="utf-8")
+            changed_runtime_state = self.module.fingerprint_environment(
+                environment, root
+            )
+
+            self.assertEqual(baseline, with_runtime_state)
+            self.assertEqual(with_runtime_state, changed_runtime_state)
 
     def test_manifest_never_contains_plaintext_values_or_paths(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

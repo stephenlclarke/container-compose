@@ -2781,6 +2781,136 @@ extension ComposeOrchestratorTests {
         #expect(emitted.messages.contains("+ container rm --force compose-bridge-abc123"))
     }
 
+    @Test("bridge convert preserves non-empty output when overwrite is declined")
+    func bridgeConvertPreservesNonEmptyOutputWhenOverwriteIsDeclined() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let output = directory.appendingPathComponent("out", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let guardFile = output.appendingPathComponent("README.md")
+        try "do not delete me".write(to: guardFile, atomically: true, encoding: .utf8)
+        let prompts = MessageRecorder()
+        let runner = RecordingRunner()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                runtimeHooks: .init(confirm: { prompt in
+                    prompts.append(prompt)
+                    return false
+                }),
+            ),
+            imageManager: RecordingContainerImageManager(),
+        )
+
+        await #expect(throws: ComposeError.self) {
+            try await orchestrator.bridgeConvert(
+                project: ComposeProject(name: "demo", services: [:]),
+                options: ComposeBridgeConvertOptions(
+                    output: output.path,
+                    transformations: ["example/transformer"],
+                ),
+            )
+        }
+
+        #expect(try String(contentsOf: guardFile, encoding: .utf8) == "do not delete me")
+        #expect(runner.commands.isEmpty)
+        #expect(prompts.messages == [
+            "Output directory '\(output.path)' is not empty, all its content will be permanently deleted. Continue? [yN] ",
+        ])
+    }
+
+    @Test("bridge convert yes replaces non-empty output without prompting")
+    func bridgeConvertYesReplacesNonEmptyOutputWithoutPrompting() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let output = directory.appendingPathComponent("out", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let guardFile = output.appendingPathComponent("stale.txt")
+        try "stale".write(to: guardFile, atomically: true, encoding: .utf8)
+        let runner = BridgeInputInspectingRunner()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                runtimeHooks: .init(confirm: { _ in
+                    throw ComposeError.invalidProject("unexpected confirmation prompt")
+                }),
+            ),
+            imageManager: RecordingContainerImageManager(),
+        )
+
+        try await orchestrator.bridgeConvert(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposeBridgeConvertOptions(
+                output: output.path,
+                transformations: ["example/transformer"],
+                assumeYes: true,
+            ),
+        )
+
+        #expect(!FileManager.default.fileExists(atPath: guardFile.path))
+        #expect(runner.commands.count == 1)
+    }
+
+    @Test("bridge convert replaces non-empty output after confirmation")
+    func bridgeConvertReplacesNonEmptyOutputAfterConfirmation() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let output = directory.appendingPathComponent("out", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let guardFile = output.appendingPathComponent("stale.txt")
+        try "stale".write(to: guardFile, atomically: true, encoding: .utf8)
+        let prompts = MessageRecorder()
+        let runner = BridgeInputInspectingRunner()
+        let orchestrator = ComposeOrchestrator(
+            runner: runner,
+            options: ComposeExecutionOptions(
+                runtimeHooks: .init(confirm: { prompt in
+                    prompts.append(prompt)
+                    return true
+                }),
+            ),
+            imageManager: RecordingContainerImageManager(),
+        )
+
+        try await orchestrator.bridgeConvert(
+            project: ComposeProject(name: "demo", services: [:]),
+            options: ComposeBridgeConvertOptions(
+                output: output.path,
+                transformations: ["example/transformer"],
+            ),
+        )
+
+        #expect(!FileManager.default.fileExists(atPath: guardFile.path))
+        #expect(runner.commands.count == 1)
+        #expect(prompts.messages.count == 1)
+    }
+
+    @Test("bridge convert preserves an output path that is not a directory")
+    func bridgeConvertPreservesOutputPathThatIsNotDirectory() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let output = directory.appendingPathComponent("out")
+        try "do not delete me".write(to: output, atomically: true, encoding: .utf8)
+        let runner = RecordingRunner()
+
+        await #expect(throws: ComposeError.self) {
+            try await ComposeOrchestrator(
+                runner: runner,
+                imageManager: RecordingContainerImageManager(),
+            ).bridgeConvert(
+                project: ComposeProject(name: "demo", services: [:]),
+                options: ComposeBridgeConvertOptions(
+                    output: output.path,
+                    transformations: ["example/transformer"],
+                    assumeYes: true,
+                ),
+            )
+        }
+
+        #expect(try String(contentsOf: output, encoding: .utf8) == "do not delete me")
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test("bridge convert accepts empty output without deleting the current directory")
     func bridgeConvertAcceptsEmptyOutputWithoutDeletingCurrentDirectory() async throws {
         let runner = BridgeInputInspectingRunner()

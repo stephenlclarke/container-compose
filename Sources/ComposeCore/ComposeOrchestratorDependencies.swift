@@ -135,6 +135,7 @@ public struct ComposeOrchestratorRuntimeDependencies: Sendable {
 public struct ComposeOrchestratorDependencies: Sendable {
     public var commands: ComposeOrchestratorCommandDependencies
     public var runtime: ComposeOrchestratorRuntimeDependencies
+    public var apiSocketCredentialResolver: any ComposeAPISocketCredentialResolving
     public var imageManager: ComposeRuntimeImageManaging
     public var pullMetadataStore: ComposePullMetadataStoring
 
@@ -143,11 +144,14 @@ public struct ComposeOrchestratorDependencies: Sendable {
         options: ComposeExecutionOptions = ComposeExecutionOptions(),
         commands: ComposeOrchestratorCommandDependencies = ComposeOrchestratorCommandDependencies(),
         runtime: ComposeOrchestratorRuntimeDependencies? = nil,
+        apiSocketCredentialResolver: (any ComposeAPISocketCredentialResolving)? = nil,
         imageManager: ComposeRuntimeImageManaging = ComposeRuntimeProviderDefaults.images(),
         pullMetadataStore: ComposePullMetadataStoring = FileComposePullMetadataStore(),
     ) {
         self.commands = commands
         self.runtime = runtime ?? ComposeOrchestratorRuntimeDependencies(runner: runner, options: options)
+        self.apiSocketCredentialResolver = apiSocketCredentialResolver
+            ?? DockerAPISocketCredentialResolver(runner: runner)
         self.imageManager = imageManager
         self.pullMetadataStore = pullMetadataStore
     }

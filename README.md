@@ -135,11 +135,11 @@ in the stable baseline and current candidate. Planned compatibility work is kept
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
 > <!-- upstream-metrics:start -->
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 5 September 2026 snapshot, the three support forks are **1140 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 10 September 2026 snapshot, the three support forks are **1202 commits ahead of Apple upstream**:
 >
-> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 301 ahead** at [`b404e03bb914`](https://github.com/stephenlclarke/containerization/commit/b404e03bb914904107a6a9305ba1f0e44c79a59c).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 786 ahead** at [`a252482bbacb`](https://github.com/stephenlclarke/container/commit/a252482bbacbd15742845764893585131e2c4825).
-> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 53 ahead** at [`287f2ea3276e`](https://github.com/stephenlclarke/container-builder-shim/commit/287f2ea3276eca73cd3781ff59b4c9c82d5f3d32).
+> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 317 ahead** at [`bd8130fea851`](https://github.com/stephenlclarke/containerization/commit/bd8130fea851f6ee264f00fc684e2543a7d2faa3).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 826 ahead** at [`e653616e62ab`](https://github.com/stephenlclarke/container/commit/e653616e62ab7763c3a7d10e88c365d6dca7e0c4).
+> - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 59 ahead** at [`5373d9b4363c`](https://github.com/stephenlclarke/container-builder-shim/commit/5373d9b4363c6e536dc6401199da269c7045abf9).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >
 > What looks like a local Compose change can therefore require coordinated conflict resolution, pin updates, builds, tests, packaging, and release validation across the entire stack. The pinned revisions must move together.
@@ -222,6 +222,14 @@ commands. The supported Homebrew install uses the matched `stephenlclarke`
 runtime stack; [BUILD.md](docs/guides/BUILD.md) covers repository roles, branch policy, and
 deterministic release promotion.
 
+From a clean source checkout, `make` builds the complete local Container-family
+stack, automatically consumes exact upstream pins, and retains recoverable
+native caches and timing evidence. Use `make local-build` for a quick
+Compose-only build, `make stack-status` to verify retained pins, and
+`make release-version` to preview the Conventional Commit semantic-version
+decision. The complete build, test, Actions, recovery, and release diagrams are
+in [Recoverable Container-family builds](docs/architecture/recoverable-container-family-builds.md).
+
 ## Plugin Recognition
 
 When installed correctly, `container help` lists `compose` under `PLUGINS`.
@@ -233,7 +241,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [Container developer API collection](https://stephenlclarke.github.io/api/): browse the unified documentation for `container-engine-api`, `container`, `containerization`, `container-k8s`, `container-builder-shim`, `container-compose`, and `devcontainer`.
 - [container-compose API reference](https://stephenlclarke.github.io/api/container-compose/): browse the Compose plugin API reference generated from the Swift source.
 - [INSTALL.md](docs/guides/INSTALL.md): install, upgrade, verify, uninstall, recover bad installs, and diagnose runtime issues.
-- [BUILD.md](docs/guides/BUILD.md): build, test, package, validate parity, and promote the current build to a stable release, including the weekly minor-release scheduler and manual major-release dispatch.
+- [BUILD.md](docs/guides/BUILD.md): build, test, package, validate parity, and promote the current build using automatic Conventional Commit versioning or an explicit reviewed override.
 - [DESIGN.md](docs/project/DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](docs/project/STATUS.md): understand the functionality and explicit limitations in the current stable release and candidate.
 - [BACKLOG.md](docs/project/BACKLOG.md): understand the remaining parity contracts and follow their live GitHub issues.
@@ -241,7 +249,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [Docker logging-driver design](docs/architecture/docker-logging-driver-semantics-design.md): review the released logging architecture, retained evidence, and remaining provider and certification gaps.
 - [Container-family parity architecture](docs/architecture/coherent-container-family-parity-design.md): understand the integrated authority, runtime topology, dependency order, and devcontainer/shared Engine design.
 - [Container-family parity development cycle](docs/architecture/container-family-development-cycle.md): deliver vertical slices with local-first validation, review-to-clean convergence, MBP runners, clean GitHub state, upstream monitoring, and comparable-or-better performance.
-- [Recoverable Container-family builds](docs/architecture/recoverable-container-family-builds.md): use the pinned OSS Nextflow graph for immutable source capture, noninteractive native macOS checks, durable evidence, and exact-session recovery.
+- [Recoverable Container-family builds](docs/architecture/recoverable-container-family-builds.md): use the Make, SwiftPM, and Go graph for automatic dependency pins, durable native caches, verified artifacts, and checkpoint recovery.
 - [Archived macOS parity closure review](docs/archive/remaining-macos-parity-closure-design.md): retain the 31 July 2026 analysis that preceded the GitHub-backed 1.0 backlog.
 - [macOS Compose parity and performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md): review the current parity, performance, design, and SonarQube-quality gaps.
 - [External resources](docs/guides/external-resources.md): provision Compose-owned external config files and Keychain secrets.

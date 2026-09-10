@@ -406,116 +406,30 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Swift style tools
-        env:
-          HOMEBREW_NO_ENV_HINTS: "1"
-        run: |
-          set -euo pipefail
-          for tap in aws/tap azure/bicep; do
-            HOMEBREW_NO_REQUIRE_TAP_TRUST=1 brew untap "$tap" >/dev/null 2>&1 || true
-          done
-          if ! command -v swiftlint >/dev/null 2>&1; then
-            HOMEBREW_REQUIRE_TAP_TRUST=1 brew install swiftlint
-          fi
-          if ! command -v swiftformat >/dev/null 2>&1; then
-            HOMEBREW_REQUIRE_TAP_TRUST=1 brew install swiftformat
-          fi
-          swiftlint version
-          swiftformat --version
-
-      - name: Collect Swift style paths
-        id: style-paths
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Run deterministic Swift style checks
         shell: bash
         run: |
           set -euo pipefail
-          changed_files="${RUNNER_TEMP}/changed-files.txt"
-          style_paths="${RUNNER_TEMP}/swift-style-paths.txt"
-
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
-              gh api "repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.pull_request.number }}/files" \
-                --paginate \
-                --jq '.[].filename' > "$changed_files"
+              export SWIFT_STYLE_BASE="${{ github.event.pull_request.base.sha }}"
+              export SWIFT_STYLE_HEAD="${GITHUB_SHA}"
               ;;
             push)
               before="${{ github.event.before }}"
-              after="${GITHUB_SHA}"
               if [[ "$before" =~ ^0+$ ]] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
-                git diff-tree --no-commit-id --name-only -r "$after" > "$changed_files"
+                export SWIFT_STYLE_ALL=1
               else
-                git diff --name-only "$before" "$after" > "$changed_files"
+                export SWIFT_STYLE_BASE="$before"
+                export SWIFT_STYLE_HEAD="${GITHUB_SHA}"
               fi
               ;;
             workflow_dispatch)
-              {
-                if [[ -f Package.swift ]]; then
-                  printf 'Package.swift\n'
-                fi
-                find Sources Tests -type f -name '*.swift' -print
-              } > "$changed_files"
+              export SWIFT_STYLE_ALL=1
               ;;
             *)
-              : > "$changed_files"
+              printf 'Unsupported Swift style event: %s\n' "${GITHUB_EVENT_NAME}" >&2
+              exit 2
               ;;
           esac
-
-          while IFS= read -r path; do
-            [[ -f "$path" ]] || continue
-            # These legacy command and orchestrator files predate the strict changed-file style gate.
-            case "$path" in
-              Sources/ComposePlugin/ComposeCLIHelp.swift|Tests/ComposePluginTests/ComposeCLIHelpTests.swift)
-                continue
-                ;;
-              Sources/ComposePlugin/ComposePlugin.swift)
-                continue
-                ;;
-              Sources/ComposeCore/ComposeCommandOptions.swift|Sources/ComposeCore/ComposeCommitImageArchive.swift|Sources/ComposeCore/ComposeExecutionOptions.swift|Sources/ComposeCore/ComposeOrchestratorBuildAndImages.swift|Sources/ComposeCore/ComposeOrchestratorCreateAndLogs.swift|Sources/ComposeCore/ComposeOrchestratorMountsContainersVolumes.swift|Sources/ComposeCore/ComposeOrchestratorRunCopyStart.swift|Sources/ComposeCore/ComposeOrchestratorUp.swift|Sources/ComposeCore/ComposeOrchestratorWaitAndPorts.swift|Sources/ComposeCore/ContainerDiscoveryAdapter.swift|Tests/ComposeCoreTests/ComposeOrchestratorTests.swift)
-                continue
-                ;;
-              Sources/ComposeContainerRuntime/ComposeCommitImageArchive.swift|Tests/ComposeCoreTests/ComposeOrchestratorBuildAndImageTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorCopyExportCommitTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorInspectionAndConfigTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorLifecycleTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorLogsWatchAttachTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorResourceTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorRunTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorRuntimeAdapterTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorTestSupport.swift|Tests/ComposeCoreTests/ComposeOrchestratorUpAndCreateTests.swift|Tests/ComposeCoreTests/ComposeOrchestratorValidationTests.swift)
-                continue
-                ;;
-              Sources/ComposePlugin/ContainerPackageCompatibility.swift|Tests/ComposePluginTests/ContainerPackageCompatibilityTests.swift|Tests/ComposeCoreTests/ComposeNormalizerTests.swift|Tests/ComposeRuntimeTests/ComposeRuntimeSmokeTests.swift)
-                continue
-                ;;
-            esac
-            case "$path" in
-              Package.swift|Sources/*.swift|Tests/*.swift)
-                printf '%s\n' "$path"
-                ;;
-            esac
-          done < "$changed_files" | sort -u > "$style_paths"
-
-          if [[ ! -s "$style_paths" ]]; then
-            printf 'No Swift style paths selected.\n'
-            printf 'has_paths=false\n' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          printf 'Selected Swift style paths:\n'
-          sed 's/^/  /' "$style_paths"
-          printf 'has_paths=true\n' >> "$GITHUB_OUTPUT"
-
-      - name: Run SwiftLint
-        if: steps.style-paths.outputs.has_paths == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          style_paths=()
-          while IFS= read -r path; do
-            style_paths+=("$path")
-          done < "${RUNNER_TEMP}/swift-style-paths.txt"
-          swiftlint lint --strict --quiet "${style_paths[@]}"
-
-      - name: Run SwiftFormat lint
-        if: steps.style-paths.outputs.has_paths == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          style_paths=()
-          while IFS= read -r path; do
-            style_paths+=("$path")
-          done < "${RUNNER_TEMP}/swift-style-paths.txt"
-          swiftformat "${style_paths[@]}" --lint --swift-version 6.2
+          make swift-style-check

@@ -18,12 +18,10 @@ The [Container-family parity development cycle](../architecture/container-family
 - The Swift toolchain declared by `Package.swift`, aligned with the matching
   `container` and `containerization` checkouts.
 - The Go toolchain declared by `Tools/compose-normalizer/go.mod`.
-- Bash 5 or newer for repository checks; the recoverable pipeline records and
-  exposes this executable instead of falling back to macOS Bash 3.2.
+- The macOS system Bash for the small Make recipes that coordinate native
+  builds.
 - Python 3 for coverage and release tooling.
 - Node.js plus `markdownlint-cli` for Markdown validation.
-- The exact Java 21.0.11 runtime recorded by the recoverable-pipeline wrapper
-  when using the pinned Nextflow launcher.
 - Internet access for SwiftPM to fetch the exact checked-in `container` and
   `containerization` revisions. A sibling runtime checkout is required only for
   full stack, runtime, or release-gate validation.
@@ -33,7 +31,7 @@ The [Container-family parity development cycle](../architecture/container-family
 Install the user-space prerequisites with Homebrew when needed:
 
 ```sh
-brew install bash go node openjdk@21 python sonar-scanner
+brew install go node python sonar-scanner
 npm install --global markdownlint-cli
 ```
 
@@ -50,6 +48,9 @@ runtime by the exact revision in `Package.swift` and `Package.resolved`.
 Keep a sibling runtime checkout only when running the full stack gates:
 
 ```text
+~/github/container-builder-shim
+~/github/container-engine-api
+~/github/containerization
 ~/github/container
 ~/github/container-compose
 ```
@@ -57,6 +58,9 @@ Keep a sibling runtime checkout only when running the full stack gates:
 ```sh
 mkdir -p ~/github
 git clone https://github.com/stephenlclarke/container.git ~/github/container
+git clone https://github.com/stephenlclarke/containerization.git ~/github/containerization
+git clone https://github.com/stephenlclarke/container-builder-shim.git ~/github/container-builder-shim
+git clone https://github.com/stephenlclarke/container-engine-api.git ~/github/container-engine-api
 git clone https://github.com/stephenlclarke/container-compose.git ~/github/container-compose
 cd ~/github/container-compose
 ```
@@ -79,9 +83,13 @@ compatibility.
 
 | Target | Output |
 | --- | --- |
+| `make` or `make all` | Recoverable build of the complete Container-family source stack; writes exact pins and JSONL timings. |
+| `make local-build` | Quick repository-local debug builds of `compose` and `compose-normalizer`. |
 | `make build` | Debug Swift `compose` executable. |
 | `make build-release` | Release Swift `compose` executable. |
 | `make go-build` | Static, trimmed release `compose-normalizer`. |
+| `make stack-build` | Explicit form of the default recoverable full-stack build. |
+| `make stack-status` | Verify every retained source, dependency, and artifact pin plus the final bundle. |
 | `make package` | Release plugin archive and relocatable checksum sidecar. |
 
 Run the plugin directly from source with:
@@ -133,34 +141,30 @@ Useful focused targets are:
 | `make upstream-divergence-report` | Fetch Apple upstream and stephenlclarke refs for the Apple-backed sibling repos, then write `.build/reports/upstream-divergence.md` and `.build/reports/upstream-divergence.json`. |
 | `make upstream-divergence-check` | Run the same report as a strict check that fails on dirty worktrees, unpushed local commits, missing refs, or Apple upstream merge conflicts. |
 | `make upstream-divergence-release-check` | Stable-release check: also fails when a fork `main` is behind Apple upstream. |
-| `make pipeline-bootstrap` | Explicitly download and SHA-256 verify the pinned Nextflow OSS runtime. Normal pipeline runs never install or update it. |
-| `make pipeline-plan` | Print the selected recoverable-pipeline repositories and stages without building. |
-| `make pipeline-preflight` | Validate the host, clean repositories, exact commits, full Git bundles for source checks, path-scoped tree archives for functional/build stages, and stage-specific tools. |
-| `make pipeline PIPELINE_PROFILE=repository` | Run Compose source, Swift-test, Go-test, and CLI-smoke stages with durable cache and evidence. This profile does not run coverage. |
-| `make pipeline PIPELINE_PROFILE=focused PIPELINE_STAGE_SELECTOR=compose-source` | Run explicitly selected stages. Selecting a functional/build stage automatically adds its same-repository source stage. |
-| `make pipeline PIPELINE_PROFILE=release-hosted` | Run the release-specific sibling graph with one Swift-heavy lane and one independent Go/Homebrew lane. |
-| `make pipeline-resume PIPELINE_SESSION=<failed-session-uuid>` | Resume exactly one failed session after a correction. Bare resume is rejected. |
-| `make pipeline-status` | List durable Nextflow session history. |
-| `make pipeline-self-test` | Inject a downstream failure, prove exact-session recovery reuses successful upstream work, corrupt a published output, and prove the cached task restores it. |
+| `make stack-preflight` | Validate native tools, state ownership, and clean sibling source repositories before expensive work. |
+| `make stack-self-test` | Prove atomic pin publication, transitive invalidation, artifact verification, and bundle recovery. |
 
-The OSS recovery graph is documented in [Recoverable Container-family builds](../architecture/recoverable-container-family-builds.md). Its source, build-only, and non-runtime functional profiles now also provide the post-tag hosted sibling release gate. Live runtime, Docker parity, sanitizer, package, demonstration, and publication stages remain on their existing release authorities.
+The source-build recovery contract and diagrams are documented in
+[Recoverable Container-family builds](../architecture/recoverable-container-family-builds.md).
+Make declares the repository graph; SwiftPM and Go retain their native compiler
+caches. Each successful repository build atomically publishes a source-,
+dependency-, and artifact-addressed JSON pin. Downstream repositories read
+those pins automatically, and any source, dependency, artifact, or receipt
+drift invalidates the affected transitive path before reuse. Unrelated Makefile
+changes do not invalidate native caches because the stack contract has its own
+versioned manifest.
 
-Source-check stages receive a self-contained Git bundle for the repository's
-exact commit. Functional and build stages receive deterministic tree archives
-containing only their declared paths, and each waits only for its own
-repository's source-check receipt. Stage commands execute below `/private/tmp`
-with a sealed private tool directory followed by the fixed system path. Every
-stage pins and revalidates the selected Apple developer directory and its
-resolved Git and Python tools. Swift stages additionally identify the SDK,
-Swift, Clang, frontend, and linker, Go stages identify and hash the complete
-`GOROOT`, and Markdown stages hash the installed `markdownlint-cli` package
-tree. Repository scripts resolve the recorded Bash 5 executable from the
-sealed directory, and preflight fails before any source stage when that
-executable reports a major version below 5.
+The final pin bundle is verified while the single build lock is held. After a
+failure or interruption, rerun `make`: valid independent pins are
+reused and the first missing or stale stage continues from its native build
+cache. The hosted release gate uses candidate-keyed stage checkpoints and
+durable logs under the same principle. Never repair a success receipt by hand.
 
-On failure, the pipeline preserves the receipt, stage command, stdout, stderr, `.command.sh`, and `.command.run` under `$PIPELINE_STATE_ROOT/failures/<session-uuid>/<stage>`. The wrapper copies that tree into the attempt evidence directory as `failures/`. Successful stages publish their receipt and complete stdout/stderr logs; the summary authenticates both logs by SHA-256. The self-test proves that an exact-session correction reuses independent successful work and that a missing or corrupted published output is restored from the valid content cache. The graph does not yet export reusable compiler products or its own coverage-floor decision.
-
-The post-tag hosted sibling gate uses the recoverable graph and no longer replays Compose CI or accepts manually carried-forward checkpoint records. The local live-runtime and Docker-parity gate still uses the legacy Python checkpoint wrappers while those exclusive runtime stages are migrated. Its broad fingerprint can invalidate unrelated proof, and retained historical checkpoints may contain manually carried-forward records that the implementation cannot authenticate. Treat those records as migration-era evidence only, never as exact-input cache entries, and never create or edit a `carried_forward` record.
+Each full stack invocation writes a unique JSONL file below
+`$(STACK_STATE_ROOT)/timings`. It records the end-to-end duration plus each
+native compiler and bin-path operation, including failures. Compare a clean
+run, the immediate no-op rerun, and a fail-once recovery using these durable
+records rather than terminal timestamps.
 
 Every stage has a wall-clock deadline and terminates its complete process
 session, including descendant process groups, when that deadline expires. A
@@ -338,7 +342,13 @@ formula syntax, the isolated Swift runtime suite, and the pinned Compose compari
 suite, including live `build --check` against the matched container backend.
 The Container integration segment uses a per-candidate ignored test app/log root,
 so it cannot inherit or leave persistent macOS runtime state between release-gate
-runs. GitHub-hosted macOS runners cannot launch nested Virtualization.framework guests, so the post-tag Stable Release Gate runs the `release-hosted` recoverable graph from its immutable release-control checkout against immutable source, runtime, and tap checkouts instead. Main CI is already green at the exact candidate SHA, so the graph does not replay Compose validation. It runs independent builder-shim and Homebrew work alongside, but never concurrently with, more than one Swift-heavy sibling graph; the local full gate remains mandatory for runtime integration and Docker Compose parity. When release
+runs. The post-tag Stable Release Gate runs its checkpointed, non-live sibling
+proof on the dedicated self-hosted Mac from an immutable release-control
+checkout against immutable source, runtime, and tap checkouts. Main CI is
+already green at the exact candidate SHA, so this proof does not replay Compose
+validation. Each release-specific sibling target has its own exact-input
+checkpoint; the local full gate remains mandatory for runtime integration and
+Docker Compose parity. When release
 preparation changes `container`'s exact `containerization` package pin, the
 helper applies the sole deterministic automation exception above: it verifies
 one release-generated commit changes only `Package.swift` and
@@ -420,7 +430,13 @@ prior SHA.
 
 ### Scheduled Stable Releases
 
-**Scheduled Stable Release** runs every Monday at 09:17 UTC and promotes the next minor version with `-+-` when the Current build has soaked for seven days and `main` contains source newer than the latest semantic tag. It ends successfully without allocating the release runner when either condition is not met, so an unready week is not a failed release. A manual dispatch of the same workflow permits either `-+-` (minor) or `+--` (major); patch, exact-version, and documented security releases remain explicit local helper invocations.
+**Scheduled Stable Release** runs every Monday at 09:17 UTC. When the Current
+build has soaked for seven days and `main` contains source newer than the latest
+semantic tag, it derives the next version from first-parent Conventional Commit
+history. It ends successfully without allocating the release runner when there
+is no release-producing commit or the soak is incomplete, so an unready week is
+not a failed release. Manual dispatch can use the same automatic decision or an
+explicit patch, minor, or major override.
 
 The scheduled stable-release workflow and the Current package workflow run only from `main` on the dedicated `container-compose-release` Apple-silicon self-hosted runner. It creates clean, disposable stack checkouts, reconstructs the read-only Apple remotes and Stephen-owned push remotes, and invokes the existing helper unchanged. That preserves the required local runtime and Docker Compose parity gate, signed semantic tag, source-promotion pull request, hosted stable gate, immutable package assets, and paired Homebrew update. The separate Current Demo workflow consumes the already-published exact-SHA signed packages on the same hardware-virtualization-capable runner, uses a stable internal-volume runtime path, and applies a process-group deadline. Its mutable visual asset is recoverable and deliberately outside the package, attestation, release, and Homebrew critical path. GitHub-hosted macOS workers cannot provide the nested virtualization needed to record Container guest startup, so they must never publish that recording.
 
@@ -438,6 +454,8 @@ From clean `~/github/container-compose`, `~/github/container-builder-shim`,
 
 ```sh
 make release-plan
+make release-version
+make release-plan VERSION_SELECTOR=--+ # reviewed maintenance plan
 ```
 
 ### Promote The Current Build
@@ -450,13 +468,13 @@ formulae, and release notes deterministic. The current prerelease is recreated
 by its workflow after the matching Homebrew formulae update, so its GitHub
 published time always identifies the build users are viewing.
 
-After `make release-plan` confirms the intended next version, promote the
-validated `main` source with one selector. The selector is resolved from the
-latest semantic tag—not from the working-tree version. The explicit intent
-makes a stable release a conscious boundary rather than an automatic response to
-every green slice:
+`make release-version` reports the latest reachable semantic tag, selected
+bump, and next version. `make release-plan` includes that decision. After the
+plan confirms the intended version, promote validated `main`; omission of
+`VERSION_SELECTOR` uses the Conventional Commit decision:
 
 ```sh
+CONTAINER_STACK_RELEASE_INTENT=milestone make release
 CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=--+   # patch: X.Y.Z -> X.Y.(Z+1)
 CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=-+-   # minor: X.Y.Z -> X.(Y+1).0
 CONTAINER_STACK_RELEASE_INTENT=milestone make release VERSION_SELECTOR=+--   # major: X.Y.Z -> (X+1).0.0
@@ -466,6 +484,15 @@ CONTAINER_STACK_RELEASE_INTENT=milestone \\
   make release VERSION_SELECTOR=0.7.0
 CONTAINER_STACK_RELEASE_INTENT=security CONTAINER_STACK_SECURITY_REASON='CVE-2026-12345' make release VERSION_SELECTOR=--+
 ```
+
+The automatic resolver treats `fix`, `perf`, and `revert` as patch changes,
+`feat` as minor, and a `!` marker or `BREAKING CHANGE:` footer as major. Other
+valid Conventional Commit types do not create a release by themselves.
+Non-conventional first-parent subjects fail closed. For a GitHub merge commit,
+the Conventional pull-request title recorded as its first body line supplies
+the decision. Explicit selectors remain available for reviewed maintenance
+promotions, security releases, and exact recovery retries; they are not a way
+to bypass release evidence.
 
 Before source promotion, the helper requires the mutable `current` tag to point
 at the validated `main` head. Milestones also require that Current build's
@@ -479,7 +506,7 @@ stack tools, fetches the required `containerization` integration kernel when it
 is absent, and runs the full local `make release-gate` inside one fresh,
 marker-protected, uniquely namespaced runtime lifecycle. Nested runtime targets
 reuse that owner without stopping it. Local runtime and parity checkpoints under the release evidence directory may be reused after an interrupted retry, subject to the legacy checkpoint limitations described above. An unpublished
-helper-generated candidate commit is likewise retained rather than recommitted with a new identity after its signature, exact subject, ancestry, and changed files pass the fail-closed recovery policy. The hosted gate then runs the `release-hosted` recoverable graph from its immutable release-control checkout against the immutable source, runtime, and tap checkouts before package publication. The helper waits up to three hours for
+helper-generated candidate commit is likewise retained rather than recommitted with a new identity after its signature, exact subject, ancestry, and changed files pass the fail-closed recovery policy. The hosted gate then runs the checkpointed sibling proof from its immutable release-control checkout against the immutable source, runtime, and tap checkouts before package publication. The helper waits up to three hours for
 that hosted gate, which exceeds its 120-minute workflow timeout; set
 `CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS` only when an operator needs a
 different bound.
@@ -612,8 +639,8 @@ PARITY_SINK_BIND_ADDRESS=0.0.0.0 make docker-compose-performance-matrix
 
 Do not use the wildcard opt-in for an unattended host whose approval state is
 unknown. The harness fails before the expensive matrix when cross-VM logging
-cannot use a reachable bind. This performance matrix is not part of the
-phase-one Nextflow graph.
+cannot use a reachable bind. This performance matrix is deliberately separate
+from the source-build graph.
 
 Run a focused target directly while iterating:
 

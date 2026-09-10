@@ -172,8 +172,8 @@ public struct CommandResult: Equatable, Sendable {
     public var status: Int32
     package var stdoutData: Data
     package var stderrData: Data
-    package var stdoutOmittedByteCount: Int
-    package var stderrOmittedByteCount: Int
+    public private(set) var stdoutOmittedByteCount: Int
+    public private(set) var stderrOmittedByteCount: Int
 
     public var stdout: String {
         get { processOutputString(stdoutData) }
@@ -242,6 +242,14 @@ public protocol CommandRunning: Sendable {
         environment: [String: String]?,
         io: CommandIO,
     ) async throws -> CommandResult
+
+    /// Runs a captured command while retaining at most one prefix per output stream.
+    func runCapturingOutputPrefix(
+        _ executable: String,
+        _ arguments: [String],
+        input: Data?,
+        maximumOutputBytes: Int,
+    ) async throws -> CommandResult
 }
 
 public extension CommandRunning {
@@ -259,6 +267,35 @@ public extension CommandRunning {
             workingDirectory: workingDirectory,
             environment: environment,
             io: .captured(input: input),
+        )
+    }
+
+    /// Provides bounded result semantics for custom runners. `ProcessRunner`
+    /// overrides this method so child output is bounded while it is drained.
+    func runCapturingOutputPrefix(
+        _ executable: String,
+        _ arguments: [String],
+        input: Data? = nil,
+        maximumOutputBytes: Int,
+    ) async throws -> CommandResult {
+        precondition(maximumOutputBytes >= 0)
+        let result = try await run(
+            executable,
+            arguments,
+            workingDirectory: nil,
+            environment: nil,
+            input: input,
+        )
+        let stdoutPrefix = result.stdoutData.prefix(maximumOutputBytes)
+        let stderrPrefix = result.stderrData.prefix(maximumOutputBytes)
+        return CommandResult(
+            status: result.status,
+            stdoutData: Data(stdoutPrefix),
+            stderrData: Data(stderrPrefix),
+            stdoutOmittedByteCount: result.stdoutOmittedByteCount
+                + result.stdoutData.count - stdoutPrefix.count,
+            stderrOmittedByteCount: result.stderrOmittedByteCount
+                + result.stderrData.count - stderrPrefix.count,
         )
     }
 }
@@ -328,11 +365,9 @@ public struct ProcessRunner: CommandRunning {
     }
 
     /// Runs a captured command while retaining at most one prefix per output stream.
-    package func runCapturingOutputPrefix(
+    public func runCapturingOutputPrefix(
         _ executable: String,
         _ arguments: [String],
-        workingDirectory: URL? = nil,
-        environment: [String: String]? = nil,
         input: Data? = nil,
         maximumOutputBytes: Int,
     ) async throws -> CommandResult {
@@ -340,8 +375,8 @@ public struct ProcessRunner: CommandRunning {
         return try await runCaptured(
             executable,
             arguments,
-            workingDirectory: workingDirectory,
-            environment: environment,
+            workingDirectory: nil,
+            environment: nil,
             options: CapturedProcessOptions(
                 input: input,
                 maximumOutputBytes: maximumOutputBytes,
@@ -897,73 +932,5 @@ private extension ProcessRunState {
                 stderrOmittedByteCount: stderrOmittedByteCount,
             )),
         )
-    }
-}
-
-/// Command invocation recorded by `RecordingRunner`.
-public struct RecordedCommand: Equatable, Sendable {
-    public var executable: String
-    public var arguments: [String]
-    public var workingDirectory: URL?
-    public var environment: [String: String]?
-    public var io: CommandIO
-
-    public var input: Data? {
-        if case let .captured(input) = io {
-            return input
-        }
-        return nil
-    }
-}
-
-/// Test runner that records invocations and returns queued responses.
-public final class RecordingRunner: CommandRunning, @unchecked Sendable {
-    private let lock = NSLock()
-    private var commandStorage: [RecordedCommand] = []
-    private var responseStorage: [CommandResult]
-
-    public var commands: [RecordedCommand] {
-        lock.lock()
-        defer { lock.unlock() }
-        return commandStorage
-    }
-
-    public var responses: [CommandResult] {
-        get {
-            lock.lock()
-            defer { lock.unlock() }
-            return responseStorage
-        }
-        set {
-            lock.lock()
-            defer { lock.unlock() }
-            responseStorage = newValue
-        }
-    }
-
-    public init(responses: [CommandResult] = []) {
-        responseStorage = responses
-    }
-
-    /// Records a command and returns the next queued response, or success.
-    public func run(
-        _ executable: String,
-        _ arguments: [String],
-        workingDirectory: URL?,
-        environment: [String: String]?,
-        io: CommandIO,
-    ) async throws -> CommandResult {
-        lock.withLock {
-            commandStorage.append(RecordedCommand(
-                executable: executable,
-                arguments: arguments,
-                workingDirectory: workingDirectory,
-                environment: environment,
-                io: io,
-            ))
-            return responseStorage.isEmpty
-                ? CommandResult(status: 0, stdout: "", stderr: "")
-                : responseStorage.removeFirst()
-        }
     }
 }

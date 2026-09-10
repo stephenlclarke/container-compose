@@ -15,7 +15,7 @@
 #===----------------------------------------------------------------------===#
 
 name: Scheduled Stable Release
-run-name: Scheduled Stable Release · ${{ inputs.version_selector || '-+-' }}
+run-name: Scheduled Stable Release · ${{ inputs.version_selector || 'auto' }}
 
 on:
   schedule:
@@ -24,11 +24,13 @@ on:
   workflow_dispatch:
     inputs:
       version_selector:
-        description: "Stable release bump, resolved from the latest semantic tag"
+        description: "Stable release bump; auto derives it from Conventional Commits"
         required: true
-        default: "-+-"
+        default: "auto"
         type: choice
         options:
+          - "auto"
+          - "--+"
           - "-+-"
           - "+--"
 
@@ -52,21 +54,39 @@ jobs:
       - name: Checkout release controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Select release increment
         id: selector
         env:
-          SELECTOR: ${{ inputs.version_selector || '-+-' }}
+          SELECTOR: ${{ inputs.version_selector || 'auto' }}
         shell: bash
         run: |
           set -euo pipefail
+          requested_selector="${SELECTOR}"
           case "${SELECTOR}" in
-            -+-|+--)
-              printf 'selector=%s\n' "${SELECTOR}" >> "$GITHUB_OUTPUT"
+            auto)
+              SELECTOR="$(python3 Tools/release/conventional-version.py \
+                --format selector --allow-no-release)"
+              ;;
+            --+|-+-|+--)
               ;;
             *)
-              printf 'scheduled stable releases only support -+- (minor) or +-- (major): %s\n' \
+              printf 'stable release selector must be auto, --+, -+-, or +--: %s\n' \
+                "${SELECTOR}" >&2
+              exit 2
+              ;;
+          esac
+          case "${SELECTOR}" in
+            --+|-+-|+--)
+              printf 'selector=%s\n' "${SELECTOR}" >> "$GITHUB_OUTPUT"
+              ;;
+            "")
+              [[ "${requested_selector}" == "auto" ]]
+              printf 'selector=\n' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              printf 'conventional version resolver returned an invalid selector: %s\n' \
                 "${SELECTOR}" >&2
               exit 2
               ;;
@@ -76,6 +96,7 @@ jobs:
         id: decision
         env:
           GH_TOKEN: ${{ github.token }}
+          SELECTED_SELECTOR: ${{ steps.selector.outputs.selector }}
         shell: bash
         run: |
           set -euo pipefail
@@ -134,6 +155,10 @@ jobs:
             --latest-stable-sha "${latest_stable_sha}" > "${decision_file}"
           should_release="$(jq -r '.should_release' "${decision_file}")"
           reason="$(jq -r '.reason' "${decision_file}")"
+          if [[ "${should_release}" == "true" && -z "${SELECTED_SELECTOR}" ]]; then
+            should_release=false
+            reason="Current is newer, but Conventional Commit history contains no release-producing change."
+          fi
           printf 'should_release=%s\n' "${should_release}" >> "$GITHUB_OUTPUT"
           printf 'reason=%s\n' "${reason}" >> "$GITHUB_OUTPUT"
           printf '%s\n' "${reason}" >> "$GITHUB_STEP_SUMMARY"
@@ -148,51 +173,77 @@ jobs:
       - name: Checkout container-compose release controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          path: release-stack/container-compose
+          path: release-controls/container-compose
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Checkout builder-shim source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/container-builder-shim
-          ref: main
-          path: release-stack/container-builder-shim
-          fetch-depth: 0
-          persist-credentials: false
+      # This inline workflow step is the trust root for unattended recovery.
+      # It must run before Make, Bash, or Python consumes any checked-out file;
+      # the controller repeats the check later only as defence in depth.
+      - name: Verify exact release bootstrap closure
+        shell: bash
+        working-directory: release-controls/container-compose
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bootstrap_closure=(
+            Makefile
+            scripts/CONTAINER_STACK_RELEASE.sh
+            Tools/ci/container-runtime-lock.sh
+            Tools/release/release-host-state.py
+            Tools/release/release-workspace.py
+          )
+          origin_url="$(git remote get-url origin)"
+          case "${origin_url}" in
+            https://github.com/stephenlclarke/container-compose|https://github.com/stephenlclarke/container-compose.git|git@github.com:stephenlclarke/container-compose|git@github.com:stephenlclarke/container-compose.git) ;;
+            *)
+              printf 'release bootstrap origin is not stephenlclarke/container-compose: %s\n' \
+                "${origin_url:-missing}" >&2
+              exit 1
+              ;;
+          esac
+          local_head="$(git rev-parse HEAD)"
+          remote_head="$(git ls-remote --heads origin refs/heads/main | awk '{print $1}' | tail -n 1)"
+          if [[ ! "${EXPECTED_HEAD}" =~ ^[0-9a-f]{40}$ ]] ||
+            [[ "${local_head}" != "${EXPECTED_HEAD}" ]] ||
+            [[ "${remote_head}" != "${EXPECTED_HEAD}" ]]; then
+            printf 'unattended release bootstrap is not exact reviewed main: workflow %s, local %s, remote %s\n' \
+              "${EXPECTED_HEAD:-missing}" "${local_head:-missing}" \
+              "${remote_head:-missing}" >&2
+            exit 1
+          fi
+          if [[ -n "$(git status --short)" ]]; then
+            printf 'unattended release bootstrap checkout is dirty\n' >&2
+            exit 1
+          fi
+          for relative_path in "${bootstrap_closure[@]}"; do
+            if [[ ! -f "${relative_path}" || -L "${relative_path}" ]]; then
+              printf 'release bootstrap closure file is missing or unsafe: %s\n' \
+                "${relative_path}" >&2
+              exit 1
+            fi
+            index_entry="$(git ls-files -v -- "${relative_path}")"
+            if [[ -z "${index_entry}" || "${index_entry}" == S\ * ||
+              "${index_entry:0:1}" =~ [a-z] ]]; then
+              printf 'release bootstrap closure has hidden index state: %s\n' \
+                "${relative_path}" >&2
+              exit 1
+            fi
+            expected_blob="$(git rev-parse "HEAD:${relative_path}")"
+            actual_blob="$(git hash-object --no-filters "${relative_path}")"
+            if [[ ! "${expected_blob}" =~ ^[0-9a-f]{40}$ ]] ||
+              [[ "${actual_blob}" != "${expected_blob}" ]]; then
+              printf 'release bootstrap closure differs from reviewed HEAD: %s\n' \
+                "${relative_path}" >&2
+              exit 1
+            fi
+          done
 
-      - name: Checkout containerization source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/containerization
-          ref: main
-          path: release-stack/containerization
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Checkout container runtime source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/container
-          ref: main
-          path: release-stack/container
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Checkout Homebrew tap
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/homebrew-tap
-          ref: main
-          path: release-stack/homebrew-tap
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Configure isolated release stack
+      - name: Configure isolated release controller
         shell: bash
         run: |
           set -euo pipefail
-          release_root="${GITHUB_WORKSPACE}/release-stack"
           automation_token="$(
             unset GH_TOKEN GITHUB_TOKEN
             gh auth token
@@ -207,27 +258,7 @@ jobs:
             exit 1
           fi
 
-          own_url() {
-            local repository="$1"
-            printf 'https://x-access-token:%s@github.com/%s.git' "${automation_token}" "${repository}"
-          }
-          configure_apple_fork() {
-            local path="$1" fork_repository="$2" upstream_repository="$3"
-            git -C "${path}" remote rename origin fork
-            git -C "${path}" remote set-url fork "$(own_url "${fork_repository}")"
-            git -C "${path}" remote add origin "https://github.com/${upstream_repository}.git"
-            git -C "${path}" remote set-url --push origin no_push
-          }
-
-          configure_apple_fork "${release_root}/container-builder-shim" \
-            stephenlclarke/container-builder-shim apple/container-builder-shim
-          configure_apple_fork "${release_root}/container" \
-            stephenlclarke/container apple/container
-          git -C "${release_root}/containerization" remote set-url origin "$(own_url stephenlclarke/containerization)"
-          git -C "${release_root}/containerization" remote add upstream https://github.com/apple/containerization.git
-          git -C "${release_root}/containerization" remote set-url --push upstream no_push
-          git -C "${release_root}/container-compose" remote set-url origin "$(own_url stephenlclarke/container-compose)"
-          git -C "${release_root}/homebrew-tap" remote set-url origin "$(own_url stephenlclarke/homebrew-tap)"
+          gh auth setup-git
 
           for command_name in docker gh git go make node npm python3 swift; do
             command -v "${command_name}" >/dev/null 2>&1 || {
@@ -244,15 +275,12 @@ jobs:
           [[ -n "${signing_key}" && -r "${signing_key}" ]]
           signing_private_key="${signing_key%.pub}"
           ssh-keygen -y -P '' -f "${signing_private_key}" >/dev/null
-          git -C "${release_root}/container-compose" config gpg.format ssh
-          git -C "${release_root}/container-compose" config commit.gpgsign true
-          git -C "${release_root}/container-compose" config user.signingkey "${signing_key}"
 
       - name: Promote the selected stable release
         shell: bash
-        working-directory: release-stack/container-compose
+        working-directory: release-controls/container-compose
         env:
-          CONTAINER_STACK_RELEASE_ROOT: ${{ github.workspace }}/release-stack
+          CONTAINER_STACK_RELEASE_BUILD_ROOT: /Volumes/SSD/github/container-compose-release-transactions
           CONTAINER_STACK_RELEASE_INTENT: milestone
           VERSION_SELECTOR: ${{ needs.preflight.outputs.selector }}
         run: |

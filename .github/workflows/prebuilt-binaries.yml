@@ -480,6 +480,40 @@ jobs:
           fetch-depth: 1
           ref: ${{ github.sha }}
 
+      - name: Verify exact preflight source controls
+        env:
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+          RELEASE_CONTROL_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C container-compose rev-parse HEAD)" == "${PUBLISH_SHA}" ]]
+          [[ "$(git -C release-tools rev-parse HEAD)" == \
+            "${RELEASE_CONTROL_SHA}" ]]
+
+      - name: Require Current stack pins to match fork mains
+        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: container-compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          for component in container-builder-shim containerization container; do
+            repository="$(jq -er --arg component "${component}" \
+              '.components[$component].repository' Tools/release/stack-refs.json)"
+            pinned_ref="$(jq -er --arg component "${component}" \
+              '.components[$component].ref' Tools/release/stack-refs.json)"
+            main_ref="$(gh api "repos/${repository}/commits/main" --jq '.sha')"
+            if [[ ! "${pinned_ref}" =~ ^[0-9a-f]{40}$ ||
+                  ! "${main_ref}" =~ ^[0-9a-f]{40}$ ||
+                  "${pinned_ref}" != "${main_ref}" ]]; then
+              printf 'Current stack uses %s %s, but fork main is %s; update the stack pin before packaging\n' \
+                "${component}" "${pinned_ref:-missing}" "${main_ref:-missing}" >&2
+              exit 1
+            fi
+          done
+
       - name: Require a writable Homebrew promotion token
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -492,6 +526,69 @@ jobs:
           fi
           if [[ "$(gh api repos/stephenlclarke/homebrew-tap --jq '.permissions.push')" != "true" ]]; then
             printf 'HOMEBREW_TAP_TOKEN cannot push to stephenlclarke/homebrew-tap.\n' >&2
+            exit 1
+          fi
+
+      - name: Require exact Current VM-init authority
+        if: needs.resolve-publish-context.outputs.ref_type == 'branch'
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        working-directory: container-compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          containerization_ref="$(
+            jq -er '.components.containerization.ref' \
+              Tools/release/stack-refs.json
+          )"
+          if [[ ! "${containerization_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Current VM-init authority requires an exact Containerization ref: %s\n' \
+              "${containerization_ref:-<unset>}" >&2
+            exit 1
+          fi
+
+          authority_root="${RUNNER_TEMP}/current-vminit-preflight"
+          mkdir -p "${authority_root}"
+          gh api --paginate --slurp \
+            "repos/stephenlclarke/containerization/actions/workflows/containerization-build.yml/runs?head_sha=${containerization_ref}&per_page=100" \
+            > "${authority_root}/run-pages.json"
+          jq '[.[].workflow_runs[] | {
+            databaseId: .id,
+            workflowName: .name,
+            headSha: .head_sha,
+            status,
+            conclusion,
+            event,
+            createdAt: .created_at,
+            url: .html_url
+          }]' "${authority_root}/run-pages.json" > "${authority_root}/runs.json"
+          python3 Tools/parity/historical_reconstruction_benchmark.py \
+            run-candidates \
+            --runs "${authority_root}/runs.json" \
+            --revision "${containerization_ref}" \
+            > "${authority_root}/run-candidates.json"
+
+          authority_found=false
+          while IFS= read -r run_id; do
+            candidate_run="${authority_root}/run-${run_id}.json"
+            candidate_artifacts="${authority_root}/artifacts-${run_id}.json"
+            jq --argjson id "${run_id}" \
+              '.[] | select(.runId == $id)' \
+              "${authority_root}/run-candidates.json" > "${candidate_run}"
+            gh api \
+              "repos/stephenlclarke/containerization/actions/runs/${run_id}/artifacts" \
+              > "${candidate_artifacts}"
+            if python3 Tools/parity/historical_reconstruction_benchmark.py \
+              validate-initfs \
+              --run "${candidate_run}" \
+              --artifacts "${candidate_artifacts}" >/dev/null; then
+              authority_found=true
+              break
+            fi
+          done < <(jq -r '.[].runId' "${authority_root}/run-candidates.json")
+          if [[ "${authority_found}" != "true" ]]; then
+            printf 'no exact, retained initfs artifact exists for Containerization %s\n' \
+              "${containerization_ref}" >&2
             exit 1
           fi
 
@@ -527,6 +624,15 @@ jobs:
           fetch-depth: 1
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
+      - name: Record exact preflight inputs
+        id: preflight-inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          tap_ref="$(git -C homebrew-tap rev-parse HEAD)"
+          [[ "${tap_ref}" =~ ^[0-9a-f]{40}$ ]]
+          printf 'tap_ref=%s\n' "${tap_ref}" >> "${GITHUB_OUTPUT}"
+
       - name: Validate Homebrew configuration before builds
         shell: bash
         run: |
@@ -535,6 +641,21 @@ jobs:
             --tap homebrew-tap \
             --compose-repository container-compose \
             --container-repository container
+          [[ "$(git -C container-compose rev-parse HEAD)" == \
+            "${{ needs.resolve-publish-context.outputs.sha }}" ]]
+          [[ "$(git -C release-tools rev-parse HEAD)" == "${{ github.sha }}" ]]
+          [[ "$(git -C container rev-parse HEAD)" == \
+            "${{ steps.container-source.outputs.ref }}" ]]
+          [[ "$(git -C homebrew-tap rev-parse HEAD)" == \
+            "${{ steps.preflight-inputs.outputs.tap_ref }}" ]]
+          remote_tap_ref="$(
+            git -C homebrew-tap ls-remote --heads origin refs/heads/main |
+              awk '{ print $1 }' | tail -n 1
+          )"
+          [[ "${remote_tap_ref}" == "${{ steps.preflight-inputs.outputs.tap_ref }}" ]]
+          for repository in container-compose release-tools container homebrew-tap; do
+            [[ -z "$(git -C "${repository}" status --porcelain --untracked-files=no)" ]]
+          done
 
   codeql-release:
     name: CodeQL
@@ -556,6 +677,14 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ needs.resolve-publish-context.outputs.checkout_ref }}
+
+      - name: Verify exact CodeQL release source
+        env:
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${PUBLISH_SHA}" ]]
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -594,10 +723,44 @@ jobs:
           mkdir -p "$GOCACHE" "$GOMODCACHE"
           make go-build
 
+      - name: Verify CodeQL release authority remained exact
+        env:
+          PUBLISH_REF_NAME: ${{ needs.resolve-publish-context.outputs.ref_name }}
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${PUBLISH_SHA}" ]]
+          [[ -z "$(git status --porcelain --untracked-files=no)" ]]
+          tag_ref="$(
+            git ls-remote --tags origin \
+              "refs/tags/${PUBLISH_REF_NAME}" \
+              "refs/tags/${PUBLISH_REF_NAME}^{}" |
+              awk '$2 ~ /\^\{\}$/ { peeled = $1 } $2 !~ /\^\{\}$/ { direct = $1 } END { print peeled ? peeled : direct }'
+          )"
+          [[ "${tag_ref}" == "${PUBLISH_SHA}" ]]
+
       - name: Analyze CodeQL release source
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           category: "/language:swift-go"
+
+      - name: Verify CodeQL release authority after analysis
+        env:
+          PUBLISH_REF_NAME: ${{ needs.resolve-publish-context.outputs.ref_name }}
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${PUBLISH_SHA}" ]]
+          [[ -z "$(git status --porcelain --untracked-files=no)" ]]
+          tag_ref="$(
+            git ls-remote --tags origin \
+              "refs/tags/${PUBLISH_REF_NAME}" \
+              "refs/tags/${PUBLISH_REF_NAME}^{}" |
+              awk '$2 ~ /\^\{\}$/ { peeled = $1 } $2 !~ /\^\{\}$/ { direct = $1 } END { print peeled ? peeled : direct }'
+          )"
+          [[ "${tag_ref}" == "${PUBLISH_SHA}" ]]
 
   package:
     name: Package
@@ -625,6 +788,28 @@ jobs:
           fetch-depth: 0
           ref: ${{ needs.resolve-publish-context.outputs.checkout_ref }}
           token: ${{ github.token }}
+
+      - name: Checkout immutable release control tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: release-tools
+          fetch-depth: 1
+          ref: ${{ github.sha }}
+
+      - name: Verify exact container-compose checkout
+        env:
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+          RELEASE_CONTROL_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C container-compose rev-parse HEAD)"
+          if [[ "${actual}" != "${PUBLISH_SHA}" ]]; then
+            printf 'container-compose checkout mismatch: expected %s, got %s\n' \
+              "${PUBLISH_SHA}" "${actual}" >&2
+            exit 1
+          fi
+          [[ "$(git -C release-tools rev-parse HEAD)" == "${RELEASE_CONTROL_SHA}" ]]
 
       - name: Select release lane
         id: lane
@@ -764,6 +949,7 @@ jobs:
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json
           from pathlib import Path
+          import re
 
           manifest = Path("Tools/release/stack-refs.json")
           if not manifest.exists():
@@ -777,7 +963,10 @@ jobs:
 
           def ref(name):
               value = components.get(name, {})
-              return value.get("ref", "")
+              revision = value.get("ref", "")
+              if revision and re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+                  raise SystemExit(f"{name} stack ref is not immutable: {revision}")
+              return revision
 
           print(f"container_builder_shim_ref={ref('container-builder-shim')}")
           print(f"containerization_ref={ref('containerization')}")
@@ -822,6 +1011,19 @@ jobs:
           fetch-depth: 0
           ref: ${{ steps.container-ref.outputs.ref }}
 
+      - name: Verify container-builder-shim dependency ref
+        if: steps.stack-refs.outputs.container_builder_shim_ref != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C container-builder-shim rev-parse HEAD)"
+          expected="${{ steps.stack-refs.outputs.container_builder_shim_ref }}"
+          if [[ "${actual}" != "${expected}" ]]; then
+            printf 'container-builder-shim checkout mismatch: expected %s, got %s\n' \
+              "${expected}" "${actual}" >&2
+            exit 1
+          fi
+
       - name: Verify container dependency ref
         shell: bash
         run: |
@@ -846,6 +1048,7 @@ jobs:
           fi
 
       - name: Require the hosted release authority
+        id: stable-authority
         env:
           GH_TOKEN: ${{ github.token }}
           PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
@@ -875,16 +1078,18 @@ jobs:
               ;;
             tag)
               authority_name="Stable Release Authority (${PUBLISH_REF_NAME})"
-              authority_filter=".check_runs[] | select(.name == \"${authority_name}\""
+              authority_filter="[.[].check_runs[] | select(.name == \"${authority_name}\""
               authority_filter+=' and .status == "completed"'
               authority_filter+=' and .conclusion == "success"'
-              authority_filter+=' and .app.slug == "github-actions")'
-              authority_filter+=' | .external_id'
-              authority_run_id="$(
-                gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${PUBLISH_SHA}/check-runs?per_page=100" \
-                  --jq "${authority_filter}" \
-                  | tail -n 1
+              authority_filter+=' and .app.slug == "github-actions")]'
+              authority_filter+=' | sort_by(.completed_at) | last'
+              authority_filter+=' | [.external_id, .output.summary] | @tsv'
+              authority_record="$(
+                gh api --paginate --slurp \
+                  "repos/${GITHUB_REPOSITORY}/commits/${PUBLISH_SHA}/check-runs?per_page=100" \
+                  | jq -r "${authority_filter}"
               )"
+              IFS=$'\t' read -r authority_run_id authority_summary <<< "${authority_record}"
               if [[ ! "${authority_run_id}" =~ ^[0-9]+$ ]]; then
                 printf 'refusing to package %s without candidate-bound Stable Release Authority %s\n' \
                   "${PUBLISH_SHA}" "${authority_name}" >&2
@@ -900,12 +1105,118 @@ jobs:
                   "${PUBLISH_SHA}" >&2
                 exit 1
               fi
+              receipt_sha256="$(
+                sed -nE 's/.* Authority receipt SHA-256: ([0-9a-f]{64})[.].*/\1/p' \
+                  <<< "${authority_summary}"
+              )"
+              artifact_id="$(
+                sed -nE 's/.* Authority artifact ID: ([0-9]+)[.].*/\1/p' \
+                  <<< "${authority_summary}"
+              )"
+              artifact_digest="$(
+                sed -nE 's/.* Authority artifact digest: ([0-9a-f]{64})[.].*/\1/p' \
+                  <<< "${authority_summary}"
+              )"
+              if [[ ! "${receipt_sha256}" =~ ^[0-9a-f]{64}$ ]] ||
+                [[ ! "${artifact_id}" =~ ^[0-9]+$ ]] ||
+                [[ ! "${artifact_digest}" =~ ^[0-9a-f]{64}$ ]]; then
+                printf 'stable release authority has no valid receipt binding\n' >&2
+                exit 1
+              fi
+              {
+                printf 'run_id=%s\n' "${authority_run_id}"
+                printf 'receipt_sha256=%s\n' "${receipt_sha256}"
+                printf 'artifact_id=%s\n' "${artifact_id}"
+                printf 'artifact_digest=%s\n' "${artifact_digest}"
+              } >> "${GITHUB_OUTPUT}"
               ;;
             *)
               printf 'unsupported publish ref type: %s\n' "${PUBLISH_REF_TYPE}" >&2
               exit 1
               ;;
           esac
+
+      - name: Verify candidate-bound authority receipt
+        id: authority-bundle
+        if: needs.resolve-publish-context.outputs.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_REF_NAME: ${{ needs.resolve-publish-context.outputs.ref_name }}
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+          BUILDER_REF: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
+          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
+          CONTAINER_REF: ${{ steps.stack-refs.outputs.container_ref }}
+          AUTHORITY_RUN_ID: ${{ steps.stable-authority.outputs.run_id }}
+          AUTHORITY_RECEIPT_SHA256: ${{ steps.stable-authority.outputs.receipt_sha256 }}
+          AUTHORITY_ARTIFACT_ID: ${{ steps.stable-authority.outputs.artifact_id }}
+          AUTHORITY_ARTIFACT_DIGEST: ${{ steps.stable-authority.outputs.artifact_digest }}
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          authority_root="${RUNNER_TEMP}/stable-release-authority-${PUBLISH_REF_NAME}"
+          mkdir "${authority_root}"
+          artifact_json="${authority_root}/artifact.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${AUTHORITY_ARTIFACT_ID}" \
+            > "${artifact_json}"
+          expected_name="stable-release-authority-${PUBLISH_REF_NAME}-${PUBLISH_SHA}"
+          if [[ "$(jq -r '.expired' "${artifact_json}")" != "false" ]] ||
+            [[ "$(jq -r '.name' "${artifact_json}")" != "${expected_name}" ]] ||
+            [[ "$(jq -r '.digest' "${artifact_json}")" != "sha256:${AUTHORITY_ARTIFACT_DIGEST}" ]] ||
+            [[ "$(jq -r '.workflow_run.id' "${artifact_json}")" != "${AUTHORITY_RUN_ID}" ]]; then
+            printf 'stable release authority artifact does not match its check run\n' >&2
+            exit 1
+          fi
+          gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${AUTHORITY_ARTIFACT_ID}/zip" \
+            > "${authority_root}/artifact.zip"
+          mkdir "${authority_root}/bundle"
+          /usr/bin/ditto -x -k "${authority_root}/artifact.zip" \
+            "${authority_root}/bundle"
+          receipt="${authority_root}/bundle/stable-release-authority.json"
+          if [[ "$(shasum -a 256 "${receipt}" | awk '{print $1}')" != \
+            "${AUTHORITY_RECEIPT_SHA256}" ]]; then
+            printf 'stable release authority receipt digest changed\n' >&2
+            exit 1
+          fi
+          init_authority_object="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/stable-init-image-authority/${PUBLISH_REF_NAME}" \
+              --jq '.object.sha'
+          )"
+          init_authority="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/tags/${init_authority_object}"
+          )"
+          if [[ "$(jq -r '.verification.verified' <<< "${init_authority}")" != "true" ]] ||
+            [[ "$(jq -r '.object.sha' <<< "${init_authority}")" != "${PUBLISH_SHA}" ]]; then
+            printf 'stable init-image authority no longer verifies the package source\n' >&2
+            exit 1
+          fi
+          init_image_sha256="$(
+            jq -r '.message' <<< "${init_authority}" |
+              sed -nE 's/^Guest init image SHA-256: ([0-9a-f]{64})[.]$/\1/p'
+          )"
+          homebrew_tap_ref="$(
+            git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git \
+              refs/heads/main | awk '{print $1}' | tail -n 1
+          )"
+          [[ "$(git -C release-tools rev-parse HEAD)" == "${GITHUB_SHA}" ]]
+          python3 release-tools/Tools/release/stable-release-authority.py verify \
+            --evidence-dir "${authority_root}/bundle" \
+            --receipt "${receipt}" \
+            --release-tag "${PUBLISH_REF_NAME}" \
+            --candidate-sha "${PUBLISH_SHA}" \
+            --builder-ref "${BUILDER_REF}" \
+            --containerization-ref "${CONTAINERIZATION_REF}" \
+            --container-ref "${CONTAINER_REF}" \
+            --homebrew-tap-ref "${homebrew_tap_ref}" \
+            --init-image-sha256 "${init_image_sha256}" >/dev/null
+          authority_asset="stable-release-authority.tar.gz"
+          /usr/bin/tar -C "${authority_root}/bundle" -czf \
+            "${RUNNER_TEMP}/${authority_asset}" .
+          python3 container-compose/Tools/release/write-sha256-sidecar.py \
+            "${RUNNER_TEMP}/${authority_asset}"
+          {
+            printf 'asset=%s\n' "${authority_asset}"
+            printf 'local_asset=%s\n' "${RUNNER_TEMP}/${authority_asset}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Install Developer ID application certificate
         env:
@@ -1276,6 +1587,12 @@ jobs:
         with:
           subject-path: ${{ steps.current-init-image.outputs.local_asset }}
 
+      - name: Attest stable release authority
+        if: needs.resolve-publish-context.outputs.ref_type == 'tag'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.authority-bundle.outputs.local_asset }}
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -1321,6 +1638,25 @@ jobs:
                 "${PUBLISH_SHA}" "${current_main:-missing}"
               publish=false
             fi
+            for component in container-builder-shim containerization container; do
+              repository="$(jq -er --arg component "${component}" \
+                '.components[$component].repository' \
+                container-compose/Tools/release/stack-refs.json)"
+              pinned_ref="$(jq -er --arg component "${component}" \
+                '.components[$component].ref' \
+                container-compose/Tools/release/stack-refs.json)"
+              main_ref="$(
+                git ls-remote --heads "https://github.com/${repository}.git" refs/heads/main \
+                  | awk '{ print $1 }' \
+                  | tail -n 1
+              )"
+              if [[ "${pinned_ref}" != "${main_ref}" ]]; then
+                printf 'Skipping stale Current stack: %s uses %s, but fork main is now %s.\n' \
+                  "${component}" "${pinned_ref:-missing}" "${main_ref:-missing}"
+                publish=false
+                break
+              fi
+            done
           fi
           printf 'publish=%s\n' "${publish}" >> "$GITHUB_OUTPUT"
 
@@ -1371,6 +1707,12 @@ jobs:
           printf '%s\n%s\n' \
             "${{ steps.runtime-package.outputs.local_asset }}" \
             "${{ steps.runtime-package.outputs.local_asset }}.sha256" > "${extra_assets}"
+          if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
+            printf '%s\n%s\n' \
+              "${{ steps.authority-bundle.outputs.local_asset }}" \
+              "${{ steps.authority-bundle.outputs.local_asset }}.sha256" \
+              >> "${extra_assets}"
+          fi
           if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
             printf '%s\n%s\n' \
               "${{ steps.current-init-image.outputs.local_asset }}" \
@@ -1638,6 +1980,127 @@ jobs:
           python3 ../release-tools/Tools/release/retain-release-assets.py \
             "${retention_arguments[@]}"
 
+      - name: Verify exact published output closure
+        if: steps.current-freshness.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_REF_TYPE: ${{ needs.resolve-publish-context.outputs.ref_type }}
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+          RELEASE_TAG: ${{ steps.lane.outputs.release_tag }}
+          RELEASE_PRERELEASE: ${{ steps.lane.outputs.release_prerelease }}
+          UPDATE_TAP: ${{ steps.lane.outputs.update_tap }}
+          ASSET: ${{ steps.lane.outputs.asset }}
+          RUNTIME_LOCAL_ASSET: ${{ steps.runtime-package.outputs.local_asset }}
+          CURRENT_INIT_LOCAL_ASSET: ${{ steps.current-init-image.outputs.local_asset }}
+          AUTHORITY_LOCAL_ASSET: ${{ steps.authority-bundle.outputs.local_asset }}
+          HIGHLIGHTS_ASSET: ${{ steps.lane.outputs.highlights_asset }}
+          QUALITY_SNAPSHOT_ASSET: ${{ steps.lane.outputs.quality_snapshot_asset }}
+          COMPOSE_FORMULA: ${{ steps.lane.outputs.formula }}
+          CONTAINER_FORMULA: ${{ steps.lane.outputs.container_formula }}
+          RELEASE_CONTROL_SHA: ${{ github.sha }}
+          BUILDER_REF: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
+          CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
+          CONTAINER_REF: ${{ steps.container-ref.outputs.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Ensure a package input checkout still has its resolved commit.
+          verify_checkout() {
+            local path="$1" expected="$2" actual
+            [[ -n "${expected}" ]] || return 0
+            actual="$(git -C "${path}" rev-parse HEAD)"
+            if [[ "${actual}" != "${expected}" ]]; then
+              printf '%s checkout changed during package publication: expected %s, got %s\n' \
+                "${path}" "${expected}" "${actual}" >&2
+              exit 1
+            fi
+            if [[ -n "$(git -C "${path}" status --porcelain --untracked-files=no)" ]]; then
+              printf '%s checkout gained tracked changes during package publication\n' \
+                "${path}" >&2
+              exit 1
+            fi
+          }
+
+          # Bind one locally produced asset to its hosted release output.
+          add_asset() {
+            local path="$1" name digest
+            [[ -f "${path}" ]]
+            name="$(basename "${path}")"
+            digest="$(shasum -a 256 "${path}" | awk '{ print $1 }')"
+            authority_arguments+=(--asset "${name}=${digest}")
+          }
+
+          verify_checkout container-compose "${PUBLISH_SHA}"
+          verify_checkout release-tools "${RELEASE_CONTROL_SHA}"
+          verify_checkout container-builder-shim "${BUILDER_REF}"
+          verify_checkout containerization "${CONTAINERIZATION_REF}"
+          verify_checkout container "${CONTAINER_REF}"
+
+          if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
+            current_main="$(
+              git -C container-compose ls-remote --heads origin refs/heads/main |
+                awk '{ print $1 }' | tail -n 1
+            )"
+            if [[ "${current_main}" != "${PUBLISH_SHA}" ]]; then
+              printf 'Current release input changed during publication: expected %s, got %s\n' \
+                "${PUBLISH_SHA}" "${current_main:-missing}" >&2
+              exit 1
+            fi
+            for component in container-builder-shim containerization container; do
+              repository="$(jq -er --arg component "${component}" \
+                '.components[$component].repository' \
+                container-compose/Tools/release/stack-refs.json)"
+              expected="$(jq -er --arg component "${component}" \
+                '.components[$component].ref' \
+                container-compose/Tools/release/stack-refs.json)"
+              current="$(
+                git ls-remote --heads "https://github.com/${repository}.git" \
+                  refs/heads/main | awk '{ print $1 }' | tail -n 1
+              )"
+              if [[ "${current}" != "${expected}" ]]; then
+                printf 'Current release dependency changed during publication: %s expected %s, got %s\n' \
+                  "${component}" "${expected}" "${current:-missing}" >&2
+                exit 1
+              fi
+            done
+          fi
+
+          authority_arguments=(
+            --repository "${GITHUB_REPOSITORY}"
+            --release-tag "${RELEASE_TAG}"
+            --release-ref "${PUBLISH_SHA}"
+            --release-prerelease "${RELEASE_PRERELEASE}"
+          )
+          add_asset "${RUNNER_TEMP}/${ASSET}"
+          add_asset "${RUNNER_TEMP}/${ASSET}.sha256"
+          add_asset "${RUNTIME_LOCAL_ASSET}"
+          add_asset "${RUNTIME_LOCAL_ASSET}.sha256"
+          add_asset "${RUNNER_TEMP}/${HIGHLIGHTS_ASSET}"
+          add_asset "${RUNNER_TEMP}/${QUALITY_SNAPSHOT_ASSET}"
+          if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
+            add_asset "${CURRENT_INIT_LOCAL_ASSET}"
+            add_asset "${CURRENT_INIT_LOCAL_ASSET}.sha256"
+          else
+            add_asset "${AUTHORITY_LOCAL_ASSET}"
+            add_asset "${AUTHORITY_LOCAL_ASSET}.sha256"
+          fi
+          if [[ "${UPDATE_TAP}" == "true" ]]; then
+            tap_ref="$(git -C homebrew-tap rev-parse HEAD)"
+            authority_arguments+=(
+              --tap homebrew-tap
+              --tap-ref "${tap_ref}"
+              --formula "homebrew-tap/Formula/${COMPOSE_FORMULA}"
+              --formula "homebrew-tap/Formula/${CONTAINER_FORMULA}"
+            )
+          fi
+          authority="$(
+            python3 release-tools/Tools/release/package-publication-authority.py \
+              "${authority_arguments[@]}"
+          )"
+          printf 'Published output authority SHA-256: %s.\n' "${authority}" \
+            >> "${GITHUB_STEP_SUMMARY}"
+
   repair-stable-tap:
     name: Repair Stable Homebrew Formulae
     needs: resolve-publish-context
@@ -1662,6 +2125,19 @@ jobs:
           fetch-depth: 1
           ref: ${{ github.sha }}
           token: ${{ github.token }}
+
+      - name: Verify exact container-compose checkout
+        env:
+          PUBLISH_SHA: ${{ needs.resolve-publish-context.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git -C container-compose rev-parse HEAD)"
+          if [[ "${actual}" != "${PUBLISH_SHA}" ]]; then
+            printf 'container-compose checkout mismatch: expected %s, got %s\n' \
+              "${PUBLISH_SHA}" "${actual}" >&2
+            exit 1
+          fi
 
       - name: Verify immutable release control tools
         env:
@@ -1824,3 +2300,34 @@ jobs:
           git add Formula/container-compose.rb Formula/container.rb
           git commit -m "chore(homebrew): repair stable stack ${RELEASE_VERSION}"
           git push
+
+      - name: Verify repaired stable Homebrew output closure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTAINER_REF: ${{ steps.container-ref.outputs.ref }}
+          RELEASE_CONTROL_SHA: ${{ github.sha }}
+          RELEASE_TAG: ${{ needs.resolve-publish-context.outputs.ref_name }}
+          RELEASE_REF: ${{ needs.resolve-publish-context.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git -C container-compose rev-parse HEAD)" == "${RELEASE_REF}" ]]
+          [[ "$(git -C release-tools rev-parse HEAD)" == "${RELEASE_CONTROL_SHA}" ]]
+          [[ "$(git -C container rev-parse HEAD)" == "${CONTAINER_REF}" ]]
+          for repository in container-compose release-tools container; do
+            [[ -z "$(git -C "${repository}" status --porcelain --untracked-files=no)" ]]
+          done
+          tap_ref="$(git -C homebrew-tap rev-parse HEAD)"
+          authority="$(
+            python3 release-tools/Tools/release/package-publication-authority.py \
+              --repository "${GITHUB_REPOSITORY}" \
+              --release-tag "${RELEASE_TAG}" \
+              --release-ref "${RELEASE_REF}" \
+              --release-prerelease false \
+              --tap homebrew-tap \
+              --tap-ref "${tap_ref}" \
+              --formula homebrew-tap/Formula/container-compose.rb \
+              --formula homebrew-tap/Formula/container.rb
+          )"
+          printf 'Repaired tap authority SHA-256: %s.\n' "${authority}" \
+            >> "${GITHUB_STEP_SUMMARY}"

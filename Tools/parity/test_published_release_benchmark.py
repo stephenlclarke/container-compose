@@ -456,12 +456,18 @@ class PublishedReportTests(unittest.TestCase):
                 manifest["assets"]["guest"]["reconstruction"] = {
                     "artifactDigest": "sha256:" + "d" * 64,
                     "artifactId": 123,
-                    "cctlArtifactSha256": "e" * 64,
-                    "cctlBuildCommandSha256": "1" * 64,
-                    "cctlBuildSourceMetadataSha256": "2" * 64,
-                    "cctlBuildSourceSha256": "3" * 64,
-                    "cctlBuildToolsSha256": "4" * 64,
-                    "cctlReceiptSha256": "5" * 64,
+                    "cctlBuildPinSchema": 1,
+                    "cctlBuildPinSha256": "e" * 64,
+                    "cctlBuildCommand": "swift build -c release --product cctl",
+                    "cctlBuildContractSha256": "1" * 64,
+                    "cctlBuildDurationSeconds": 12,
+                    "cctlBuildSourceCommit": manifest["stack"][
+                        "containerization"
+                    ]["ref"],
+                    "cctlBuildSourceRemote": (
+                        "https://github.com/stephenlclarke/containerization"
+                    ),
+                    "cctlBuildSourceTree": "2" * 40,
                     "cctlSha256": "f" * 64,
                     "containerizationRef": manifest["stack"]["containerization"][
                         "ref"
@@ -488,6 +494,8 @@ class PublishedReportTests(unittest.TestCase):
         self.assertIn("# Historical reconstruction benchmark", report)
         self.assertIn("exact retained Containerization CI initfs artifact", report)
         self.assertIn("Guest initfs authority:", report)
+        self.assertIn("atomic build pin", report)
+        self.assertIn("duration `12` seconds", report)
         self.assertNotIn("No source product was built", report)
 
     def test_report_labels_unpromoted_maintenance_backfill(self) -> None:
@@ -1017,7 +1025,8 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         for job in (resolve, benchmark):
             self.assertIn("github.repository == 'stephenlclarke/container-compose'", job)
             self.assertIn("github.ref == 'refs/heads/main'", job)
-            self.assertIn("ref: main", job)
+        self.assertIn("ref: ${{ github.sha }}", resolve)
+        self.assertIn("ref: ${{ needs.resolve.outputs.controls_ref }}", benchmark)
 
     def test_workflow_reruns_use_a_fresh_publication_branch(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
@@ -1027,11 +1036,17 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
             workflow,
         )
 
-    def test_benchmark_report_only_change_skips_docc_builds(self) -> None:
+    def test_benchmark_report_changes_cannot_trigger_docc_builds(self) -> None:
         workflow = DOCUMENTATION_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Classify documented API and site inputs", workflow)
-        self.assertIn("classify-documentation-changes.py", workflow)
-        self.assertIn("needs.classify-changes.outputs.build_docc == 'true'", workflow)
+        triggers = workflow[
+            workflow.index("on:\n") : workflow.index("permissions:\n")
+        ]
+
+        self.assertIn("  workflow_dispatch:\n", triggers)
+        self.assertNotIn("  schedule:\n", triggers)
+        self.assertNotIn("  push:\n", triggers)
+        self.assertNotIn("  pull_request:\n", triggers)
+        self.assertNotIn("classify-documentation-changes.py", workflow)
 
     def test_documentation_pr_dispatches_only_lightweight_protected_checks(self) -> None:
         benchmark = WORKFLOW.read_text(encoding="utf-8")

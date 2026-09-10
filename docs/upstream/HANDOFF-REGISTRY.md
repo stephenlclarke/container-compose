@@ -6,11 +6,11 @@ This registry replaces the retired issue and pull-request handoff pairs.
 Current supporting records remain as ordinary Markdown files; every retired document
 links to an immutable Git snapshot.
 
-Last verified: 2026-09-05
+Last verified: 2026-09-10
 
-Entries: 422. Document snapshots: 736. Current supporting documents: 130.
+Entries: 432. Document snapshots: 756. Current supporting documents: 150.
 
-States: `active-draft` 27, `archived` 304, `closed` 22, `merged` 11, `submitted` 16, `tracked-upstream` 15, `unsubmitted` 27.
+States: `active-draft` 37, `archived` 304, `closed` 22, `merged` 11, `submitted` 16, `tracked-upstream` 15, `unsubmitted` 27.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -252,6 +252,16 @@ States: `active-draft` 27, `archived` 304, `closed` 22, `merged` 11, `submitted`
 | `stephenlclarke/container-compose` | [Remove undeclared gtimeout dependency from managed Sonar gates](https://github.com/stephenlclarke/container-compose/pull/447) | `active-draft` | None recorded | [Issue details](container-compose/ISSUE-446.md); [PR details](container-compose/PR-447.md) |
 | `stephenlclarke/container-compose` | [Pin synchronized Container fork for 0.14.1](https://github.com/stephenlclarke/container-compose/pull/449) | `active-draft` | `2647090a8af7` | [Issue details](container-compose/ISSUE-448.md); [PR details](container-compose/PR-449.md) |
 | `stephenlclarke/container-compose` | [Make the recoverable pipeline reliable and efficient](https://github.com/stephenlclarke/container-compose/pull/489) | `active-draft` | `bdfd9cef9139`, `03a387961ee9` | [Issue details](container-compose/ISSUE-488.md); [PR details](container-compose/PR-489.md) |
+| `stephenlclarke/container-compose` | [chore(release): refresh 0.14.3 upstream authority](https://github.com/stephenlclarke/container-compose/pull/534) | `active-draft` | `228897171d71`, `40ab92d74a02`, `847655d373a2`, `f9d57ad1c809` | [Issue details](container-compose/ISSUE-533.md); [PR details](container-compose/PR-534.md) |
+| `stephenlclarke/container-compose` | [chore(release): refresh 0.14.3 Container classification authority](https://github.com/stephenlclarke/container-compose/pull/545) | `active-draft` | `09acdc2f1df2`, `aaacb3ed973f` | [Issue details](container-compose/ISSUE-544.md); [PR details](container-compose/PR-545.md) |
+| `stephenlclarke/container-compose` | [chore(release): refresh corrected builder classification authority](https://github.com/stephenlclarke/container-compose/pull/558) | `active-draft` | `25399784a692`, `8538b2e7931f`, `d8ccda0fd6f3`, `f99e66b89402` | [Issue details](container-compose/ISSUE-557.md); [PR details](container-compose/PR-558.md) |
+| `stephenlclarke/container-compose` | [fix(release): refresh retained sibling mains](https://github.com/stephenlclarke/container-compose/pull/572) | `active-draft` | None recorded | [Issue details](container-compose/ISSUE-571.md); [PR details](container-compose/PR-572.md) |
+| `stephenlclarke/container-compose` | [\[Build\] Replace Nextflow with a recoverable native graph](https://github.com/stephenlclarke/container-compose/pull/594) | `active-draft` | `89f9f7944b58`, `44f4895d88a7` | [Issue details](container-compose/ISSUE-593.md); [PR details](container-compose/PR-594.md) |
+| `stephenlclarke/container-compose` | [fix(build): complete recoverable stack workflow](https://github.com/stephenlclarke/container-compose/pull/596) | `active-draft` | `73b886a8a1d6` | [Issue details](container-compose/ISSUE-595.md); [PR details](container-compose/PR-596.md) |
+| `stephenlclarke/container-compose` | [fix(release): recover stale candidate namespaces](https://github.com/stephenlclarke/container-compose/pull/622) | `active-draft` | None recorded | [Issue details](container-compose/ISSUE-621.md); [PR details](container-compose/PR-622.md) |
+| `stephenlclarke/container-compose` | [fix(release): keep stable authority lookup runner-compatible](https://github.com/stephenlclarke/container-compose/pull/625) | `active-draft` | None recorded | [Issue details](container-compose/ISSUE-624.md); [PR details](container-compose/PR-625.md) |
+| `stephenlclarke/container-compose` | [fix(release): preserve stable retry control authority](https://github.com/stephenlclarke/container-compose/pull/627) | `active-draft` | None recorded | [Issue details](container-compose/ISSUE-626.md); [PR details](container-compose/PR-627.md) |
+| `stephenlclarke/container-compose` | [fix(docs): preserve prerelease publication authority](https://github.com/stephenlclarke/container-compose/pull/630) | `active-draft` | None recorded | [Issue details](container-compose/ISSUE-629.md); [PR details](container-compose/PR-630.md) |
 | `stephenlclarke/container-compose` | Isolate deterministic anonymous volume identities | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-anonymous-volume-identity.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-anonymous-volume-identity.md) |
 | `stephenlclarke/container-compose` | Support bind create_host_path policy | `archived` | `12c6ed0b8a1e` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-create-host-path.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-create-host-path.md) |
 | `stephenlclarke/container-compose` | Support bind propagation mount options | `archived` | `5fbe9f0937d8` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-propagation.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-propagation.md) |

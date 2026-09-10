@@ -6,11 +6,11 @@
     },
     "container-builder-shim": {
       "image": {
-        "digest": "sha256:7398845b67e6d5c5e610e9f1c6bf4ce84e4c7242a8f8002ff2e5e917437cfdf7",
+        "digest": "sha256:3c5d4e42dfdfe6b85ca8c928f3e53b5dfa31f64a279bb8ff639ea56a74ba580b",
         "repository": "ghcr.io/stephenlclarke/container-builder-shim/builder",
-        "tag": "current-33970281067-287f2ea3276e"
+        "tag": "current-34334330512-5373d9b4363c"
       },
-      "ref": "287f2ea3276eca73cd3781ff59b4c9c82d5f3d32",
+      "ref": "5373d9b4363c6e536dc6401199da269c7045abf9",
       "repository": "stephenlclarke/container-builder-shim"
     },
     "containerization": {

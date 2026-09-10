@@ -514,7 +514,7 @@ check_implementation() {
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \
             --format '{{json (truncate "aéz" 2)}}'
     )"
-    assert_equal "$actual" '"a\ufffd"' "$project partial UTF-8 JSON template"
+    assert_equal "$actual" '"a�"' "$project partial UTF-8 JSON template"
 
     actual="$(
         "${command[@]}" --project-name "$project" -f "$FIXTURE_DIR/compose.yaml" ps \

@@ -31,18 +31,22 @@ ROOT = Path(__file__).parents[2]
 class BuildReleaseLocalStackTests(unittest.TestCase):
     """`build-release` must preserve the local-stack behavior of `build`."""
 
-    def test_uses_local_overlays_and_restores_package_resolution(self) -> None:
+    def test_uses_recoverable_local_stack_session(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             temporary_root = Path(temporary_directory)
             container = temporary_root / "container"
             containerization = temporary_root / "containerization"
             engine_api = temporary_root / "container-engine-api"
+            container_commit = "a" * 40
+            container_tree = "b" * 40
 
             result = subprocess.run(
                 [
                     "make",
                     "-n",
                     f"CONTAINER_PACKAGE_PATH={container}",
+                    f"CONTAINER_PACKAGE_COMMIT={container_commit}",
+                    f"CONTAINER_PACKAGE_TREE={container_tree}",
                     f"CONTAINERIZATION_PACKAGE_PATH={containerization}",
                     f"CONTAINER_ENGINE_API_PACKAGE_PATH={engine_api}",
                     "build-release",
@@ -53,15 +57,19 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(f'CONTAINER_PACKAGE_PATH="{container}"', result.stdout)
+            self.assertIn(f'--container "{container}"', result.stdout)
             self.assertIn(
-                f'CONTAINERIZATION_PACKAGE_PATH="{containerization}"', result.stdout
+                f'--container-commit "{container_commit}"', result.stdout
+            )
+            self.assertIn(f'--container-tree "{container_tree}"', result.stdout)
+            self.assertIn(
+                f'--containerization "{containerization}"', result.stdout
             )
             self.assertIn(
-                f'CONTAINER_ENGINE_API_PACKAGE_PATH="{engine_api}"', result.stdout
+                f'--engine-api "{engine_api}"', result.stdout
             )
-            self.assertIn('cp Package.resolved "$lock_backup"', result.stdout)
-            self.assertIn("trap restore_lock EXIT HUP INT QUIT TERM", result.stdout)
+            self.assertIn("Tools/ci/run-with-local-swift-stack.py", result.stdout)
+            self.assertIn("--retain-edits", result.stdout)
             branch_separator = "else " + chr(92) + "\n"
             local_branch, separator, fallback_branch = result.stdout.partition(
                 branch_separator
@@ -96,6 +104,14 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
             "swift build --disable-automatic-resolution -c release --product compose",
             result.stdout,
         )
+        self.assertIn("Tools/ci/run-with-local-swift-stack.py", result.stdout)
+
+    def test_clean_restores_local_stack_before_removing_products(self) -> None:
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+
+        self.assertIn("local-swift-stack-clean:\n", makefile)
+        self.assertIn("--cleanup", makefile)
+        self.assertIn("clean: local-swift-stack-clean\n", makefile)
 
     def test_full_parity_uses_the_release_compose_binary(self) -> None:
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
@@ -106,10 +122,12 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
         ]
 
         self.assertTrue(
-            parity.startswith(
-                "docker-compose-parity: build-release release-parity-build-info "
-                "container-stack-build-if-needed docker-compose-reference"
-            ),
+            parity.startswith("docker-compose-parity: docker-compose-reference"),
+            parity,
+        )
+        self.assertIn(
+            "$(MAKE) --no-print-directory build-release "
+            "release-parity-build-info container-stack-build-if-needed",
             parity,
         )
         self.assertIn(

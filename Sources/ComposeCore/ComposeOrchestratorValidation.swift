@@ -117,9 +117,6 @@ extension ComposeOrchestrator {
             let fieldList = fields.joined(separator: ", ")
             throw ComposeError.unsupported("service '\(service.name)' uses unsupported volume fields \(fieldList); advanced service volume options need an apple/container mount primitive gap PR")
         }
-        if service.useAPISocket == true {
-            throw ComposeError.unsupported("service '\(service.name)' uses use_api_socket; Docker-compatible API socket and credential handoff need an apple/container runtime boundary")
-        }
     }
 
     /// Validates dependency conditions in the same order as runtime orchestration.

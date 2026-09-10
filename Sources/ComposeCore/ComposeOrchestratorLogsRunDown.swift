@@ -789,6 +789,9 @@ public extension ComposeOrchestrator {
         dependencies: [ComposeService],
         options run: ComposeRunOptions,
     ) async throws -> ComposeRunServicePreparation {
+        let project = try await projectByApplyingAPISocket(project)
+        let service = project.services[service.name] ?? service
+        let dependencies = dependencies.map { project.services[$0.name] ?? $0 }
         let cache = ComposeImageHealthCheckCache()
         let services = dependencies + [service]
         let externalVolumeMounts = try await resolveExternalVolumeMounts(

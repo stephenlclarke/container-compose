@@ -26,6 +26,7 @@ import Foundation
 public final class ComposeOrchestrator: @unchecked Sendable {
     let runner: CommandRunning
     let options: ComposeExecutionOptions
+    let apiSocketCredentialResolver: any ComposeAPISocketCredentialResolving
     let archiveManager: ComposeArchiveManaging
     let attachManager: ComposeRuntimeAttachManaging
     let copier: ComposeRuntimeCopying
@@ -55,6 +56,7 @@ public final class ComposeOrchestrator: @unchecked Sendable {
         let dependencies = dependencies ?? ComposeOrchestratorDependencies(runner: runner, options: options)
         self.runner = runner
         self.options = options
+        apiSocketCredentialResolver = dependencies.apiSocketCredentialResolver
         archiveManager = dependencies.archiveManager
         attachManager = dependencies.attachManager
         copier = dependencies.copier

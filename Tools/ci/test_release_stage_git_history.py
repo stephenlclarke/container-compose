@@ -15,335 +15,172 @@
 ## limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-"""Regression tests for recoverable release-stage policy."""
+"""Policy tests for the simple, recoverable Container-family build."""
 
 from pathlib import Path
 import unittest
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-PIPELINE_SOURCE = (REPOSITORY_ROOT / "main.nf").read_text(encoding="utf-8")
-PIPELINE_CONFIG = (REPOSITORY_ROOT / "nextflow.config").read_text(
-    encoding="utf-8"
-)
-PIPELINE_MAKEFILE = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
-REPOSITORY_STAGE = (
-    REPOSITORY_ROOT / "build-pipeline/modules/repository-stage.nf"
-).read_text(encoding="utf-8")
+MAKEFILE = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
 STABLE_RELEASE_WORKFLOW = (
     REPOSITORY_ROOT / ".github/workflows/stable-release-gate.yml"
 ).read_text(encoding="utf-8")
 CI_WORKFLOW = (REPOSITORY_ROOT / ".github/workflows/ci.yml").read_text(
     encoding="utf-8"
 )
-RECOVERY_PROOF = (
-    REPOSITORY_ROOT / "Tests/BuildPipeline/recovery-proof.nf"
-).read_text(encoding="utf-8")
 
 
-class ReleaseStageGitHistoryTests(unittest.TestCase):
-    """Keep history-sensitive validation on verified Git bundles."""
+def make_target(name: str, next_name: str) -> str:
+    return MAKEFILE.split(f"\n{name}:", 1)[1].split(f"\n{next_name}:", 1)[0]
 
-    def test_stage_tools_include_nested_process_dependencies(self) -> None:
-        devcontainer_stage = PIPELINE_SOURCE.split(
-            "['devcontainer', 'devcontainer-source'", 1
-        )[1].split("['container-k8s'", 1)[0]
-        self.assertIn(
-            "'make,python3,ruby,swiftformat,swiftlint,shellcheck,markdownlint,actionlint'",
-            devcontainer_stage,
-        )
 
-    def test_compose_source_stage_is_fail_fast_and_tool_tests_run_once(self) -> None:
-        compose_source = PIPELINE_SOURCE.split(
-            "['container-compose', 'compose-source'", 1
-        )[1].split("['container-builder-shim'", 1)[0]
-        compose_go = PIPELINE_SOURCE.split(
-            "['container-compose', 'compose-go-validation'", 1
-        )[1].split("['container-builder-shim'", 1)[0]
+class RecoverableStackBuildPolicyTests(unittest.TestCase):
+    def test_release_supports_automatic_and_explicit_version_selection(self) -> None:
+        release = make_target("release", "release-plan")
+        plan = make_target("release-plan", "release-version")
+        self.assertIn("CONVENTIONAL_VERSION_TOOL", release)
+        self.assertIn("VERSION_SELECTOR", release)
+        self.assertIn("CONVENTIONAL_VERSION_TOOL", plan)
+        self.assertIn("Explicit reviewed release selector", plan)
 
-        self.assertIn("pipeline-source-check", compose_source)
-        self.assertNotIn(" coverage-tools-test", compose_source)
-        self.assertIn("-j4", compose_go)
-        self.assertIn("pipeline-tool-validation go-test go-build", compose_go)
-        self.assertIn(
-            "pipeline-source-check: source-preflight lint-static",
-            PIPELINE_MAKEFILE,
-        )
-        self.assertEqual(PIPELINE_SOURCE.count("pipeline-tool-validation"), 1)
+    def test_default_make_is_the_recoverable_stack_build(self) -> None:
+        self.assertIn("\nlocal-build: build go-build\n", MAKEFILE)
+        self.assertIn("\nall: stack-build\n", MAKEFILE)
+        default = make_target("all", "workflow")
+        for forbidden in ("codeql", "docs", "package", "release", "codesign"):
+            self.assertNotIn(forbidden, default.lower())
 
-    def test_stage_root_preserves_unix_socket_path_budget(self) -> None:
+    def test_stack_graph_has_explicit_parallel_and_dependency_boundaries(self) -> None:
+        self.assertIn("stack-build-locked:", MAKEFILE)
         self.assertIn(
-            "mktemp -d '/private/tmp/ccp.XXXXXX'",
-            REPOSITORY_STAGE,
+            "stack-container-build: stack-containerization-build stack-engine-api-build",
+            MAKEFILE,
         )
-        self.assertIn(
-            '[[ "$execution_root" == /private/tmp/ccp.* ]]',
-            REPOSITORY_STAGE,
-        )
-        longest_fixture_socket = (
-            "/private/tmp/ccp.XXXXXX/tmp/tmpxxxxxxxx/"
-            "app-root/engine-provider/provider.sock"
-        )
-        self.assertLessEqual(len(longest_fixture_socket.encode()), 103)
+        self.assertIn("stack-compose-build: stack-container-build", MAKEFILE)
+        invocation = make_target("stack-build", "stack-build-locked")
+        self.assertIn('"$(STACK_LOCK_TOOL)" -t 0', invocation)
+        self.assertIn("stack-build-locked STACK_LOCK_HELD=1", invocation)
 
-    def test_stage_forwards_cancellation_to_the_deadline_supervisor(self) -> None:
-        self.assertIn("stage_runner_pid=$!", REPOSITORY_STAGE)
-        self.assertIn(
-            "trap 'forward_stage_signal TERM 143' TERM",
-            REPOSITORY_STAGE,
-        )
-        self.assertIn(
-            '/bin/kill -"$signal_name" "$stage_runner_pid"',
-            REPOSITORY_STAGE,
-        )
-        self.assertIn(
-            'exec /usr/bin/env -i "${clean_environment[@]}"',
-            REPOSITORY_STAGE,
-        )
+    def test_global_lock_covers_final_bundle_publication(self) -> None:
+        locked = make_target("stack-build-locked", "stack-containerization-build")
+        self.assertIn("-j3 stack-builder-build stack-compose-build", locked)
+        self.assertIn("requires the stack-build lock", locked)
+        self.assertIn('"$(STACK_PIN_TOOL)" bundle', locked)
+        self.assertIn('"$(STACK_PIN_TOOL)" verify-bundle', locked)
 
-    def test_history_sensitive_release_stages_request_commit_metadata(self) -> None:
-        expected_declarations = (
-            "'make,go,hawkeye', '.', 'commit,describe'",
-            "'make,apple-swift,hawkeye,codesign', '.', 'commit'",
-            "'make,apple-swift,python3,hawkeye,codesign,security', '.', "
-            "'commit,describe'",
+    def test_recoverable_builder_ignores_ambient_go_workspaces(self) -> None:
+        self.assertIn(
+            'STACK_GO_CONTRACT = $(shell GOWORK=off "$(PYTHON)"', MAKEFILE
         )
+        builder = make_target("stack-builder-build", "stack-compose-build")
+        self.assertIn('GOWORK=off "$(PYTHON)" "$(STACK_DEADLINE_TOOL)"', builder)
+        self.assertIn('"$(STACK_GO)" build -trimpath', builder)
 
-        for declaration in expected_declarations:
-            with self.subTest(declaration=declaration):
-                self.assertIn(declaration, PIPELINE_SOURCE)
+    def test_native_builds_are_bounded_and_compose_uses_durable_scratch(self) -> None:
+        stack = MAKEFILE.split("\nstack-build:", 1)[1].split("\nlocal-build:", 1)[0]
+        self.assertGreaterEqual(stack.count('"$(STACK_DEADLINE_TOOL)" --seconds'), 7)
+        compose = make_target("stack-compose-build", "local-build")
+        self.assertIn("/container-compose", compose)
+        self.assertIn('--scratch-path "$$scratch"', compose)
+        self.assertIn('--artifact "$$bin_path/compose"', compose)
 
-    def test_complete_repository_commit_capture_preserves_git_history(self) -> None:
-        self.assertIn(
-            'elif [[ "$source_paths" == . ]]; then\n'
-            '        case ",$metadata_requirements," in\n'
-            '            *,commit,*) preserve_git_history=1 ;;',
-            PIPELINE_SOURCE,
-        )
-        self.assertIn(
-            "if ((preserve_git_history == 1)); then",
-            PIPELINE_SOURCE,
-        )
-        self.assertIn("source_format=git-bundle", PIPELINE_SOURCE)
-
-    def test_partial_source_capture_remains_a_tree_archive(self) -> None:
-        self.assertIn(
-            'elif [[ "$source_paths" == . ]]; then',
-            PIPELINE_SOURCE,
-        )
-        self.assertIn("source_format=git-tree-archive", PIPELINE_SOURCE)
-
-    def test_release_graph_terminates_after_first_failed_stage(self) -> None:
-        self.assertIn("errorStrategy = 'terminate'", PIPELINE_CONFIG)
-        self.assertIn("errorStrategy 'terminate'", REPOSITORY_STAGE)
-        self.assertNotIn("errorStrategy = 'finish'", PIPELINE_CONFIG)
-        self.assertNotIn("errorStrategy 'finish'", REPOSITORY_STAGE)
-
-    def test_release_graph_pins_full_xcode_and_preflights_docc(self) -> None:
-        self.assertIn(
-            "DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer",
-            STABLE_RELEASE_WORKFLOW,
-        )
-        self.assertIn('developer_directory="${DEVELOPER_DIR:-}"', PIPELINE_SOURCE)
-        self.assertIn(
-            'DEVELOPER_DIR="$${DEVELOPER_DIR:-}"',
-            PIPELINE_MAKEFILE,
-        )
-        self.assertIn("stable release gate requires full Xcode with DocC", PIPELINE_SOURCE)
-        self.assertIn("DEVELOPER_DIR=\"$developer_directory\"", PIPELINE_SOURCE)
-        self.assertIn("/usr/bin/xcrun --find docc", PIPELINE_SOURCE)
-        self.assertIn("xcrun_shims+=(docc)", PIPELINE_SOURCE)
-        self.assertIn("resolved_version=binary-sha256-only", PIPELINE_SOURCE)
-        self.assertIn(
-            'DEVELOPER_DIR="$recorded_developer_directory" \\\n'
-            '                            /usr/bin/xcrun --find docc',
-            REPOSITORY_STAGE,
-        )
-
-    def test_release_documentation_runs_after_functional_validation(self) -> None:
-        self.assertIn("containerization-release-documentation", PIPELINE_SOURCE)
-        self.assertIn("container-release-documentation", PIPELINE_SOURCE)
-        self.assertIn("'make,apple-swift,docc'", PIPELINE_SOURCE)
-        self.assertNotIn(
-            "check containerization examples docs coverage",
-            PIPELINE_SOURCE,
-        )
-        self.assertNotIn("check build dsym docs coverage-unit", PIPELINE_SOURCE)
-        validation_gate = PIPELINE_SOURCE.index("validationCompletionGate =")
-        documentation_run = PIPELINE_SOURCE.index("RUN_DOCUMENTATION_STAGE(")
-        self.assertLess(validation_gate, documentation_run)
-        self.assertIn("item[10] && item[11]", PIPELINE_SOURCE)
-        self.assertIn("withName: RUN_DOCUMENTATION_STAGE", PIPELINE_CONFIG)
-        self.assertIn("toolPreflightGate =", PIPELINE_SOURCE)
-        self.assertIn(".combine(toolPreflightGate)", PIPELINE_SOURCE)
-        self.assertIn(
-            "Release documentation requires every functional validation",
-            PIPELINE_SOURCE,
-        )
-
-    def test_release_validation_barrier_preserves_receipt_tuples(self) -> None:
-        self.assertIn(
-            ".concat(RUN_LIGHTWEIGHT_STAGE.out.receipt)\n"
-            "        .collect(flat: false)",
-            PIPELINE_SOURCE,
-        )
-        self.assertIn("receiptGate = channel.of(", RECOVERY_PROOF)
-        self.assertIn(".collect(flat: false)", RECOVERY_PROOF)
-
-    def test_container_validation_checks_the_operator_keychain_just_in_time(
-        self,
-    ) -> None:
-        self.assertIn(
-            "params.operatorHome = ''",
-            PIPELINE_SOURCE,
-        )
-        self.assertIn(
-            '"--operatorHome=$$operator_home"',
-            PIPELINE_MAKEFILE,
-        )
-        self.assertIn(
-            "'make,apple-swift,python3,hawkeye,codesign,security'",
-            PIPELINE_SOURCE,
-        )
-        self.assertIn(
-            "security) tool_selector=/usr/bin/security",
-            PIPELINE_SOURCE,
-        )
-        self.assertIn(
-            "system-*|otool|codesign|docc|gofmt|security",
-            PIPELINE_SOURCE,
-        )
-        self.assertIn(
-            '/usr/bin/security show-keychain-info '
-            '"$PIPELINE_OPERATOR_LOGIN_KEYCHAIN"',
-            PIPELINE_SOURCE,
-        )
-        self.assertIn(
-            "operator login Keychain readiness check exceeded its deadline",
-            PIPELINE_SOURCE,
-        )
-        self.assertIn(
-            "operator login Keychain must be unlocked before Container "
-            "release coverage",
-            PIPELINE_SOURCE,
-        )
-        self.assertIn(
-            '[[ "$stage_name" == container-release-validation ]]',
-            REPOSITORY_STAGE,
-        )
-        self.assertIn(
-            'metadata_environment+=("PIPELINE_OPERATOR_HOME=$operator_home")',
-            REPOSITORY_STAGE,
-        )
-        self.assertIn(
-            '"PIPELINE_OPERATOR_LOGIN_KEYCHAIN=$operator_login_keychain"',
-            REPOSITORY_STAGE,
-        )
-        self.assertIn(
-            '"PIPELINE_DEADLINE_RUNNER=$deadline_runner"',
-            REPOSITORY_STAGE,
-        )
-        self.assertIn(
-            'HOME="$PIPELINE_OPERATOR_HOME" make --no-print-directory',
-            PIPELINE_SOURCE,
-        )
-        self.assertNotIn(
-            "configure_ephemeral_test_keychain",
-            REPOSITORY_STAGE,
-        )
-        self.assertNotIn(
-            "/usr/bin/security create-keychain",
-            REPOSITORY_STAGE,
-        )
-        container_stage = PIPELINE_SOURCE.split(
-            "['container', 'container-release-validation'", 1
-        )[1].split("['homebrew-tap'", 1)[0]
-        build = container_stage.index("check build dsym")
-        readiness = container_stage.index(
-            '/usr/bin/security show-keychain-info '
-            '"$PIPELINE_OPERATOR_LOGIN_KEYCHAIN"'
-        )
-        coverage = container_stage.index("coverage-unit")
-        self.assertLess(build, readiness)
-        self.assertLess(readiness, coverage)
-
-        host_preflight = PIPELINE_SOURCE.split("process PREFLIGHT_HOST", 1)[1].split(
-            "process PREFLIGHT_REPOSITORY", 1
+    def test_build_contract_does_not_hash_unrelated_make_targets(self) -> None:
+        contracts = MAKEFILE.split("STACK_SWIFT_CONTRACT =", 1)[1].split(
+            "RELEASE_GATE_CHECKPOINT_DIR", 1
         )[0]
-        self.assertNotIn("show-keychain-info", host_preflight)
-        self.assertNotIn("system-security", host_preflight)
+        self.assertIn("STACK_BUILD_CONTRACT", contracts)
+        self.assertEqual(contracts.count("--controller-section"), 4)
+        self.assertNotIn("--controller \"$(abspath Makefile)\"", contracts)
 
-        stage_preflight = PIPELINE_SOURCE.split(
-            "process PREFLIGHT_STAGE_TOOLS", 1
-        )[1].split("workflow PREFLIGHT_GRAPH", 1)[0]
-        self.assertNotIn('[[ ! -d "$operator_home" ]]', stage_preflight)
-        self.assertNotIn('[[ ! -f "$operator_login_keychain" ]]', stage_preflight)
+    def test_individual_stack_stages_reject_unlocked_execution(self) -> None:
+        self.assertEqual(MAKEFILE.count("\n\t$(STACK_REQUIRE_LOCK)\n"), 5)
+        self.assertIn("stack stage requires the stack-build lock", MAKEFILE)
 
-    def test_operator_home_is_scoped_to_selected_container_validation(self) -> None:
+    def test_every_source_build_publishes_a_verified_atomic_pin(self) -> None:
+        for current, following, repository in (
+            ("stack-containerization-build", "stack-engine-api-build", "containerization"),
+            ("stack-engine-api-build", "stack-container-build", "container-engine-api"),
+            ("stack-container-build", "stack-builder-build", "container"),
+            ("stack-builder-build", "stack-compose-build", "container-builder-shim"),
+            ("stack-compose-build", "local-build", "container-compose"),
+        ):
+            with self.subTest(repository=repository):
+                target = make_target(current, following)
+                self.assertIn('"$(STACK_PIN_TOOL)" verify --quiet', target)
+                self.assertIn('"$(STACK_PIN_TOOL)" create', target)
+                self.assertIn(f"--repository {repository}", target)
+                self.assertIn("--expected-commit", target)
+                self.assertIn("--expected-tree", target)
+                self.assertLess(target.index(" build"), target.index(" create "))
+
+    def test_downstream_stages_bind_upstream_receipts_and_source_paths(self) -> None:
+        container = make_target("stack-container-build", "stack-builder-build")
+        self.assertIn('--dependency "$(STACK_CONTAINERIZATION_PIN)"', container)
+        self.assertIn('--dependency "$(STACK_ENGINE_API_PIN)"', container)
         self.assertIn(
-            'operator_home=; \\\n\trequires_operator_keychain=false;',
-            PIPELINE_MAKEFILE,
+            'CONTAINERIZATION_PACKAGE_PATH="$(CONTAINERIZATION_STACK_REPO)"',
+            container,
         )
         self.assertIn(
-            'if [[ "$$action" != plan ]] && '
-            '[[ "$${PIPELINE_PROFILE}" == release-hosted ]]; then',
-            PIPELINE_MAKEFILE,
+            'CONTAINER_ENGINE_API_PACKAGE_PATH="$(CONTAINER_ENGINE_API_STACK_REPO)"',
+            container,
         )
-        self.assertIn(
-            '[[ "$$selected_stage" == container-release-validation ]]',
-            PIPELINE_MAKEFILE,
-        )
-        self.assertIn(
-            'if [[ "$$requires_operator_keychain" == true ]]; then',
-            PIPELINE_MAKEFILE,
-        )
-        self.assertNotIn("requiresOperatorKeychain", PIPELINE_SOURCE)
+        compose = make_target("stack-compose-build", "local-build")
+        for variable, source_path, repository in (
+            (
+                "STACK_CONTAINERIZATION_PIN",
+                "CONTAINERIZATION_PACKAGE_PATH",
+                "CONTAINERIZATION_STACK_REPO",
+            ),
+            (
+                "STACK_ENGINE_API_PIN",
+                "CONTAINER_ENGINE_API_PACKAGE_PATH",
+                "CONTAINER_ENGINE_API_STACK_REPO",
+            ),
+            ("STACK_CONTAINER_PIN", "CONTAINER_PACKAGE_PATH", "CONTAINER_STACK_REPO"),
+        ):
+            self.assertIn(f'--dependency "$({variable})"', compose)
+            self.assertIn(f'{source_path}="$({repository})"', compose)
 
-    def test_ci_parallelizes_independent_tool_suites(self) -> None:
-        tool_tests_section = CI_WORKFLOW.split("  tool_tests:", 1)[1].split(
-            "  validate_runtime:", 1
-        )[0]
-        self.assertIn("run: make source-checks", CI_WORKFLOW)
-        self.assertIn("tool_tests:", CI_WORKFLOW)
-        self.assertIn("fail-fast: true", CI_WORKFLOW)
-        self.assertIn("target: release-tools-test", CI_WORKFLOW)
-        self.assertIn("target: ci-tools-test", CI_WORKFLOW)
-        self.assertIn("path: container-compose", tool_tests_section)
-        self.assertIn('run: make "${TOOL_TEST_TARGET}"', tool_tests_section)
-        self.assertIn("      - tool_tests", CI_WORKFLOW)
-        self.assertIn("TOOL_TESTS_RESULT", CI_WORKFLOW)
+    def test_recovery_state_is_durable_and_has_a_safe_local_fallback(self) -> None:
+        self.assertIn("/Volumes/SSD/github/.container-compose-build", MAKEFILE)
+        self.assertIn("$(abspath .build/stack)", MAKEFILE)
+        state_init = make_target("stack-state-init", "stack-preflight")
+        self.assertIn("STACK_STATE_ROOT must be absolute", state_init)
+        self.assertIn("must not be a symbolic link", state_init)
+        self.assertIn(".container-compose-build-root", state_init)
+        self.assertIn("/bin/mv", state_init)
+
+    def test_unattended_make_never_discovers_a_keychain_identity(self) -> None:
+        self.assertIn("CONTAINER_RUNTIME_CODESIGN_IDENTITY ?=\n", MAKEFILE)
+        self.assertNotIn("security find-identity", MAKEFILE)
+
+    def test_stack_build_excludes_release_only_work(self) -> None:
+        stack = MAKEFILE.split("\nstack-build:", 1)[1].split("\nlocal-build:", 1)[0]
+        for forbidden in (
+            "codeql",
+            "docc",
+            "documentation",
+            "notar",
+            "codesign",
+            "vhs",
+            "parity",
+        ):
+            self.assertNotIn(forbidden, stack.lower())
+
+    def test_ci_tools_lane_runs_recovery_regressions_once(self) -> None:
+        ci_tools = make_target("ci-tools-test", "coverage-tools-test")
         self.assertIn(
-            "coverage-tools-test: coverage-python-tools-test "
-            "release-tools-test ci-tools-test",
-            PIPELINE_MAKEFILE,
+            "$(MAKE) --no-print-directory stack-self-test",
+            ci_tools,
         )
+        self.assertEqual(MAKEFILE.count("stack-self-test\n"), 1)
 
-    def test_ci_keeps_handoff_only_changes_on_the_lightweight_path(self) -> None:
-        classifier = CI_WORKFLOW.split("      - name: Classify changed files", 1)[
-            1
-        ].split("  source_checks:", 1)[0]
-        handoff_case = classifier.split("docs/upstream/*)", 1)[1].split(";;", 1)[
-            0
-        ]
-        lightweight = CI_WORKFLOW.split("  validate-lightweight:", 1)[1]
-
-        self.assertIn("handoff: ${{ steps.filter.outputs.handoff }}", CI_WORKFLOW)
-        self.assertIn("handoff=true", handoff_case)
-        self.assertNotIn("heavy=true", handoff_case)
-        self.assertIn(
-            "HANDOFF_CHANGE: ${{ needs.changes.outputs.handoff }}",
-            lightweight,
-        )
-        self.assertIn("make upstream-handoff-registry-check", lightweight)
-        self.assertIn("if: needs.changes.outputs.heavy == 'true'", CI_WORKFLOW)
-
-    def test_runtime_validation_uses_pinned_managed_macos_toolchain(
-        self,
-    ) -> None:
+    def test_runtime_validation_uses_pinned_managed_macos_toolchain(self) -> None:
         runtime_validation = CI_WORKFLOW.split("  validate_runtime:", 1)[1].split(
             "  prebuilt_binaries:", 1
         )[0]
-
         self.assertIn("runs-on: macos-26", runtime_validation)
         self.assertIn(
             "DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer",
@@ -351,42 +188,23 @@ class ReleaseStageGitHistoryTests(unittest.TestCase):
         )
         self.assertNotIn("self-hosted", runtime_validation)
 
-    def test_release_state_is_persistent_and_candidate_keyed(self) -> None:
-        self.assertNotIn(
-            "RELEASE_PIPELINE_STATE_ROOT: ${{ github.workspace }}",
-            STABLE_RELEASE_WORKFLOW,
-        )
-        self.assertIn(
-            'runner_work_root="$(cd "${RUNNER_TEMP}/.." && pwd -P)"',
-            STABLE_RELEASE_WORKFLOW,
-        )
-        self.assertIn(
-            'workspace_root="$(cd "${GITHUB_WORKSPACE}" && pwd -P)"',
-            STABLE_RELEASE_WORKFLOW,
-        )
-        self.assertIn(
-            'state_parent="${runner_work_root}/.container-compose-release-pipeline"',
-            STABLE_RELEASE_WORKFLOW,
-        )
+    def test_stable_gate_uses_candidate_keyed_checkpoint_state(self) -> None:
+        self.assertIn("RELEASE_BUILD_STATE_ROOT", STABLE_RELEASE_WORKFLOW)
         self.assertIn(
             'state_root="${state_parent}/${CANDIDATE_SHA}"',
             STABLE_RELEASE_WORKFLOW,
         )
         self.assertIn(
-            'state_root="$(cd "${state_root}" && pwd -P)"',
-            STABLE_RELEASE_WORKFLOW,
+            "CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR", STABLE_RELEASE_WORKFLOW
         )
         self.assertIn(
-            '"${workspace_root}"|"${workspace_root}"/*)',
-            STABLE_RELEASE_WORKFLOW,
+            "make -C release-tools release-gate-hosted", STABLE_RELEASE_WORKFLOW
         )
-        self.assertIn('[[ -L "${state_parent}" ]]', STABLE_RELEASE_WORKFLOW)
-        self.assertIn('[[ -L "${state_root}" ]]', STABLE_RELEASE_WORKFLOW)
         self.assertIn(
-            "printf 'RELEASE_PIPELINE_STATE_ROOT=%s\\n' \"${state_root}\" "
-            '>> "${GITHUB_ENV}"',
+            'HAWKEYE="${GITHUB_WORKSPACE}/container-compose/.local/bin/hawkeye"',
             STABLE_RELEASE_WORKFLOW,
         )
+        self.assertNotIn("nextflow", STABLE_RELEASE_WORKFLOW.lower())
 
 
 if __name__ == "__main__":

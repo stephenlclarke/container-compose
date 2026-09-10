@@ -23,6 +23,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import re
 import shutil
 import stat
@@ -37,6 +38,9 @@ import published_release_benchmark as published
 CONTAINERIZATION_REPOSITORY = "stephenlclarke/containerization"
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+CONTAINERIZATION_REMOTE = re.compile(
+    r"^https://github[.]com/stephenlclarke/containerization(?:[.]git)?$"
+)
 
 
 class ReconstructionInputError(ValueError):
@@ -228,9 +232,15 @@ def extract_cctl(
         or len(artifact_rows[0]) != 4
         or SHA256.fullmatch(artifact_rows[0][2]) is None
         or records.get("archive-sha256") != [archive_digest]
-        or receipt_records.get("schema") != ["3"]
+        or receipt_records.get("schema") != ["4"]
         or receipt_records.get("stage") != ["containerization-benchmark-cctl"]
         or receipt_records.get("repository") != ["containerization"]
+        or receipt_records.get("source-format") != ["git-tree-archive"]
+        or len(receipt_records.get("source-commit", [])) != 1
+        or COMMIT.fullmatch(receipt_records["source-commit"][0]) is None
+        or len(receipt_records.get("source-execution-head", [])) != 1
+        or COMMIT.fullmatch(receipt_records["source-execution-head"][0]) is None
+        or receipt_records.get("source-tracked-clean") != ["true"]
         or receipt_records.get("artifact-archive-sha256") != [archive_digest]
         or receipt_records.get("artifact-manifest-sha256") != [manifest_digest]
         or receipt_records.get("artifact-count") != ["1"]
@@ -245,6 +255,7 @@ def extract_cctl(
         "source-metadata-sha256",
         "command-sha256",
         "stage-tools-sha256",
+        "stage-inputs-sha256",
     )
     if any(
         len(receipt_records.get(key, [])) != 1
@@ -273,10 +284,15 @@ def extract_cctl(
     return {
         "cctlArtifactSha256": archive_digest,
         "cctlBuildCommandSha256": receipt_records["command-sha256"][0],
+        "cctlBuildInputsSha256": receipt_records["stage-inputs-sha256"][0],
+        "cctlBuildSourceCommit": receipt_records["source-commit"][0],
+        "cctlBuildSourceFormat": receipt_records["source-format"][0],
         "cctlBuildSourceMetadataSha256": receipt_records[
             "source-metadata-sha256"
         ][0],
+        "cctlBuildSourceHead": receipt_records["source-execution-head"][0],
         "cctlBuildSourceSha256": receipt_records["source-payload-sha256"][0],
+        "cctlBuildSourceTrackedClean": True,
         "cctlBuildToolsSha256": receipt_records["stage-tools-sha256"][0],
         "cctlReceiptSha256": receipt_digest,
         "cctlSha256": artifact_rows[0][2],
@@ -294,37 +310,7 @@ def prepare_reconstruction(
     output: Path,
 ) -> dict[str, object]:
     provenance = json.loads(guest_provenance_path.read_text(encoding="utf-8"))
-    required = {
-        "artifactDigest",
-        "artifactId",
-        "cctlArtifactSha256",
-        "cctlBuildCommandSha256",
-        "cctlBuildSourceMetadataSha256",
-        "cctlBuildSourceSha256",
-        "cctlBuildToolsSha256",
-        "cctlReceiptSha256",
-        "cctlSha256",
-        "containerizationRef",
-        "runUrl",
-    }
-    if not isinstance(provenance, dict) or not required.issubset(provenance):
-        raise ReconstructionInputError("guest reconstruction provenance is incomplete")
-    if (
-        COMMIT.fullmatch(str(provenance["containerizationRef"])) is None
-        or SHA256.fullmatch(str(provenance["cctlArtifactSha256"])) is None
-        or any(
-            SHA256.fullmatch(str(provenance[key])) is None
-            for key in required
-            if key.endswith("Sha256")
-        )
-        or re.fullmatch(r"sha256:[0-9a-f]{64}", str(provenance["artifactDigest"]))
-        is None
-        or not isinstance(provenance["artifactId"], int)
-        or provenance["artifactId"] <= 0
-        or provenance["runUrl"]
-        != f"https://github.com/{CONTAINERIZATION_REPOSITORY}/actions/runs/{provenance.get('runId')}"
-    ):
-        raise ReconstructionInputError("guest reconstruction provenance is invalid")
+    validate_guest_provenance(provenance)
     manifest = published.prepare_distribution(
         version,
         distribution,
@@ -348,6 +334,104 @@ def prepare_reconstruction(
         encoding="utf-8",
     )
     return manifest
+
+
+def validate_guest_provenance(provenance: object) -> None:
+    common_required = {
+        "artifactDigest",
+        "artifactId",
+        "cctlSha256",
+        "containerizationRef",
+        "runId",
+        "runUrl",
+    }
+    if not isinstance(provenance, dict) or not common_required.issubset(provenance):
+        raise ReconstructionInputError("guest reconstruction provenance is incomplete")
+    if (
+        COMMIT.fullmatch(str(provenance["containerizationRef"])) is None
+        or SHA256.fullmatch(str(provenance["cctlSha256"])) is None
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", str(provenance["artifactDigest"]))
+        is None
+        or isinstance(provenance["artifactId"], bool)
+        or not isinstance(provenance["artifactId"], int)
+        or provenance["artifactId"] <= 0
+        or isinstance(provenance["runId"], bool)
+        or not isinstance(provenance["runId"], int)
+        or provenance["runId"] <= 0
+        or provenance["runUrl"]
+        != f"https://github.com/{CONTAINERIZATION_REPOSITORY}/actions/runs/{provenance['runId']}"
+    ):
+        raise ReconstructionInputError("guest reconstruction provenance is invalid")
+
+    if "cctlBuildPinSchema" in provenance:
+        pin_required = {
+            "cctlBuildPinSchema",
+            "cctlBuildPinSha256",
+            "cctlBuildCommand",
+            "cctlBuildContractSha256",
+            "cctlBuildDurationSeconds",
+            "cctlBuildSourceCommit",
+            "cctlBuildSourceTree",
+            "cctlBuildSourceRemote",
+        }
+        duration = provenance.get("cctlBuildDurationSeconds")
+        if (
+            not pin_required.issubset(provenance)
+            or isinstance(provenance["cctlBuildPinSchema"], bool)
+            or provenance["cctlBuildPinSchema"] != 1
+            or SHA256.fullmatch(str(provenance["cctlBuildPinSha256"])) is None
+            or SHA256.fullmatch(str(provenance["cctlBuildContractSha256"])) is None
+            or provenance["cctlBuildCommand"]
+            != "swift build -c release --product cctl"
+            or COMMIT.fullmatch(str(provenance["cctlBuildSourceCommit"])) is None
+            or provenance["cctlBuildSourceCommit"]
+            != provenance["containerizationRef"]
+            or COMMIT.fullmatch(str(provenance["cctlBuildSourceTree"])) is None
+            or CONTAINERIZATION_REMOTE.fullmatch(
+                str(provenance["cctlBuildSourceRemote"])
+            )
+            is None
+            or isinstance(duration, bool)
+            or not isinstance(duration, (int, float))
+            or not math.isfinite(duration)
+            or duration < 0
+        ):
+            raise ReconstructionInputError(
+                "guest reconstruction build pin provenance is invalid"
+            )
+        return
+
+    legacy_required = {
+        "cctlArtifactSha256",
+        "cctlBuildCommandSha256",
+        "cctlBuildInputsSha256",
+        "cctlBuildSourceMetadataSha256",
+        "cctlBuildSourceHead",
+        "cctlBuildSourceCommit",
+        "cctlBuildSourceFormat",
+        "cctlBuildSourceSha256",
+        "cctlBuildSourceTrackedClean",
+        "cctlBuildToolsSha256",
+        "cctlReceiptSha256",
+    }
+    if not legacy_required.issubset(provenance):
+        raise ReconstructionInputError("guest reconstruction provenance is incomplete")
+    if (
+        COMMIT.fullmatch(str(provenance["cctlBuildSourceCommit"])) is None
+        or COMMIT.fullmatch(str(provenance["cctlBuildSourceHead"])) is None
+        or provenance["cctlBuildSourceCommit"]
+        != provenance["containerizationRef"]
+        or provenance["cctlBuildSourceFormat"] != "git-tree-archive"
+        or provenance["cctlBuildSourceTrackedClean"] is not True
+        or any(
+            SHA256.fullmatch(str(provenance[key])) is None
+            for key in legacy_required
+            if key.endswith("Sha256")
+        )
+    ):
+        raise ReconstructionInputError(
+            "guest reconstruction legacy provenance is invalid"
+        )
 
 
 def load_json(path: Path) -> object:

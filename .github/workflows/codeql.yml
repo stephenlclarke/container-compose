@@ -44,6 +44,8 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
+      release_id: ${{ steps.resolve.outputs.release_id }}
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
     steps:
       - name: Require an immutable published release
         id: resolve
@@ -60,17 +62,35 @@ jobs:
             exit 1
           fi
           release="$(
-            gh release view "${RELEASE_REF}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --json isDraft,tagName
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_REF}"
           )"
-          if [[ "$(jq -r .isDraft <<<"${release}")" != "false" ||
-                "$(jq -r .tagName <<<"${release}")" != "${RELEASE_REF}" ]]; then
+          expected_prerelease=false
+          [[ "${RELEASE_REF}" == "current" ]] && expected_prerelease=true
+          if [[ "$(jq -r .draft <<<"${release}")" != "false" ||
+                "$(jq -r .tag_name <<<"${release}")" != "${RELEASE_REF}" ||
+                "$(jq -r .prerelease <<<"${release}")" != "${expected_prerelease}" ]]; then
             printf 'CodeQL recovery release is not published and immutable: %s\n' \
               "${RELEASE_REF}" >&2
             exit 1
           fi
-          printf 'checkout_ref=%s\n' "${RELEASE_REF}" >> "${GITHUB_OUTPUT}"
+          remote="https://github.com/${GITHUB_REPOSITORY}.git"
+          checkout_ref="$(
+            git ls-remote --tags "${remote}" \
+              "refs/tags/${RELEASE_REF}" "refs/tags/${RELEASE_REF}^{}" \
+              | awk '$2 ~ /\^\{\}$/ { peeled = $1 } $2 !~ /\^\{\}$/ { direct = $1 } END { print peeled ? peeled : direct }'
+          )"
+          release_id="$(jq -er '.id' <<<"${release}")"
+          if [[ ! "${checkout_ref}" =~ ^[0-9a-f]{40}$ ]] || \
+            [[ ! "${release_id}" =~ ^[0-9]+$ ]]; then
+            printf 'CodeQL recovery could not resolve exact release authority: %s\n' \
+              "${RELEASE_REF}" >&2
+            exit 1
+          fi
+          {
+            printf 'checkout_ref=%s\n' "${checkout_ref}"
+            printf 'release_id=%s\n' "${release_id}"
+            printf 'release_tag=%s\n' "${RELEASE_REF}"
+          } >> "${GITHUB_OUTPUT}"
 
   analyze:
     name: Analyze Go Release
@@ -83,6 +103,14 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ needs.resolve-release.outputs.checkout_ref }}
+
+      - name: Verify exact release checkout
+        env:
+          RELEASE_SHA: ${{ needs.resolve-release.outputs.checkout_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${RELEASE_SHA}" ]]
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -121,6 +149,15 @@ jobs:
           mkdir -p "$GOCACHE" "$GOMODCACHE"
           make go-build
 
+      - name: Verify release source remained exact
+        env:
+          RELEASE_SHA: ${{ needs.resolve-release.outputs.checkout_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${RELEASE_SHA}" ]]
+          [[ -z "$(git status --porcelain --untracked-files=no)" ]]
+
       - name: Analyze
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
@@ -128,18 +165,44 @@ jobs:
 
   verify:
     name: CodeQL
-    needs: analyze
+    needs:
+      - resolve-release
+      - analyze
     if: always()
     runs-on: ubuntu-24.04
     steps:
       - name: Require successful release analysis
         env:
           ANALYSIS_RESULT: ${{ needs.analyze.result }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ needs.resolve-release.outputs.release_id }}
+          RELEASE_SHA: ${{ needs.resolve-release.outputs.checkout_ref }}
+          RELEASE_TAG: ${{ needs.resolve-release.outputs.release_tag }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ "${ANALYSIS_RESULT}" != "success" ]]; then
             printf 'CodeQL release analysis did not complete successfully: %s\n' \
               "${ANALYSIS_RESULT}" >&2
+            exit 1
+          fi
+          release="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}"
+          )"
+          current_release_id="$(jq -er '.id' <<<"${release}")"
+          expected_prerelease=false
+          [[ "${RELEASE_TAG}" == "current" ]] && expected_prerelease=true
+          current_tag_sha="$(
+            git ls-remote --tags "https://github.com/${GITHUB_REPOSITORY}.git" \
+              "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" \
+              | awk '$2 ~ /\^\{\}$/ { peeled = $1 } $2 !~ /\^\{\}$/ { direct = $1 } END { print peeled ? peeled : direct }'
+          )"
+          if [[ "$(jq -r '.draft' <<<"${release}")" != "false" ]] || \
+            [[ "$(jq -r '.tag_name' <<<"${release}")" != "${RELEASE_TAG}" ]] || \
+            [[ "$(jq -r '.prerelease' <<<"${release}")" != "${expected_prerelease}" ]] || \
+            [[ "${current_release_id}" != "${RELEASE_ID}" ]] || \
+            [[ "${current_tag_sha}" != "${RELEASE_SHA}" ]]; then
+            printf 'CodeQL release authority changed while analysis ran: %s\n' \
+              "${RELEASE_TAG}" >&2
             exit 1
           fi

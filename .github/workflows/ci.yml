@@ -53,10 +53,11 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       heavy: ${{ steps.filter.outputs.heavy }}
+      tools: ${{ steps.filter.outputs.tools }}
+      runtime: ${{ steps.filter.outputs.runtime }}
       handoff: ${{ steps.filter.outputs.handoff }}
     steps:
-      - name: Checkout for push diff
-        if: github.event_name == 'push'
+      - name: Checkout change classifier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
@@ -75,7 +76,7 @@ jobs:
           # validation transaction instead of inferring their scope from a
           # synthetic tag-push diff (whose before SHA is all zeroes).
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            printf 'heavy=true\nhandoff=false\n' >> "$GITHUB_OUTPUT"
+            python3 Tools/ci/classify-ci-changes.py --full >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -83,15 +84,15 @@ jobs:
             pull_request)
               gh api "repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.pull_request.number }}/files" \
                 --paginate \
-                --jq '.[].filename' > "$changed_files"
+                --jq '.[] | .filename, (.previous_filename // empty)' > "$changed_files"
               ;;
             push)
               before="${{ github.event.before }}"
               after="${GITHUB_SHA}"
               if [[ "$before" =~ ^0+$ ]] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
-                git diff-tree --no-commit-id --name-only -r "$after" > "$changed_files"
+                git diff-tree --no-commit-id --name-only --no-renames -r "$after" > "$changed_files"
               else
-                git diff --name-only "$before" "$after" > "$changed_files"
+                git diff --name-only --no-renames "$before" "$after" > "$changed_files"
               fi
               ;;
             workflow_dispatch)
@@ -106,36 +107,18 @@ jobs:
                 [[ "$(jq -r '.base.ref' <<<"${pr_metadata}")" == "main" ]]
                 gh api "repos/${GITHUB_REPOSITORY}/pulls/${DOCUMENTATION_PR}/files" \
                   --paginate \
-                  --jq '.[].filename' > "$changed_files"
+                  --jq '.[] | .filename, (.previous_filename // empty)' > "$changed_files"
               else
-                printf 'heavy=true\nhandoff=false\n' >> "$GITHUB_OUTPUT"
+                python3 Tools/ci/classify-ci-changes.py --full >> "$GITHUB_OUTPUT"
                 exit 0
               fi
               ;;
             *)
-              printf 'heavy=true\nhandoff=false\n' >> "$GITHUB_OUTPUT"
+              python3 Tools/ci/classify-ci-changes.py --full >> "$GITHUB_OUTPUT"
               exit 0
               ;;
           esac
-
-          heavy=false
-          handoff=false
-          while IFS= read -r path; do
-            case "$path" in
-              docs/upstream/*)
-                handoff=true
-                ;;
-              *.md|docs/*|Formula/*)
-                ;;
-              *)
-                heavy=true
-                break
-                ;;
-            esac
-          done < "$changed_files"
-
-          printf 'heavy=%s\n' "$heavy" >> "$GITHUB_OUTPUT"
-          printf 'handoff=%s\n' "$handoff" >> "$GITHUB_OUTPUT"
+          python3 Tools/ci/classify-ci-changes.py "$changed_files" >> "$GITHUB_OUTPUT"
 
   source_checks:
     name: Source Checks
@@ -261,7 +244,7 @@ jobs:
   tool_tests:
     name: Tool Tests (${{ matrix.suite }})
     needs: changes
-    if: needs.changes.outputs.heavy == 'true'
+    if: needs.changes.outputs.tools == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
@@ -292,7 +275,7 @@ jobs:
       - changes
       - resolve-canonical-main
     if: >
-      needs.changes.outputs.heavy == 'true' &&
+      (needs.changes.outputs.runtime == 'true' || github.ref == 'refs/heads/main') &&
       needs.resolve-canonical-main.result == 'success'
     # This lane compiles and exercises unit/CLI coverage only. Keep VM-backed
     # integration in the recoverable release graph and use a managed runner
@@ -819,6 +802,8 @@ jobs:
 
   resolve-canonical-main:
     name: Resolve Canonical Main
+    needs: changes
+    if: needs.changes.outputs.runtime == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     outputs:
       artifact_run_id: ${{ steps.main.outputs.artifact_run_id }}
@@ -954,7 +939,9 @@ jobs:
       - name: Check parallel validation jobs
         env:
           RESOLVE_CANONICAL_MAIN_RESULT: ${{ needs.resolve-canonical-main.result }}
+          RUNTIME_SELECTED: ${{ needs.changes.outputs.runtime == 'true' || github.ref == 'refs/heads/main' }}
           SOURCE_CHECKS_RESULT: ${{ needs.source_checks.result }}
+          TOOLS_SELECTED: ${{ needs.changes.outputs.tools }}
           TOOL_TESTS_RESULT: ${{ needs.tool_tests.result }}
           VALIDATE_RUNTIME_RESULT: ${{ needs.validate_runtime.result }}
         run: |
@@ -963,19 +950,31 @@ jobs:
             printf 'Source Checks concluded %s\n' "${SOURCE_CHECKS_RESULT}" >&2
             exit 1
           fi
-          if [[ "${TOOL_TESTS_RESULT}" != "success" ]]; then
+          if [[ "${TOOLS_SELECTED}" == "true" && "${TOOL_TESTS_RESULT}" != "success" ]]; then
             printf 'Tool Tests concluded %s\n' "${TOOL_TESTS_RESULT}" >&2
             exit 1
           fi
-          if [[ "${VALIDATE_RUNTIME_RESULT}" != "success" ]]; then
+          if [[ "${TOOLS_SELECTED}" != "true" && "${TOOL_TESTS_RESULT}" != "skipped" ]]; then
+            printf 'Unselected Tool Tests concluded %s\n' "${TOOL_TESTS_RESULT}" >&2
+            exit 1
+          fi
+          if [[ "${RUNTIME_SELECTED}" == "true" && "${VALIDATE_RUNTIME_RESULT}" != "success" ]]; then
             printf 'Validate Runtime concluded %s\n' "${VALIDATE_RUNTIME_RESULT}" >&2
             exit 1
           fi
-          if [[ "${RESOLVE_CANONICAL_MAIN_RESULT}" != "success" && "${RESOLVE_CANONICAL_MAIN_RESULT}" != "skipped" ]]; then
+          if [[ "${RUNTIME_SELECTED}" != "true" && "${VALIDATE_RUNTIME_RESULT}" != "skipped" ]]; then
+            printf 'Unselected Validate Runtime concluded %s\n' "${VALIDATE_RUNTIME_RESULT}" >&2
+            exit 1
+          fi
+          if [[ "${RUNTIME_SELECTED}" == "true" && "${RESOLVE_CANONICAL_MAIN_RESULT}" != "success" ]]; then
             printf 'Resolve Canonical Main concluded %s\n' "${RESOLVE_CANONICAL_MAIN_RESULT}" >&2
             exit 1
           fi
-          printf 'Source Checks, Tool Tests, and Validate Runtime passed, including any required atomic Sonar restoration.\n'
+          if [[ "${RUNTIME_SELECTED}" != "true" && "${RESOLVE_CANONICAL_MAIN_RESULT}" != "skipped" ]]; then
+            printf 'Unselected Resolve Canonical Main concluded %s\n' "${RESOLVE_CANONICAL_MAIN_RESULT}" >&2
+            exit 1
+          fi
+          printf 'All selected validation scopes passed, including any required atomic Sonar restoration.\n'
 
   validate-lightweight:
     # Branch protection requires one stable aggregate context for both the

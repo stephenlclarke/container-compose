@@ -65,6 +65,23 @@ class MakefileFailFastTests(unittest.TestCase):
             ],
         )
 
+    def test_license_check_uses_repository_pinned_hawkeye_by_default(self) -> None:
+        self.assertIn("HAWKEYE ?= .local/bin/hawkeye", self.makefile)
+        recipe = self.makefile.split("check-licenses:", 1)[1].split(
+            "update-licenses:", 1
+        )[0]
+        self.assertIn(
+            'HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh', recipe
+        )
+
+    def test_license_update_validates_the_selected_hawkeye(self) -> None:
+        recipe = self.makefile.split("update-licenses:", 1)[1].split(
+            "pre-commit:", 1
+        )[0]
+        self.assertIn(
+            'HAWKEYE="$(HAWKEYE)" ./scripts/ensure-hawkeye-exists.sh', recipe
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

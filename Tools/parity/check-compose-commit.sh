@@ -30,6 +30,8 @@
 #                      Path to the Apple container binary used by container-compose.
 #   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
 #                      "docker compose" when available, otherwise docker-compose.
+#   PARITY_TIMEOUT_SECONDS
+#                      Per-operation deadline in seconds. Defaults to 300.
 #
 # This script is intentionally local-only and is not part of CI. It validates
 # Docker Compose V2 running-container commit image config behavior with
@@ -46,6 +48,8 @@ REPO_ROOT="$(cd "$(dirname "$SELF_PATH")/../.." && pwd)"
 readonly REPO_ROOT
 
 STRICT=0
+PARITY_TIMEOUT_SECONDS="${PARITY_TIMEOUT_SECONDS:-300}"
+readonly CLEANUP_TIMEOUT_SECONDS=30
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
 DOCKER_COMPOSE_COMMAND=()
@@ -105,12 +109,31 @@ skip_or_fail() {
     exit 0
 }
 
+run_bounded_for() {
+    local seconds="$1"
+    shift
+    python3 "$REPO_ROOT/Tools/ci/run-command-with-deadline.py" \
+        --seconds "$seconds" --grace-seconds 5 -- "$@"
+}
+
+run_bounded() {
+    run_bounded_for "$PARITY_TIMEOUT_SECONDS" "$@"
+}
+
+validate_configuration() {
+    if [[ ! "$PARITY_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+        error "PARITY_TIMEOUT_SECONDS must be a positive integer: $PARITY_TIMEOUT_SECONDS"
+        return 2
+    fi
+}
+
 detect_docker_compose() {
     if [[ -n "${DOCKER_COMPOSE:-}" ]]; then
         IFS=' ' read -r -a DOCKER_COMPOSE_COMMAND <<<"$DOCKER_COMPOSE"
-    elif docker compose version >/dev/null 2>&1; then
+    elif run_bounded docker compose version >/dev/null 2>&1; then
         DOCKER_COMPOSE_COMMAND=(docker compose)
-    elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+    elif command -v docker-compose >/dev/null 2>&1 \
+        && run_bounded docker-compose version >/dev/null 2>&1; then
         DOCKER_COMPOSE_COMMAND=(docker-compose)
     else
         skip_or_fail 'Docker Compose V2 is not available'
@@ -118,11 +141,11 @@ detect_docker_compose() {
 }
 
 check_tools() {
-    detect_docker_compose
     if ! command -v python3 >/dev/null 2>&1; then
         skip_or_fail 'python3 is not available'
     fi
-    if ! docker info >/dev/null 2>&1; then
+    detect_docker_compose
+    if ! run_bounded docker info >/dev/null 2>&1; then
         skip_or_fail 'Docker Engine is not available'
     fi
     if [[ ! -x "$CONTAINER_COMPOSE" ]]; then
@@ -161,28 +184,38 @@ YAML
 
 cleanup() {
     if [[ -n "$FIXTURE_DIR" ]]; then
-        COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
-            "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" down --remove-orphans >/dev/null 2>&1 || true
-        COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
-            CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
-                "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" down --remove-orphans >/dev/null 2>&1 || true
+        run_bounded_for "$CLEANUP_TIMEOUT_SECONDS" env \
+            COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
+            "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
+            down --remove-orphans >/dev/null 2>&1 || true
+        run_bounded_for "$CLEANUP_TIMEOUT_SECONDS" env \
+            COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
+            CONTAINER_BIN="$CONTAINER_BINARY" \
+            CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
+            "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
+            down --remove-orphans >/dev/null 2>&1 || true
         rm -rf "$FIXTURE_DIR"
     fi
-    docker image rm -f "$DOCKER_IMAGE" >/dev/null 2>&1 || true
-    docker image rm -f "$DOCKER_BASE_IMAGE" >/dev/null 2>&1 || true
-    "$CONTAINER_BINARY" image delete --force "$CONTAINER_IMAGE" >/dev/null 2>&1 || true
-    "$CONTAINER_BINARY" image delete --force "$CONTAINER_BASE_IMAGE" >/dev/null 2>&1 || true
+    run_bounded_for "$CLEANUP_TIMEOUT_SECONDS" docker image rm -f "$DOCKER_IMAGE" >/dev/null 2>&1 || true
+    run_bounded_for "$CLEANUP_TIMEOUT_SECONDS" docker image rm -f "$DOCKER_BASE_IMAGE" >/dev/null 2>&1 || true
+    run_bounded_for "$CLEANUP_TIMEOUT_SECONDS" \
+        "$CONTAINER_BINARY" image delete --force "$CONTAINER_IMAGE" >/dev/null 2>&1 || true
+    run_bounded_for "$CLEANUP_TIMEOUT_SECONDS" \
+        "$CONTAINER_BINARY" image delete --force "$CONTAINER_BASE_IMAGE" >/dev/null 2>&1 || true
 }
 
 build_fixture_images() {
-    docker build --quiet --tag "$DOCKER_BASE_IMAGE" "$FIXTURE_DIR" >/dev/null
-    "$CONTAINER_BINARY" build --tag "$CONTAINER_BASE_IMAGE" "$FIXTURE_DIR" >/dev/null
+    info "Building Docker commit parity fixture image..."
+    run_bounded docker build --quiet --tag "$DOCKER_BASE_IMAGE" "$FIXTURE_DIR" >/dev/null
+    info "Building Container commit parity fixture image..."
+    run_bounded "$CONTAINER_BINARY" build --progress plain \
+        --tag "$CONTAINER_BASE_IMAGE" "$FIXTURE_DIR"
 }
 
 commit_with_docker_compose() {
-    COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
+    run_bounded env COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
         "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up -d --quiet-pull api >/dev/null
-    COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
+    run_bounded env COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
         "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" commit \
         --pause=false \
         --author parity \
@@ -196,17 +229,17 @@ commit_with_docker_compose() {
         --change 'VOLUME ["/logs","/shared-data"]' \
         --change 'WORKDIR /srv/app' \
         api "$DOCKER_IMAGE" >/dev/null
-    docker image inspect "$DOCKER_IMAGE" >"$FIXTURE_DIR/docker-image.json"
+    run_bounded docker image inspect "$DOCKER_IMAGE" >"$FIXTURE_DIR/docker-image.json"
 }
 
 commit_with_container_compose() {
-    COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
+    run_bounded env COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
         CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
             "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up -d api >/dev/null
-    COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
+    run_bounded env COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
         CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
             "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" stop api >/dev/null
-    COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
+    run_bounded env COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
         CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
             "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" commit \
             -p=false \
@@ -221,7 +254,8 @@ commit_with_container_compose() {
             -c 'VOLUME ["/logs","/shared-data"]' \
             -c 'WORKDIR /srv/app' \
             api "$CONTAINER_IMAGE" >/dev/null
-    "$CONTAINER_BINARY" image inspect "$CONTAINER_IMAGE" >"$FIXTURE_DIR/container-image.json"
+    run_bounded "$CONTAINER_BINARY" image inspect "$CONTAINER_IMAGE" \
+        >"$FIXTURE_DIR/container-image.json"
 }
 
 assert_committed_image_config() {
@@ -293,6 +327,7 @@ PY
 
 main() {
     parse_args "$@"
+    validate_configuration
     check_tools
     trap cleanup EXIT
     create_fixture

@@ -20,13 +20,17 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
+import json
 import os
 import signal
+import stat
 import subprocess
 import sys
 import time
 from collections.abc import Sequence
 from enum import Enum
+from pathlib import Path
 from typing import NamedTuple
 
 TIMEOUT_EXIT_STATUS = 124
@@ -58,6 +62,8 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
         help="supervise the command process group without a wall-clock deadline",
     )
     parser.add_argument("--grace-seconds", type=float, default=10.0)
+    parser.add_argument("--timing-log", type=Path)
+    parser.add_argument("--timing-label")
     parser.add_argument(
         "--ignore-parent-signals",
         action="store_true",
@@ -73,7 +79,35 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
         parser.error("--grace-seconds must be non-negative")
     if not parsed.command:
         parser.error("a command is required after --")
+    if (parsed.timing_log is None) != (parsed.timing_label is None):
+        parser.error("--timing-log and --timing-label must be used together")
     return parsed
+
+
+def append_timing(
+    path: Path, label: str, duration_seconds: float, exit_status: int
+) -> None:
+    """Append one concurrency-safe JSON timing record."""
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    record = {
+        "duration_seconds": round(duration_seconds, 6),
+        "exit_status": exit_status,
+        "label": label,
+        "recorded_at_epoch_seconds": round(time.time(), 6),
+    }
+    flags = os.O_APPEND | os.O_CREAT | os.O_WRONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(path, flags, 0o600)
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+        os.close(descriptor)
+        raise OSError(f"timing log is not a regular file: {path}")
+    with os.fdopen(descriptor, "a", encoding="utf-8") as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        stream.write(json.dumps(record, sort_keys=True) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+        fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
 def signal_process_group(process_group_id: int, number: int) -> None:
@@ -303,8 +337,7 @@ def reap_direct_child(
         return False
 
 
-def run(arguments: Sequence[str]) -> int:
-    options = parse_arguments(arguments)
+def run_command(options: argparse.Namespace) -> int:
     forwarded_signal: int | None = None
     previous_handlers: dict[int, signal.Handlers] = {}
     forwarded_signals = {
@@ -448,6 +481,20 @@ def run(arguments: Sequence[str]) -> int:
     finally:
         for number, handler in previous_handlers.items():
             signal.signal(number, handler)
+
+
+def run(arguments: Sequence[str]) -> int:
+    options = parse_arguments(arguments)
+    started = time.monotonic()
+    exit_status = run_command(options)
+    if options.timing_log is not None:
+        append_timing(
+            options.timing_log,
+            options.timing_label,
+            time.monotonic() - started,
+            exit_status,
+        )
+    return exit_status
 
 
 if __name__ == "__main__":

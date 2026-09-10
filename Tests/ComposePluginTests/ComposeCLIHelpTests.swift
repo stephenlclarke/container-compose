@@ -891,19 +891,21 @@ struct ComposeCLIHelpTests {
 
                 #expect(command.global.dryRun)
             }),
-            (["bridge", "convert"], ["--dry-run", "--output", "--templates", "--transformation"], {
+            (["bridge", "convert"], ["--dry-run", "--output", "--templates", "--transformation", "--yes"], {
                 let command = try BridgeConvert.parse([
                     "--dry-run",
                     "--output", "out",
                     "--templates", "templates",
                     "--transformation", "one",
                     "--transformation", "two",
+                    "--yes",
                 ])
 
                 #expect(command.global.dryRun)
                 #expect(command.output == "out")
                 #expect(command.templates == "templates")
                 #expect(command.transformations == ["one", "two"])
+                #expect(command.yes)
             }),
             (["bridge", "transformations"], ["--dry-run"], {
                 let command = try BridgeTransformations.parse(["--dry-run"])

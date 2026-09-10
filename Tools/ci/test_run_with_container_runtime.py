@@ -707,6 +707,16 @@ exit 113
                 {"CONTAINER_RUNTIME_APP_ROOT": "/tmp/" + "x" * 80},
                 "container runtime app root exceeds the provider Unix socket path limit",
             ),
+            (
+                "space-separated anonymous registry hosts",
+                {
+                    "CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS": (
+                        "ghcr.io docker.io"
+                    ),
+                },
+                "CONTAINER_RUNTIME_ANONYMOUS_REGISTRY_HOSTS must be a "
+                "comma-separated host list",
+            ),
         ]
         for name, overrides, expected_error in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary_directory:
@@ -1033,7 +1043,10 @@ exit 113
                         rf"^/(?:private/)?tmp/container-compose-runtime-{os.getuid()}"
                         rf"/candidate-[0-9a-f]{{16}}/bin/container$",
                     )
-                    self.assertEqual(values[3], "ghcr.io")
+                    self.assertEqual(
+                        values[3],
+                        "ghcr.io,docker.io,registry-1.docker.io,index.docker.io",
+                    )
                     staged_paths.append(values[0])
 
                 self.assertEqual(staged_paths[0], staged_paths[1])

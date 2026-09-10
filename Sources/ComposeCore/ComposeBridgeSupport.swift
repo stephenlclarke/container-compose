@@ -71,7 +71,7 @@ func createBridgeInputDirectory(composeYAML: String) throws -> URL {
     }
 }
 
-func recreateBridgeOutputDirectory(_ output: String) throws {
+func validateBridgeOutputDirectory(_ output: String) throws {
     let url = URL(fileURLWithPath: output, isDirectory: true)
     let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
         .resolvingSymlinksInPath().standardizedFileURL.path
@@ -82,6 +82,28 @@ func recreateBridgeOutputDirectory(_ output: String) throws {
                 + "or an ancestor of the current directory",
         )
     }
+}
+
+func bridgeOutputDirectoryNeedsConfirmation(_ output: String) throws -> Bool {
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: output, isDirectory: &isDirectory) else {
+        return false
+    }
+    guard isDirectory.boolValue else {
+        throw ComposeError.invalidProject("bridge output path is not a directory: \(output)")
+    }
+    do {
+        return try !FileManager.default.contentsOfDirectory(atPath: output).isEmpty
+    } catch {
+        throw ComposeError.invalidProject(
+            "cannot read bridge output directory '\(output)': \(error.localizedDescription)",
+        )
+    }
+}
+
+func recreateBridgeOutputDirectory(_ output: String) throws {
+    try validateBridgeOutputDirectory(output)
+    let url = URL(fileURLWithPath: output, isDirectory: true)
     if FileManager.default.fileExists(atPath: output) {
         try FileManager.default.removeItem(at: url)
     }

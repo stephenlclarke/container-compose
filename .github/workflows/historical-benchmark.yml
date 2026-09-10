@@ -61,7 +61,7 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 240
     env:
-      PIPELINE_STATE_ROOT: /Volumes/SSD/github/.container-compose-pipeline
+      BUILD_STATE_ROOT: /Volumes/SSD/github/.container-compose-build/historical-benchmark
       REPETITIONS: ${{ inputs.repetitions }}
       FIXTURE_GROUPS: ${{ inputs.fixture_groups }}
       FIXTURE_IMAGE: alpine:3.20
@@ -82,7 +82,43 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-          ref: main
+          ref: ${{ github.sha }}
+
+      - name: Resolve exact external checkouts
+        id: external-checkouts
+        env:
+          CONTROLS_REF: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${CONTROLS_REF}" ]]
+
+          # Resolve one external checkout before any expensive reconstruction.
+          resolve_main() {
+            local variable="$1" repository="$2" revision
+            revision="$(
+              git ls-remote --heads "https://github.com/${repository}.git" \
+                refs/heads/main | awk '{ print $1 }' | tail -n 1
+            )"
+            if [[ ! "${revision}" =~ ^[0-9a-f]{40}$ ]]; then
+              printf 'benchmark checkout authority is invalid: %s@main\n' \
+                "${repository}" >&2
+              exit 1
+            fi
+            printf -v "${variable}" '%s' "${revision}"
+          }
+
+          resolve_main homebrew_ref stephenlclarke/homebrew-tap
+          resolve_main containerization_ref stephenlclarke/containerization
+          {
+            printf 'homebrew_ref=%s\n' "${homebrew_ref}"
+            printf 'containerization_ref=%s\n' "${containerization_ref}"
+          } >> "${GITHUB_OUTPUT}"
+          {
+            printf 'CONTROLS_REF=%s\n' "${CONTROLS_REF}"
+            printf 'HOMEBREW_REF=%s\n' "${homebrew_ref}"
+            printf 'CONTAINERIZATION_SOURCE_REF=%s\n' "${containerization_ref}"
+          } >> "${GITHUB_ENV}"
 
       - name: Checkout complete Homebrew distribution history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -90,6 +126,7 @@ jobs:
           repository: stephenlclarke/homebrew-tap
           path: homebrew-tap
           fetch-depth: 0
+          ref: ${{ steps.external-checkouts.outputs.homebrew_ref }}
 
       - name: Checkout Containerization source authority
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -97,6 +134,16 @@ jobs:
           repository: stephenlclarke/containerization
           path: containerization-source
           fetch-depth: 0
+          ref: ${{ steps.external-checkouts.outputs.containerization_ref }}
+
+      - name: Verify exact benchmark checkouts
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "${CONTROLS_REF}" ]]
+          [[ "$(git -C homebrew-tap rev-parse HEAD)" == "${HOMEBREW_REF}" ]]
+          [[ "$(git -C containerization-source rev-parse HEAD)" == \
+            "${CONTAINERIZATION_SOURCE_REF}" ]]
 
       - name: Verify unattended documentation signing
         shell: bash
@@ -144,8 +191,39 @@ jobs:
             > "${RUNNER_TEMP}/comparison.json"
           target="$(jq -r '.target' "${RUNNER_TEMP}/comparison.json")"
           baseline="$(jq -r '.baseline' "${RUNNER_TEMP}/comparison.json")"
-          printf 'TARGET_VERSION=%s\nBASELINE_VERSION=%s\n' \
-            "${target}" "${baseline}" >> "${GITHUB_ENV}"
+
+          # Resolve one published release to its immutable object and tag identities.
+          resolve_release() {
+            local label="$1" tag="$2" release release_id release_ref
+            release="$(
+              gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}"
+            )"
+            release_id="$(jq -er '.id' <<<"${release}")"
+            release_ref="$(
+              git ls-remote --tags \
+                "https://github.com/${GITHUB_REPOSITORY}.git" \
+                "refs/tags/${tag}" "refs/tags/${tag}^{}" |
+                awk '$2 ~ /\^\{\}$/ { peeled = $1 } $2 !~ /\^\{\}$/ { direct = $1 } END { print peeled ? peeled : direct }'
+            )"
+            if [[ "$(jq -r '.draft or .prerelease' <<<"${release}")" != "false" ]] ||
+              [[ "$(jq -r '.tag_name' <<<"${release}")" != "${tag}" ]] ||
+              [[ ! "${release_id}" =~ ^[0-9]+$ ]] ||
+              [[ ! "${release_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+              printf 'benchmark release authority is invalid: %s\n' "${tag}" >&2
+              exit 1
+            fi
+            printf '%s_RELEASE_ID=%s\n' "${label}" "${release_id}" \
+              >> "${GITHUB_ENV}"
+            printf '%s_RELEASE_REF=%s\n' "${label}" "${release_ref}" \
+              >> "${GITHUB_ENV}"
+          }
+
+          {
+            printf 'TARGET_VERSION=%s\n' "${target}"
+            printf 'BASELINE_VERSION=%s\n' "${baseline}"
+          } >> "${GITHUB_ENV}"
+          resolve_release TARGET "${target}"
+          resolve_release BASELINE "${baseline}"
           printf 'Reconstructing %s and %s from exact retained authorities.\n' \
             "${target}" "${baseline}" >> "${GITHUB_STEP_SUMMARY}"
 
@@ -154,11 +232,10 @@ jobs:
         run: |
           set -euo pipefail
           [[ -d /Volumes/SSD/github ]]
-          [[ -d "${PIPELINE_STATE_ROOT}" ]]
-          [[ -f "${PIPELINE_STATE_ROOT}/.container-compose-pipeline-root" ]]
-          [[ "$(<"${PIPELINE_STATE_ROOT}/.container-compose-pipeline-root")" == \
-            'container-compose recoverable pipeline v1' ]]
-          [[ -x "${PIPELINE_STATE_ROOT}/tools/nextflow/26.04.6/nextflow" ]]
+          make stack-state-init STACK_STATE_ROOT="${BUILD_STATE_ROOT}"
+          [[ -f "${BUILD_STATE_ROOT}/.container-compose-build-root" ]]
+          [[ "$(<"${BUILD_STATE_ROOT}/.container-compose-build-root")" == \
+            'container-compose recoverable build v1' ]]
           if [[ -e "${BENCHMARK_ROOT}" ]]; then
             printf 'benchmark root already exists: %s\n' "${BENCHMARK_ROOT}" >&2
             exit 1
@@ -349,7 +426,15 @@ jobs:
             Tools/release/verify-developer-id-archive.sh \
               "${distribution}/container-compose-plugin-release-arm64.tar.gz"
 
-            source_commit="$(git rev-parse --verify "refs/tags/${version}^{commit}")"
+            case "${version}" in
+              "${TARGET_VERSION}") source_commit="${TARGET_RELEASE_REF}" ;;
+              "${BASELINE_VERSION}") source_commit="${BASELINE_RELEASE_REF}" ;;
+              *)
+                printf 'version has no exact release authority: %s\n' \
+                  "${version}" >&2
+                exit 1
+                ;;
+            esac
             git show "${source_commit}:Tools/release/stack-refs.json" \
               > "${version_root}/stack-refs.json"
             containerization_ref="$(jq -r \
@@ -417,23 +502,56 @@ jobs:
               extract-initfs --archive "${version_root}/initfs.zip" \
               --digest "${initfs_artifact_digest}" --output "${initfs_root}"
 
-            attempt_id="historical-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${version//./-}"
-            PIPELINE_PROFILE=benchmark-reconstruction \
-              PIPELINE_STAGE_SELECTOR=containerization-benchmark-cctl \
-              PIPELINE_ATTEMPT_ID="${attempt_id}" \
-              PIPELINE_CONTAINERIZATION_REPO="${GITHUB_WORKSPACE}/containerization-source" \
-              PIPELINE_CONTAINERIZATION_REF="${containerization_ref}" \
-              /opt/homebrew/opt/make/libexec/gnubin/make \
-                --no-print-directory pipeline
-            pipeline_evidence="${PIPELINE_STATE_ROOT}/evidence/${attempt_id}"
+            source_worktree="${BENCHMARK_ROOT}/work/containerization-${version}"
+            cctl_pin="${version_root}/containerization-cctl.pin.json"
+            git -C containerization-source worktree add --detach \
+              "${source_worktree}" "${containerization_ref}"
+            source_commit="$(git -C "${source_worktree}" rev-parse 'HEAD^{commit}')"
+            source_tree="$(git -C "${source_worktree}" rev-parse 'HEAD^{tree}')"
+            cctl_contract="$(/usr/bin/python3 Tools/build/stack-pin.py contract \
+              --tool /usr/bin/swift --configuration release \
+              --controller "$(pwd -P)/.github/workflows/historical-benchmark.yml" \
+              --controller "$(pwd -P)/Tools/build/stack-pin.py")"
+            scratch="${BUILD_STATE_ROOT}/scratch/${cctl_contract}/containerization-${containerization_ref}"
+            started=${SECONDS}
+            /usr/bin/swift build --package-path "${source_worktree}" \
+              --disable-automatic-resolution --scratch-path "${scratch}" \
+              -c release --product cctl
+            cctl_bin_path="$(/usr/bin/swift build --package-path "${source_worktree}" \
+              --scratch-path "${scratch}" -c release --show-bin-path)"
+            /usr/bin/install -m 0755 "${cctl_bin_path}/cctl" \
+              "${version_root}/cctl"
+            /usr/bin/python3 Tools/build/stack-pin.py create \
+              --repository containerization \
+              --repository-path "${source_worktree}" --output "${cctl_pin}" \
+              --artifact "${version_root}/cctl" \
+              --expected-commit "${source_commit}" --expected-tree "${source_tree}" \
+              --build-contract "${cctl_contract}" \
+              --duration-seconds "$((SECONDS - started))" \
+              --command-label 'swift build -c release --product cctl' >/dev/null
+            /usr/bin/python3 Tools/build/stack-pin.py verify --quiet \
+              --receipt "${cctl_pin}" --repository containerization \
+              --repository-path "${source_worktree}" \
+              --build-contract "${cctl_contract}"
             cctl_result="${version_root}/cctl-result.json"
-            /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py \
-              extract-cctl \
-              --archive "${pipeline_evidence}/receipts/containerization-benchmark-cctl.artifacts.tar" \
-              --manifest "${pipeline_evidence}/receipts/containerization-benchmark-cctl.artifacts.tsv" \
-              --receipt "${pipeline_evidence}/receipts/containerization-benchmark-cctl.receipt.tsv" \
-              --summary "${pipeline_evidence}/pipeline-summary.tsv" \
-              --output "${version_root}/cctl" > "${cctl_result}"
+            jq -e '
+              if .schema == 1 and
+                .repository == "containerization" and
+                (.artifacts | length) == 1
+              then {
+                cctlBuildPinSchema: .schema,
+                cctlBuildPinSha256: .receipt_sha256,
+                cctlBuildCommand: .build.command,
+                cctlBuildContractSha256: .build.contract,
+                cctlBuildDurationSeconds: .build.duration_seconds,
+                cctlBuildSourceCommit: .source.commit,
+                cctlBuildSourceTree: .source.tree,
+                cctlBuildSourceRemote: .source.remote,
+                cctlSha256: .artifacts[0].sha256
+              }
+              else error("invalid containerization cctl build pin")
+              end
+            ' "${cctl_pin}" > "${cctl_result}"
 
             cctl_home="${version_root}/cctl-home"
             install -d -m 0700 "${cctl_home}/Library/Application Support" \
@@ -479,7 +597,7 @@ jobs:
         run: |
           set -euo pipefail
           competing=0
-          for process_name in swift-frontend swiftc clang xcodebuild nextflow; do
+          for process_name in swift-frontend swiftc clang xcodebuild; do
             if pgrep -x "${process_name}" > \
               "${BENCHMARK_ROOT}/work/competing-${process_name}.txt" 2>/dev/null; then
               printf 'competing build process is still active: %s\n' \
@@ -605,6 +723,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Recheck the exact inputs used to produce this report.
+          verify_authority() {
+            /usr/bin/python3 Tools/parity/benchmark-authority.py \
+              --source . \
+              --controls-ref "${CONTROLS_REF}" \
+              --allow-output "${REPORT_PATH}" \
+              --release "${GITHUB_REPOSITORY}|${TARGET_VERSION}|${TARGET_RELEASE_ID}|${TARGET_RELEASE_REF}" \
+              --release "${GITHUB_REPOSITORY}|${BASELINE_VERSION}|${BASELINE_RELEASE_ID}|${BASELINE_RELEASE_REF}" \
+              --checkout "homebrew-tap|${HOMEBREW_REF}" \
+              --checkout "containerization-source|${CONTAINERIZATION_SOURCE_REF}"
+          }
+
+          expected_authority="$(verify_authority)"
           branch="docs/historical-benchmark-${TARGET_VERSION}-vs-${BASELINE_VERSION}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git switch -c "${branch}"
           git add -- "${REPORT_PATH}"
@@ -618,6 +749,29 @@ jobs:
           pr_number="${pr_url##*/}"
           gh workflow run ci.yml --repo "${GITHUB_REPOSITORY}" \
             --ref "${branch}" -f documentation_pr="${pr_number}"
+          local_head="$(git rev-parse HEAD)"
+          remote_head="$(
+            git ls-remote --heads origin "refs/heads/${branch}" |
+              awk '{ print $1 }' | tail -n 1
+          )"
+          pr_details="$(
+            gh pr view "${pr_number}" --repo "${GITHUB_REPOSITORY}" \
+              --json baseRefName,headRefName,headRefOid,state,url
+          )"
+          if [[ "${remote_head}" != "${local_head}" ]] ||
+            ! jq -e --arg base main --arg head "${local_head}" \
+              --arg name "${branch}" --arg url "${pr_url}" \
+              '.baseRefName == $base and .headRefName == $name and
+                .headRefOid == $head and .state == "OPEN" and .url == $url' \
+              <<<"${pr_details}" >/dev/null; then
+            printf 'benchmark report pull request is not bound to its exact output commit\n' >&2
+            exit 1
+          fi
+          current_authority="$(verify_authority)"
+          if [[ "${current_authority}" != "${expected_authority}" ]]; then
+            printf 'benchmark authority changed during report publication\n' >&2
+            exit 1
+          fi
           printf 'Documentation report pull request: %s\n' "${pr_url}" \
             >> "${GITHUB_STEP_SUMMARY}"
 
@@ -629,6 +783,20 @@ jobs:
           marker="${BENCHMARK_ROOT}/.historical-benchmark-root"
           if [[ -f "${marker}" ]] && \
             [[ "$(<"${marker}")" == 'container-compose historical benchmark v1' ]]; then
+            for version in "${BASELINE_VERSION:-}" "${TARGET_VERSION:-}"; do
+              [[ -n "${version}" ]] || continue
+              source_worktree="${BENCHMARK_ROOT}/work/containerization-${version}"
+              if [[ -L "${source_worktree}" ]]; then
+                printf 'refusing to remove symbolic-link benchmark worktree: %s\n' \
+                  "${source_worktree}" >&2
+                exit 1
+              fi
+              if [[ -d "${source_worktree}" ]]; then
+                git -C containerization-source worktree remove --force \
+                  "${source_worktree}"
+              fi
+            done
+            git -C containerization-source worktree prune
             find "${BENCHMARK_ROOT}" -depth -delete
           elif [[ -e "${BENCHMARK_ROOT}" ]]; then
             printf 'refusing to clean unmarked benchmark root: %s\n' \

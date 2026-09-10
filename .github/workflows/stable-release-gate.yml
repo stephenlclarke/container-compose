@@ -41,6 +41,7 @@ jobs:
     outputs:
       sha: ${{ steps.candidate.outputs.sha }}
       authority_ref: ${{ steps.candidate.outputs.authority_ref }}
+      control_sha: ${{ steps.candidate.outputs.control_sha }}
       homebrew_tap_ref: ${{ steps.candidate.outputs.homebrew_tap_ref }}
       init_image_sha256: ${{ steps.candidate.outputs.init_image_sha256 }}
       init_image_authority_object: ${{ steps.candidate.outputs.init_image_authority_object }}
@@ -169,9 +170,12 @@ jobs:
             authority_ref="${release_branch}"
             candidate_ci_branch="${RELEASE_TAG}"
           else
-            printf 'stable tag %s is neither current main nor exact %s head\n' \
-              "${RELEASE_TAG}" "${release_branch}" >&2
-            exit 1
+            # An unpublished latest tag can outlive main when release-control
+            # automation is repaired after the tag was signed. Its payload
+            # authority remains the immutable tag and original main CI; the
+            # current main head independently owns the retry's control tools.
+            authority_ref="main"
+            candidate_ci_branch="main"
           fi
 
           semantic_tags="$(
@@ -268,6 +272,7 @@ jobs:
           {
             printf 'sha=%s\n' "${tag_sha}"
             printf 'authority_ref=%s\n' "${authority_ref}"
+            printf 'control_sha=%s\n' "${main_sha}"
             printf 'homebrew_tap_ref=%s\n' "${homebrew_tap_ref}"
             printf 'init_image_sha256=%s\n' "${INIT_IMAGE_SHA256}"
             printf 'init_image_authority_object=%s\n' "${init_image_authority_object}"
@@ -278,6 +283,10 @@ jobs:
     needs: resolve-candidate
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 120
+    outputs:
+      authority_artifact_digest: ${{ steps.upload-authority.outputs.artifact-digest }}
+      authority_artifact_id: ${{ steps.upload-authority.outputs.artifact-id }}
+      authority_receipt_sha256: ${{ steps.authority-receipt.outputs.sha256 }}
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     steps:
@@ -372,7 +381,7 @@ jobs:
           [[ "${CANDIDATE_SHA}" =~ ^[[:xdigit:]]{40}$ ]]
           runner_work_root="$(cd "${RUNNER_TEMP}/.." && pwd -P)"
           workspace_root="$(cd "${GITHUB_WORKSPACE}" && pwd -P)"
-          state_parent="${runner_work_root}/.container-compose-release-pipeline"
+          state_parent="${runner_work_root}/.container-compose-release-build"
           if [[ -L "${state_parent}" ]]; then
             printf 'Release state parent must not be a symbolic link: %s\n' \
               "${state_parent}" >&2
@@ -395,7 +404,7 @@ jobs:
               exit 2
               ;;
           esac
-          printf 'RELEASE_PIPELINE_STATE_ROOT=%s\n' "${state_root}" >> "${GITHUB_ENV}"
+          printf 'RELEASE_BUILD_STATE_ROOT=%s\n' "${state_root}" >> "${GITHUB_ENV}"
           printf 'Candidate-keyed release state: %s\n' "${state_root}" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Set up Go
@@ -412,62 +421,93 @@ jobs:
             container-compose/.local/cache/hawkeye
           key: ${{ runner.os }}-${{ runner.arch }}-local-tools-hawkeye-v6.5.1
 
-      - name: Provision checksum-pinned release tools
+      - name: Provision checksum-pinned repository tools
         shell: /bin/bash --noprofile --norc -e -o pipefail {0}
         working-directory: container-compose
         run: |
           set -euo pipefail
           ./scripts/install-hawkeye.sh
-          PIPELINE_STATE_ROOT="${RELEASE_PIPELINE_STATE_ROOT}" \
-            make -C ../release-tools pipeline-bootstrap
 
-      # GitHub-hosted macOS runners are VMs and cannot launch nested
-      # Virtualization.framework guests. Hosted stack validation therefore uses
-      # Container's native build, dSYM, docs, and unit-coverage targets rather
-      # than the installer-staging target that builds Linux service workloads
-      # with Colima. The release helper runs the full packaging/live gate on a
-      # supported local Mac before it creates the signed source tag.
+      # This self-hosted release runner executes the release-only sibling proof.
+      # The release helper has already run the full packaging/live gate before
+      # it creates the signed source tag, so this stage does not repeat that
+      # installer workload.
       # Main CI is already green at the exact candidate SHA. This graph runs
-      # only release-specific sibling proofs, with one Swift-heavy lane and one
-      # independent Go/Homebrew lane. Nextflow retains content-addressed stage
-      # state so a corrected rerun resumes from the last valid output.
+      # only release-specific sibling proofs. Make declares the repository
+      # dependencies and the checkpoint controller retains each exact-input
+      # success so a corrected rerun resumes at the first invalid stage.
       - name: Run recoverable hosted release graph
         shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+        run: |
+          set -euo pipefail
+          checkpoint_root="${RELEASE_BUILD_STATE_ROOT}/checkpoints"
+          mkdir -p "${checkpoint_root}"
+          HAWKEYE="${GITHUB_WORKSPACE}/container-compose/.local/bin/hawkeye" \
+          CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR="${checkpoint_root}" \
+          STACK_SOURCE_ROOT="${GITHUB_WORKSPACE}" \
+          CONTAINER_BUILDER_SHIM_STACK_REPO="${GITHUB_WORKSPACE}/container-builder-shim" \
+          CONTAINERIZATION_STACK_REPO="${GITHUB_WORKSPACE}/containerization" \
+          CONTAINER_STACK_REPO="${GITHUB_WORKSPACE}/container" \
+          HOMEBREW_TAP_REPO="${GITHUB_WORKSPACE}/homebrew-tap" \
+            make -C release-tools release-gate-hosted
+
+      - name: Create candidate-bound authority receipt
+        id: authority-receipt
         env:
+          RELEASE_TAG: ${{ inputs.ref }}
+          CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
           BUILDER_REF: ${{ steps.stack-refs.outputs.container_builder_shim_ref }}
           CONTAINERIZATION_REF: ${{ steps.stack-refs.outputs.containerization_ref }}
           CONTAINER_REF: ${{ steps.stack-refs.outputs.container_ref }}
           HOMEBREW_TAP_REF: ${{ needs.resolve-candidate.outputs.homebrew_tap_ref }}
-          CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
+          INIT_IMAGE_SHA256: ${{ needs.resolve-candidate.outputs.init_image_sha256 }}
+        shell: /bin/bash --noprofile --norc -e -o pipefail {0}
         run: |
           set -euo pipefail
-          pipeline_environment=(
-            "PIPELINE_PROFILE=release-hosted"
-            "PIPELINE_STATE_ROOT=${RELEASE_PIPELINE_STATE_ROOT}"
-            "PIPELINE_EXECUTION_PATH=${GITHUB_WORKSPACE}/container-compose/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-            "PIPELINE_COMPOSE_REPO=${GITHUB_WORKSPACE}/container-compose"
-            "PIPELINE_COMPOSE_REF=${CANDIDATE_SHA}"
-            "PIPELINE_BUILDER_REPO=${GITHUB_WORKSPACE}/container-builder-shim"
-            "PIPELINE_BUILDER_REF=${BUILDER_REF}"
-            "PIPELINE_CONTAINERIZATION_REPO=${GITHUB_WORKSPACE}/containerization"
-            "PIPELINE_CONTAINERIZATION_REF=${CONTAINERIZATION_REF}"
-            "PIPELINE_CONTAINER_REPO=${GITHUB_WORKSPACE}/container"
-            "PIPELINE_CONTAINER_REF=${CONTAINER_REF}"
-            "PIPELINE_HOMEBREW_REPO=${GITHUB_WORKSPACE}/homebrew-tap"
-            "PIPELINE_HOMEBREW_REF=${HOMEBREW_TAP_REF}"
-          )
-          resume_session=""
-          history="${RELEASE_PIPELINE_STATE_ROOT}/.nextflow/history"
-          if [[ -s "${history}" ]]; then
-            resume_session="$(awk -F $'\t' 'NF >= 6 { value = $6 } END { print value }' "${history}")"
+          evidence="${RELEASE_BUILD_STATE_ROOT}/checkpoints/compose-release-gate"
+          bundle="${RUNNER_TEMP}/stable-release-authority"
+          if [[ -e "${bundle}" || -L "${bundle}" ]]; then
+            printf 'stable release authority bundle already exists: %s\n' "${bundle}" >&2
+            exit 2
           fi
-          if [[ "${resume_session}" =~ ^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$ ]]; then
-            printf 'resuming content-addressed release graph session %s\n' "${resume_session}"
-            env "${pipeline_environment[@]}" PIPELINE_SESSION="${resume_session}" \
-              make -C release-tools pipeline-resume
-          else
-            env "${pipeline_environment[@]}" make -C release-tools pipeline
+          mkdir "${bundle}"
+          checkpoint="${evidence}/hosted-sibling-stack.success.json"
+          output_name="$(python3 - "${checkpoint}" <<'PY'
+          import json
+          import sys
+
+          print(json.load(open(sys.argv[1], encoding="utf-8"))["output_file"])
+          PY
+          )"
+          if [[ -z "${output_name}" ]] || [[ "${output_name}" != "$(basename "${output_name}")" ]]; then
+            printf 'stable release checkpoint output name is unsafe: %s\n' "${output_name}" >&2
+            exit 2
           fi
+          cp "${checkpoint}" "${bundle}/"
+          cp "${evidence}/${output_name}" "${bundle}/"
+          receipt_sha256="$(
+            python3 release-tools/Tools/release/stable-release-authority.py create \
+              --evidence-dir "${bundle}" \
+              --receipt "${bundle}/stable-release-authority.json" \
+              --release-tag "${RELEASE_TAG}" \
+              --candidate-sha "${CANDIDATE_SHA}" \
+              --builder-ref "${BUILDER_REF}" \
+              --containerization-ref "${CONTAINERIZATION_REF}" \
+              --container-ref "${CONTAINER_REF}" \
+              --homebrew-tap-ref "${HOMEBREW_TAP_REF}" \
+              --init-image-sha256 "${INIT_IMAGE_SHA256}"
+          )"
+          [[ "${receipt_sha256}" =~ ^[0-9a-f]{64}$ ]]
+          printf 'sha256=%s\n' "${receipt_sha256}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload candidate-bound authority receipt
+        id: upload-authority
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: stable-release-authority-${{ inputs.ref }}-${{ needs.resolve-candidate.outputs.sha }}
+          path: ${{ runner.temp }}/stable-release-authority
+          if-no-files-found: error
+          retention-days: 90
 
   record-release-authority:
     name: Record Stable Release Authority
@@ -486,8 +526,12 @@ jobs:
           RELEASE_TAG: ${{ inputs.ref }}
           CANDIDATE_SHA: ${{ needs.resolve-candidate.outputs.sha }}
           AUTHORITY_REF: ${{ needs.resolve-candidate.outputs.authority_ref }}
+          CONTROL_SHA: ${{ needs.resolve-candidate.outputs.control_sha }}
           INIT_IMAGE_SHA256: ${{ needs.resolve-candidate.outputs.init_image_sha256 }}
           INIT_IMAGE_AUTHORITY_OBJECT: ${{ needs.resolve-candidate.outputs.init_image_authority_object }}
+          AUTHORITY_ARTIFACT_DIGEST: ${{ needs.release-gate.outputs.authority_artifact_digest }}
+          AUTHORITY_ARTIFACT_ID: ${{ needs.release-gate.outputs.authority_artifact_id }}
+          AUTHORITY_RECEIPT_SHA256: ${{ needs.release-gate.outputs.authority_receipt_sha256 }}
         shell: bash
         run: |
           set -euo pipefail
@@ -497,14 +541,24 @@ jobs:
               awk '{ print $1 }' |
               tail -n 1
           )"
+          if [[ ! "${CONTROL_SHA}" =~ ^[0-9a-f]{40}$ ]] ||
+            [[ "${GITHUB_SHA}" != "${CONTROL_SHA}" ]]; then
+            printf 'stable release control identity changed: expected %s, got %s\n' \
+              "${CONTROL_SHA:-missing}" "${GITHUB_SHA}" >&2
+            exit 75
+          fi
+          expected_authority_sha="${CANDIDATE_SHA}"
+          if [[ "${AUTHORITY_REF}" == "main" ]]; then
+            expected_authority_sha="${CONTROL_SHA}"
+          fi
           tag_sha="$(
             git ls-remote --tags "${remote}" "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" |
               awk '$2 ~ /\^\{\}$/ { print $1 }' |
               tail -n 1
           )"
-          if [[ "${authority_sha}" != "${CANDIDATE_SHA}" ]]; then
+          if [[ "${authority_sha}" != "${expected_authority_sha}" ]]; then
             printf 'release authority %s moved after validation: expected %s, got %s\n' \
-              "${AUTHORITY_REF}" "${CANDIDATE_SHA}" "${authority_sha:-missing}" >&2
+              "${AUTHORITY_REF}" "${expected_authority_sha}" "${authority_sha:-missing}" >&2
             exit 75
           fi
           if [[ "${tag_sha}" != "${CANDIDATE_SHA}" ]]; then
@@ -540,18 +594,38 @@ jobs:
             printf 'stable init-image authority digest changed after validation\n' >&2
             exit 75
           fi
+          if [[ ! "${AUTHORITY_ARTIFACT_ID}" =~ ^[0-9]+$ ]] ||
+            [[ ! "${AUTHORITY_ARTIFACT_DIGEST}" =~ ^[0-9a-f]{64}$ ]] ||
+            [[ ! "${AUTHORITY_RECEIPT_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+            printf 'stable release authority receipt outputs are invalid\n' >&2
+            exit 75
+          fi
           authority_name="Stable Release Authority (${RELEASE_TAG})"
           details_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           summary="Hosted Stable Release Gate passed for immutable source"
           summary+=" ${CANDIDATE_SHA}."
           summary+=" Guest init image SHA-256: ${INIT_IMAGE_SHA256}."
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" \
-            -f "name=${authority_name}" \
-            -f "head_sha=${CANDIDATE_SHA}" \
-            -f 'status=completed' \
-            -f 'conclusion=success' \
-            -f "external_id=${GITHUB_RUN_ID}" \
-            -f "details_url=${details_url}" \
-            -f "output[title]=${authority_name}" \
-            -f "output[summary]=${summary}" \
-            --silent
+          summary+=" Authority receipt SHA-256: ${AUTHORITY_RECEIPT_SHA256}."
+          summary+=" Authority artifact ID: ${AUTHORITY_ARTIFACT_ID}."
+          summary+=" Authority artifact digest: ${AUTHORITY_ARTIFACT_DIGEST}."
+          check_run="$(
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/check-runs" \
+              -f "name=${authority_name}" \
+              -f "head_sha=${CANDIDATE_SHA}" \
+              -f 'status=completed' \
+              -f 'conclusion=success' \
+              -f "external_id=${GITHUB_RUN_ID}" \
+              -f "details_url=${details_url}" \
+              -f "output[title]=${authority_name}" \
+              -f "output[summary]=${summary}"
+          )"
+          if ! jq -e \
+            --arg name "${authority_name}" \
+            --arg sha "${CANDIDATE_SHA}" \
+            --arg run "${GITHUB_RUN_ID}" \
+            '.name == $name and .head_sha == $sha and .external_id == $run and
+              .status == "completed" and .conclusion == "success"' \
+            <<<"${check_run}" >/dev/null; then
+            printf 'stable release authority check output does not match its exact candidate\n' >&2
+            exit 75
+          fi

@@ -24,6 +24,8 @@ readonly COMPOSE_PROMOTION_REVIEW_TOOL="${SELF_DIRECTORY}/../Tools/release/compo
 readonly HOMEBREW_PREFLIGHT_TOOL="${SELF_DIRECTORY}/../Tools/release/homebrew-preflight.py"
 readonly OCI_IMAGE_LAYOUT_VALIDATOR="${SELF_DIRECTORY}/../Tools/release/validate-oci-image-layout.py"
 readonly RELEASE_COMMAND_DEADLINE_RUNNER="${SELF_DIRECTORY}/../Tools/ci/run-command-with-deadline.py"
+readonly RELEASE_HOST_STATE_TOOL="${SELF_DIRECTORY}/../Tools/release/release-host-state.py"
+readonly RELEASE_WORKSPACE_TOOL="${SELF_DIRECTORY}/../Tools/release/release-workspace.py"
 readonly STABLE_RELEASE_LANE_CLASSIFIER="${SELF_DIRECTORY}/../Tools/release/stable-release-default-lane.py"
 # shellcheck disable=SC1091
 source "${SELF_DIRECTORY}/../Tools/ci/container-runtime-lock.sh"
@@ -38,13 +40,14 @@ Usage:
   ${SCRIPT_USAGE} release VERSION_SELECTOR [--execute]
 
 Purpose:
-  Coordinate releases for the four local stephenlclarke source repositories
-  and the Homebrew tap without touching Apple upstream repositories.
+  Coordinate releases for the four stephenlclarke source repositories and the
+  Homebrew tap without touching Apple upstream repositories or primary local
+  checkouts.
 
 Modes:
   plan
-      Inspect the four local source main branches and print the next release
-      plan, including the Homebrew tap workflow boundary.
+      Inspect the four canonical remote main branches and print the next
+      release plan, including the Homebrew tap workflow boundary.
       This mode never mutates repositories.
 
   release VERSION_SELECTOR
@@ -77,16 +80,17 @@ Options:
   --execute
       Run mutating git commands. Without this flag the script is a dry run.
 
-Local source checkout layout expected:
-  ~/github/container-builder-shim
-  ~/github/containerization
-  ~/github/container
-  ~/github/container-compose
+Release checkout layout:
+  Exact release transactions are created below
+  /Volumes/SSD/github/container-compose-release-transactions by default.
+  Failed or interrupted transactions are retained and resumed in place.
+  Successful transactions are removed after publication completes.
 
 Rules enforced:
   - Apple remotes are read-only and must not be push targets.
   - stephenlclarke-owned remotes are the only push targets.
-  - Worktrees must be clean before release changes.
+  - Primary developer checkouts are never inspected or changed.
+  - Fresh release workspaces start at exact canonical remote main revisions.
   - Stable container-compose release tags are SSH-signed and point at the validated main commit.
   - GitHub must verify each stable tag signature before the release gate starts.
   - The hosted Stable Release Gate runs after the signed tag and before stable package publication.
@@ -144,6 +148,10 @@ Environment:
   CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS
       Override the default one-hour package workflow wait and 30-second poll.
 
+  CONTAINER_STACK_DOCUMENTATION_WAIT_SECONDS
+      Override the default two-hour wait for the four parallel, release-only
+      DocC sites and their GitHub Pages deployment.
+
   CONTAINER_STACK_RELEASE_CANDIDATE_STOP_TIMEOUT_SECONDS
       Override the default 30-second bound for stopping the exact candidate
       runtime namespace during local release-gate cleanup.
@@ -171,6 +179,11 @@ Environment:
       deadline and the default 10-observation grace before one restart of a
       live but definitively unready service.
 
+  CONTAINER_STACK_RELEASE_HOST_STATE_ROOT
+      Override the private, marker-protected local restoration journal used by
+      focused tests. Production defaults to /private/tmp and records every
+      launch agent before the release controller can suspend or stop it.
+
   CONTAINER_STACK_RELEASE_DEVCONTAINER_CLI
   CONTAINER_STACK_RELEASE_CURL
   CONTAINER_STACK_RELEASE_GITHUB_CLI
@@ -186,9 +199,12 @@ Environment:
       registry or host login.
 
   CONTAINER_STACK_RELEASE_ROOT
-      Override the parent directory containing the four source checkouts and
-      the Homebrew tap. Defaults to ~/github. Use an isolated stack root for
-      release validation without touching another local workspace.
+      Internal path of an active marker-protected release transaction. Normal
+      callers must not set this; the controller sets it for its child process.
+
+  CONTAINER_STACK_RELEASE_BUILD_ROOT
+      Override the marker-protected transaction parent. Defaults to
+      /Volumes/SSD/github/container-compose-release-transactions.
 USAGE
 }
 
@@ -240,10 +256,12 @@ parse_arguments() {
 }
 
 ROOT="${CONTAINER_STACK_RELEASE_ROOT:-${HOME}/github}"
+RELEASE_BUILD_ROOT="${CONTAINER_STACK_RELEASE_BUILD_ROOT:-/Volumes/SSD/github/container-compose-release-transactions}"
 COMPOSE_REPO="container-compose"
 CONTAINER_REPO="container"
 COMPOSE_PACKAGE_WAIT_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_WAIT_SECONDS:-3600}"
 COMPOSE_PACKAGE_POLL_SECONDS="${CONTAINER_STACK_COMPOSE_PACKAGE_POLL_SECONDS:-30}"
+DOCUMENTATION_WAIT_SECONDS="${CONTAINER_STACK_DOCUMENTATION_WAIT_SECONDS:-7200}"
 STABLE_RELEASE_GATE_WAIT_SECONDS="${CONTAINER_STACK_STABLE_GATE_WAIT_SECONDS:-24000}"
 PROMOTION_WAIT_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_WAIT_SECONDS:-3600}"
 PROMOTION_POLL_SECONDS="${CONTAINER_STACK_RELEASE_PROMOTION_POLL_SECONDS:-30}"
@@ -255,12 +273,14 @@ RELEASE_SUSPENDED_RUNNER_PGIDS=()
 RELEASE_QUIESCED_ACTION_STARTED=()
 RELEASE_QUIESCED_DEADLINES=()
 RELEASE_QUIESCED_RESTARTED_UNREADY=()
+RELEASE_QUIESCED_RETAINED=()
 RELEASE_QUIESCE_WAIT_ATTEMPTS="${CONTAINER_STACK_RELEASE_QUIESCE_WAIT_ATTEMPTS:-30}"
 RELEASE_QUIESCE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_QUIESCE_POLL_SECONDS:-1}"
 RELEASE_RESTORE_WAIT_ATTEMPTS="${CONTAINER_STACK_RELEASE_RESTORE_WAIT_ATTEMPTS:-60}"
 RELEASE_RESTORE_TIMEOUT_SECONDS="${CONTAINER_STACK_RELEASE_RESTORE_TIMEOUT_SECONDS:-60}"
 RELEASE_RESTORE_POLL_SECONDS="${CONTAINER_STACK_RELEASE_RESTORE_POLL_SECONDS:-1}"
 RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS="${CONTAINER_STACK_RELEASE_RESTORE_RESTART_GRACE_ATTEMPTS:-10}"
+RELEASE_HOST_STATE_ROOT="${CONTAINER_STACK_RELEASE_HOST_STATE_ROOT:-/private/tmp/container-compose-release-host-state-$(id -u)}"
 RELEASE_DEVCONTAINER_CLI="${CONTAINER_STACK_RELEASE_DEVCONTAINER_CLI:-$(command -v devcontainer || true)}"
 RELEASE_CURL="${CONTAINER_STACK_RELEASE_CURL:-/usr/bin/curl}"
 RELEASE_GITHUB_CLI="${CONTAINER_STACK_RELEASE_GITHUB_CLI:-$(command -v gh || true)}"
@@ -271,6 +291,8 @@ SECURITY_REASON="${CONTAINER_STACK_SECURITY_REASON:-}"
 MAINTENANCE_REASON="${CONTAINER_STACK_MAINTENANCE_REASON:-}"
 MILESTONE_SOAK_OVERRIDE_REASON="${CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON:-}"
 RECOVERED_UNPUBLISHED_RELEASE_BASE=""
+RELEASE_CONTROLLER_RESTART_REQUIRED=0
+RELEASE_BOOTSTRAP_HEAD=""
 CURRENT_INIT_IMAGE_AUTHORITY_ROOT=""
 CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=0
 RELEASE_INIT_AUTHORITY_CACHE_ROOT="${CONTAINER_STACK_RELEASE_INIT_AUTHORITY_CACHE_ROOT:-$({ getconf DARWIN_USER_CACHE_DIR 2>/dev/null || printf '/private/tmp/'; })container-compose-release-authorities}"
@@ -447,21 +469,67 @@ PY
   fi
 }
 
+# Advance one clean retained sibling checkout to the canonical fork main. A
+# failed release transaction is intentionally reusable, so its sibling clones
+# can be older than the Current stack that repaired the failure.
+refresh_release_sibling_main() {
+  local component="$1" path remote remote_ref local_ref
+  path="$(repo_path "${component}")"
+  remote="$(push_remote "${component}")"
+  if [[ "$(git -C "${path}" branch --show-current)" != "main" ]] ||
+    [[ -n "$(git -C "${path}" status --short)" ]]; then
+    printf 'retained %s checkout is not a clean main branch\n' "${component}" >&2
+    return 1
+  fi
+
+  fetch_release_remote "${component}"
+  if ! remote_ref="$(git -C "${path}" rev-parse "refs/remotes/${remote}/main")" ||
+    [[ ! "${remote_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'cannot resolve freshly fetched canonical main for %s\n' \
+      "${component}" >&2
+    return 1
+  fi
+  local_ref="$(git -C "${path}" rev-parse main)"
+  if [[ "${local_ref}" == "${remote_ref}" ]]; then
+    return 0
+  fi
+  if ! git -C "${path}" merge-base --is-ancestor "${local_ref}" "${remote_ref}"; then
+    printf 'retained %s main cannot fast-forward from %s to canonical remote %s\n' \
+      "${component}" "${local_ref}" "${remote_ref}" >&2
+    return 1
+  fi
+
+  run git -C "${path}" merge --ff-only "${remote_ref}"
+  if [[ "$(git -C "${path}" rev-parse main)" != "${remote_ref}" ]] ||
+    [[ -n "$(git -C "${path}" status --short)" ]]; then
+    printf 'retained %s checkout did not reach clean canonical remote main\n' \
+      "${component}" >&2
+    return 1
+  fi
+}
+
 # A stable candidate must be the exact stack already published as Current.
-# Refuse a sibling-main advance before the release helper mutates dependency
-# pins or creates commits; the normal main/Current lane must integrate it first.
+# Refresh retained sibling checkouts first, then refuse a sibling-main advance
+# before dependency pins or release commits can change.
 require_current_stack_matches_sibling_mains() {
   local path current_commit component published_ref local_ref
   path="$(repo_path "${COMPOSE_REPO}")"
   current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
   for component in container-builder-shim containerization container; do
+    if [[ "${EXECUTE}" == "1" ]]; then
+      refresh_release_sibling_main "${component}"
+      local_ref="$(git -C "$(repo_path "${component}")" rev-parse main)"
+    elif ! local_ref="$(remote_main_commit "${component}")" ||
+      [[ ! "${local_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+      printf 'cannot resolve canonical remote main for %s\n' "${component}" >&2
+      return 1
+    fi
     published_ref="$(git -C "${path}" show \
       "${current_commit}:Tools/release/stack-refs.json" | python3 -c \
       'import json, sys; print(json.load(sys.stdin)["components"][sys.argv[1]]["ref"])' \
       "${component}")"
-    local_ref="$(git -C "$(repo_path "${component}")" rev-parse main)"
     if [[ "${published_ref}" != "${local_ref}" ]]; then
-      printf 'Current stack uses %s %s, but sibling main is %s; integrate and publish exact Current before stable release\n' \
+      printf 'Current stack uses %s %s, but canonical sibling main is %s; integrate and publish exact Current before stable release\n' \
         "${component}" "${published_ref:-missing}" "${local_ref}" >&2
       return 1
     fi
@@ -570,13 +638,7 @@ PY
       )
       github_cli attestation verify "${cache_root}/${cache_asset}" --repo "${repo}"
     else
-      if find "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}" -mindepth 1 -maxdepth 1 \
-        -type d -name ".${containerization_reference}.*" -print -quit \
-        | grep -q .; then
-        printf 'an incomplete VM-init authority attempt is retained for diagnosis; resolve it before retrying: %s/.%s.*\n' \
-          "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}" "${containerization_reference}" >&2
-        return 1
-      fi
+      local staged_attempts staged_attempt_count staged_digest staged_name staged_extra staged_line_count
       current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
       remote_current_before="$(git -C "${path}" ls-remote --tags origin \
         'refs/tags/current' 'refs/tags/current^{}' | awk '{print $1}' | tail -n 1)"
@@ -586,13 +648,49 @@ PY
         return 1
       fi
       asset="container-vminit-current-${current_commit:0:12}-arm64.oci.tar"
-      stage="$(mktemp -d \
-        "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}/.${containerization_reference}.XXXXXX")"
-      github_cli release download current \
-        --repo "${repo}" \
-        --dir "${stage}" \
-        --pattern "${asset}" \
-        --pattern "${asset}.sha256"
+      staged_attempts="$(find "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}" \
+        -mindepth 1 -maxdepth 1 \
+        \( -type d -o -type l \) \
+        -name ".${containerization_reference}.*" -print)"
+      staged_attempt_count="$(printf '%s\n' "${staged_attempts}" \
+        | awk 'NF { count += 1 } END { print count + 0 }')"
+      if ((staged_attempt_count > 1)); then
+        printf 'multiple incomplete VM-init authority attempts are retained; preserving ambiguous evidence: %s/.%s.*\n' \
+          "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}" "${containerization_reference}" >&2
+        return 1
+      elif ((staged_attempt_count == 1)); then
+        stage="${staged_attempts}"
+        if [[ ! -d "${stage}" || -L "${stage}" \
+          || ! -f "${stage}/${asset}" || -L "${stage}/${asset}" \
+          || ! -f "${stage}/${asset}.sha256" || -L "${stage}/${asset}.sha256" ]]; then
+          printf 'retained VM-init authority attempt is incomplete or unsafe; preserving evidence: %s\n' \
+            "${stage}" >&2
+          return 1
+        fi
+        staged_digest=""
+        staged_name=""
+        staged_extra=""
+        staged_line_count="$(wc -l < "${stage}/${asset}.sha256" \
+          | tr -d '[:space:]')"
+        if ! read -r staged_digest staged_name staged_extra \
+          < "${stage}/${asset}.sha256" \
+          || [[ "${staged_line_count}" != "1" \
+          || ! "${staged_digest}" =~ ^[0-9a-f]{64}$ \
+          || "${staged_name}" != "${asset}" || -n "${staged_extra}" ]]; then
+          printf 'retained VM-init authority checksum is malformed; preserving evidence: %s\n' \
+            "${stage}/${asset}.sha256" >&2
+          return 1
+        fi
+        printf 'resuming retained VM-init authority verification: %s\n' "${stage}"
+      else
+        stage="$(mktemp -d \
+          "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}/.${containerization_reference}.XXXXXX")"
+        github_cli release download current \
+          --repo "${repo}" \
+          --dir "${stage}" \
+          --pattern "${asset}" \
+          --pattern "${asset}.sha256"
+      fi
       (
         cd "${stage}"
         shasum -a 256 -c "${asset}.sha256"
@@ -634,8 +732,242 @@ PY
 # Retain a helper-created candidate after a local release gate fails before
 # promotion. Recommitting an identical tree changes the reviewed candidate
 # identity on every retry and makes evidence impossible to bind reliably.
+compute_release_candidate_refresh_tree() {
+  local path="$1" candidate_head="$2" remote_head="$3"
+  local merge_output merge_tree conflict_paths conflict_path authority_paths
+  local index_root index_file resolution_error resolved_tree
+  local remote_entry remote_mode remote_type remote_blob remote_path resolved_blob
+
+  RELEASE_CANDIDATE_REFRESH_TREE=""
+  RELEASE_CANDIDATE_REFRESH_CONFLICTS=""
+  RELEASE_CANDIDATE_REFRESH_ERROR=""
+
+  if merge_output="$(
+    git -C "${path}" merge-tree --write-tree --name-only --no-messages \
+      "${candidate_head}" "${remote_head}" 2>&1
+  )"; then
+    merge_tree="${merge_output%%$'\n'*}"
+    if [[ ! "${merge_tree}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${merge_output}" != "${merge_tree}" ]]; then
+      RELEASE_CANDIDATE_REFRESH_ERROR="release candidate refresh did not produce one exact merge tree"
+      return 1
+    fi
+    RELEASE_CANDIDATE_REFRESH_TREE="${merge_tree}"
+    return 0
+  fi
+
+  merge_tree="${merge_output%%$'\n'*}"
+  conflict_paths="${merge_output#*$'\n'}"
+  if [[ ! "${merge_tree}" =~ ^[0-9a-f]{40}$ ]] ||
+    [[ -z "${conflict_paths}" ]] || [[ "${conflict_paths}" == "${merge_output}" ]]; then
+    RELEASE_CANDIDATE_REFRESH_ERROR="${merge_output}"
+    return 1
+  fi
+
+  while IFS= read -r conflict_path; do
+    [[ -n "${conflict_path}" ]] || continue
+    # These snapshots describe the current reviewed fork heads, so canonical
+    # main owns their complete contents. The strict divergence gate validates
+    # that authority against the transaction repositories before any build.
+    case "${conflict_path}" in
+      docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json|docs/upstream/FORK-COMMIT-CLASSIFICATIONS.md) ;;
+      *)
+        RELEASE_CANDIDATE_REFRESH_ERROR="${merge_output}"
+        return 1
+        ;;
+    esac
+  done <<<"${conflict_paths}"
+
+  authority_paths=$'docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json\ndocs/upstream/FORK-COMMIT-CLASSIFICATIONS.md'
+
+  index_root="$(
+    mktemp -d "${TMPDIR:-/tmp}/container-compose-refresh-index.XXXXXX"
+  )" || {
+    RELEASE_CANDIDATE_REFRESH_ERROR="could not create an isolated refresh index"
+    return 1
+  }
+  index_file="${index_root}/index"
+  resolution_error=""
+
+  if ! GIT_INDEX_FILE="${index_file}" git -C "${path}" read-tree "${merge_tree}"; then
+    resolution_error="could not read the candidate conflict tree"
+  fi
+
+  while [[ -z "${resolution_error}" ]] && IFS= read -r conflict_path; do
+    [[ -n "${conflict_path}" ]] || continue
+    remote_entry="$(
+      git -C "${path}" ls-tree "${remote_head}" -- "${conflict_path}"
+    )"
+    read -r remote_mode remote_type remote_blob remote_path <<<"${remote_entry}"
+    if [[ ! "${remote_mode}" =~ ^[0-7]{6}$ ]] ||
+      [[ "${remote_type}" != "blob" ]] ||
+      [[ ! "${remote_blob}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${remote_path}" != "${conflict_path}" ]]; then
+      resolution_error="reviewed classification authority is missing or unsafe: ${conflict_path}"
+      break
+    fi
+    if ! GIT_INDEX_FILE="${index_file}" git -C "${path}" update-index \
+      --add --cacheinfo "${remote_mode},${remote_blob},${conflict_path}"; then
+      resolution_error="could not install reviewed classification authority: ${conflict_path}"
+      break
+    fi
+  done <<<"${authority_paths}"
+
+  if [[ -z "${resolution_error}" ]]; then
+    resolved_tree="$(
+      GIT_INDEX_FILE="${index_file}" git -C "${path}" write-tree 2>/dev/null || true
+    )"
+    if [[ ! "${resolved_tree}" =~ ^[0-9a-f]{40}$ ]]; then
+      resolution_error="could not write the resolved candidate refresh tree"
+    fi
+  fi
+
+  /bin/rm -f "${index_file}" "${index_file}.lock"
+  if ! /bin/rmdir "${index_root}" && [[ -z "${resolution_error}" ]]; then
+    resolution_error="could not remove the isolated refresh index"
+  fi
+  if [[ -n "${resolution_error}" ]]; then
+    RELEASE_CANDIDATE_REFRESH_ERROR="${resolution_error}"
+    return 1
+  fi
+
+  while IFS= read -r conflict_path; do
+    [[ -n "${conflict_path}" ]] || continue
+    resolved_blob="$(
+      git -C "${path}" rev-parse "${resolved_tree}:${conflict_path}" 2>/dev/null || true
+    )"
+    remote_blob="$(
+      git -C "${path}" rev-parse "${remote_head}:${conflict_path}" 2>/dev/null || true
+    )"
+    if [[ ! "${resolved_blob}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${resolved_blob}" != "${remote_blob}" ]]; then
+      RELEASE_CANDIDATE_REFRESH_ERROR="reviewed classification authority was not selected exactly: ${conflict_path}"
+      return 1
+    fi
+  done <<<"${authority_paths}"
+
+  RELEASE_CANDIDATE_REFRESH_TREE="${resolved_tree}"
+  RELEASE_CANDIDATE_REFRESH_CONFLICTS="${authority_paths}"
+  return 0
+}
+
+validate_unpublished_release_refresh_commit() {
+  local path="$1" commit="$2" version="$3" current_remote_head="$4"
+  local subject parents first_parent main_parent extra_parent
+  local expected_tree actual_tree
+
+  subject="$(git -C "${path}" show -s --format=%s "${commit}")"
+  if [[ "${subject}" != "chore(release): refresh ${version} candidate from main" ]]; then
+    return 1
+  fi
+
+  parents="$(git -C "${path}" show -s --format=%P "${commit}")"
+  read -r first_parent main_parent extra_parent <<<"${parents}"
+  if [[
+    ! "${first_parent}" =~ ^[0-9a-f]{40}$
+    || ! "${main_parent}" =~ ^[0-9a-f]{40}$
+    || -n "${extra_parent}"
+  ]]; then
+    printf 'release candidate refresh has unexpected parents: %s\n' "${commit}" >&2
+    return 1
+  fi
+  if ! git -C "${path}" merge-base --is-ancestor \
+    "${main_parent}" "${current_remote_head}"; then
+    printf 'release candidate refresh does not contain canonical main history: %s\n' \
+      "${commit}" >&2
+    return 1
+  fi
+  if ! compute_release_candidate_refresh_tree \
+    "${path}" "${first_parent}" "${main_parent}"; then
+    printf 'release candidate refresh parents no longer merge cleanly: %s\n%s\n' \
+      "${commit}" "${RELEASE_CANDIDATE_REFRESH_ERROR}" >&2
+    return 1
+  fi
+  expected_tree="${RELEASE_CANDIDATE_REFRESH_TREE}"
+  actual_tree="$(git -C "${path}" rev-parse "${commit}^{tree}")"
+  if [[ ! "${expected_tree}" =~ ^[0-9a-f]{40}$ || "${actual_tree}" != "${expected_tree}" ]]; then
+    printf 'release candidate refresh tree is not the exact parent merge: %s\n' \
+      "${commit}" >&2
+    return 1
+  fi
+  return 0
+}
+
+# Advance a retained, signed release candidate with reviewed commits that
+# landed on canonical main after the candidate was prepared. A signed merge
+# preserves every candidate commit identity while making the exact remote head
+# an ancestor. merge-tree proves the update is conflict-free without touching
+# the checkout; the branch moves only after the remote authority is rechecked.
+refresh_unpublished_release_candidate() {
+  local path="$1" remote="$2" local_head="$3" remote_head="$4" version="$5"
+  local base commit commits merge_tree live_remote_head refresh_head
+
+  base="$(git -C "${path}" merge-base "${local_head}" "${remote_head}")"
+  if [[ ! "${base}" =~ ^[0-9a-f]{40}$ || "${base}" == "${local_head}" || "${base}" == "${remote_head}" ]]; then
+    printf 'container-compose candidate has no safe diverged main base\n' >&2
+    return 1
+  fi
+
+  commits="$(git -C "${path}" rev-list --reverse "${base}..${local_head}")"
+  if [[ -z "${commits}" ]]; then
+    printf 'container-compose candidate has no retained release commits to refresh\n' >&2
+    return 1
+  fi
+  while IFS= read -r commit; do
+    validate_unpublished_release_commit \
+      "${path}" "${commit}" "${version}" "${remote_head}" || return 1
+  done <<<"${commits}"
+
+  if ! compute_release_candidate_refresh_tree \
+    "${path}" "${local_head}" "${remote_head}"; then
+    printf 'reviewed main cannot be applied cleanly to the retained release candidate:\n%s\n' \
+      "${RELEASE_CANDIDATE_REFRESH_ERROR}" >&2
+    return 1
+  fi
+  merge_tree="${RELEASE_CANDIDATE_REFRESH_TREE}"
+  if [[ ! "${merge_tree}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'release candidate refresh did not produce an exact merge tree\n' >&2
+    return 1
+  fi
+  if [[ -n "${RELEASE_CANDIDATE_REFRESH_CONFLICTS}" ]]; then
+    printf 'resolved superseded fork-classification authority from reviewed main:\n%s\n' \
+      "${RELEASE_CANDIDATE_REFRESH_CONFLICTS}"
+  fi
+
+  live_remote_head="$(
+    git -C "${path}" ls-remote --heads "${remote}" refs/heads/main \
+      | awk '{print $1}' | tail -n 1
+  )"
+  if [[ "${live_remote_head}" != "${remote_head}" ]]; then
+    printf 'container-compose main moved while refreshing the release candidate: expected %s, got %s\n' \
+      "${remote_head}" "${live_remote_head:-missing}" >&2
+    return 1
+  fi
+
+  refresh_head="$(
+    git -C "${path}" commit-tree -S "${merge_tree}" \
+      -p "${local_head}" -p "${remote_head}" \
+      -m "chore(release): refresh ${version} candidate from main"
+  )"
+  if [[ ! "${refresh_head}" =~ ^[0-9a-f]{40}$ ]] ||
+    ! git -C "${path}" verify-commit "${refresh_head}" >/dev/null 2>&1; then
+    printf 'could not create a verified release candidate refresh commit\n' >&2
+    return 1
+  fi
+
+  run git -C "${path}" merge --ff-only "${refresh_head}"
+  if [[ "$(git -C "${path}" rev-parse main)" != "${refresh_head}" ]] ||
+    [[ -n "$(git -C "${path}" status --short)" ]]; then
+    printf 'release candidate refresh did not leave an exact clean checkout\n' >&2
+    return 1
+  fi
+  printf 'refreshed retained release candidate %s with reviewed main %s\n' \
+    "${refresh_head}" "${remote_head}"
+}
+
 validate_unpublished_release_commit() {
-  local path="$1" commit="$2" version="$3" subject files file
+  local path="$1" commit="$2" version="$3" current_remote_head="${4:-}"
+  local subject files file
   subject="$(git -C "${path}" show -s --format=%s "${commit}")"
   files="$(git -C "${path}" diff-tree --no-commit-id --name-only -r "${commit}" | sort | paste -sd, -)"
 
@@ -643,6 +975,16 @@ validate_unpublished_release_commit() {
     printf 'unpublished release candidate contains an unverified commit: %s %s\n' \
       "${commit}" "${subject}" >&2
     return 1
+  fi
+
+  if [[ "${subject}" == "chore(release): refresh ${version} candidate from main" ]]; then
+    if [[ ! "${current_remote_head}" =~ ^[0-9a-f]{40}$ ]]; then
+      printf 'release candidate refresh validation requires canonical main\n' >&2
+      return 1
+    fi
+    validate_unpublished_release_refresh_commit \
+      "${path}" "${commit}" "${version}" "${current_remote_head}"
+    return
   fi
 
   if [[ "${subject}" == "chore(release): prepare ${version}" ]]; then
@@ -654,7 +996,7 @@ validate_unpublished_release_commit() {
     IFS=',' read -r -a release_files <<<"${files}"
     for file in "${release_files[@]}"; do
       case "${file}" in
-        Makefile|Sources/ComposePlugin/ComposePlugin.swift|Tools/release/stack-refs.json) ;;
+        Makefile|Sources/ComposePlugin/ComposePlugin.swift|Tools/release/stack-refs.json|Tools/release/documentation-refs.json) ;;
         *)
           printf 'release preparation commit changes an unexpected file: %s %s\n' \
             "${commit}" "${file}" >&2
@@ -694,7 +1036,7 @@ validate_unpublished_release_commit() {
     IFS=',' read -r -a release_files <<<"${files}"
     for file in "${release_files[@]}"; do
       case "${file}" in
-        README.md|docs/*.md) ;;
+        README.md|docs/*.md|docs/upstream/FORK-COMMIT-CLASSIFICATIONS.json) ;;
         *)
           printf 'release documentation repair changes an unexpected file: %s %s\n' \
             "${commit}" "${file}" >&2
@@ -719,13 +1061,60 @@ validate_unpublished_release_commit() {
   return 1
 }
 
+# Recover the published Current base from a validated retained candidate. A
+# candidate may have been refreshed from canonical main more than once, so the
+# published base can be the main parent of an earlier refresh rather than the
+# latest remote head.
+published_base_for_retained_candidate() {
+  local path="$1" version="$2" remote_head="$3" commits="$4"
+  local current_head commit subject main_parent
+
+  current_head="$(git -C "${path}" rev-parse --verify -q 'refs/tags/current^{}' || true)"
+  if [[ ! "${current_head}" =~ ^[0-9a-f]{40}$ ]] ||
+    ! git -C "${path}" merge-base --is-ancestor "${current_head}" "${remote_head}"; then
+    printf '%s\n' "${remote_head}"
+    return 0
+  fi
+  if [[ "${current_head}" == "${remote_head}" ]]; then
+    printf '%s\n' "${current_head}"
+    return 0
+  fi
+
+  while IFS= read -r commit; do
+    [[ -n "${commit}" ]] || continue
+    subject="$(git -C "${path}" show -s --format=%s "${commit}")"
+    if [[ "${subject}" != "chore(release): refresh ${version} candidate from main" ]]; then
+      continue
+    fi
+    main_parent="$(git -C "${path}" rev-parse --verify -q "${commit}^2" || true)"
+    if [[ "${main_parent}" == "${current_head}" ]]; then
+      printf '%s\n' "${current_head}"
+      return 0
+    fi
+  done <<<"${commits}"
+
+  printf '%s\n' "${remote_head}"
+}
+
 recover_unpublished_release_candidate() {
-  local version="$1" path remote local_head remote_head commit commits
+  local version="$1" path remote local_head remote_head local_tree remote_tree current_head promotion_parent commit commits
   RECOVERED_UNPUBLISHED_RELEASE_BASE=""
+  RELEASE_CONTROLLER_RESTART_REQUIRED=0
   path="$(repo_path "${COMPOSE_REPO}")"
   remote="$(push_remote "${COMPOSE_REPO}")"
+  fetch_release_remote "${COMPOSE_REPO}"
   local_head="$(git -C "${path}" rev-parse main)"
   remote_head="$(remote_main_commit "${COMPOSE_REPO}")"
+
+  if [[ "${CONTAINER_STACK_RELEASE_BOOTSTRAP:-0}" == "1" ]]; then
+    if [[ ! "${CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD:-}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${remote_head}" != "${CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD}" ]]; then
+      printf 'reviewed release bootstrap moved before candidate recovery: expected %s, got %s\n' \
+        "${CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD:-missing}" \
+        "${remote_head:-missing}" >&2
+      exit 1
+    fi
+  fi
 
   if [[ "${local_head}" == "${remote_head}" ]]; then
     return 0
@@ -734,13 +1123,57 @@ recover_unpublished_release_candidate() {
     printf 'cannot recover an unpublished release candidate without %s/main\n' "${remote}" >&2
     exit 1
   fi
-  if ! git -C "${path}" merge-base --is-ancestor "${remote_head}" "${local_head}"; then
-    printf 'container-compose main is not based on %s/main; refusing to recover a release candidate\n' "${remote}" >&2
-    exit 1
-  fi
   if [[ -n "$(git -C "${path}" status --short)" ]]; then
     printf 'dirty worktree blocks recovery of an unpublished release candidate for container-compose\n' >&2
     exit 1
+  fi
+  if ! git -C "${path}" merge-base --is-ancestor "${remote_head}" "${local_head}"; then
+    if [[ -z "${remote_head}" ]] ||
+      ! git -C "${path}" cat-file -e "${remote_head}^{commit}" 2>/dev/null; then
+      printf 'cannot inspect promoted container-compose main on %s\n' "${remote}" >&2
+      exit 1
+    fi
+    local_tree="$(git -C "${path}" rev-parse "${local_head}^{tree}")"
+    remote_tree="$(git -C "${path}" rev-parse "${remote_head}^{tree}")"
+    if git -C "${path}" merge-base --is-ancestor "${local_head}" "${remote_head}" &&
+      [[ "${local_tree}" == "${remote_tree}" ]]; then
+      promotion_parent="$(git -C "${path}" rev-parse --verify -q "${remote_head}^1" || true)"
+      if [[ -z "${promotion_parent}" ]] ||
+        ! git -C "${path}" merge-base --is-ancestor "${promotion_parent}" "${local_head}" ||
+        ! git -C "${path}" rev-parse "${remote_head}^@" | grep -Fxq "${local_head}"; then
+        printf 'promoted container-compose candidate is not the reviewed direct merge parent\n' >&2
+        exit 1
+      fi
+      current_head="$(git -C "${path}" rev-parse --verify -q 'refs/tags/current^{}' || true)"
+      if [[ "${current_head}" != "${promotion_parent}" &&
+        "${current_head}" != "${remote_head}" ]]; then
+        printf 'current does not identify the exact pre-promotion container-compose main\n' >&2
+        exit 1
+      fi
+      commits="$(git -C "${path}" rev-list --reverse "${promotion_parent}..${local_head}")"
+      if [[ -z "${commits}" ]]; then
+        printf 'promoted container-compose candidate has no unpublished commits after current\n' >&2
+        exit 1
+      fi
+      while IFS= read -r commit; do
+        validate_unpublished_release_commit \
+          "${path}" "${commit}" "${version}" "${remote_head}" || exit 1
+      done <<<"${commits}"
+      if [[ "${current_head}" == "${promotion_parent}" ]]; then
+        RECOVERED_UNPUBLISHED_RELEASE_BASE="${promotion_parent}"
+      fi
+      align_equivalent_compose_main "${path}" "${remote}" "${remote_head}" "${local_tree}"
+      return 0
+    fi
+    if git -C "${path}" merge-base --is-ancestor "${local_head}" "${remote_head}"; then
+      printf 'container-compose main changed after candidate promotion; refusing to recover without exact promoted-tree evidence\n' >&2
+      exit 1
+    fi
+    refresh_unpublished_release_candidate \
+      "${path}" "${remote}" "${local_head}" "${remote_head}" "${version}" || exit 1
+    RECOVERED_UNPUBLISHED_RELEASE_BASE="${remote_head}"
+    RELEASE_CONTROLLER_RESTART_REQUIRED=1
+    return 0
   fi
 
   commits="$(git -C "${path}" rev-list --reverse "${remote_head}..${local_head}")"
@@ -749,11 +1182,41 @@ recover_unpublished_release_candidate() {
     exit 1
   fi
   while IFS= read -r commit; do
-    validate_unpublished_release_commit "${path}" "${commit}" "${version}" || exit 1
+    validate_unpublished_release_commit \
+      "${path}" "${commit}" "${version}" "${remote_head}" || exit 1
   done <<<"${commits}"
 
-  RECOVERED_UNPUBLISHED_RELEASE_BASE="${remote_head}"
+  RECOVERED_UNPUBLISHED_RELEASE_BASE="$(
+    published_base_for_retained_candidate \
+      "${path}" "${version}" "${remote_head}" "${commits}"
+  )"
   printf 'retaining unpublished release candidate %s after an earlier local gate failure\n' "${local_head}"
+}
+
+# A retained candidate can acquire newer release-controller code and version
+# metadata when it is refreshed from canonical main. The outer bootstrap also
+# enters here after it has recovered an older candidate with reviewed main.
+# Replace either process so no state computed by the bootstrap or old controller
+# survives past that boundary. exec preserves the marker-protected workspace
+# lease because its PID is unchanged.
+restart_refreshed_release_controller() {
+  local path controller
+  if [[ "${RELEASE_CONTROLLER_RESTART_REQUIRED}" != "1" ]]; then
+    return 0
+  fi
+  path="$(repo_path "${COMPOSE_REPO}")"
+  controller="${path}/scripts/${SCRIPT_NAME}"
+  if [[ ! -f "${controller}" || -L "${controller}" ]]; then
+    printf 'refreshed release controller is missing or unsafe: %s\n' \
+      "${controller}" >&2
+    exit 1
+  fi
+  printf 'restarting from refreshed release controller: %s\n' "${controller}"
+  CONTAINER_STACK_RELEASE_LIBRARY=0
+  CONTAINER_STACK_RELEASE_BOOTSTRAP=0
+  export CONTAINER_STACK_RELEASE_LIBRARY
+  export CONTAINER_STACK_RELEASE_BOOTSTRAP
+  exec /bin/bash "${controller}" release "${VERSION_SELECTOR}" --execute
 }
 
 # Print and optionally execute a command.
@@ -810,8 +1273,13 @@ fetch_release_remote() {
   if [[ "${repo}" == "${CONTAINER_REPO}" ]]; then
     # The legacy Homebrew lane retargets this pointer on every runtime build.
     # Stable release preparation does not consume it, so exclude it while
-    # fetching immutable package and semantic tags.
-    fetch_args+=("^refs/tags/homebrew-main")
+    # fetching immutable package and semantic tags. The explicit negative
+    # refspec disables Git's configured branch refspec unless a positive one
+    # is also supplied, so retain the canonical fork branch mapping here.
+    fetch_args+=(
+      "+refs/heads/*:refs/remotes/${remote}/*"
+      "^refs/tags/homebrew-main"
+    )
   fi
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -859,6 +1327,8 @@ stage_local_validation_checkout() {
   local staged_path="$2"
   local checkout_kind="${3:-containerization}"
   local source_commit source_tree staged_tree kernel kernel_count hawkeye_path
+  local source_history_count staged_history_count
+  local fetch_source source_origin normalized_origin
   local source_hawkeye_digest staged_hawkeye_digest
   local -a isolated_git=(
     env
@@ -898,13 +1368,31 @@ stage_local_validation_checkout() {
   if ! source_commit="$("${isolated_git[@]}" -C "${source_path}" \
     rev-parse --verify HEAD)" || \
     ! source_tree="$("${isolated_git[@]}" -C "${source_path}" \
-      rev-parse --verify 'HEAD^{tree}')"; then
+      rev-parse --verify 'HEAD^{tree}')" || \
+    ! source_history_count="$("${isolated_git[@]}" -C "${source_path}" \
+      rev-list --count "${source_commit}")"; then
     printf 'failed to resolve release validation source identity: %s\n' \
       "${source_path}" >&2
     return 1
   fi
-  if ! "${isolated_git[@]}" clone --no-local --no-checkout --quiet \
-    "${source_path}" "${staged_path}"; then
+  # Release workspaces may deliberately be partial clones. Fetching their full
+  # history through a local file transport disables lazy object retrieval and
+  # can fail mid-pack. Prefer the checkout's authoritative origin when it is
+  # available, while retaining local-only support for focused fixtures.
+  fetch_source="${source_path}"
+  source_origin="$("${isolated_git[@]}" -C "${source_path}" \
+    config --get remote.origin.url 2>/dev/null || true)"
+  if [[ -n "${source_origin}" ]]; then
+    fetch_source="${source_origin}"
+    if normalized_origin="$(stephen_https_url "${source_origin}" 2>/dev/null)"; then
+      fetch_source="${normalized_origin}"
+    fi
+  fi
+  if ! "${isolated_git[@]}" init --quiet "${staged_path}" || \
+    ! "${isolated_git[@]}" -C "${staged_path}" remote add origin \
+      "${fetch_source}" || \
+    ! "${isolated_git[@]}" -C "${staged_path}" fetch --quiet --no-tags \
+      origin "${source_commit}"; then
     printf 'failed to stage release validation checkout locally: %s\n' \
       "${source_path}" >&2
     return 1
@@ -936,7 +1424,9 @@ stage_local_validation_checkout() {
     return 1
   fi
   if ! staged_tree="$("${isolated_git[@]}" -C "${staged_path}" \
-    rev-parse --verify 'HEAD^{tree}')"; then
+    rev-parse --verify 'HEAD^{tree}')" || \
+    ! staged_history_count="$("${isolated_git[@]}" -C "${staged_path}" \
+      rev-list --count "${source_commit}")"; then
     printf 'failed to resolve staged release validation tree: %s\n' \
       "${staged_path}" >&2
     return 1
@@ -945,6 +1435,15 @@ stage_local_validation_checkout() {
     ! "${isolated_git[@]}" -C "${staged_path}" diff --quiet HEAD --; then
     printf 'staged release validation checkout does not match source tree %s: %s\n' \
       "${source_tree}" "${staged_path}" >&2
+    return 1
+  fi
+  # Hawkeye derives the expected licence year range from Git history. A
+  # depth-one staging fetch preserves the source tree but makes every tracked
+  # file look newly created, which invalidates otherwise-correct headers. Keep
+  # the complete history available to the source-policy checks that run here.
+  if [[ "${staged_history_count}" != "${source_history_count}" ]]; then
+    printf 'staged release validation checkout does not preserve source history (%s != %s): %s\n' \
+      "${staged_history_count}" "${source_history_count}" "${staged_path}" >&2
     return 1
   fi
   if [[ -f "${staged_path}/.git/objects/info/alternates" ]]; then
@@ -1230,16 +1729,6 @@ print_header() {
   printf '\n== %s ==\n' "$1"
 }
 
-# Verify that a checkout exists.
-ensure_repo_exists() {
-  local repo="$1" path
-  path="$(repo_path "${repo}")"
-  if [[ ! -d "${path}/.git" ]]; then
-    printf 'missing checkout: %s\n' "${path}" >&2
-    exit 1
-  fi
-}
-
 # Refuse to operate on dirty working trees.
 ensure_clean() {
   local repo="$1" path status
@@ -1322,6 +1811,34 @@ require_release_gate_gnu_tar() {
   version_output="$("${tar_binary}" --version 2>/dev/null || true)"
   if [[ "${version_output}" != *"GNU tar"* ]]; then
     printf 'GNU tar is required by the release parity fixtures; install gnu-tar before starting the release\n' >&2
+    return 1
+  fi
+}
+
+# Prove the repository-pinned Hawkeye binary supports the CLI consumed by every
+# stack Makefile. The release controller passes this exact executable through
+# the complete gate so an incompatible Homebrew installation cannot take over.
+require_release_hawkeye_cli() {
+  local executable="${1:-}"
+  local check_help=""
+  local format_help=""
+
+  if [[ "${executable}" != /* || ! -f "${executable}" ||
+    ! -x "${executable}" || -L "${executable}" ]]; then
+    printf 'release Hawkeye must be an absolute, regular executable: %s\n' \
+      "${executable:-unset}" >&2
+    return 1
+  fi
+  if ! check_help="$("${executable}" check --help 2>&1)" ||
+    [[ "${check_help}" != *"--fail-if-unknown"* ]]; then
+    printf 'release Hawkeye does not support check --fail-if-unknown: %s\n' \
+      "${executable}" >&2
+    return 1
+  fi
+  if ! format_help="$("${executable}" format --help 2>&1)" ||
+    [[ "${format_help}" != *"--fail-if-updated"* ]]; then
+    printf 'release Hawkeye does not support format --fail-if-updated: %s\n' \
+      "${executable}" >&2
     return 1
   fi
 }
@@ -1746,6 +2263,7 @@ force_bootout_stable_container_validation_namespace() {
   local service_namespace="$1"
   local stable_container_path="$2"
   local manager domain label active_pids="" launchctl_output=""
+  local index=0
   local -a labels=()
 
   if [[ ! "${service_namespace}" =~ ^io\.github\.container\.stack-validation\.[A-Za-z0-9]+$ ]] || \
@@ -1773,7 +2291,8 @@ force_bootout_stable_container_validation_namespace() {
     [[ -n "${label}" ]] && labels+=("${label}")
   done < <(/usr/bin/awk -v prefix="${service_namespace}." \
     'index($3, prefix) == 1 { print $3 }' <<<"${launchctl_output}")
-  for label in "${labels[@]}"; do
+  for ((index = 0; index < ${#labels[@]}; index++)); do
+    label="${labels[index]}"
     if ! "${RELEASE_COMMAND_DEADLINE_RUNNER}" \
       --seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" --grace-seconds 0 -- \
       "${RELEASE_LAUNCHCTL}" bootout "${domain}/${label}"; then
@@ -2473,7 +2992,10 @@ resume_suspended_release_runner_groups() {
       fi
     fi
   done
-  RELEASE_SUSPENDED_RUNNER_PGIDS=("${failed_groups[@]}")
+  RELEASE_SUSPENDED_RUNNER_PGIDS=()
+  if ((resume_status != 0)); then
+    RELEASE_SUSPENDED_RUNNER_PGIDS=("${failed_groups[@]}")
+  fi
   return "${resume_status}"
 }
 
@@ -2547,7 +3069,132 @@ prepare_competing_release_runner_for_bootout() {
   return 0
 }
 
+# Persist restoration authority before this process can suspend or stop a
+# launch agent. The journal is the cross-process source of truth; the arrays
+# below are only the current process's retry state.
+record_release_launch_agent_restoration() {
+  python3 "${RELEASE_HOST_STATE_TOOL}" --root "${RELEASE_HOST_STATE_ROOT}" \
+    record --label "$1" --plist "$2"
+}
+
+# Discard durable authority only after the exact service has passed its health
+# probe. Removal is idempotent so legacy in-memory-only fixtures remain valid.
+remove_release_launch_agent_restoration() {
+  python3 "${RELEASE_HOST_STATE_TOOL}" --root "${RELEASE_HOST_STATE_ROOT}" \
+    remove --label "$1" --plist "$2"
+}
+
+# Recover a previous controller's journal into this process. A malformed or
+# untrusted journal fails before launchctl can mutate the host.
+load_retained_release_launch_agents() {
+  local extra=""
+  local label=""
+  local plist=""
+  local retained=""
+
+  if [[ -n "${RELEASE_QUIESCED_LABELS[*]:-}" || \
+    -n "${RELEASE_QUIESCED_PLISTS[*]:-}" ]]; then
+    printf 'cannot load retained release host state over active restoration state\n' >&2
+    return 2
+  fi
+  if ! retained="$(python3 "${RELEASE_HOST_STATE_TOOL}" \
+    --root "${RELEASE_HOST_STATE_ROOT}" list)"; then
+    printf 'cannot load retained release host state: %s\n' \
+      "${RELEASE_HOST_STATE_ROOT}" >&2
+    return 1
+  fi
+  [[ -z "${retained}" ]] && return 0
+
+  while IFS=$'\t' read -r label plist extra; do
+    if [[ -z "${label}" || -z "${plist}" || -n "${extra}" ]]; then
+      printf 'invalid retained release launch-agent record\n' >&2
+      return 1
+    fi
+    RELEASE_QUIESCED_LABELS+=("${label}")
+    RELEASE_QUIESCED_PLISTS+=("${plist}")
+    RELEASE_QUIESCED_ACTION_STARTED+=(0)
+    RELEASE_QUIESCED_DEADLINES+=("")
+    RELEASE_QUIESCED_RESTARTED_UNREADY+=(0)
+    RELEASE_QUIESCED_RETAINED+=(1)
+  done <<<"${retained}"
+}
+
+# A killed controller can leave an Actions listener in SIGSTOP before bootout.
+# Resume that exact retained process group before its online registration is
+# accepted as recovery evidence.
+resume_retained_release_runner() {
+  local label="$1"
+  local live_status=0
+  local process_group=""
+  local stopped_status=0
+
+  release_launch_agent_has_live_process "${label}" || live_status=$?
+  case "${live_status}" in
+    0)
+      ;;
+    1)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+  process_group="$(release_runner_service_process_group "${label}")" || return 1
+  release_runner_process_group_is_stopped "${process_group}" || stopped_status=$?
+  case "${stopped_status}" in
+    0)
+      if ! "${RELEASE_KILL}" -CONT "-${process_group}" 2>/dev/null; then
+        if "${RELEASE_KILL}" -0 "-${process_group}" 2>/dev/null; then
+          printf 'failed to resume retained release runner process group: %s\n' \
+            "${process_group}" >&2
+          return 1
+        fi
+      fi
+      ;;
+    1)
+      ;;
+    *)
+      printf 'cannot establish retained release runner process state: %s\n' \
+        "${label}" >&2
+      return 1
+      ;;
+  esac
+}
+
+recover_retained_release_launch_agents() {
+  load_retained_release_launch_agents || return
+  if [[ -z "${RELEASE_QUIESCED_LABELS[*]:-}" ]]; then
+    return 0
+  fi
+  printf 'recovering retained release host state: %s\n' \
+    "${RELEASE_QUIESCED_LABELS[*]}"
+  restore_quiesced_release_launch_agents
+}
+
+# Recover host state before an outer release invocation clones, builds, or
+# waits for remote authority. The runtime lock serializes this journal with a
+# local gate that may still be exiting.
+recover_release_host_state_on_startup() {
+  [[ "${EXECUTE}" == "1" ]] || return 0
+  (
+    # These dynamic-scope arrays intentionally belong only to the recovery
+    # subshell; restore_quiesced_release_launch_agents consumes them there.
+    # shellcheck disable=SC2030
+    local -a RELEASE_QUIESCED_LABELS=() RELEASE_QUIESCED_PLISTS=() \
+      RELEASE_QUIESCED_ACTION_STARTED=() RELEASE_QUIESCED_DEADLINES=() \
+      RELEASE_QUIESCED_RESTARTED_UNREADY=() RELEASE_QUIESCED_RETAINED=() \
+      RELEASE_SUSPENDED_RUNNER_PGIDS=()
+
+    trap release_local_release_gate_host_state EXIT
+    acquire_container_runtime_lock || return
+    recover_retained_release_launch_agents || return
+    release_local_release_gate_host_state || return
+    trap - EXIT
+  )
+}
+
 # Restore only the launch agents this release invocation successfully stopped.
+# shellcheck disable=SC2031 # Dynamic-scope arrays are supplied by each caller.
 restore_quiesced_release_launch_agents() {
   local attempt=0
   local deadline=0
@@ -2561,6 +3208,7 @@ restore_quiesced_release_launch_agents() {
   local restore_action_started=0
   local restored=0
   local restarted_unready_service=0
+  local retained_entry=0
   local sleep_seconds=0
   local unready_live_attempts=0
   local user_domain=""
@@ -2569,6 +3217,7 @@ restore_quiesced_release_launch_agents() {
   local -a failed_labels=()
   local -a failed_plists=()
   local -a failed_restarted_unready=()
+  local -a failed_retained=()
   user_domain="gui/$(id -u)"
 
   if ! resume_suspended_release_runner_groups; then
@@ -2594,13 +3243,40 @@ restore_quiesced_release_launch_agents() {
       "${restarted_unready_service}" != 1 ]]; then
       restarted_unready_service=0
     fi
+    retained_entry="${RELEASE_QUIESCED_RETAINED[index]:-0}"
+    if [[ "${retained_entry}" != 0 && "${retained_entry}" != 1 ]]; then
+      retained_entry=1
+    fi
+    if ((retained_entry == 1)); then
+      case "${label}" in
+        actions.runner.*)
+          if ! resume_retained_release_runner "${label}"; then
+            printf 'failed to resume retained release runner %s\n' \
+              "${label}" >&2
+            failed_labels+=("${label}")
+            failed_plists+=("${plist}")
+            failed_action_started+=("${restore_action_started}")
+            failed_deadlines+=("${deadline}")
+            failed_restarted_unready+=("${restarted_unready_service}")
+            failed_retained+=(1)
+            restore_status=1
+            continue
+          fi
+          ;;
+      esac
+    fi
     unready_live_attempts=0
     for ((attempt = 1; attempt <= RELEASE_RESTORE_WAIT_ATTEMPTS; attempt++)); do
       health_status=0
       release_launch_agent_is_healthy "${label}" "${deadline}" || \
         health_status=$?
       if ((health_status == 0)); then
-        restored=1
+        if remove_release_launch_agent_restoration "${label}" "${plist}"; then
+          restored=1
+        else
+          printf 'failed to clear restored release launch-agent authority: %s\n' \
+            "${label}" >&2
+        fi
         break
       fi
       if ((health_status == 1)); then
@@ -2660,15 +3336,25 @@ restore_quiesced_release_launch_agents() {
       failed_action_started+=("${restore_action_started}")
       failed_deadlines+=("${deadline}")
       failed_restarted_unready+=("${restarted_unready_service}")
+      failed_retained+=("${retained_entry}")
       restore_status=1
     fi
   done
 
-  RELEASE_QUIESCED_LABELS=("${failed_labels[@]}")
-  RELEASE_QUIESCED_PLISTS=("${failed_plists[@]}")
-  RELEASE_QUIESCED_ACTION_STARTED=("${failed_action_started[@]}")
-  RELEASE_QUIESCED_DEADLINES=("${failed_deadlines[@]}")
-  RELEASE_QUIESCED_RESTARTED_UNREADY=("${failed_restarted_unready[@]}")
+  RELEASE_QUIESCED_LABELS=()
+  RELEASE_QUIESCED_PLISTS=()
+  RELEASE_QUIESCED_ACTION_STARTED=()
+  RELEASE_QUIESCED_DEADLINES=()
+  RELEASE_QUIESCED_RESTARTED_UNREADY=()
+  RELEASE_QUIESCED_RETAINED=()
+  if ((${#failed_labels[@]} > 0)); then
+    RELEASE_QUIESCED_LABELS=("${failed_labels[@]}")
+    RELEASE_QUIESCED_PLISTS=("${failed_plists[@]}")
+    RELEASE_QUIESCED_ACTION_STARTED=("${failed_action_started[@]}")
+    RELEASE_QUIESCED_DEADLINES=("${failed_deadlines[@]}")
+    RELEASE_QUIESCED_RESTARTED_UNREADY=("${failed_restarted_unready[@]}")
+    RELEASE_QUIESCED_RETAINED=("${failed_retained[@]}")
+  fi
   return "${restore_status}"
 }
 
@@ -2693,6 +3379,7 @@ release_local_release_gate_host_state() {
 # loaded set is restored by the caller's EXIT path even when validation fails.
 quiesce_local_release_workers() {
   local attempt=0
+  local index=0
   local label=""
   local listed_labels=""
   local plist=""
@@ -2740,7 +3427,8 @@ quiesce_local_release_workers() {
     [[ -n "${label}" ]] && labels+=("${label}")
   done <<<"${listed_labels}"
 
-  for label in "${labels[@]}"; do
+  for ((index = 0; index < ${#labels[@]}; index++)); do
+    label="${labels[index]}"
     if ! [[ "${label}" =~ ^[A-Za-z0-9._-]+$ ]]; then
       printf 'refusing unsafe release launch-agent label: %s\n' "${label}" >&2
       restore_quiesced_release_launch_agents || true
@@ -2755,6 +3443,16 @@ quiesce_local_release_workers() {
     fi
     case "${label}" in
       actions.runner.*)
+        if ! record_release_launch_agent_restoration "${label}" "${plist}"; then
+          restore_quiesced_release_launch_agents || true
+          return 1
+        fi
+        RELEASE_QUIESCED_LABELS+=("${label}")
+        RELEASE_QUIESCED_PLISTS+=("${plist}")
+        RELEASE_QUIESCED_ACTION_STARTED+=(0)
+        RELEASE_QUIESCED_DEADLINES+=("")
+        RELEASE_QUIESCED_RESTARTED_UNREADY+=(0)
+        RELEASE_QUIESCED_RETAINED+=(0)
         runner_status=0
         prepare_competing_release_runner_for_bootout "${label}" || runner_status=$?
         case "${runner_status}" in
@@ -2772,14 +3470,19 @@ quiesce_local_release_workers() {
             ;;
         esac
         ;;
+      *)
+        if ! record_release_launch_agent_restoration "${label}" "${plist}"; then
+          restore_quiesced_release_launch_agents || true
+          return 1
+        fi
+        RELEASE_QUIESCED_LABELS+=("${label}")
+        RELEASE_QUIESCED_PLISTS+=("${plist}")
+        RELEASE_QUIESCED_ACTION_STARTED+=(0)
+        RELEASE_QUIESCED_DEADLINES+=("")
+        RELEASE_QUIESCED_RESTARTED_UNREADY+=(0)
+        RELEASE_QUIESCED_RETAINED+=(0)
+        ;;
     esac
-    # Record recovery authority before mutation so an asynchronous exit cannot
-    # strand a successfully booted-out worker in the instruction boundary.
-    RELEASE_QUIESCED_LABELS+=("${label}")
-    RELEASE_QUIESCED_PLISTS+=("${plist}")
-    RELEASE_QUIESCED_ACTION_STARTED+=(0)
-    RELEASE_QUIESCED_DEADLINES+=("")
-    RELEASE_QUIESCED_RESTARTED_UNREADY+=(0)
     if ! "${RELEASE_LAUNCHCTL}" bootout "${user_domain}/${label}"; then
       resume_suspended_release_runner_groups || true
       loaded_status=0
@@ -2799,7 +3502,8 @@ quiesce_local_release_workers() {
 
   for ((attempt = 1; attempt <= RELEASE_QUIESCE_WAIT_ATTEMPTS; attempt++)); do
     local workers_stopped=1
-    for label in "${RELEASE_QUIESCED_LABELS[@]}"; do
+    for ((index = 0; index < ${#RELEASE_QUIESCED_LABELS[@]}; index++)); do
+      label="${RELEASE_QUIESCED_LABELS[index]}"
       loaded_status=0
       release_launch_agent_is_loaded "${label}" || loaded_status=$?
       case "${loaded_status}" in
@@ -3003,17 +3707,19 @@ retained_stable_init_image_gate_digest() {
 # Run the full release gate locally before any source branch is promoted.
 run_local_release_gate() {
   (
-  local path repository container_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_containerization_path stable_container_path stable_containerization_path release_gate_path release_gate_make release_gate_tar
+  local path repository container_path container_source_path containerization_path container_binary runtime_parent runtime_parent_base runtime_app_root profile_root evidence_root init_image_archive staged_init_image_archive staged_container_path staged_containerization_path stable_container_path stable_containerization_path release_gate_path release_gate_make release_gate_tar release_hawkeye
   local containerization_reference required_init_references status runtime_run_id runtime_service_namespace runtime_namespace_digest candidate_sha init_image_digest_before init_image_digest_after container_validation_suffix container_validation_app_root container_validation_namespace
   local -a RELEASE_QUIESCED_LABELS=()
   local -a RELEASE_QUIESCED_PLISTS=()
   local -a RELEASE_QUIESCED_ACTION_STARTED=()
   local -a RELEASE_QUIESCED_DEADLINES=()
   local -a RELEASE_QUIESCED_RESTARTED_UNREADY=()
+  local -a RELEASE_QUIESCED_RETAINED=()
   local -a RELEASE_SUSPENDED_RUNNER_PGIDS=()
   path="$(repo_path "${COMPOSE_REPO}")"
   candidate_sha="$(git -C "${path}" rev-parse HEAD)"
   container_path="$(repo_path "${CONTAINER_REPO}")"
+  container_source_path="${container_path}"
   containerization_path="$(repo_path "containerization")"
   if [[ ! -f "${HOMEBREW_TAP_REPO}/Formula/container-compose.rb" ]]; then
     printf 'Homebrew tap checkout is required at %s\n' "${HOMEBREW_TAP_REPO}" >&2
@@ -3029,18 +3735,48 @@ run_local_release_gate() {
     --tap "${HOMEBREW_TAP_REPO}" \
     --compose-repository "${path}" \
     --container-repository "${container_path}"
+  if [[ "${EXECUTE}" == "1" ]]; then
+    init_image_archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
+    if [[ "${init_image_archive}" != /* || ! -f "${init_image_archive}" ]]; then
+      printf 'local release gate requires an absolute retained OCI init-image archive via CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE: %s\n' \
+        "${init_image_archive:-unset}" >&2
+      return 2
+    fi
+    init_image_archive="$(cd "$(dirname "${init_image_archive}")" && pwd -P)/$(basename "${init_image_archive}")"
+    containerization_reference="$(python3 - "${path}/Tools/release/stack-refs.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(manifest["components"]["containerization"]["ref"])
+PY
+)"
+    required_init_references="vminit:container-compose ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
+    "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${init_image_archive}" \
+      vminit:container-compose \
+      "ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
+    if [[ ! -f "${RELEASE_HOST_STATE_TOOL}" || -L "${RELEASE_HOST_STATE_TOOL}" ]]; then
+      printf 'release host-state tool is not a regular source file: %s\n' \
+        "${RELEASE_HOST_STATE_TOOL}" >&2
+      return 2
+    fi
+    python3 "${RELEASE_HOST_STATE_TOOL}" \
+      --root "${RELEASE_HOST_STATE_ROOT}" list >/dev/null
+  else
+    printf '%s\n' \
+      'would validate the retained OCI init-image authority before host mutation'
+  fi
   release_gate_path="$(release_gate_execution_path)"
   require_release_gate_gnu_tar "${release_gate_path}"
   release_gate_tar="$(PATH="${release_gate_path}" command -v tar)"
-  require_local_virtualization
-  if [[ "${EXECUTE}" == "1" ]]; then
-    trap release_local_release_gate_host_state EXIT
-    acquire_container_runtime_lock
-    quiesce_local_release_workers
-  else
-    printf '%s\n' \
-      'would quiesce and restore competing Container-family release workers'
+  release_gate_make="$(PATH="${release_gate_path}" command -v make || true)"
+  if [[ "${release_gate_make}" != /* || ! -x "${release_gate_make}" ]]; then
+    printf 'sealed release-gate PATH has no executable make: %s\n' \
+      "${release_gate_path}" >&2
+    return 1
   fi
+  require_local_virtualization
   for repository in "${path}" \
     "$(repo_path "container-builder-shim")" \
     "$(repo_path "containerization")" \
@@ -3058,38 +3794,37 @@ run_local_release_gate() {
       fi
     )
   done
+  release_hawkeye="${path}/.local/bin/hawkeye"
+  if [[ "${EXECUTE}" == "1" ]]; then
+    require_release_hawkeye_cli "${release_hawkeye}"
+  else
+    printf 'would validate and pin release Hawkeye at %s\n' "${release_hawkeye}"
+  fi
   run make -C "${containerization_path}" fetch-default-kernel
+  if [[ "${EXECUTE}" == "1" ]]; then
+    trap release_local_release_gate_host_state EXIT
+    acquire_container_runtime_lock
+    recover_retained_release_launch_agents
+    quiesce_local_release_workers
+  else
+    printf '%s\n' \
+      'would quiesce and restore competing Container-family release workers'
+  fi
   if [[ "${EXECUTE}" != "1" ]]; then
     printf 'would package an immutable Container runtime candidate and run the complete local gate inside one fresh marker-protected runtime lifecycle\n'
     return 0
   fi
 
-  init_image_archive="${CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE:-}"
-  if [[ "${init_image_archive}" != /* || ! -f "${init_image_archive}" ]]; then
-    printf 'local release gate requires an absolute retained OCI init-image archive via CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE: %s\n' \
-      "${init_image_archive:-unset}" >&2
-    return 2
-  fi
-  init_image_archive="$(cd "$(dirname "${init_image_archive}")" && pwd -P)/$(basename "${init_image_archive}")"
-
-  containerization_reference="$(python3 - "${path}/Tools/release/stack-refs.json" <<'PY'
-import json
-from pathlib import Path
-import sys
-
-manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-print(manifest["components"]["containerization"]["ref"])
-PY
-)"
-  required_init_references="vminit:container-compose ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
-  "${OCI_IMAGE_LAYOUT_VALIDATOR}" "${init_image_archive}" \
-    vminit:container-compose \
-    "ghcr.io/stephenlclarke/containerization/vminit:${containerization_reference}"
-
   evidence_root="$(resolve_release_evidence_root "${path}" \
     "${PARITY_EVIDENCE_DIR:-.build/release-evidence}")"
-  stage_container_runtime_candidate "${container_path}" "${evidence_root}"
+  container_binary=""
   runtime_parent=""
+  runtime_app_root=""
+  runtime_service_namespace=""
+  stable_containerization_path=""
+  stable_container_path=""
+  container_validation_app_root=""
+  container_validation_namespace=""
   # shellcheck disable=SC2329
   cleanup_local_release_gate_roots() {
     local trapped_status=$?
@@ -3113,7 +3848,6 @@ PY
     return "${cleanup_status}"
   }
   trap cleanup_local_release_gate_roots EXIT
-  container_binary="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container"
   runtime_parent_base=/private/tmp
   if [[ ! -d "${runtime_parent_base}" || ! -w "${runtime_parent_base}" ]]; then
     runtime_parent_base=/tmp
@@ -3145,6 +3879,24 @@ PY
     "${stable_container_path}" container)"; then
     return 1
   fi
+  # Both repositories derive expected licence years from Git history. Prove
+  # the system-volume checkouts retain that policy input before spending time
+  # packaging or starting the runtime. The stack gate will still checkpoint
+  # its own source target; this cheap check protects the expensive prefix.
+  if ! "${release_gate_make}" -C "${containerization_path}" \
+    "HAWKEYE=${release_hawkeye}" check-licenses; then
+    printf 'staged Containerization licence preflight failed before runtime packaging: %s\n' \
+      "${containerization_path}" >&2
+    return 1
+  fi
+  if ! "${release_gate_make}" -C "${container_path}" \
+    "HAWKEYE=${release_hawkeye}" check-licenses; then
+    printf 'staged Container licence preflight failed before runtime packaging: %s\n' \
+      "${container_path}" >&2
+    return 1
+  fi
+  stage_container_runtime_candidate "${container_source_path}" "${evidence_root}"
+  container_binary="${CONTAINER_RUNTIME_CANDIDATE_ROOT}/bin/container"
   container_validation_suffix="$(git -C "${container_path}" rev-parse --verify HEAD \
     | tr -cd '[:alnum:]' | cut -c1-12)"
   container_validation_app_root="${runtime_parent}/i/stack-release-app-root"
@@ -3177,12 +3929,6 @@ PY
     >"${runtime_parent}/.container-compose-release-runtime-identity"
   profile_root="${runtime_parent}/profiles"
   mkdir -p "${profile_root}"
-  release_gate_make="$(PATH="${release_gate_path}" command -v make || true)"
-  if [[ "${release_gate_make}" != /* || ! -x "${release_gate_make}" ]]; then
-    printf 'sealed release-gate PATH has no executable make: %s\n' \
-      "${release_gate_path}" >&2
-    return 1
-  fi
   status=0
   run_local_release_gate_command env -u TAR -u CONTAINER_APP_ROOT -u CONTAINER_SERVICE_NAMESPACE \
     -u CONTAINER_RUNTIME_SERVICE_NAMESPACE -u CONTAINER_RUNTIME_RUN_ID \
@@ -3204,6 +3950,7 @@ PY
     "${path}/scripts/run-with-container-runtime.sh" "${container_binary}" \
     "${release_gate_make}" -C "${path}" release-gate \
     "TAR=${release_gate_tar}" \
+    "HAWKEYE=${release_hawkeye}" \
     "CONTAINER_BUILDER_SHIM_STACK_REPO=$(repo_path "container-builder-shim")" \
     "CONTAINERIZATION_STACK_REPO=${containerization_path}" \
     "CONTAINER_STACK_REPO=${container_path}" \
@@ -3287,28 +4034,6 @@ ensure_push_boundary() {
       exit 1
     fi
   fi
-}
-
-# Fetch and align the local main branch.
-prepare_repo_main() {
-  local repo="$1" path remote
-  path="$(repo_path "${repo}")"
-  remote="$(push_remote "${repo}")"
-  ensure_repo_exists "${repo}"
-  ensure_clean "${repo}"
-  ensure_push_boundary "${repo}"
-  fetch_release_remote "${repo}"
-  run git -C "${path}" switch main
-  run git -C "${path}" pull --rebase --autostash "${remote}" main
-  ensure_clean "${repo}"
-}
-
-# Prepare every stack participant in release order.
-prepare_all_main() {
-  local repo
-  for repo in "${REPOS[@]}"; do
-    prepare_repo_main "${repo}"
-  done
 }
 
 # Read the compose plugin version from the Makefile.
@@ -4341,6 +5066,51 @@ manifest.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding=
 PY
 }
 
+# Bind the only documentation-only repository to one published release. The
+# stable source tag then contains every ref needed to rebuild Pages exactly,
+# even after Actions run history expires.
+write_release_documentation_manifest() {
+  local path manifest authority k8s_release_tag k8s_ref
+  path="$(repo_path "${COMPOSE_REPO}")"
+  manifest="${path}/Tools/release/documentation-refs.json"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would update: %s with one exact published container-k8s ref\n' \
+      "${manifest}"
+    return 0
+  fi
+
+  need_command gh
+  authority="$(released_k8s_documentation_authority)"
+  k8s_release_tag="$(sed -n '1p' <<<"${authority}")"
+  k8s_ref="$(sed -n '2p' <<<"${authority}")"
+  if [[ ! "${k8s_release_tag}" =~ ^[A-Za-z0-9._-]+$ ]] || \
+    [[ ! "${k8s_ref}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'published container-k8s documentation authority is malformed: %s at %s\n' \
+      "${k8s_release_tag:-missing}" "${k8s_ref:-missing}" >&2
+    return 1
+  fi
+
+  python3 - "${manifest}" "${k8s_release_tag}" "${k8s_ref}" <<'PY'
+from pathlib import Path
+import json
+import sys
+
+manifest = Path(sys.argv[1])
+data = {
+    "schemaVersion": 1,
+    "sites": {
+        "k8s": {
+            "repository": "stephenlclarke/container-k8s",
+            "releaseTag": sys.argv[2],
+            "ref": sys.argv[3],
+        }
+    },
+}
+manifest.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+}
+
 remote_main_commit() {
   local repo="$1" path remote
   path="$(repo_path "${repo}")"
@@ -4991,6 +5761,45 @@ latest_stable_release_gate_dispatch_run() {
     --jq '.[0].databaseId // ""'
 }
 
+# Return the newest run for one immutable stable documentation manifest.
+latest_stable_documentation_dispatch() {
+  local version="$1" title
+  title="Documentation · ${version}"
+  github_cli run list \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --workflow Documentation \
+    --event workflow_dispatch \
+    --limit 100 \
+    --json databaseId,displayTitle,status,conclusion \
+    --jq "map(select(.displayTitle == \"${title}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
+}
+
+# Resolve the newest published (draft-free) container-k8s release tag and its
+# exact Git object. The pair is committed into the stable source candidate,
+# so documentation recovery never relies on retained workflow history.
+released_k8s_documentation_authority() {
+  local tag ref remote
+  remote="https://github.com/stephenlclarke/container-k8s.git"
+  tag="$(
+    github_cli api --paginate --slurp \
+      'repos/stephenlclarke/container-k8s/releases?per_page=100' \
+      | jq -r '[.[][] | select(.draft == false and .published_at != null)] | sort_by(.published_at) | last | .tag_name // ""'
+  )"
+  if [[ -z "${tag}" ]]; then
+    printf 'container-k8s has no published release for stable documentation\n' >&2
+    return 1
+  fi
+  ref="$(
+    git ls-remote --tags "${remote}" "refs/tags/${tag}" "refs/tags/${tag}^{}" \
+      | awk '$2 ~ /\^\{\}$/ { peeled = $1 } $2 !~ /\^\{\}$/ { direct = $1 } END { print peeled ? peeled : direct }'
+  )"
+  if [[ ! "${ref}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'could not resolve published container-k8s release %s\n' "${tag}" >&2
+    return 1
+  fi
+  printf '%s\n%s\n' "${tag}" "${ref}"
+}
+
 # Wait for a GitHub Actions run to complete successfully.
 wait_for_github_run_success() {
   local run_id="$1" label="$2" wait_seconds="${3:-${COMPOSE_PACKAGE_WAIT_SECONDS}}"
@@ -5530,6 +6339,70 @@ dispatch_stable_release_gate() {
   done
 }
 
+# Build and publish DocC only after the stable package, Homebrew pair, and all
+# earlier release gates have succeeded. A successful exact-input run is the
+# recovery checkpoint; every retry reads the same refs from the immutable
+# stable source tag.
+dispatch_stable_documentation() {
+  local version="$1" details previous_run run_id status conclusion deadline now
+  print_header "publish released documentation for ${version}"
+
+  if [[ "${EXECUTE}" != "1" ]]; then
+    printf 'would use the exact documentation refs committed in the stable source tag\n'
+    printf 'would run: gh workflow run docs.yml --repo %s --ref main -f ref=%s\n' \
+      "$(github_repo "${COMPOSE_REPO}")" "${version}"
+    printf 'would build the four DocC sites in parallel and deploy Pages as the final release operation\n'
+    return 0
+  fi
+
+  need_command gh
+  details="$(latest_stable_documentation_dispatch "${version}")"
+  IFS=$'\t' read -r previous_run status conclusion <<<"${details}"
+  if [[ -n "${previous_run}" && "${status}" == "completed" && \
+    "${conclusion}" == "success" ]]; then
+    printf 'stable documentation already passed for the exact released inputs: %s (run %s)\n' \
+      "${version}" "${previous_run}"
+    return 0
+  fi
+  if [[ -n "${previous_run}" && "${status}" != "completed" ]]; then
+    printf 'stable documentation is already running for the exact released inputs: %s\n' \
+      "${previous_run}"
+    wait_for_github_run_success \
+      "${previous_run}" "stable documentation and Pages deployment" \
+      "${DOCUMENTATION_WAIT_SECONDS}"
+    return 0
+  fi
+
+  run github_cli workflow run docs.yml \
+    --repo "$(github_repo "${COMPOSE_REPO}")" \
+    --ref main \
+    -f "ref=${version}"
+
+  deadline=$((SECONDS + DOCUMENTATION_WAIT_SECONDS))
+  while true; do
+    details="$(latest_stable_documentation_dispatch "${version}")"
+    IFS=$'\t' read -r run_id status conclusion <<<"${details}"
+    if [[ -n "${run_id}" && "${run_id}" != "${previous_run}" ]]; then
+      printf 'stable documentation started: %s\n' "${run_id}"
+      wait_for_github_run_success \
+        "${run_id}" "stable documentation and Pages deployment" \
+        "${DOCUMENTATION_WAIT_SECONDS}"
+      return 0
+    fi
+
+    now="${SECONDS}"
+    if (( now >= deadline )); then
+      printf 'timed out waiting for stable documentation dispatch for %s\n' \
+        "${version}" >&2
+      exit 1
+    fi
+
+    printf 'waiting for stable documentation dispatch for %s; next check in %ss\n' \
+      "${version}" "${COMPOSE_PACKAGE_POLL_SECONDS}"
+    sleep "${COMPOSE_PACKAGE_POLL_SECONDS}"
+  done
+}
+
 # Print the verified boundary for a stable release or its formula-only recovery.
 print_stable_release_point() {
   local version="$1" generation="$2" latest label tap_update
@@ -5562,6 +6435,7 @@ publish_stable_release() {
   local version="$1"
   dispatch_stable_release_gate "${version}"
   dispatch_compose_stable_package "${version}"
+  dispatch_stable_documentation "${version}"
   print_stable_release_point "${version}" "container-compose stable package workflow dispatch"
 }
 
@@ -5584,6 +6458,7 @@ resume_stable_release() {
     if [[ "${promote_default_lane}" == "true" ]]; then
       ensure_latest_stable_retry "${version}"
       dispatch_compose_stable_tap_repair "${version}"
+      dispatch_stable_documentation "${version}"
       print_stable_release_point "${version}" "formula-only recovery from immutable release assets"
     else
       authority_record="$(ensure_published_stable_recovery_authority "${version}")"
@@ -5595,6 +6470,7 @@ resume_stable_release() {
         "${stable_formula_identities_before}" "${authority_init_digest}"
       require_stable_init_image_authority_unchanged \
         "${version}" "${authority_object}" "${authority_init_digest}"
+      dispatch_stable_documentation "${version}"
       print_stable_release_point "${version}" "maintenance backfill asset recovery"
     fi
     return 0
@@ -5622,6 +6498,19 @@ release_current_stack() {
   fi
   current="$(current_compose_version)"
   version="$(resolve_release_version "${VERSION_SELECTOR}")"
+  if [[ "${CONTAINER_STACK_RELEASE_BOOTSTRAP:-0}" == "1" ]]; then
+    if ! stable_tag_exists "${version}"; then
+      ensure_release_version_is_valid "${latest}" "${current}" "${version}"
+      ensure_new_stable_release "${version}"
+      ensure_release_intent
+      recover_unpublished_release_candidate "${version}"
+    fi
+    # No build, test, package, or publication step may use controller or tool
+    # files outside the signed transaction. Even an unchanged candidate must
+    # therefore replace the reviewed-main bootstrap before proceeding.
+    RELEASE_CONTROLLER_RESTART_REQUIRED=1
+    restart_refreshed_release_controller
+  fi
   if stable_tag_exists "${version}"; then
     printf 'resuming stable tag: %s\n' "${version}"
     resume_stable_release "${version}"
@@ -5631,6 +6520,7 @@ release_current_stack() {
   ensure_new_stable_release "${version}"
   ensure_release_intent
   recover_unpublished_release_candidate "${version}"
+  restart_refreshed_release_controller
   ensure_current_build_release_readiness
   require_current_stack_matches_sibling_mains
   require_release_upstream_alignment
@@ -5654,17 +6544,18 @@ release_current_stack() {
   sync_containerization_package_pins
   sync_container_package_pin
   write_release_stack_manifest
+  write_release_documentation_manifest
   prepare_stable_init_image_authority
 
   if [[ "${EXECUTE}" == "1" ]]; then
-    git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json
-    if ! git -C "${path}" diff --cached --quiet -- Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json; then
+    git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json Tools/release/documentation-refs.json
+    if ! git -C "${path}" diff --cached --quiet -- Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json Tools/release/documentation-refs.json; then
       run git -C "${path}" commit -S -m "chore(release): prepare ${version}"
     else
       printf 'release prep files already match %s\n' "${version}"
     fi
   else
-    run git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json
+    run git -C "${path}" add Makefile Sources/ComposePlugin/ComposePlugin.swift Tools/release/stack-refs.json Tools/release/documentation-refs.json
     run git -C "${path}" commit -S -m "chore(release): prepare ${version}"
   fi
 
@@ -5705,32 +6596,10 @@ PY
 
 # Print current stack release status.
 plan() {
-  local repo current latest next_patch next_minor next_major changed
-  prepare_all_main
-  current="$(current_compose_version)"
-  latest="$(latest_local_semver_tag "${COMPOSE_REPO}")"
-  if [[ -z "${latest}" ]]; then
-    latest="${current}"
-  fi
-  next_patch="$(resolve_version_selector '--+' "${latest}")"
-  next_minor="$(resolve_version_selector '-+-' "${latest}")"
-  next_major="$(resolve_version_selector '+--' "${latest}")"
-
   print_header "simplified stack release plan"
-  printf 'current COMPOSE_VERSION: %s\n' "${current}"
-  printf 'latest semantic tag:     %s\n' "${latest}"
-  printf 'next patch release:      %s\n' "${next_patch}"
-  printf 'next minor release:      %s\n' "${next_minor}"
-  printf 'next major release:      %s\n\n' "${next_major}"
+  python3 "${RELEASE_WORKSPACE_TOOL}" plan
+  printf '\n'
   printf 'stable release intent:   %s\n\n' "${RELEASE_INTENT:-required for release}"
-  printf '%-26s %-40s %-18s\n' "component" "main-sha" "changed-since-tag"
-  for repo in "${REPOS[@]}"; do
-    changed="yes"
-    if ! repo_changed_since_latest_tag "${repo}"; then
-      changed="no"
-    fi
-    printf '%-26s %-40s %-18s\n' "${repo}" "$(git -C "$(repo_path "${repo}")" rev-parse main)" "${changed}"
-  done
 
   cat <<'EOF'
 
@@ -5750,6 +6619,129 @@ Process:
 EOF
 }
 
+# Require the one controller allowed to bootstrap a retained transaction to be
+# the clean, exact reviewed main checkout. The bootstrap may recover an
+# unpublished candidate, but it must re-exec the signed transaction controller
+# before any release stage runs.
+require_release_bootstrap_authority() {
+  local source_root source_head source_origin remote_head bootstrap_controller
+  local relative_path absolute_path index_entry expected_blob actual_blob
+  local -a bootstrap_closure=(
+    "Makefile"
+    "scripts/${SCRIPT_NAME}"
+    "Tools/ci/container-runtime-lock.sh"
+    "Tools/release/release-host-state.py"
+    "Tools/release/release-workspace.py"
+  )
+  source_root="$(cd "${SELF_DIRECTORY}/.." && pwd -P)"
+  bootstrap_controller="${SELF_DIRECTORY}/${SCRIPT_NAME}"
+  if [[ ! -f "${bootstrap_controller}" || -L "${bootstrap_controller}" ]]; then
+    printf 'release bootstrap controller is missing or unsafe: %s\n' \
+      "${bootstrap_controller}" >&2
+    return 1
+  fi
+  if ! git -C "${source_root}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'release bootstrap source is not a Git checkout: %s\n' \
+      "${source_root}" >&2
+    return 1
+  fi
+  if [[ -n "$(git -C "${source_root}" status --short)" ]]; then
+    printf 'dirty release bootstrap source is not reviewed authority: %s\n' \
+      "${source_root}" >&2
+    return 1
+  fi
+  for relative_path in "${bootstrap_closure[@]}"; do
+    absolute_path="${source_root}/${relative_path}"
+    if [[ ! -f "${absolute_path}" || -L "${absolute_path}" ]]; then
+      printf 'release bootstrap closure file is missing or unsafe: %s\n' \
+        "${absolute_path}" >&2
+      return 1
+    fi
+    index_entry="$(git -C "${source_root}" ls-files -v -- "${relative_path}")"
+    if [[ -z "${index_entry}" || "${index_entry}" == S\ * ||
+      "${index_entry:0:1}" =~ [a-z] ]]; then
+      printf 'release bootstrap closure has hidden index state: %s\n' \
+        "${relative_path}" >&2
+      return 1
+    fi
+    expected_blob="$(git -C "${source_root}" rev-parse "HEAD:${relative_path}" \
+      2>/dev/null || true)"
+    actual_blob="$(git -C "${source_root}" hash-object --no-filters \
+      "${absolute_path}" 2>/dev/null || true)"
+    if [[ ! "${expected_blob}" =~ ^[0-9a-f]{40}$ ]] ||
+      [[ "${actual_blob}" != "${expected_blob}" ]]; then
+      printf 'release bootstrap closure differs from reviewed HEAD: %s\n' \
+        "${relative_path}" >&2
+      return 1
+    fi
+  done
+  source_origin="$(git -C "${source_root}" remote get-url origin 2>/dev/null || true)"
+  case "${source_origin}" in
+    https://github.com/stephenlclarke/container-compose|https://github.com/stephenlclarke/container-compose.git|git@github.com:stephenlclarke/container-compose|git@github.com:stephenlclarke/container-compose.git) ;;
+    *)
+      printf 'release bootstrap origin is not stephenlclarke/container-compose: %s\n' \
+        "${source_origin:-missing}" >&2
+      return 1
+      ;;
+  esac
+  source_head="$(git -C "${source_root}" rev-parse HEAD)"
+  remote_head="$(git -C "${source_root}" ls-remote --heads origin refs/heads/main \
+    | awk '{print $1}' | tail -n 1)"
+  if [[ ! "${source_head}" =~ ^[0-9a-f]{40}$ ]] ||
+    [[ "${source_head}" != "${remote_head}" ]]; then
+    printf 'release bootstrap is not exact reviewed origin/main: local %s, remote %s\n' \
+      "${source_head:-missing}" "${remote_head:-missing}" >&2
+    return 1
+  fi
+  RELEASE_BOOTSTRAP_HEAD="${source_head}"
+}
+
+# Run a stable release only inside the exact marker-protected transaction
+# created by the release workspace controller. A failed child is retained for
+# the next invocation; only a completely successful publication is removed.
+run_isolated_release() {
+  local workspace bootstrap child child_pid status claim_status
+  if [[ "${EXECUTE}" != "1" ]]; then
+    python3 "${RELEASE_WORKSPACE_TOOL}" plan
+    printf 'would materialize and retain an exact isolated release workspace for %s\n' \
+      "${VERSION_SELECTOR}"
+    return 0
+  fi
+
+  workspace="$(python3 "${RELEASE_WORKSPACE_TOOL}" materialize \
+    --build-root "${RELEASE_BUILD_ROOT}" -- "${VERSION_SELECTOR}")"
+  bootstrap="${SELF_DIRECTORY}/${SCRIPT_NAME}"
+  child="${workspace}/container-compose/scripts/${SCRIPT_NAME}"
+  if [[ ! -f "${child}" || -L "${child}" ]]; then
+    printf 'isolated release controller is missing or unsafe: %s\n' "${child}" >&2
+    return 1
+  fi
+  status=0
+  CONTAINER_STACK_RELEASE_ROOT="${workspace}" \
+  CONTAINER_STACK_RELEASE_BUILD_ROOT="${RELEASE_BUILD_ROOT}" \
+  CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE=1 \
+  CONTAINER_STACK_RELEASE_BOOTSTRAP=1 \
+  CONTAINER_STACK_RELEASE_BOOTSTRAP_HEAD="${RELEASE_BOOTSTRAP_HEAD}" \
+    python3 "${RELEASE_WORKSPACE_TOOL}" execute \
+      --build-root "${RELEASE_BUILD_ROOT}" "${workspace}" \
+      /bin/bash "${bootstrap}" release "${VERSION_SELECTOR}" --execute &
+  child_pid=$!
+  wait "${child_pid}" || status=$?
+  claim_status=0
+  python3 "${RELEASE_WORKSPACE_TOOL}" release-claim \
+    --build-root "${RELEASE_BUILD_ROOT}" --pid "${child_pid}" "${workspace}" || claim_status=$?
+  if ((claim_status != 0)); then
+    printf 'release transaction lease could not be cleared: %s\n' "${workspace}" >&2
+    return "${claim_status}"
+  fi
+  if ((status != 0)); then
+    printf 'release transaction retained for exact recovery: %s\n' "${workspace}" >&2
+    return "${status}"
+  fi
+  python3 "${RELEASE_WORKSPACE_TOOL}" cleanup \
+    --build-root "${RELEASE_BUILD_ROOT}" "${workspace}"
+}
+
 main() {
   parse_arguments "$@"
   case "${MODE}" in
@@ -5759,8 +6751,24 @@ main() {
     release)
       trap cleanup_current_init_image_authority EXIT
       ensure_compose_promotion_mode
-      prepare_all_main
-      release_current_stack
+      if [[ "${CONTAINER_STACK_RELEASE_LIBRARY:-0}" == "1" ]]; then
+        recover_release_host_state_on_startup
+        release_current_stack
+      elif [[ "${CONTAINER_STACK_RELEASE_WORKSPACE_ACTIVE:-0}" == "1" ]]; then
+        # An active child is untrusted until its marker-protected workspace is
+        # verified. Do not let an unmarked checkout reach host recovery.
+        python3 "${RELEASE_WORKSPACE_TOOL}" verify \
+          --build-root "${RELEASE_BUILD_ROOT}" "${ROOT}" >/dev/null
+        recover_release_host_state_on_startup
+        for repo in "${REPOS[@]}"; do
+          ensure_push_boundary "${repo}"
+        done
+        release_current_stack
+      else
+        require_release_bootstrap_authority
+        recover_release_host_state_on_startup
+        run_isolated_release
+      fi
       CURRENT_INIT_IMAGE_AUTHORITY_RELEASED=1
       ;;
   esac

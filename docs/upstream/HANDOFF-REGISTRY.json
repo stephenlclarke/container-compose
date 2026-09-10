@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-09-05",
+  "generatedAt": "2026-09-10",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -8299,6 +8299,214 @@
         }
       ],
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/489"
+    },
+    {
+      "id": "container-compose-533",
+      "owner": "stephenlclarke/container-compose",
+      "title": "chore(release): refresh 0.14.3 upstream authority",
+      "state": "active-draft",
+      "lastVerified": "2026-09-07",
+      "commits": [
+        "228897171d71975988ccdc690f1982e7433952af",
+        "40ab92d74a02bbd6b7436a50d47c38898a4bc294",
+        "847655d373a27b8b8d0c3a9747f04f16b5de1206",
+        "f9d57ad1c80944c43bec6fc74afe1bfac3956480"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-533.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-534.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/534"
+    },
+    {
+      "id": "container-compose-544",
+      "owner": "stephenlclarke/container-compose",
+      "title": "chore(release): refresh 0.14.3 Container classification authority",
+      "state": "active-draft",
+      "lastVerified": "2026-09-07",
+      "commits": [
+        "09acdc2f1df2d8a15a37e6dbce19dbf94ed2a607",
+        "aaacb3ed973f9e47434fc14335f87a4a42a1f2ad"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-544.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-545.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/545"
+    },
+    {
+      "id": "container-compose-557",
+      "owner": "stephenlclarke/container-compose",
+      "title": "chore(release): refresh corrected builder classification authority",
+      "state": "active-draft",
+      "lastVerified": "2026-09-07",
+      "commits": [
+        "25399784a692d5d5933ab3db67d385e0e82b5fad",
+        "8538b2e7931f41a831af66dc65381f7acc46cc64",
+        "d8ccda0fd6f3c24ecfb399f40b50850ce2fa136a",
+        "f99e66b8940242d6ea8bed448619ba61f3f6f1a5"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-557.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-558.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/558"
+    },
+    {
+      "id": "container-compose-571",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): refresh retained sibling mains",
+      "state": "active-draft",
+      "lastVerified": "2026-09-08",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-571.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-572.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/572"
+    },
+    {
+      "id": "container-compose-593",
+      "owner": "stephenlclarke/container-compose",
+      "title": "[Build] Replace Nextflow with a recoverable native graph",
+      "state": "active-draft",
+      "lastVerified": "2026-09-09",
+      "commits": [
+        "89f9f7944b587d805143b6b193796608c2a6d3b7",
+        "44f4895d88a7d23cec8b92c695265343fd7b30da"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-593.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-594.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/594"
+    },
+    {
+      "id": "container-compose-595",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(build): complete recoverable stack workflow",
+      "state": "active-draft",
+      "lastVerified": "2026-09-09",
+      "commits": [
+        "73b886a8a1d66feae5361f92e0ccee581f28b6ce"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-595.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-596.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/596"
+    },
+    {
+      "id": "container-compose-621",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): recover stale candidate namespaces",
+      "state": "active-draft",
+      "lastVerified": "2026-09-10",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-621.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-622.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/622"
+    },
+    {
+      "id": "container-compose-624",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): keep stable authority lookup runner-compatible",
+      "state": "active-draft",
+      "lastVerified": "2026-09-10",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-624.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-625.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/625"
+    },
+    {
+      "id": "container-compose-626",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): preserve stable retry control authority",
+      "state": "active-draft",
+      "lastVerified": "2026-09-10",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-626.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-627.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/627"
+    },
+    {
+      "id": "container-compose-629",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(docs): preserve prerelease publication authority",
+      "state": "active-draft",
+      "lastVerified": "2026-09-10",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-629.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-630.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/630"
     },
     {
       "id": "process-list-compose-top-process-list",
