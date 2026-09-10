@@ -1,5 +1,5 @@
 {
-  "originHash" : "9a9788836ed01388c9213a989353ac117f39dff91531e23f6d3c36195a95c8ee",
+  "originHash" : "32f7049a414667267213742e2600a9d353e3e8a5ff3fc51cd8f6e4aa9bc5fc7a",
   "pins" : [
     {
       "identity" : "async-http-client",
@@ -13,9 +13,10 @@
     {
       "identity" : "container",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/stephenlclarke/container.git",
+      "location" : "https://github.com/apple/container.git",
       "state" : {
-        "revision" : "ccf99d73b75626ed49a0d638c640bd3b9851e2de"
+        "revision" : "9a8917ca2da5cd6ba059b9ba5ca5a74892e9bb7d",
+        "version" : "1.4.1"
       }
     },
     {
@@ -29,9 +30,10 @@
     {
       "identity" : "containerization",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/stephenlclarke/containerization.git",
+      "location" : "https://github.com/apple/containerization.git",
       "state" : {
-        "revision" : "bd8130fea851f6ee264f00fc684e2543a7d2faa3"
+        "revision" : "9eacc197d7c3663eb29cbab6d51244ede6d1cd7d",
+        "version" : "0.45.0"
       }
     },
     {
@@ -59,15 +61,6 @@
       "state" : {
         "revision" : "176c5a434fd76f6f479848d1a8f7d44967534168",
         "version" : "2.4.1"
-      }
-    },
-    {
-      "identity" : "punycodeswift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/futamura/PunycodeSwift.git",
-      "state" : {
-        "revision" : "de703481cf48b859a04bac8ef1d98217b9c97aa9",
-        "version" : "4.0.3"
       }
     },
     {
@@ -253,9 +246,10 @@
     {
       "identity" : "swift-nio-ssl",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/stephenlclarke/swift-nio-ssl.git",
+      "location" : "https://github.com/apple/swift-nio-ssl.git",
       "state" : {
-        "revision" : "3e13ce5f6dd5b7e89fff9ab55ab7caed39fe7285"
+        "revision" : "03827c1a9fdb2b6b00a4e93ede8861520263af8c",
+        "version" : "2.37.4"
       }
     },
     {
@@ -319,15 +313,6 @@
       "state" : {
         "revision" : "827506c90475e82d5a7f191f950fb3025cbdc0d6",
         "version" : "2.0.0"
-      }
-    },
-    {
-      "identity" : "tldextractswift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/futamura/TLDExtractSwift.git",
-      "state" : {
-        "revision" : "5fb29b13f99b24401cd93c6c0c83faf7c23e9918",
-        "version" : "4.0.3"
       }
     },
     {

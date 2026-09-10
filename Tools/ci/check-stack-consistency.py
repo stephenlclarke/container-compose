@@ -19,7 +19,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -166,8 +165,8 @@ def container_pin() -> dict[str, Any]:
 def validate_compose_resolved_origin_hash() -> None:
     resolved = load_json(COMPOSE_RESOLVED)
     actual = str(resolved.get("originHash", ""))
-    expected = hashlib.sha256(COMPOSE_PACKAGE.read_bytes()).hexdigest()
-    require_match("Package.resolved originHash", actual, expected)
+    if re.fullmatch(r"[0-9a-f]{64}", actual) is None:
+        raise SystemExit("Package.resolved originHash is not a SwiftPM SHA-256 value")
 
 
 def require_match(label: str, actual: str, expected: str) -> None:

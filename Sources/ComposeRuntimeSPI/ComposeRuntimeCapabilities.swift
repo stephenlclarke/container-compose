@@ -22,6 +22,8 @@
 public struct ComposeRuntimeCapabilities: Equatable, Sendable {
     public static let loggingDriversV1Identifier =
         "io.github.stephenlclarke.container.logging-drivers.v1"
+    public static let networkScopedAliasesV1Identifier =
+        "io.github.stephenlclarke.container.compose.network-scoped-aliases.v1"
 
     public private(set) var identifiers: Set<String>
 
@@ -33,5 +35,11 @@ public struct ComposeRuntimeCapabilities: Equatable, Sendable {
     /// request and exposes driver-neutral read and attach operations.
     public var supportsLoggingDriversV1: Bool {
         identifiers.contains(Self.loggingDriversV1Identifier)
+    }
+
+    /// Whether network attachment options beyond stock Apple's `mac` and `mtu`
+    /// can be projected without losing their network-scoped meaning.
+    public var supportsNetworkScopedAliasesV1: Bool {
+        identifiers.contains(Self.networkScopedAliasesV1Identifier)
     }
 }

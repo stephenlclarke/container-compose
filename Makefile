@@ -41,6 +41,7 @@ endif
 override SHELL_QUOTE = '$(subst ','"'"',$(1))'
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
+CONTAINER_COMPOSE_BUILD_PROFILE ?= enhanced
 # Additional release compiler flags for deliberate toolchain experiments.
 # Normal releases use SwiftPM's default speed-optimised production build.
 SWIFT_RELEASE_FLAGS ?=
@@ -260,8 +261,9 @@ STACK_GO_CONTRACT := $(shell GOWORK=off "$(PYTHON)" "$(STACK_PIN_TOOL)" contract
 	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK TARGETS::END RECOVERABLE STACK TARGETS")
 endif
 ifeq ($(origin STACK_COMPOSE_CONTRACT),undefined)
-STACK_COMPOSE_CONTRACT := $(shell { printf 'swift=%s\ngo=%s\n' \
-	$(call SHELL_QUOTE,$(STACK_SWIFT_CONTRACT)) $(call SHELL_QUOTE,$(STACK_GO_CONTRACT)); \
+STACK_COMPOSE_CONTRACT := $(shell { printf 'swift=%s\ngo=%s\nprofile=%s\n' \
+	$(call SHELL_QUOTE,$(STACK_SWIFT_CONTRACT)) $(call SHELL_QUOTE,$(STACK_GO_CONTRACT)) \
+	$(call SHELL_QUOTE,$(CONTAINER_COMPOSE_BUILD_PROFILE)); \
 	shasum -a 256 config.toml "$(PLUGIN_ICON)" Tools/release/runtime-capabilities.json; \
 	} | shasum -a 256 | awk '{print $$1}')
 endif
@@ -757,7 +759,8 @@ stack-compose-build: stack-container-build stack-restore-compose-pin
 			--container-ref "$$(/usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse HEAD)" \
 			--containerization-source "$(CONTAINERIZATION_SOURCE)" \
 			--containerization-ref "$$(/usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse HEAD)" \
-			--compose-go-version "$(COMPOSE_GO_VERSION)"; \
+			--compose-go-version "$(COMPOSE_GO_VERSION)" \
+			--runtime-profile "$(CONTAINER_COMPOSE_BUILD_PROFILE)"; \
 		compose_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$bin_path/compose" --root "$(STACK_ARTIFACT_ROOT)" --name compose)"; \
 		normalizer_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$product/compose-normalizer" --root "$(STACK_ARTIFACT_ROOT)" --name compose-normalizer)"; \
 		config_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$(abspath config.toml)" --root "$(STACK_ARTIFACT_ROOT)" --name config.toml)"; \
@@ -889,7 +892,8 @@ release-parity-build-info:
 		--container-ref "$(PARITY_CONTAINER_REF)" \
 		--containerization-source "$(CONTAINERIZATION_SOURCE)" \
 		--containerization-ref "$(PARITY_CONTAINERIZATION_REF)" \
-		--compose-go-version "$(COMPOSE_GO_VERSION)"
+		--compose-go-version "$(COMPOSE_GO_VERSION)" \
+		--runtime-profile "$(CONTAINER_COMPOSE_BUILD_PROFILE)"
 
 run:
 	$(SWIFT) run $(SWIFT_RESOLVED_FLAGS) compose version
@@ -2465,7 +2469,8 @@ else
 		--container-ref "$(CONTAINER_REF)" \
 		--containerization-source "$(CONTAINERIZATION_SOURCE)" \
 		--containerization-ref "$(CONTAINERIZATION_REF)" \
-		--compose-go-version "$(COMPOSE_GO_VERSION)"
+		--compose-go-version "$(COMPOSE_GO_VERSION)" \
+		--runtime-profile "$(CONTAINER_COMPOSE_BUILD_PROFILE)"
 endif
 	$(CODESIGN) $(CODESIGN_OPTS) \
 		--identifier io.github.stephenlclarke.container-compose \

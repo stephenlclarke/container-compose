@@ -73,6 +73,15 @@ private let matchingSystemVersionJSON = """
 @Suite("Container package compatibility")
 // swiftlint:disable:next type_body_length
 struct ContainerPackageCompatibilityTests {
+  @Test("compiled runtime profile matches the selected package graph")
+  func compiledRuntimeProfileMatchesSelectedPackageGraph() {
+    #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
+      #expect(ContainerPackageCompatibility.compiledRuntimeProfile == .enhanced)
+    #else
+      #expect(ContainerPackageCompatibility.compiledRuntimeProfile == .stock)
+    #endif
+  }
+
   @Test("runtime commands require installed stack check")
   func runtimeCommandsRequireInstalledStackCheck() {
     #expect(ContainerPackageCompatibility.requiresRuntimeCheck(arguments: ["up"]))
@@ -155,6 +164,73 @@ struct ContainerPackageCompatibilityTests {
     }
   }
 
+  @Test("stock profile accepts a coherent unmodified Apple runtime")
+  func stockProfileAcceptsCoherentAppleRuntime() {
+    let components = [
+      ContainerSystemVersionComponent(
+        appName: "container",
+        buildType: "release",
+        commit: "5973b9c",
+        containerization: nil,
+        distribution: nil,
+        source: nil,
+        version: "1.1.0"
+      ),
+      ContainerSystemVersionComponent(
+        appName: "container-apiserver",
+        buildType: "release",
+        commit: "5973b9c",
+        containerization: nil,
+        distribution: nil,
+        source: nil,
+        version: "1.1.0"
+      ),
+    ]
+
+    #expect(
+      ContainerPackageCompatibility.compatibilityFailure(
+        components: components,
+        lane: "main",
+        runtimeProfile: .stock,
+        expectedContainerRef: "enhanced-build-pin",
+        expectedContainerizationRef: "enhanced-build-pin"
+      ) == nil)
+  }
+
+  @Test("stock profile rejects custom and incoherent runtime components")
+  func stockProfileRejectsCustomAndIncoherentRuntimeComponents() throws {
+    let components = [
+      ContainerSystemVersionComponent(
+        appName: "container",
+        buildType: "release",
+        commit: "custom-cli",
+        containerization: "stephenlclarke/containerization@main",
+        distribution: "custom",
+        source: "stephenlclarke/container",
+        version: "homebrew-main"
+      ),
+      ContainerSystemVersionComponent(
+        appName: "container-apiserver",
+        buildType: "release",
+        commit: "stock-service",
+        containerization: nil,
+        distribution: nil,
+        source: nil,
+        version: "1.1.0"
+      ),
+    ]
+
+    let message = try #require(
+      ContainerPackageCompatibility.compatibilityFailure(
+        components: components,
+        lane: "main",
+        runtimeProfile: .stock
+      ))
+    #expect(message.contains("asked to use stock Apple container"))
+    #expect(message.contains("distribution: custom"))
+    #expect(message.contains("CLI commit custom-cli"))
+  }
+
   @Test("missing, duplicate, and wrong-schema capabilities are reported exactly")
   func malformedRuntimeCapabilityManifestReportsExactFailures() throws {
     let capabilities = ComposeRuntimeCapabilityManifest.required.identifiers
@@ -213,6 +289,7 @@ struct ContainerPackageCompatibilityTests {
     let failure = try await ContainerPackageCompatibility.compatibilityFailure(
       arguments: ["up"],
       lane: "main",
+      runtimeProfile: .enhanced,
       expectedContainerRef: "matched-container",
       expectedContainerizationRef: "matched-containerization",
       onCompatibleRuntime: { selection.replace(with: $0) },
@@ -236,6 +313,7 @@ struct ContainerPackageCompatibilityTests {
     let failure = try await ContainerPackageCompatibility.compatibilityFailure(
       arguments: ["up"],
       lane: "main",
+      runtimeProfile: .enhanced,
       onCompatibleRuntime: { selection.replace(with: $0) },
       run: { arguments in
         if arguments == ["system", "version", "--format", "json"] {
@@ -368,6 +446,7 @@ struct ContainerPackageCompatibilityTests {
       try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
+        runtimeProfile: .enhanced,
         run: { _ in
           throw ContainerPackageCompatibilityError.commandFailed("container: command not found")
         }
@@ -391,6 +470,7 @@ struct ContainerSystemServiceReadinessTests {
       try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
+        runtimeProfile: .enhanced,
         run: { arguments in
           calls.append(arguments)
           return Data(appleSystemVersionJSON.utf8)
@@ -410,6 +490,7 @@ struct ContainerSystemServiceReadinessTests {
       try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
+        runtimeProfile: .enhanced,
         expectedContainerRef: "matched-container",
         expectedContainerizationRef: "matched-containerization",
         run: { arguments in
@@ -443,6 +524,7 @@ struct ContainerSystemServiceReadinessTests {
     let message = try await ContainerPackageCompatibility.compatibilityFailure(
       arguments: ["up"],
       lane: "main",
+      runtimeProfile: .enhanced,
       expectedContainerRef: "matched-container",
       expectedContainerizationRef: "matched-containerization",
       run: { arguments in
@@ -464,6 +546,7 @@ struct ContainerSystemServiceReadinessTests {
       try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
+        runtimeProfile: .enhanced,
         run: { _ in
           throw CancellationError()
         }
@@ -477,6 +560,7 @@ struct ContainerSystemServiceReadinessTests {
       try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
+        runtimeProfile: .enhanced,
         expectedContainerRef: "matched-container",
         expectedContainerizationRef: "matched-containerization",
         run: { arguments in

@@ -99,6 +99,51 @@ class BuildInfoWriterTests(unittest.TestCase):
                 spec.loader.exec_module(module)
                 module.load_runtime_capability_manifest(manifest)
 
+    def test_stock_profile_declares_no_enhanced_runtime_capabilities(self) -> None:
+        """A stock Apple build must not advertise fork-only runtime APIs."""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "build-info.json"
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).with_name("write-build-info.py")),
+                    "--output",
+                    str(output),
+                    "--version",
+                    "0.1.0",
+                    "--source",
+                    "stephenlclarke/container-compose",
+                    "--branch",
+                    "main",
+                    "--lane",
+                    "release",
+                    "--commit",
+                    "abc123",
+                    "--build-type",
+                    "release",
+                    "--container-source",
+                    "apple/container",
+                    "--container-ref",
+                    "1.4.1",
+                    "--containerization-source",
+                    "apple/containerization",
+                    "--containerization-ref",
+                    "0.45.0",
+                    "--compose-go-version",
+                    "v2.12.1",
+                    "--runtime-profile",
+                    "stock",
+                ],
+                check=True,
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(payload["containerSource"], "apple/container")
+            self.assertEqual(payload["containerizationSource"], "apple/containerization")
+            self.assertEqual(payload["runtimeCapabilitySchemaVersion"], 1)
+            self.assertEqual(payload["runtimeCapabilities"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
