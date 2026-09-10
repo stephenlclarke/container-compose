@@ -28,6 +28,7 @@ import re
 import stat
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -110,18 +111,32 @@ def retain(root: Path, version: str, candidates: list[Path]) -> None:
                     f"release asset must be an absolute regular file: {candidate}"
                 )
             STACK_ARTIFACT.validate_name(name)
-            digest = sha256(candidate)
             existing = assets.get(name)
             if existing is not None:
-                if not isinstance(existing, dict) or existing.get("sha256") != digest:
+                if not isinstance(existing, dict):
                     raise RetentionError(
                         f"retained stable asset conflicts for {version}: {name}"
                     )
-                retained_path(root, version, name)
-                continue
+                expected_digest = existing.get("sha256")
+                candidate_digest = sha256(candidate)
+                if expected_digest != candidate_digest:
+                    raise RetentionError(
+                        f"retained stable asset conflicts for {version}: {name}"
+                    )
+                try:
+                    retained_path(root, version, name)
+                except (RetentionError, OSError):
+                    quarantine_invalid_object(root, version, name, existing)
+                else:
+                    continue
             retained = STACK_ARTIFACT.promote(
                 candidate, root / "release/artifacts", name
             )
+            digest = sha256(retained)
+            if existing is not None and digest != existing.get("sha256"):
+                raise RetentionError(
+                    f"retained stable asset changed while repairing {version}: {name}"
+                )
             record = {
                 "mode": stat.S_IMODE(retained.stat(follow_symlinks=False).st_mode),
                 "path": str(retained),
@@ -130,6 +145,28 @@ def retain(root: Path, version: str, candidates: list[Path]) -> None:
             }
             assets[name] = record
         write_manifest(path, manifest)
+
+
+def quarantine_invalid_object(
+    root: Path, version: str, name: str, record: dict[str, Any]
+) -> None:
+    """Move an invalid recorded object aside before exact-byte repair."""
+    value = record.get("path")
+    if not isinstance(value, str):
+        return
+    path = Path(value)
+    artifact_root = (root / "release/artifacts").resolve(strict=True)
+    if not path.is_absolute() or artifact_root not in path.resolve(strict=False).parents:
+        raise RetentionError(f"retained stable asset path is unsafe: {version}/{name}")
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    quarantine = root / "release/quarantine" / version
+    quarantine.mkdir(parents=True, mode=0o700, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    destination = quarantine / f"{timestamp}-{name}"
+    os.replace(path, destination)
 
 
 def retained_path(root: Path, version: str, name: str) -> Path:

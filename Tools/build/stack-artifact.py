@@ -80,39 +80,65 @@ def validate_name(name: str) -> None:
         raise ArtifactError(f"artifact name must be one safe path component: {name!r}")
 
 
+def reject_symlink_components(path: Path) -> None:
+    """Reject every existing symbolic-link component in an absolute path."""
+    current = Path(path.anchor)
+    for component in path.parts[1:]:
+        current /= component
+        try:
+            status = current.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(status.st_mode):
+            raise ArtifactError(f"artifact path contains a symbolic link: {current}")
+
+
 def resolve_root(root: Path) -> Path:
     if not root.is_absolute():
         raise ArtifactError(f"retained artifact root must be absolute: {root}")
-    if root.is_symlink():
-        raise ArtifactError(f"retained artifact root must not be a symbolic link: {root}")
+    normalized = Path(os.path.abspath(root))
+    reject_symlink_components(normalized)
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    reject_symlink_components(normalized)
     resolved = root.resolve(strict=True)
-    if resolved == Path("/"):
+    if resolved == Path("/") or resolved != normalized:
         raise ArtifactError("retained artifact root must not be /")
     return resolved
 
 
 def promote(source: Path, root: Path, name: str) -> Path:
     validate_name(name)
-    if not source.is_absolute() or source.is_symlink():
+    if not source.is_absolute():
         raise ArtifactError(f"source artifact must be an absolute regular file: {source}")
-    resolved_source = source.resolve(strict=True)
-    source_status = resolved_source.stat(follow_symlinks=False)
+    source_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        source_descriptor = os.open(source, source_flags)
+    except OSError as error:
+        raise ArtifactError(
+            f"source artifact must be an absolute regular file: {source}"
+        ) from error
+    source_status = os.fstat(source_descriptor)
     if not stat.S_ISREG(source_status.st_mode):
+        os.close(source_descriptor)
         raise ArtifactError(f"source artifact is not a regular file: {source}")
 
     resolved_root = resolve_root(root)
     incoming = resolved_root / "incoming"
     objects = resolved_root / "objects" / "sha256"
+    reject_symlink_components(incoming)
+    reject_symlink_components(objects)
     incoming.mkdir(mode=0o700, exist_ok=True)
     objects.mkdir(mode=0o700, parents=True, exist_ok=True)
+    reject_symlink_components(incoming)
+    reject_symlink_components(objects)
     descriptor, temporary_name = tempfile.mkstemp(prefix=".promote-", dir=incoming)
     temporary = Path(temporary_name)
     try:
         with (
-            resolved_source.open("rb") as source_stream,
+            os.fdopen(source_descriptor, "rb") as source_stream,
             os.fdopen(descriptor, "wb") as destination_stream,
         ):
+            source_descriptor = -1
             descriptor = -1
             digest = copy_and_digest(source_stream, destination_stream)
             destination_stream.flush()
@@ -121,6 +147,7 @@ def promote(source: Path, root: Path, name: str) -> Path:
         temporary.chmod(retained_mode)
         destination_directory = objects / digest[:2] / digest
         destination_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        reject_symlink_components(destination_directory)
         destination = destination_directory / name
         if destination.exists():
             if destination.is_symlink() or digest_file(destination) != digest:
@@ -152,6 +179,8 @@ def promote(source: Path, root: Path, name: str) -> Path:
                     os.close(directory)
         return destination
     finally:
+        if source_descriptor >= 0:
+            os.close(source_descriptor)
         if descriptor >= 0:
             os.close(descriptor)
         temporary.unlink(missing_ok=True)

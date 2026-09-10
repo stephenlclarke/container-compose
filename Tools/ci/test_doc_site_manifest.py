@@ -86,6 +86,18 @@ class DocSiteManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.ManifestError, "unsafe"):
             MODULE.verify_archive(archive)
 
+    def test_semantic_context_rejects_wrong_site_or_source(self) -> None:
+        context = {
+            "site": "compose",
+            "source_ref": "a" * 40,
+            "toolchain_digest": "b" * 64,
+            "hosting_base_path": "container-compose",
+        }
+        MODULE.create(self.root, context)
+        MODULE.verify(self.root, context)
+        with self.assertRaisesRegex(MODULE.ManifestError, "context changed"):
+            MODULE.verify(self.root, {**context, "source_ref": "c" * 40})
+
 
 if __name__ == "__main__":
     unittest.main()

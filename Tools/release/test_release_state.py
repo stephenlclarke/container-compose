@@ -124,6 +124,48 @@ class ReleaseStateTests(unittest.TestCase):
         self.assertEqual(observed[0]["observed"]["state"], "completed")
         self.assertNotIn("observed", record)
 
+    def test_malformed_remote_assets_are_reported_unavailable(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(
+                {"assets": None, "draft": False, "prerelease": False}
+            ),
+            stderr="",
+        )
+        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+            remote = MODULE.remote_release("owner/repo", "1.2.3", False)
+
+        self.assertEqual(remote["state"], "unavailable")
+        self.assertIn("malformed", remote["reason"])
+
+    def test_complete_local_store_plans_missing_remote_assets_before_postconditions(
+        self,
+    ) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch.object(
+                MODULE,
+                "retained_assets",
+                return_value=(list(MODULE.EXPECTED_ASSETS), []),
+            ),
+            mock.patch.object(MODULE, "dispatch_records", return_value=[]),
+            mock.patch.object(
+                MODULE,
+                "remote_release",
+                return_value={
+                    "assets": [],
+                    "missing_assets": list(MODULE.EXPECTED_ASSETS),
+                    "state": "published",
+                },
+            ),
+        ):
+            state = MODULE.inspect(
+                Path(directory) / "retained", "1.2.3", "owner/repo", False
+            )
+
+        self.assertIn("incomplete remote release", state["next_action"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -66,7 +67,7 @@ def record_path(root: Path, request_id: str) -> Path:
 
 
 def validate_record(value: object, request_id: str) -> dict[str, object]:
-    if not isinstance(value, dict) or value.get("schema") != 1:
+    if not isinstance(value, dict) or value.get("schema") not in {1, 2}:
         raise JournalError("dispatch journal has an unsupported schema")
     if value.get("request_id") != request_id:
         raise JournalError("dispatch journal request ID does not match its path")
@@ -77,46 +78,114 @@ def validate_record(value: object, request_id: str) -> dict[str, object]:
     workflow = value.get("workflow")
     if not isinstance(workflow, str) or not workflow or len(workflow) > 200:
         raise JournalError("dispatch journal has an invalid workflow")
+    mode = value.get("mode", "")
+    if not isinstance(mode, str) or len(mode) > 100:
+        raise JournalError("dispatch journal has an invalid mode")
     if value.get("state") not in {
         "dispatch-intent",
         "dispatch-unknown",
         "dispatched",
+        "failed",
     }:
         raise JournalError("dispatch journal has an invalid state")
     return value
 
 
+def matching_records(
+    root: Path, workflow: str, version: str, control_sha: str, mode: str
+) -> list[dict[str, object]]:
+    directory = root / "release/dispatches"
+    matches: list[dict[str, object]] = []
+    if directory.exists():
+        if directory.is_symlink() or not directory.is_dir():
+            raise JournalError(f"unsafe dispatch journal directory: {directory}")
+        for candidate in directory.glob("*.json"):
+            record = validate_record(
+                json.loads(candidate.read_text(encoding="utf-8")), candidate.stem
+            )
+            if (
+                record.get("workflow") == workflow
+                and record.get("version") == version
+                and record.get("control_sha") == control_sha
+                and record.get("mode", "") == mode
+            ):
+                matches.append(record)
+    matches.sort(key=lambda value: str(value.get("created_at", "")), reverse=True)
+    return matches
+
+
+def intent_value(options: argparse.Namespace) -> dict[str, object]:
+    if (
+        not options.workflow
+        or len(options.workflow) > 200
+        or VERSION_PATTERN.fullmatch(options.version or "") is None
+        or not re.fullmatch(r"[0-9a-f]{40}", options.control_sha or "")
+    ):
+        raise JournalError("dispatch intent is missing workflow/version/control")
+    return {
+        "control_sha": options.control_sha,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "request_id": options.request_id,
+        "mode": options.mode,
+        "schema": 2,
+        "state": "dispatch-intent",
+        "version": options.version,
+        "workflow": options.workflow,
+    }
+
+
 def main(arguments: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("intent", "unknown", "ack"))
+    parser.add_argument("action", choices=("intent", "unknown", "ack", "fail", "find", "claim"))
     parser.add_argument("--root", type=Path, required=True)
-    parser.add_argument("--request-id", required=True)
+    parser.add_argument("--request-id")
     parser.add_argument("--workflow")
     parser.add_argument("--version")
     parser.add_argument("--control-sha")
     parser.add_argument("--run-id")
+    parser.add_argument("--mode", default="")
     options = parser.parse_args(arguments)
     try:
+        if options.action in {"find", "claim"}:
+            if (
+                not options.workflow
+                or VERSION_PATTERN.fullmatch(options.version or "") is None
+                or not re.fullmatch(r"[0-9a-f]{40}", options.control_sha or "")
+            ):
+                raise JournalError("dispatch lookup is missing workflow/version/control")
+            if options.action == "find":
+                matches = matching_records(
+                    options.root, options.workflow, options.version,
+                    options.control_sha, options.mode,
+                )
+                print(json.dumps(matches[0] if matches else {}, sort_keys=True))
+                return 0
+            if not options.request_id:
+                raise JournalError("claim requires --request-id")
+            path = record_path(options.root, options.request_id)
+            path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+            lock_path = path.parent / ".logical-operation.lock"
+            with lock_path.open("a+b") as lock_stream:
+                fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
+                matches = matching_records(
+                    options.root, options.workflow, options.version,
+                    options.control_sha, options.mode,
+                )
+                active = [record for record in matches if record.get("state") != "failed"]
+                value = active[0] if active else intent_value(options)
+                if not active:
+                    if matches:
+                        value["previous_request_id"] = matches[0]["request_id"]
+                    write(path, value)
+                print(json.dumps(value, sort_keys=True))
+            return 0
+        if not options.request_id:
+            raise JournalError(f"{options.action} requires --request-id")
         path = record_path(options.root, options.request_id)
         if options.action == "intent":
             if path.exists():
                 raise JournalError(f"dispatch request already exists: {options.request_id}")
-            if (
-                not options.workflow
-                or len(options.workflow) > 200
-                or VERSION_PATTERN.fullmatch(options.version or "") is None
-                or not re.fullmatch(r"[0-9a-f]{40}", options.control_sha or "")
-            ):
-                raise JournalError("dispatch intent is missing workflow/version/control")
-            value: dict[str, object] = {
-                "control_sha": options.control_sha,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "request_id": options.request_id,
-                "schema": 1,
-                "state": "dispatch-intent",
-                "version": options.version,
-                "workflow": options.workflow,
-            }
+            value = intent_value(options)
         elif options.action == "unknown":
             if not path.is_file() or path.is_symlink():
                 raise JournalError(f"dispatch intent is unavailable: {options.request_id}")
@@ -127,7 +196,7 @@ def main(arguments: list[str] | None = None) -> int:
                 raise JournalError("dispatch journal is not awaiting a response")
             value["unknown_at"] = datetime.now(timezone.utc).isoformat()
             value["state"] = "dispatch-unknown"
-        else:
+        elif options.action == "ack":
             if not path.is_file() or path.is_symlink():
                 raise JournalError(f"dispatch intent is unavailable: {options.request_id}")
             value = validate_record(
@@ -143,6 +212,16 @@ def main(arguments: list[str] | None = None) -> int:
             value["acknowledged_at"] = datetime.now(timezone.utc).isoformat()
             value["run_id"] = options.run_id
             value["state"] = "dispatched"
+        else:
+            if not path.is_file() or path.is_symlink():
+                raise JournalError(f"dispatch record is unavailable: {options.request_id}")
+            value = validate_record(
+                json.loads(path.read_text(encoding="utf-8")), options.request_id
+            )
+            if value.get("state") != "dispatched":
+                raise JournalError("only an acknowledged dispatch can fail")
+            value["failed_at"] = datetime.now(timezone.utc).isoformat()
+            value["state"] = "failed"
         write(path, value)
     except (JournalError, OSError, UnicodeError, json.JSONDecodeError) as error:
         print(f"release-dispatch-journal: {error}", file=sys.stderr)

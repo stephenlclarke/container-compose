@@ -40,7 +40,7 @@ SPEC.loader.exec_module(STACK_PIN)
 class StackPinTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary_directory.name)
+        self.root = Path(self.temporary_directory.name).resolve()
         self.repository = self.create_repository("containerization")
         self.artifact = self.root / "artifacts/cctl"
         self.artifact.parent.mkdir()
@@ -196,6 +196,138 @@ class StackPinTests(unittest.TestCase):
             ),
             0,
         )
+
+    def test_dependent_pin_accepts_relocated_parent_and_retained_dependency(self) -> None:
+        self.assertEqual(self.create_pin(), 0)
+        downstream = self.create_repository("container")
+        downstream_artifact = self.root / "artifacts/container"
+        downstream_artifact.write_text("container\n", encoding="utf-8")
+        downstream_receipt = self.root / "pins/container.json"
+        self.assertEqual(
+            self.create_pin(
+                repository=downstream,
+                receipt=downstream_receipt,
+                artifact=downstream_artifact,
+                dependencies=[self.receipt],
+            ),
+            0,
+        )
+        moved = self.root / "relocated/container"
+        moved.parent.mkdir()
+        downstream.rename(moved)
+        shutil.rmtree(self.repository)
+
+        self.assertEqual(
+            self.invoke(
+                [
+                    "verify",
+                    "--receipt",
+                    str(downstream_receipt),
+                    "--repository-path",
+                    str(moved),
+                    "--quiet",
+                ]
+            ),
+            0,
+        )
+
+    def test_retained_only_verification_does_not_require_source_checkout(self) -> None:
+        self.assertEqual(self.create_pin(), 0)
+        shutil.rmtree(self.repository)
+        self.assertEqual(
+            self.invoke(
+                [
+                    "verify",
+                    "--receipt",
+                    str(self.receipt),
+                    "--retained-only",
+                    "--quiet",
+                ]
+            ),
+            0,
+        )
+
+    def test_materialize_restores_logical_product_layout_without_source(self) -> None:
+        self.assertEqual(self.create_pin(), 0)
+        shutil.rmtree(self.repository)
+        output = self.root / "materialized"
+
+        self.assertEqual(
+            self.invoke(
+                [
+                    "materialize",
+                    "--receipt",
+                    str(self.receipt),
+                    "--output",
+                    str(output),
+                ]
+            ),
+            0,
+        )
+        self.assertEqual((output / "cctl").read_bytes(), self.artifact.read_bytes())
+
+    def test_index_recovers_an_earlier_exact_input_after_latest_pin_changes(self) -> None:
+        index = self.root / "pin-index"
+        first_commit = self.git(self.repository, "rev-parse", "HEAD")
+        first_tree = self.git(self.repository, "rev-parse", "HEAD^{tree}")
+        first_arguments = [
+            "create",
+            "--repository",
+            self.repository.name,
+            "--repository-path",
+            str(self.repository),
+            "--output",
+            str(self.receipt),
+            "--artifact",
+            str(self.artifact),
+            "--command-label",
+            "fixture",
+            "--build-contract",
+            "a" * 64,
+            "--duration-seconds",
+            "0",
+            "--expected-commit",
+            first_commit,
+            "--expected-tree",
+            first_tree,
+            "--index-root",
+            str(index),
+        ]
+        self.assertEqual(self.invoke(first_arguments), 0)
+        first_receipt = self.receipt.read_bytes()
+        (self.repository / "source.txt").write_text("second\n", encoding="utf-8")
+        self.git(self.repository, "add", "source.txt")
+        self.git(self.repository, "commit", "-qm", "test: second input")
+        second_arguments = first_arguments.copy()
+        second_arguments[second_arguments.index(first_commit)] = self.git(
+            self.repository, "rev-parse", "HEAD"
+        )
+        second_arguments[second_arguments.index(first_tree)] = self.git(
+            self.repository, "rev-parse", "HEAD^{tree}"
+        )
+        self.assertEqual(self.invoke(second_arguments), 0)
+        self.assertNotEqual(self.receipt.read_bytes(), first_receipt)
+        self.git(self.repository, "checkout", "-q", first_commit)
+
+        self.assertEqual(
+            self.invoke(
+                [
+                    "lookup",
+                    "--repository",
+                    self.repository.name,
+                    "--repository-path",
+                    str(self.repository),
+                    "--build-contract",
+                    "a" * 64,
+                    "--index-root",
+                    str(index),
+                    "--output",
+                    str(self.receipt),
+                ]
+            ),
+            0,
+        )
+        self.assertEqual(self.receipt.read_bytes(), first_receipt)
 
     def test_source_change_during_build_refuses_to_publish_pin(self) -> None:
         arguments = [

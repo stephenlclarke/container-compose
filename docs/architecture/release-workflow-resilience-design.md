@@ -1079,6 +1079,8 @@ Decisions to confirm during implementation, not silently assume:
 
 ## Implementation status
 
+Follow-up review, 2026-09-10: the status below records the original implementation assessment, not a verified completion claim. The [follow-up review and design](release-workflow-resilience-followup-design-2026-09-10.md) reproduces remaining cleanup, relocation, retention, checkpoint, and dispatch defects and specifies their fixes. Its findings supersede the stronger recovery and storage-safety assertions below until the documented acceptance tests pass.
+
 The resilience implementation now establishes the required lifetime boundary:
 native scratch and release transactions use `/Volumes/SSD`, while completed
 binaries, pins, timing records, release assets, signed authority bundles, DocC

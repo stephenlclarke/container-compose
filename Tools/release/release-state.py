@@ -74,7 +74,7 @@ def dispatch_records(root: Path, version: str) -> list[dict[str, Any]]:
             raise StateError(f"invalid dispatch journal record: {path}") from error
         if (
             not isinstance(value, dict)
-            or value.get("schema") != 1
+            or value.get("schema") not in {1, 2}
             or value.get("request_id") != path.stem
             or REQUEST_ID.fullmatch(path.stem) is None
             or SEMVER.fullmatch(str(value.get("version", ""))) is None
@@ -83,9 +83,9 @@ def dispatch_records(root: Path, version: str) -> list[dict[str, Any]]:
             or not isinstance(value.get("workflow"), str)
             or not value["workflow"]
             or value.get("state")
-            not in {"dispatch-intent", "dispatch-unknown", "dispatched"}
+            not in {"dispatch-intent", "dispatch-unknown", "dispatched", "failed"}
             or (
-                value.get("state") == "dispatched"
+                value.get("state") in {"dispatched", "failed"}
                 and re.fullmatch(r"[0-9]+", str(value.get("run_id", ""))) is None
             )
         ):
@@ -95,12 +95,31 @@ def dispatch_records(root: Path, version: str) -> list[dict[str, Any]]:
     return records
 
 
-def retained_assets(root: Path, version: str) -> tuple[list[str], list[str]]:
+def retained_assets(
+    root: Path, version: str, deep: bool = False
+) -> tuple[list[str], list[str]]:
     present: list[str] = []
     missing: list[str] = []
+    try:
+        manifest = LOCAL_STORE.read_manifest(LOCAL_STORE.manifest_path(root, version))
+    except (LOCAL_STORE.RetentionError, OSError, json.JSONDecodeError):
+        return present, list(EXPECTED_ASSETS)
     for name in EXPECTED_ASSETS:
         try:
-            LOCAL_STORE.retained_path(root, version, name)
+            record = manifest["assets"].get(name)
+            if not isinstance(record, dict) or not isinstance(record.get("path"), str):
+                raise LOCAL_STORE.RetentionError("missing asset record")
+            path = Path(record["path"])
+            artifact_root = (root / "release/artifacts").resolve(strict=True)
+            if (
+                not path.is_absolute()
+                or artifact_root not in path.resolve(strict=False).parents
+                or path.is_symlink()
+                or not path.is_file()
+                or path.stat().st_size != record.get("size")
+                or (deep and LOCAL_STORE.sha256(path) != record.get("sha256"))
+            ):
+                raise LOCAL_STORE.RetentionError("invalid asset record")
         except (LOCAL_STORE.RetentionError, OSError, json.JSONDecodeError):
             missing.append(name)
         else:
@@ -118,7 +137,10 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=30,
         )
+    except subprocess.TimeoutExpired:
+        return {"reason": "GitHub release query timed out", "state": "unavailable"}
     except (FileNotFoundError, PermissionError, OSError):
         return {"reason": "GitHub CLI is unavailable", "state": "unavailable"}
     if completed.returncode != 0:
@@ -135,13 +157,22 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
     if not isinstance(release, dict):
         return {"reason": "GitHub returned a non-object", "state": "unavailable"}
     assets = release.get("assets", [])
+    if not isinstance(assets, list):
+        return {"reason": "GitHub returned malformed release assets", "state": "unavailable"}
     names = sorted(
         asset["name"]
         for asset in assets
         if isinstance(asset, dict) and isinstance(asset.get("name"), str)
     )
-    return {
+    result = {
         "assets": names,
+        "asset_digests": {
+            asset["name"]: asset.get("digest")
+            for asset in assets
+            if isinstance(asset, dict)
+            and isinstance(asset.get("name"), str)
+            and isinstance(asset.get("digest"), str)
+        },
         "draft": release.get("draft"),
         "id": release.get("id"),
         "prerelease": release.get("prerelease"),
@@ -149,6 +180,8 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
         if release.get("draft") is False and release.get("prerelease") is False
         else "invalid",
     }
+    result["missing_assets"] = sorted(set(EXPECTED_ASSETS) - set(names))
+    return result
 
 
 def observe_dispatches(
@@ -179,7 +212,15 @@ def observe_dispatches(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                timeout=30,
             )
+        except subprocess.TimeoutExpired:
+            record["observed"] = {
+                "reason": "GitHub run query timed out",
+                "state": "unavailable",
+            }
+            observed.append(record)
+            continue
         except (FileNotFoundError, PermissionError, OSError):
             record["observed"] = {
                 "reason": "GitHub CLI is unavailable",
@@ -212,14 +253,76 @@ def observe_dispatches(
     return observed
 
 
-def inspect(root: Path, version: str, repo: str, offline: bool) -> dict[str, Any]:
+def remote_postconditions(repo: str, offline: bool) -> dict[str, Any]:
+    if offline:
+        return {"formulae": {"state": "not-inspected"}, "pages": {"state": "not-inspected"}}
+    observations: dict[str, Any] = {}
+    formulae: dict[str, Any] = {"members": {}}
+    for name in ("container.rb", "container-compose.rb"):
+        try:
+            result = subprocess.run(
+                ["gh", "api", f"repos/stephenlclarke/homebrew-tap/contents/Formula/{name}"],
+                check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, timeout=30,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, OSError):
+            formulae = {"reason": "Homebrew formula observation unavailable", "state": "unavailable"}
+            break
+        if result.returncode != 0:
+            formulae = {
+                "reason": f"Homebrew formula query failed with exit {result.returncode}",
+                "state": "absent" if "HTTP 404" in result.stderr else "unavailable",
+            }
+            break
+        try:
+            value = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            value = None
+        if not isinstance(value, dict) or not isinstance(value.get("sha"), str):
+            formulae = {"reason": "GitHub returned malformed formula metadata", "state": "unavailable"}
+            break
+        formulae["members"][name] = value["sha"]
+    else:
+        formulae["state"] = "observed"
+    observations["formulae"] = formulae
+    try:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/pages"], check=False,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, OSError):
+        observations["pages"] = {"reason": "Pages observation unavailable", "state": "unavailable"}
+    else:
+        try:
+            value = json.loads(result.stdout) if result.returncode == 0 else None
+        except json.JSONDecodeError:
+            value = None
+        if not isinstance(value, dict):
+            observations["pages"] = {
+                "reason": f"Pages query failed with exit {result.returncode}",
+                "state": "absent" if "HTTP 404" in result.stderr else "unavailable",
+            }
+        else:
+            observations["pages"] = {
+                "build_type": value.get("build_type"),
+                "html_url": value.get("html_url"),
+                "state": "observed",
+                "status": value.get("status"),
+            }
+    return observations
+
+
+def inspect(
+    root: Path, version: str, repo: str, offline: bool, deep: bool = False
+) -> dict[str, Any]:
     if not root.is_absolute() or root == Path("/") or root.is_symlink():
         raise StateError(f"unsafe retained release root: {root}")
     if not SEMVER.fullmatch(version):
         raise StateError(f"invalid stable release version: {version}")
-    present, missing = retained_assets(root, version)
+    present, missing = retained_assets(root, version, deep)
     records = observe_dispatches(dispatch_records(root, version), repo, offline)
     remote = remote_release(repo, version, offline)
+    postconditions = remote_postconditions(repo, offline)
     waiting = [
         record
         for record in records
@@ -232,22 +335,60 @@ def inspect(root: Path, version: str, repo: str, offline: bool) -> dict[str, Any
             )
         )
     ]
+    failed = [
+        record
+        for record in records
+        if record.get("state") == "failed"
+        or (
+            record.get("state") == "dispatched"
+            and isinstance(record.get("observed"), dict)
+            and record["observed"].get("state") == "completed"
+            and record["observed"].get("conclusion") != "success"
+        )
+    ]
     if any(record.get("state") == "dispatch-unknown" for record in waiting):
         next_action = "reconcile the unknown request ID; do not redispatch"
     elif waiting:
         next_action = "inspect the acknowledged workflow run before resuming"
+    elif failed:
+        next_action = "record the failed operation and explicitly authorize a new attempt"
+    elif remote.get("state") == "unavailable":
+        next_action = "restore remote observation before planning a mutation"
+    elif remote.get("state") == "invalid":
+        next_action = "resolve the conflicting remote release state"
+    elif (
+        not missing
+        and remote.get("state") == "published"
+        and remote.get("missing_assets")
+    ):
+        next_action = "reconcile the incomplete remote release from exact retained bytes"
     elif missing and remote.get("state") == "published":
         next_action = "import and verify exact published bytes; do not rebuild"
+    elif missing and remote.get("state") == "absent":
+        next_action = "produce or restore the missing retained release closure before publication"
     elif missing:
         next_action = "restore exact authenticated bytes or report the release blocked"
+    elif remote.get("state") == "absent":
+        next_action = "publish the verified retained release closure"
+    elif any(
+        value.get("state") == "unavailable" for value in postconditions.values()
+    ):
+        next_action = "restore formula and Pages observation before declaring recovery complete"
+    elif postconditions["formulae"].get("state") != "observed":
+        next_action = "restore or reconcile the paired Homebrew formulae; no build is required"
+    elif postconditions["pages"].get("state") != "observed":
+        next_action = "restore or reconcile Pages deployment; no build is required"
     else:
-        next_action = "verify remote formula and Pages postconditions; no build is required"
+        next_action = "verify candidate-bound formula and Pages identities; no build is required"
     return {
         "dispatches": records,
+        "failed": failed,
         "next_action": next_action,
         "remote_release": remote,
+        "remote_postconditions": postconditions,
         "retained": {"missing": missing, "verified": present},
         "root": str(root),
+        "verification": "deep" if deep else "shallow",
         "schema": 1,
         "version": version,
         "waiting": waiting,
@@ -285,9 +426,15 @@ def main(arguments: list[str] | None = None) -> int:
     parser.add_argument("--repo", default="stephenlclarke/container-compose")
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument("--offline", action="store_true")
+    parser.add_argument(
+        "--deep", action="store_true",
+        help="rehash every retained payload instead of using manifest metadata",
+    )
     options = parser.parse_args(arguments)
     try:
-        state = inspect(options.root, options.version, options.repo, options.offline)
+        state = inspect(
+            options.root, options.version, options.repo, options.offline, options.deep
+        )
     except (StateError, OSError, UnicodeError) as error:
         print(f"release-state: {error}", file=sys.stderr)
         return 2

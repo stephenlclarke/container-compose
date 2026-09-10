@@ -37,7 +37,7 @@ class StackArtifactTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.source = self.root / "external/build/compose"
         self.source.parent.mkdir(parents=True)
         self.source.write_bytes(b"binary\n")
@@ -72,6 +72,16 @@ class StackArtifactTests(unittest.TestCase):
         os.chmod(destination, 0o755)
         with self.assertRaisesRegex(STACK_ARTIFACT.ArtifactError, "mode conflicts"):
             STACK_ARTIFACT.promote(self.source, self.retained, "compose")
+
+    def test_rejects_symlinked_object_store_ancestor(self) -> None:
+        outside = self.root / "outside"
+        outside.mkdir()
+        self.retained.mkdir(parents=True)
+        (self.retained / "objects").symlink_to(outside, target_is_directory=True)
+
+        with self.assertRaisesRegex(STACK_ARTIFACT.ArtifactError, "symbolic link"):
+            STACK_ARTIFACT.promote(self.source, self.retained, "compose")
+        self.assertEqual(list(outside.iterdir()), [])
 
     def test_concurrent_identical_promotion_cannot_replace_retained_bytes(self) -> None:
         original_link = STACK_ARTIFACT.os.link

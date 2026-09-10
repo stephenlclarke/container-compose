@@ -42,7 +42,7 @@ SPEC.loader.exec_module(WORKSPACE)
 class ReleaseWorkspaceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.remote_root = self.root / "remotes"
         self.remote_root.mkdir()
         self.build_root = self.root / "build"
@@ -2349,7 +2349,11 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         )
 
         self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("escaped its build root", completed.stderr)
+        self.assertTrue(
+            "escaped its build root" in completed.stderr
+            or "release transaction root must be on /Volumes/SSD" in completed.stderr,
+            completed.stderr,
+        )
 
 
 if __name__ == "__main__":

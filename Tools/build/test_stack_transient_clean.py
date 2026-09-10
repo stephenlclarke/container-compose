@@ -18,11 +18,13 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import tempfile
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPT = Path(__file__).with_name("stack-transient-clean.py")
@@ -36,10 +38,11 @@ class StackTransientCleanTests(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name) / "transient"
+        temporary_root = Path(temporary.name).resolve()
+        self.root = temporary_root / "transient"
         self.root.mkdir()
         (self.root / MODULE.MARKER).write_text(MODULE.MARKER_VALUE, encoding="utf-8")
-        self.retained = Path(temporary.name) / "retained"
+        self.retained = temporary_root / "retained"
         self.retained.mkdir()
         (self.retained / "compose").write_text("keep", encoding="utf-8")
         (self.root / "scratch/nested").mkdir(parents=True)
@@ -75,6 +78,28 @@ class StackTransientCleanTests(unittest.TestCase):
         (self.root / MODULE.MARKER).write_text("wrong\n", encoding="utf-8")
         self.assertEqual(self.invoke("--execute"), 2)
         self.assertTrue((self.root / "scratch/nested/output").exists())
+
+    def test_directory_replaced_by_symlink_during_cleanup_cannot_escape(self) -> None:
+        outside = self.retained / "outside"
+        outside.mkdir()
+        sentinel = outside / "keep"
+        sentinel.write_text("keep", encoding="utf-8")
+        original_open = MODULE.os.open
+        replaced = False
+
+        def replace_before_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+            nonlocal replaced
+            if path == "scratch" and kwargs.get("dir_fd") is not None and not replaced:
+                replaced = True
+                (self.root / "scratch").rename(self.root / "scratch-original")
+                (self.root / "scratch").symlink_to(outside, target_is_directory=True)
+            return original_open(path, flags, *args, **kwargs)
+
+        with mock.patch.object(MODULE.os, "open", side_effect=replace_before_open):
+            with self.assertRaises(OSError):
+                MODULE.remove_tree(self.root / "scratch")
+
+        self.assertTrue(sentinel.is_file())
 
 
 if __name__ == "__main__":

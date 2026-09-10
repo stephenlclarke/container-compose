@@ -118,6 +118,85 @@ class ReleaseDispatchJournalTests(unittest.TestCase):
         self.assertEqual(self.invoke("ack", "--run-id", "987"), 0)
         self.assertEqual(json.loads(path.read_text())["state"], "dispatched")
 
+    def test_find_returns_existing_logical_operation(self) -> None:
+        self.assertEqual(
+            self.invoke(
+                "intent",
+                "--workflow",
+                "docs.yml",
+                "--version",
+                "0.15.0",
+                "--control-sha",
+                "a" * 40,
+                "--mode",
+                "docs",
+            ),
+            0,
+        )
+        output = StringIO()
+        with redirect_stdout(output):
+            result = MODULE.main(
+                [
+                    "find",
+                    "--root",
+                    str(self.root),
+                    "--workflow",
+                    "docs.yml",
+                    "--version",
+                    "0.15.0",
+                    "--control-sha",
+                    "a" * 40,
+                    "--mode",
+                    "docs",
+                ]
+            )
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(output.getvalue())["request_id"], self.request)
+
+    def test_claim_reuses_one_logical_operation(self) -> None:
+        arguments = [
+            "claim", "--root", str(self.root), "--workflow", "docs.yml",
+            "--version", "0.15.0", "--control-sha", "a" * 40,
+            "--mode", "docs",
+        ]
+        first_output = StringIO()
+        with redirect_stdout(first_output):
+            self.assertEqual(
+                MODULE.main(arguments + ["--request-id", self.request]), 0
+            )
+        second_request = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        second_output = StringIO()
+        with redirect_stdout(second_output):
+            self.assertEqual(
+                MODULE.main(arguments + ["--request-id", second_request]), 0
+            )
+        self.assertEqual(
+            json.loads(second_output.getvalue())["request_id"], self.request
+        )
+        records = list((self.root / "release/dispatches").glob("*.json"))
+        self.assertEqual([record.name for record in records], [f"{self.request}.json"])
+
+    def test_failed_acknowledged_attempt_allows_linked_new_claim(self) -> None:
+        common = [
+            "--workflow", "docs.yml", "--version", "0.15.0",
+            "--control-sha", "a" * 40, "--mode", "docs",
+        ]
+        self.assertEqual(self.invoke("intent", *common), 0)
+        self.assertEqual(self.invoke("ack", "--run-id", "987"), 0)
+        self.assertEqual(self.invoke("fail"), 0)
+        replacement = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        output = StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(
+                MODULE.main(
+                    ["claim", "--root", str(self.root), "--request-id", replacement, *common]
+                ),
+                0,
+            )
+        record = json.loads(output.getvalue())
+        self.assertEqual(record["request_id"], replacement)
+        self.assertEqual(record["previous_request_id"], self.request)
+
 
 if __name__ == "__main__":
     unittest.main()

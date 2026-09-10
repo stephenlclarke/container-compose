@@ -77,7 +77,13 @@ release_state() {
   set -e
 
   if (( status == 0 )); then
-    printf 'exists\n'
+    if [[ -n "${output}" ]] && \
+      [[ "$(jq -r 'if .draft == true then "draft" else "published" end' \
+        <<<"${output}" 2>/dev/null || true)" == draft ]]; then
+      printf 'draft\n'
+    else
+      printf 'exists\n'
+    fi
     return 0
   fi
   if [[ "${output}" == *"HTTP 404"* ]]; then
@@ -99,6 +105,12 @@ fi
 
 case "${PUBLISH_REF_TYPE}:${RELEASE_MUTABLE}" in
   tag:false)
+    if [[ -z "${RELEASE_RETAINED_COMPLETE_MANIFEST:-}" || \
+      ! -f "${RELEASE_RETAINED_COMPLETE_MANIFEST}" || \
+      -L "${RELEASE_RETAINED_COMPLETE_MANIFEST}" ]]; then
+      printf 'stable publication requires a durable retained-complete manifest\n' >&2
+      exit 2
+    fi
     ;;
   branch:true)
     if [[ "${RELEASE_TAG}" != "current" ]]; then
@@ -196,6 +208,54 @@ create_release() {
   "${GH}" release create "${RELEASE_TAG}" "${create_args[@]}"
 }
 
+create_stable_draft() {
+  "${GH}" release create "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
+    --title "${RELEASE_TITLE}" --notes-file "${RELEASE_NOTES_FILE}" \
+    --verify-tag "${release_flags[@]}" --draft
+}
+
+reconcile_stable_draft() {
+  local temporary remote_names asset name downloaded
+  if [[ "$("${GIT}" rev-list -n 1 "refs/tags/${RELEASE_TAG}")" != "${PUBLISH_SHA}" ]]; then
+    printf 'stable draft tag no longer resolves to the requested candidate: %s\n' \
+      "${RELEASE_TAG}" >&2
+    return 1
+  fi
+  remote_names="$("${GH}" release view "${RELEASE_TAG}" \
+    --repo "${RELEASE_REPOSITORY}" --json assets --jq '.assets[].name')"
+  temporary="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/stable-draft-assets.XXXXXX")"
+  trap 'find "${temporary}" -depth -delete >/dev/null 2>&1 || true' RETURN
+  for asset in "${release_assets[@]}"; do
+    name="$(basename "${asset}")"
+    if grep -Fqx "${name}" <<<"${remote_names}"; then
+      "${GH}" release download "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
+        --pattern "${name}" --dir "${temporary}"
+      downloaded="${temporary}/${name}"
+      if [[ ! -f "${downloaded}" ]] || \
+        [[ "$(shasum -a 256 "${downloaded}" | awk '{print $1}')" != \
+          "$(shasum -a 256 "${asset}" | awk '{print $1}')" ]]; then
+        printf 'stable draft asset conflicts with retained candidate: %s\n' \
+          "${name}" >&2
+        return 1
+      fi
+    else
+      "${GH}" release upload "${RELEASE_TAG}" "${asset}" \
+        --repo "${RELEASE_REPOSITORY}"
+    fi
+  done
+  "${GH}" release edit "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
+    --draft=false "${release_flags[@]}"
+}
+
+if [[ "${published_release_state}" == "draft" ]]; then
+  if [[ "${RELEASE_MUTABLE}" == "true" ]]; then
+    printf 'mutable current release unexpectedly exists as a draft\n' >&2
+    exit 1
+  fi
+  reconcile_stable_draft
+  exit 0
+fi
+
 if [[ "${published_release_state}" == "exists" ]]; then
   if [[ "${RELEASE_MUTABLE}" != "true" ]]; then
     printf 'release %s already exists; published releases are immutable\n' \
@@ -229,7 +289,12 @@ if [[ "${PUBLISH_REF_TYPE}" == "branch" ]]; then
   move_current_tag
 fi
 
-create_release
+if [[ "${PUBLISH_REF_TYPE}" == "tag" ]]; then
+  create_stable_draft
+  reconcile_stable_draft
+else
+  create_release
+fi
 
 if [[ "${PUBLISH_REF_TYPE}" == "branch" && "${RELEASE_PHASE}" == "finalize" ]]; then
   "${GH}" release edit "${RELEASE_TAG}" \

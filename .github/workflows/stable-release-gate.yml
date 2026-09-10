@@ -15,7 +15,7 @@
 #===----------------------------------------------------------------------===#
 
 name: Stable Release Gate
-run-name: Stable Release Gate · ${{ inputs.ref }}
+run-name: Stable Release Gate · ${{ inputs.ref }} · ${{ inputs.request_id || 'manual' }}
 
 on:
   workflow_dispatch:

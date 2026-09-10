@@ -2428,7 +2428,7 @@ github_cli() {{
         self.assertNotIn("Attest release package", repair)
 
     def test_release_helper_tracks_the_stable_package_dispatch_by_tag(self) -> None:
-        self.assertIn('title="Prebuilt Binaries · ${version} · ${mode}"', self.script)
+        self.assertIn('title="Prebuilt Binaries · ${version} · ${mode} · "', self.script)
         self.assertIn("databaseId,displayTitle,headSha,status,conclusion", self.script)
         self.assertIn('"${version}" "${repair_tap}" "${control_sha}"', self.script)
 
@@ -2440,9 +2440,9 @@ github_cli() {{
         ]
 
         self.assertIn("run-name: Stable Release Gate · ${{ inputs.ref }}", workflow)
-        self.assertIn('title="Stable Release Gate · ${version}"', lookup)
+        self.assertIn('title="Stable Release Gate · ${version} · "', lookup)
         self.assertIn("databaseId,displayTitle", lookup)
-        self.assertIn("map(select(.displayTitle", lookup)
+        self.assertIn(".displayTitle | startswith", lookup)
 
     def test_non_discardable_release_workflows_use_a_real_queue(self) -> None:
         for workflow_path in (PACKAGE_WORKFLOW, STABLE_GATE_WORKFLOW, DOCS_WORKFLOW):
@@ -4622,7 +4622,7 @@ github_cli() {{
 
     def test_hosted_stack_validation_excludes_virtualization_commands(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             compose = root / "container-compose"
             builder = root / "container-builder-shim"
             containerization = root / "containerization"
@@ -4804,7 +4804,7 @@ github_cli() {{
                     )
 
             self.assertIn(
-                f"make:-C {containerization} PATH={candidate_tools_resolved}{os.pathsep}{tools}",
+                f"make:-C {containerization.resolve()} PATH={candidate_tools_resolved}{os.pathsep}{tools}",
                 full_commands,
             )
             assert_make_targets(
@@ -9391,6 +9391,7 @@ esac
                     "ensure_stable_init_image_authority_tag() { :; }",
                     "remote_main_commit() { printf '%s\\n' control; }",
                     "latest_stable_release_gate_dispatch_run() { printf '912\\tcompleted\\tsuccess\\n'; }",
+                    "retain_stable_gate_authority() { :; }",
                     "github_cli() { exit 99; }",
                 ]
             ),
@@ -9425,10 +9426,18 @@ esac
     def test_ambiguous_dispatch_is_journalled_and_never_blindly_retried(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            posts = root / "posts"
+            setup = (
+                f"export TEST_POSTS={shlex.quote(str(posts))}\n"
+                "github_cli() { if [[ \"$*\" == *\"runs?event=workflow_dispatch\"* ]]; "
+                "then printf '{\\\"workflow_runs\\\":[]}\\n'; return 0; fi; "
+                "printf 'post\\n' >> \"${TEST_POSTS}\"; "
+                "printf 'connection lost\\n' >&2; return 1; }"
+            )
             dispatched = self.run_release_function(
                 root,
                 f"dispatch_github_workflow_run docs.yml 0.15.0 {'a' * 40}",
-                shell_setup="github_cli() { printf 'connection lost\\n' >&2; return 1; }",
+                shell_setup=setup,
             )
 
             self.assertEqual(dispatched.returncode, 75)
@@ -9438,6 +9447,14 @@ esac
             record = json.loads(journals[0].read_text(encoding="utf-8"))
             self.assertEqual(record["state"], "dispatch-unknown")
             self.assertEqual(record["workflow"], "docs.yml")
+            retried = self.run_release_function(
+                root,
+                f"dispatch_github_workflow_run docs.yml 0.15.0 {'a' * 40}",
+                shell_setup=setup,
+            )
+            self.assertEqual(retried.returncode, 75)
+            self.assertIn("refusing a duplicate request", retried.stderr)
+            self.assertEqual(posts.read_text(encoding="utf-8").splitlines(), ["post"])
 
     def test_past_success_does_not_suppress_newly_needed_tap_repair(self) -> None:
         repaired = self.run_release_function(
@@ -9489,7 +9506,7 @@ esac
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             retained = root / "retained"
             candidates = root / "candidates"
             candidates.mkdir()
@@ -9560,7 +9577,7 @@ esac
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             fixtures = root / "documentation-fixtures"
             fixtures.mkdir()
             for site in ("compose", "container", "containerization", "k8s"):
@@ -9577,6 +9594,14 @@ esac
                         str(ROOT / "Tools/ci/doc-site-manifest.py"),
                         "create",
                         str(source),
+                        "--site",
+                        site,
+                        "--source-ref",
+                        "a" * 40,
+                        "--hosting-base-path",
+                        "container-compose"
+                        if site == "compose"
+                        else f"container-compose/{site}",
                     ],
                     check=True,
                 )
@@ -9591,6 +9616,7 @@ esac
                 [
                     f"export TEST_DOCUMENTATION_FIXTURES={shlex.quote(str(fixtures))}",
                     "github_repo() { printf '%s\\n' owner/repo; }",
+                    f"stable_documentation_source_ref() {{ printf '%s\\n' {'a' * 40}; }}",
                     "github_cli() {",
                     "  if [[ \"$1:$2\" != run:download ]]; then return 64; fi",
                     "  local destination='' previous='' argument",
@@ -9613,7 +9639,10 @@ esac
             reused = self.run_release_function(
                 root,
                 "retain_stable_documentation_artifacts 1.2.3 987",
-                shell_setup="github_cli() { return 99; }",
+                shell_setup=(
+                    f"stable_documentation_source_ref() {{ printf '%s\\n' {'a' * 40}; }}; "
+                    "github_cli() { return 99; }"
+                ),
             )
             self.assertEqual(reused.returncode, 0, reused.stderr)
             self.assertIn("already retained locally", reused.stdout)

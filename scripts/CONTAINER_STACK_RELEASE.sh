@@ -6084,56 +6084,110 @@ latest_compose_package_dispatch_run() {
   else
     mode=package
   fi
-  title="Prebuilt Binaries · ${version} · ${mode}"
+  title="Prebuilt Binaries · ${version} · ${mode} · "
   github_cli run list \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --workflow "Prebuilt Binaries" \
     --event workflow_dispatch \
     --limit 100 \
     --json databaseId,displayTitle,headSha,status,conclusion \
-    --jq "map(select(.displayTitle == \"${title}\" and .headSha == \"${control_sha}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
+    --jq "map(select((.displayTitle | startswith(\"${title}\")) and .headSha == \"${control_sha}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
 }
 
 latest_stable_release_gate_dispatch_run() {
   local version="$1" control_sha="$2" title
-  title="Stable Release Gate · ${version}"
+  title="Stable Release Gate · ${version} · "
   github_cli run list \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --workflow stable-release-gate.yml \
     --event workflow_dispatch \
     --limit 100 \
     --json databaseId,displayTitle,headSha,status,conclusion \
-    --jq "map(select(.displayTitle == \"${title}\" and .headSha == \"${control_sha}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
+    --jq "map(select((.displayTitle | startswith(\"${title}\")) and .headSha == \"${control_sha}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
 }
 
 # Return the newest run for one immutable stable documentation manifest.
 latest_stable_documentation_dispatch() {
   local version="$1" control_sha="$2" title
-  title="Documentation · ${version}"
+  title="Documentation · ${version} · "
   github_cli run list \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
     --workflow Documentation \
     --event workflow_dispatch \
     --limit 100 \
     --json databaseId,displayTitle,headSha,status,conclusion \
-    --jq "map(select(.displayTitle == \"${title}\" and .headSha == \"${control_sha}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
+    --jq "map(select((.displayTitle | startswith(\"${title}\")) and .headSha == \"${control_sha}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
 }
 
 # Dispatch a workflow through the API that returns its exact run ID. The
 # expected control SHA is also an input, so a moving main branch fails before
 # expensive or mutating work instead of leaving title-based polling ambiguous.
+reconcile_github_dispatch_request() {
+  local workflow="$1" request_id="$2" control_sha="$3" repo
+  repo="$(github_repo "${COMPOSE_REPO}")"
+  github_cli api --paginate --slurp \
+    "repos/${repo}/actions/workflows/${workflow}/runs?event=workflow_dispatch&per_page=100" \
+    | jq -r --arg request_id "${request_id}" --arg control_sha "${control_sha}" '
+      [.[][] | select(
+        .event == "workflow_dispatch" and
+        .head_sha == $control_sha and
+        (.display_title | type == "string") and
+        (.display_title | endswith($request_id))
+      ) | .id] | unique | if length == 1 then .[0] else empty end
+    '
+}
+
 dispatch_github_workflow_run() {
-  local workflow="$1" version="$2" control_sha="$3" repair_tap="${4:-}"
-  local repo request_id run_id dispatch_status
+  local workflow="$1" version="$2" control_sha="$3" repair_tap="${4:-}" mode_override="${5:-}"
+  local repo request_id proposed_request_id run_id dispatch_status mode existing existing_state existing_run run_details run_status run_conclusion
   repo="$(github_repo "${COMPOSE_REPO}")"
   run_id=""
-  request_id="$(/usr/bin/uuidgen | tr '[:upper:]' '[:lower:]')"
-  python3 "${RELEASE_DISPATCH_JOURNAL_TOOL}" intent \
-    --root "${RELEASE_RETAINED_ROOT}" \
-    --request-id "${request_id}" \
-    --workflow "${workflow}" \
-    --version "${version}" \
-    --control-sha "${control_sha}" >/dev/null
+  if [[ -n "${mode_override}" ]]; then
+    mode="${mode_override}"
+  elif [[ "${workflow}" == prebuilt-binaries.yml ]]; then
+    mode="package"
+    [[ "${repair_tap}" == true ]] && mode="tap-repair"
+  else
+    mode="${workflow%.yml}"
+  fi
+  proposed_request_id="$(/usr/bin/uuidgen | tr '[:upper:]' '[:lower:]')"
+  existing="$(python3 "${RELEASE_DISPATCH_JOURNAL_TOOL}" claim \
+    --root "${RELEASE_RETAINED_ROOT}" --request-id "${proposed_request_id}" \
+    --workflow "${workflow}" --version "${version}" \
+    --control-sha "${control_sha}" --mode "${mode}")"
+  request_id="$(jq -r '.request_id' <<<"${existing}")"
+  existing_state="$(jq -r '.state // empty' <<<"${existing}")"
+  existing_run="$(jq -r '.run_id // empty' <<<"${existing}")"
+  if [[ "${existing_state}" == dispatch-unknown ]]; then
+    existing_run="$(reconcile_github_dispatch_request \
+      "${workflow}" "${request_id}" "${control_sha}" 2>/dev/null || true)"
+    if [[ "${existing_run}" =~ ^[0-9]+$ ]]; then
+      python3 "${RELEASE_DISPATCH_JOURNAL_TOOL}" ack \
+        --root "${RELEASE_RETAINED_ROOT}" --request-id "${request_id}" \
+        --run-id "${existing_run}" >/dev/null
+      printf '%s\n' "${existing_run}"
+      return 0
+    fi
+  fi
+  if [[ ( "${existing_state}" == dispatch-intent && "${request_id}" != "${proposed_request_id}" ) || "${existing_state}" == dispatch-unknown ]]; then
+    printf 'workflow dispatch result is unresolved for %s (request %s); refusing a duplicate request\n' \
+      "${workflow}" "${request_id}" >&2
+    return 75
+  fi
+  if [[ "${existing_state}" == dispatched && "${existing_run}" =~ ^[0-9]+$ ]]; then
+    run_details="$(github_cli run view "${existing_run}" --repo "${repo}" \
+      --json status,conclusion --jq '[.status, (.conclusion // "")] | @tsv' \
+      2>/dev/null || true)"
+    IFS=$'\t' read -r run_status run_conclusion <<<"${run_details}"
+    if [[ "${run_status}" == completed && "${run_conclusion}" != success ]]; then
+      python3 "${RELEASE_DISPATCH_JOURNAL_TOOL}" fail \
+        --root "${RELEASE_RETAINED_ROOT}" --request-id "${request_id}" >/dev/null
+      dispatch_github_workflow_run "${workflow}" "${version}" "${control_sha}" "${repair_tap}" "${mode_override}"
+      return
+    fi
+    printf '%s\n' "${existing_run}"
+    return 0
+  fi
   if [[ -n "${repair_tap}" ]]; then
     if run_id="$(
       github_cli api --method POST \
@@ -6179,6 +6233,73 @@ dispatch_github_workflow_run() {
     --request-id "${request_id}" \
     --run-id "${run_id}" >/dev/null
   printf '%s\n' "${run_id}"
+}
+
+# Retain and authenticate a successful gate's complete authority before its
+# hosted artifact can expire. The package workflow may consume this exact copy.
+retain_stable_gate_authority() {
+  local version="$1" run_id="$2" init_digest="$3"
+  local archive sidecar tmp receipt bundle tag_sha receipt_sha status retained
+  local refs=()
+  archive=""
+  retained=0
+  if archive="$(python3 "${RELEASE_ASSET_RETENTION_TOOL}" path \
+    --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+    --name stable-release-authority.tar.gz 2>/dev/null)"; then
+    sidecar="$(python3 "${RELEASE_ASSET_RETENTION_TOOL}" path \
+      --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+      --name stable-release-authority.tar.gz.sha256)"
+    retained=1
+  fi
+  tmp="$(release_transient_directory stable-gate-authority)"
+  status=0
+  if (( retained == 1 )); then
+    [[ "$(awk 'NR == 1 { print $1 }' "${sidecar}")" == \
+      "$(shasum -a 256 "${archive}" | awk '{ print $1 }')" ]] || {
+      printf 'retained stable authority checksum does not match its archive\n' >&2
+      return 2
+    }
+    bundle="${tmp}/retained"
+    mkdir -p "${bundle}"
+    /usr/bin/tar -xzf "${archive}" -C "${bundle}"
+  else
+    if github_cli run download "${run_id}" \
+      --repo "$(github_repo "${COMPOSE_REPO}")" \
+      --pattern "stable-release-authority-${version}-*" --dir "${tmp}"; then
+      status=0
+    else
+      status=$?
+    fi
+  fi
+  receipt="$(find "${tmp}" -type f -name stable-release-authority.json -print -quit)"
+  if (( status == 0 )) && [[ -n "${receipt}" ]]; then
+    bundle="$(dirname "${receipt}")"
+    if (( retained == 0 )); then
+      archive="${tmp}/stable-release-authority.tar.gz"
+      sidecar="${archive}.sha256"
+      /usr/bin/tar -C "${bundle}" -czf "${archive}" .
+    fi
+    receipt_sha="$(shasum -a 256 "${receipt}" | awk '{print $1}')"
+    tag_sha="$(git -C "$(repo_path "${COMPOSE_REPO}")" rev-list -n 1 "refs/tags/${version}")"
+    while IFS= read -r value; do refs+=("${value}"); done < <(stable_stack_component_refs "${version}")
+    if ((${#refs[@]} != 3)) || ! python3 "${STABLE_AUTHORITY_BUNDLE_VERIFIER}" \
+      --archive "${archive}" --release-tag "${version}" \
+      --candidate-sha "${tag_sha}" --builder-ref "${refs[0]:-}" \
+      --containerization-ref "${refs[1]:-}" --container-ref "${refs[2]:-}" \
+      --init-image-sha256 "${init_digest}" --receipt-sha256 "${receipt_sha}"; then
+      status=2
+    elif (( retained == 0 )); then
+      python3 "${SELF_DIRECTORY}/../Tools/release/write-sha256-sidecar.py" "${archive}"
+      python3 "${RELEASE_ASSET_RETENTION_TOOL}" retain \
+        --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+        --asset "${archive}" --asset "${sidecar}" || status=$?
+    fi
+  elif (( status == 0 )); then
+    printf 'stable gate %s did not provide its authority receipt\n' "${run_id}" >&2
+    status=2
+  fi
+  find "${tmp}" -depth -delete >/dev/null 2>&1 || true
+  return "${status}"
 }
 
 # Resolve the newest published (draft-free) container-k8s release tag and its
@@ -6952,6 +7073,7 @@ dispatch_stable_release_gate() {
     "${conclusion}" == "success" ]]; then
     printf 'hosted stable release gate already passed for the exact release controls: %s\n' \
       "${previous_run}"
+    retain_stable_gate_authority "${version}" "${previous_run}" "${init_image_digest}"
     return 0
   fi
   if [[ -n "${previous_run}" && "${status}" != "completed" ]]; then
@@ -6960,6 +7082,7 @@ dispatch_stable_release_gate() {
     wait_for_github_run_success \
       "${previous_run}" "hosted stable release gate" \
       "${STABLE_RELEASE_GATE_WAIT_SECONDS}"
+    retain_stable_gate_authority "${version}" "${previous_run}" "${init_image_digest}"
     return 0
   fi
   run_id="$(dispatch_github_workflow_run \
@@ -6967,20 +7090,48 @@ dispatch_stable_release_gate() {
   printf 'stable release gate started: %s\n' "${run_id}"
   wait_for_github_run_success \
     "${run_id}" "hosted stable release gate" "${STABLE_RELEASE_GATE_WAIT_SECONDS}"
+  retain_stable_gate_authority "${version}" "${run_id}" "${init_image_digest}"
 }
 
 # Retain all four verified DocC site archives locally before a hosted run can
 # age out. A complete local set avoids downloading or rebuilding on retries.
+stable_documentation_source_ref() {
+  local version="$1" site="$2" refs=()
+  case "${site}" in
+    compose)
+      git -C "$(repo_path "${COMPOSE_REPO}")" rev-list -n 1 "refs/tags/${version}"
+      ;;
+    containerization|container)
+      while IFS= read -r value; do refs+=("${value}"); done < <(
+        stable_stack_component_refs "${version}"
+      )
+      if [[ "${site}" == containerization ]]; then printf '%s\n' "${refs[1]:-}"
+      else printf '%s\n' "${refs[2]:-}"
+      fi
+      ;;
+    k8s)
+      jq -er '.sites.k8s.ref' \
+        "$(repo_path "${COMPOSE_REPO}")/Tools/release/documentation-refs.json"
+      ;;
+    *) return 2 ;;
+  esac
+}
+
 retain_stable_documentation_artifacts() {
-  local version="$1" run_id="$2" site retained_path tmp candidate count
-  local candidates=() complete=1
+  local version="$1" run_id="$2" site retained_path tmp site_tmp candidate count source_ref base_path
+  local complete=1
   for site in compose container containerization k8s; do
+    source_ref="$(stable_documentation_source_ref "${version}" "${site}")"
+    base_path="container-compose/${site}"
+    [[ "${site}" == compose ]] && base_path=container-compose
     if retained_path="$(
       python3 "${RELEASE_ASSET_RETENTION_TOOL}" path \
         --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
         --name "${site}.tgz" 2>/dev/null
     )"; then
-      python3 "${DOC_SITE_MANIFEST_TOOL}" verify-archive "${retained_path}"
+      python3 "${DOC_SITE_MANIFEST_TOOL}" verify-archive "${retained_path}" \
+        --site "${site}" --source-ref "${source_ref}" \
+        --hosting-base-path "${base_path}"
     else
       complete=0
     fi
@@ -6992,32 +7143,43 @@ retain_stable_documentation_artifacts() {
   fi
 
   tmp="$(release_transient_directory stable-documentation)"
-  if ! github_cli run download "${run_id}" \
-    --repo "$(github_repo "${COMPOSE_REPO}")" \
-    --pattern "api-docs-${version}-*" --dir "${tmp}"; then
-    find "${tmp}" -depth -delete >/dev/null 2>&1 || true
-    return 1
-  fi
   for site in compose container containerization k8s; do
+    source_ref="$(stable_documentation_source_ref "${version}" "${site}")"
+    base_path="container-compose/${site}"
+    [[ "${site}" == compose ]] && base_path=container-compose
+    if python3 "${RELEASE_ASSET_RETENTION_TOOL}" path \
+      --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+      --name "${site}.tgz" >/dev/null 2>&1; then
+      continue
+    fi
+    site_tmp="${tmp}/${site}"
+    mkdir -p "${site_tmp}"
+    if ! github_cli run download "${run_id}" \
+      --repo "$(github_repo "${COMPOSE_REPO}")" \
+      --pattern "api-docs-${version}-${site}-*" --dir "${site_tmp}"; then
+      find "${tmp}" -depth -delete >/dev/null 2>&1 || true
+      return 1
+    fi
     candidate=""
     count=0
     while IFS= read -r matched; do
       [[ -n "${matched}" ]] || continue
       candidate="${matched}"
       ((count += 1))
-    done < <(find "${tmp}" -type f -name "${site}.tgz" -print)
+    done < <(find "${site_tmp}" -type f -name "${site}.tgz" -print)
     if (( count != 1 )); then
       printf 'documentation run %s produced %s copies of %s.tgz\n' \
         "${run_id}" "${count}" "${site}" >&2
       find "${tmp}" -depth -delete >/dev/null 2>&1 || true
       return 1
     fi
-    python3 "${DOC_SITE_MANIFEST_TOOL}" verify-archive "${candidate}"
-    candidates+=(--asset "${candidate}")
+    python3 "${DOC_SITE_MANIFEST_TOOL}" verify-archive "${candidate}" \
+      --site "${site}" --source-ref "${source_ref}" \
+      --hosting-base-path "${base_path}"
+    python3 "${RELEASE_ASSET_RETENTION_TOOL}" retain \
+      --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
+      --asset "${candidate}"
   done
-  python3 "${RELEASE_ASSET_RETENTION_TOOL}" retain \
-    --root "${RELEASE_RETAINED_ROOT}" --version "${version}" \
-    "${candidates[@]}"
   find "${tmp}" -depth -delete
 }
 
@@ -7042,24 +7204,43 @@ dispatch_stable_documentation() {
     "${conclusion}" == "success" ]]; then
     printf 'stable documentation already passed for the exact released inputs: %s (run %s)\n' \
       "${version}" "${previous_run}"
-    retain_stable_documentation_artifacts "${version}" "${previous_run}"
+    if retain_stable_documentation_artifacts "${version}" "${previous_run}"; then
+      return 0
+    fi
+    printf 'documentation artifacts for run %s are unavailable; dispatching exact-input regeneration (valid site caches remain reusable)\n' \
+      "${previous_run}" >&2
+    run_id="$(dispatch_github_workflow_run docs.yml "${version}" \
+      "${control_sha}" "" "docs-regenerate-${previous_run}")"
+    if ! wait_for_github_run_success \
+      "${run_id}" "stable documentation and Pages deployment" \
+      "${DOCUMENTATION_WAIT_SECONDS}"; then
+      retain_stable_documentation_artifacts "${version}" "${run_id}" || true
+      return 1
+    fi
+    retain_stable_documentation_artifacts "${version}" "${run_id}"
     return 0
   fi
   if [[ -n "${previous_run}" && "${status}" != "completed" ]]; then
     printf 'stable documentation is already running for the exact released inputs: %s\n' \
       "${previous_run}"
-    wait_for_github_run_success \
+    if ! wait_for_github_run_success \
       "${previous_run}" "stable documentation and Pages deployment" \
-      "${DOCUMENTATION_WAIT_SECONDS}"
+      "${DOCUMENTATION_WAIT_SECONDS}"; then
+      retain_stable_documentation_artifacts "${version}" "${previous_run}" || true
+      return 1
+    fi
     retain_stable_documentation_artifacts "${version}" "${previous_run}"
     return 0
   fi
 
   run_id="$(dispatch_github_workflow_run docs.yml "${version}" "${control_sha}")"
   printf 'stable documentation started: %s\n' "${run_id}"
-  wait_for_github_run_success \
+  if ! wait_for_github_run_success \
     "${run_id}" "stable documentation and Pages deployment" \
-    "${DOCUMENTATION_WAIT_SECONDS}"
+    "${DOCUMENTATION_WAIT_SECONDS}"; then
+    retain_stable_documentation_artifacts "${version}" "${run_id}" || true
+    return 1
+  fi
   retain_stable_documentation_artifacts "${version}" "${run_id}"
 }
 

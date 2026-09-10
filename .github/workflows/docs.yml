@@ -15,7 +15,7 @@
 #===----------------------------------------------------------------------===#
 
 name: Documentation
-run-name: Documentation · ${{ inputs.ref }}
+run-name: Documentation · ${{ inputs.ref }} · ${{ inputs.request_id || 'manual' }}
 
 on:
   workflow_dispatch:
@@ -294,11 +294,20 @@ jobs:
 
       - name: Inspect restored DocC site
         id: site
+        env:
+          SITE: ${{ matrix.site }}
+          SOURCE_REF: ${{ matrix.ref }}
+          TOOLCHAIN_DIGEST: ${{ steps.toolchain.outputs.digest }}
         shell: bash
         run: |
           set -euo pipefail
+          hosting_base_path="container-compose/${SITE}"
+          [[ "${SITE}" == compose ]] && hosting_base_path=container-compose
           if [[ "${{ steps.site-cache.outputs.cache-hit }}" == true ]] && \
-            python3 release-tools/Tools/ci/doc-site-manifest.py verify _site; then
+            python3 release-tools/Tools/ci/doc-site-manifest.py verify _site \
+              --site "${SITE}" --source-ref "${SOURCE_REF}" \
+              --toolchain-digest "${TOOLCHAIN_DIGEST}" \
+              --hosting-base-path "${hosting_base_path}"; then
             printf 'reusable=true\n' >> "${GITHUB_OUTPUT}"
           else
             if [[ -d _site ]]; then
@@ -371,15 +380,34 @@ jobs:
 
       - name: Record DocC site manifest
         if: steps.site.outputs.reusable != 'true'
-        run: python3 release-tools/Tools/ci/doc-site-manifest.py create _site
+        env:
+          SITE: ${{ matrix.site }}
+          SOURCE_REF: ${{ matrix.ref }}
+          TOOLCHAIN_DIGEST: ${{ steps.toolchain.outputs.digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          hosting_base_path="container-compose/${SITE}"
+          [[ "${SITE}" == compose ]] && hosting_base_path=container-compose
+          python3 release-tools/Tools/ci/doc-site-manifest.py create _site \
+            --site "${SITE}" --source-ref "${SOURCE_REF}" \
+            --toolchain-digest "${TOOLCHAIN_DIGEST}" \
+            --hosting-base-path "${hosting_base_path}"
 
       - name: Verify reusable DocC site
         env:
           SITE: ${{ matrix.site }}
+          SOURCE_REF: ${{ matrix.ref }}
+          TOOLCHAIN_DIGEST: ${{ steps.toolchain.outputs.digest }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 release-tools/Tools/ci/doc-site-manifest.py verify _site
+          hosting_base_path="container-compose/${SITE}"
+          [[ "${SITE}" == compose ]] && hosting_base_path=container-compose
+          python3 release-tools/Tools/ci/doc-site-manifest.py verify _site \
+            --site "${SITE}" --source-ref "${SOURCE_REF}" \
+            --toolchain-digest "${TOOLCHAIN_DIGEST}" \
+            --hosting-base-path "${hosting_base_path}"
           printf 'DocC site ready for %s (verified reuse: %s).\n' \
             "${SITE}" "${{ steps.site.outputs.reusable }}"
 

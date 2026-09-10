@@ -38,7 +38,10 @@ class CleanupError(RuntimeError):
 def validate_root(root: Path) -> Path:
     if not root.is_absolute() or root == Path("/") or root.is_symlink():
         raise CleanupError(f"unsafe transient root: {root}")
+    normalized = Path(os.path.abspath(root))
     resolved = root.resolve(strict=True)
+    if resolved != normalized:
+        raise CleanupError(f"transient root contains a symbolic link: {root}")
     marker = resolved / MARKER
     if marker.is_symlink() or not marker.is_file():
         raise CleanupError(f"transient root has no regular ownership marker: {resolved}")
@@ -47,19 +50,33 @@ def validate_root(root: Path) -> Path:
     return resolved
 
 
-def remove_tree(path: Path) -> None:
-    status = path.lstat()
-    if stat.S_ISLNK(status.st_mode) or not stat.S_ISDIR(status.st_mode):
-        path.unlink()
+def remove_entry(parent_descriptor: int, name: str) -> None:
+    """Remove one entry relative to an opened parent without following links."""
+    status = os.stat(name, dir_fd=parent_descriptor, follow_symlinks=False)
+    if not stat.S_ISDIR(status.st_mode):
+        os.unlink(name, dir_fd=parent_descriptor)
         return
-    with os.scandir(path) as entries:
+
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(name, flags, dir_fd=parent_descriptor)
+    try:
+        entries = list(os.scandir(descriptor))
         for entry in entries:
-            child = path / entry.name
-            if entry.is_dir(follow_symlinks=False):
-                remove_tree(child)
-            else:
-                child.unlink()
-    path.rmdir()
+            remove_entry(descriptor, entry.name)
+    finally:
+        os.close(descriptor)
+    os.rmdir(name, dir_fd=parent_descriptor)
+
+
+def remove_tree(path: Path) -> None:
+    """Remove a direct child through an opened, no-follow parent descriptor."""
+    parent = path.parent
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(parent, flags)
+    try:
+        remove_entry(descriptor, path.name)
+    finally:
+        os.close(descriptor)
 
 
 def targets(root: Path) -> list[Path]:

@@ -34,17 +34,18 @@ MAKEFILE = REPOSITORY_ROOT / "Makefile"
 PIN_TOOL = REPOSITORY_ROOT / "Tools/build/stack-pin.py"
 ARTIFACT_TOOL = REPOSITORY_ROOT / "Tools/build/stack-artifact.py"
 DEADLINE_TOOL = REPOSITORY_ROOT / "Tools/ci/run-command-with-deadline.py"
+STORAGE_TOOL = REPOSITORY_ROOT / "Tools/build/stack-storage.py"
 
 
 class StackMakeRecoveryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.retained = self.root / "local-retained"
         self.transient = self.root / "external-transient"
         self.log = self.root / "build.log"
-        self.fail = self.root / "fail-container"
+        self.fail_marker = self.root / "fail-container"
         self.containerization = self.create_repository("containerization")
         self.engine = self.create_repository("container-engine-api")
         self.container = self.create_repository("container")
@@ -54,7 +55,23 @@ class StackMakeRecoveryTests(unittest.TestCase):
         (self.compose / "Package.resolved").write_text(
             '{"pins":[]}\n', encoding="utf-8"
         )
-        self.git(self.compose, "add", "Makefile", "Package.resolved")
+        (self.compose / "config.toml").write_text("[compose]\n", encoding="utf-8")
+        (self.compose / "docs/images").mkdir(parents=True)
+        (self.compose / "docs/images/container-compose-icon-octopus.png").write_bytes(
+            b"fixture icon"
+        )
+        (self.compose / "Tools/release").mkdir(parents=True)
+        (self.compose / "Tools/release/write-build-info.py").symlink_to(
+            REPOSITORY_ROOT / "Tools/release/write-build-info.py"
+        )
+        (self.compose / "Tools/release/runtime-capabilities.json").symlink_to(
+            REPOSITORY_ROOT / "Tools/release/runtime-capabilities.json"
+        )
+        (self.compose / "Tools/compose-normalizer").mkdir(parents=True)
+        (self.compose / "Tools/compose-normalizer/go.mod").write_text(
+            "module example.invalid/fixture\n", encoding="utf-8"
+        )
+        self.git(self.compose, "add", "Makefile", "Package.resolved", "config.toml", "docs", "Tools")
         self.git(self.compose, "commit", "-q", "-m", "test: add lockfile")
         self.swift = self.root / "fake-swift"
         self.swift.write_text(
@@ -105,7 +122,7 @@ while (($#)); do
   esac
 done
 [[ -n "${output}" ]]
-printf 'build:container-builder-shim\n' >> "${STACK_TEST_LOG}"
+printf 'build:%s\n' "$(basename "${output}")" >> "${STACK_TEST_LOG}"
 mkdir -p "$(dirname "${output}")"
 printf 'artifact:container-builder-shim\n' > "${output}"
 """,
@@ -164,7 +181,7 @@ exec "$@"
         environment = os.environ.copy()
         environment.update(
             {
-                "STACK_TEST_FAIL": str(self.fail),
+                "STACK_TEST_FAIL": str(self.fail_marker),
                 "STACK_TEST_LOG": str(self.log),
             }
         )
@@ -180,6 +197,8 @@ exec "$@"
                 f"STACK_PIN_TOOL={PIN_TOOL}",
                 f"STACK_ARTIFACT_TOOL={ARTIFACT_TOOL}",
                 f"STACK_DEADLINE_TOOL={DEADLINE_TOOL}",
+                f"STACK_STORAGE_TOOL={STORAGE_TOOL}",
+                "STACK_REQUIRED_TRANSIENT_VOLUME=",
                 f"STACK_SWIFT={self.swift}",
                 f"STACK_SWIFT_CONTRACT={'a' * 64}",
                 "STACK_LOCK_HELD=1",
@@ -200,7 +219,7 @@ exec "$@"
         environment = os.environ.copy()
         environment.update(
             {
-                "STACK_TEST_FAIL": str(self.fail),
+                "STACK_TEST_FAIL": str(self.fail_marker),
                 "STACK_TEST_LOG": str(self.log),
             }
         )
@@ -216,12 +235,21 @@ exec "$@"
                 f"STACK_PIN_TOOL={PIN_TOOL}",
                 f"STACK_ARTIFACT_TOOL={ARTIFACT_TOOL}",
                 f"STACK_DEADLINE_TOOL={DEADLINE_TOOL}",
+                f"STACK_STORAGE_TOOL={STORAGE_TOOL}",
+                "STACK_REQUIRED_TRANSIENT_VOLUME=",
                 f"STACK_SWIFT_STACK_TOOL={self.stack_wrapper}",
                 f"STACK_SWIFT={self.swift}",
                 f"STACK_GO={self.go}",
                 f"STACK_LOCK_TOOL={self.lock}",
                 f"STACK_SWIFT_CONTRACT={'a' * 64}",
                 f"STACK_GO_CONTRACT={'b' * 64}",
+                f"STACK_COMPOSE_CONTRACT={'c' * 64}",
+                "COMPOSE_GO_VERSION=fixture",
+                "CONTAINER_COMPOSE_SOURCE=fixture/container-compose",
+                "CONTAINER_COMPOSE_BRANCH=fixture",
+                "CONTAINER_COMPOSE_LANE=fixture",
+                "CONTAINER_SOURCE=fixture/container",
+                "CONTAINERIZATION_SOURCE=fixture/containerization",
                 "STACK_BUILD_STAGE_TIMEOUT_SECONDS=30",
                 f"PYTHON={sys.executable}",
                 f"CONTAINERIZATION_STACK_REPO={self.containerization}",
@@ -254,6 +282,8 @@ exec "$@"
                 f"STACK_RETAINED_ROOT={self.retained}",
                 f"STACK_TRANSIENT_ROOT={self.transient}",
                 "STACK_REQUIRE_SEPARATE_FILESYSTEMS=0",
+                f"STACK_STORAGE_TOOL={STORAGE_TOOL}",
+                "STACK_REQUIRED_TRANSIENT_VOLUME=",
             ],
             cwd=self.root,
             check=False,
@@ -270,7 +300,7 @@ exec "$@"
         self.assertFalse((self.retained / ".container-family-retained-root").exists())
 
     def test_retry_reuses_successful_upstream_pins_after_failure(self) -> None:
-        self.fail.write_text("fail once\n", encoding="utf-8")
+        self.fail_marker.write_text("fail once\n", encoding="utf-8")
         failed = self.run_build()
         self.assertEqual(failed.returncode, 2, failed.stderr)
         self.assertTrue((self.retained / "pins/debug/containerization.json").is_file())
@@ -285,7 +315,7 @@ exec "$@"
         )
         self.assertTrue((self.retained / "pins/debug/container.json").is_file())
 
-    def test_changed_upstream_rebuilds_only_its_transitive_path(self) -> None:
+    def test_changed_upstream_with_identical_output_reuses_downstream(self) -> None:
         first = self.run_build()
         self.assertEqual(first.returncode, 0, first.stderr)
         self.log.unlink()
@@ -303,10 +333,10 @@ exec "$@"
         )
         rebuilt = self.run_build()
         self.assertEqual(rebuilt.returncode, 0, rebuilt.stderr)
-        self.assertEqual(self.logged_builds(), ["build:cctl", "build:container"])
+        self.assertEqual(self.logged_builds(), ["build:cctl"])
 
     def test_complete_graph_recovers_and_publishes_verified_bundle(self) -> None:
-        self.fail.write_text("fail once\n", encoding="utf-8")
+        self.fail_marker.write_text("fail once\n", encoding="utf-8")
 
         failed = self.run_full_build()
 
@@ -328,6 +358,7 @@ exec "$@"
                     "build:cctl": 1,
                     "build:container-engine": 1,
                     "build:container-builder-shim": 1,
+                    "build:compose-normalizer": 1,
                     "build:container": 2,
                     "build:compose": 1,
                 }
@@ -361,6 +392,35 @@ exec "$@"
         self.assertIn(str(self.retained / "artifacts/objects/sha256"), compose_pin)
         self.assertNotIn(str(self.transient / "scratch"), compose_pin)
         self.assertNotIn(str(self.compose / ".build/debug/compose"), compose_pin)
+        compose_receipt = json.loads(compose_pin)
+        self.assertEqual(
+            [artifact["name"] for artifact in compose_receipt["artifacts"]],
+            [
+                "compose/bin/compose",
+                "compose/config.toml",
+                "compose/resources/build-info.json",
+                "compose/resources/compose-normalizer",
+                "compose/resources/container-compose-icon.png",
+            ],
+        )
+        materialized = self.root / "restored-compose"
+        materialize = subprocess.run(
+            [
+                sys.executable,
+                str(PIN_TOOL),
+                "materialize",
+                "--receipt",
+                str(pin_root / "container-compose.json"),
+                "--output",
+                str(materialized),
+            ],
+            check=False,
+        )
+        self.assertEqual(materialize.returncode, 0)
+        self.assertTrue((materialized / "compose/bin/compose").is_file())
+        self.assertTrue(
+            (materialized / "compose/resources/compose-normalizer").is_file()
+        )
         timing_logs = sorted((self.retained / "timings").glob("*.jsonl"))
         self.assertEqual(len(timing_logs), 2)
         records = [
