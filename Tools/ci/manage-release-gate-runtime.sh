@@ -134,6 +134,67 @@ runtime_services() {
     'index($3, prefix) == 1 { print $3 }'
 }
 
+launchd_domain() {
+  local manager
+
+  manager="$("${launchctl_bin}" managername 2>/dev/null || true)"
+  case "${manager}" in
+    Aqua) printf 'gui/%s\n' "${runtime_user_id}" ;;
+    Background) printf 'user/%s\n' "${runtime_user_id}" ;;
+    System) printf 'system\n' ;;
+    *)
+      printf 'could not resolve launchd domain for release runtime cleanup: %s\n' \
+        "${manager:-unset}" >&2
+      return 1
+      ;;
+  esac
+}
+
+# The release wrapper holds the global runtime lock while this script runs, so
+# another release cannot legitimately own an older isolated namespace backed
+# by this candidate. Recover only live launchd jobs whose PID, UID, and exact
+# executable root all prove that ownership; everything else remains untouched.
+recover_stale_candidate_services() {
+  local domain executable label launchctl_snapshot process_id process_snapshot
+  local process_uid service_pid
+  local -a stale_services=()
+
+  if ! launchctl_snapshot="$("${launchctl_bin}" list)"; then
+    printf 'failed to inspect launchd services for stale release runtimes\n' >&2
+    return 1
+  fi
+  if ! process_snapshot="$("${ps_bin}" -axo pid=,uid=,command=)"; then
+    printf 'failed to inspect release runtime processes\n' >&2
+    return 1
+  fi
+  while read -r service_pid _ label; do
+    [[ "${service_pid}" =~ ^[1-9][0-9]*$ ]] || continue
+    [[ "${label}" =~ ^io\.github\.stephenlclarke\.container-compose\.runtime\.[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+$ ]] || continue
+    [[ "${label}" != "${service_namespace}."* ]] || continue
+    while read -r process_id process_uid executable _; do
+      if [[ "${process_id}" == "${service_pid}" && \
+        "${process_uid}" == "${runtime_user_id}" && \
+        "${executable}" == "${candidate_root}/"* ]]; then
+        stale_services+=("${label}")
+        break
+      fi
+    done <<<"${process_snapshot}"
+  done <<<"${launchctl_snapshot}"
+
+  ((${#stale_services[@]} > 0)) || return 0
+  domain="$(launchd_domain)" || return 1
+  for label in "${stale_services[@]}"; do
+    if ! "${deadline_runner}" --seconds 30 --grace-seconds 0 -- \
+      "${launchctl_bin}" bootout "${domain}/${label}"; then
+      printf 'failed to boot out stale release runtime service: %s/%s\n' \
+        "${domain}" "${label}" >&2
+      return 1
+    fi
+    printf 'recovered stale release runtime service: %s/%s\n' \
+      "${domain}" "${label}"
+  done
+}
+
 runtime_processes() {
   local process_id process_uid executable process_snapshot
   if ! process_snapshot="$("${ps_bin}" -axo pid=,uid=,command=)"; then
@@ -156,6 +217,8 @@ if [[ "${action}" == quiesce ]]; then
     CONTAINER_SERVICE_NAMESPACE="${service_namespace}" \
     "${deadline_runner}" --seconds 60 --grace-seconds 0 -- \
       "${container_cli}" system stop
+
+  recover_stale_candidate_services
 
   remaining_services=""
   remaining_processes=""

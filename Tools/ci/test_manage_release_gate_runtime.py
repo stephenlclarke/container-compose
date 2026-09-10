@@ -90,10 +90,25 @@ class ManageReleaseGateRuntimeTests(unittest.TestCase):
         self._write_executable(
             self.launchctl,
             """
+            if [[ "${1:-}" == managername ]]; then
+              printf 'Aqua\n'
+              exit 0
+            fi
             if [[ "${1:-}" == list ]]; then
-              while IFS= read -r label; do
-                [[ -n "$label" ]] && printf -- '-\t0\t%s\n' "$label"
+              while read -r first second; do
+                [[ -n "$first" ]] || continue
+                if [[ -n "$second" ]]; then
+                  printf '%s\t0\t%s\n' "$first" "$second"
+                else
+                  printf '991\t0\t%s\n' "$first"
+                fi
               done <"${LIFECYCLE_SERVICE_STATE:?}"
+              exit 0
+            fi
+            if [[ "${1:-}" == bootout ]]; then
+              printf 'launchctl:bootout:%s\n' "${2:-}" >>"${LIFECYCLE_COMMAND_LOG:?}"
+              : >"${LIFECYCLE_SERVICE_STATE:?}"
+              : >"${LIFECYCLE_PROCESS_STATE:?}"
               exit 0
             fi
             exit 64
@@ -214,6 +229,45 @@ class ManageReleaseGateRuntimeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("runtime services survived quiescence", result.stderr)
         self.assertIn("runtime processes survived quiescence", result.stderr)
+
+    def test_recovers_a_stale_namespace_backed_by_the_candidate(self) -> None:
+        stale_namespace = (
+            "io.github.stephenlclarke.container-compose.runtime.retained"
+        )
+        self.service_state.write_text(
+            f"991 {stale_namespace}.apiserver\n", encoding="utf-8"
+        )
+        self.process_state.write_text(
+            f"{self.candidate_root}/libexec/container-apiserver\n",
+            encoding="utf-8",
+        )
+
+        result = self._run("quiesce", LEAVE_RUNTIME_STATE="1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("recovered stale release runtime service", result.stdout)
+        commands = self.command_log.read_text(encoding="utf-8")
+        self.assertIn(
+            f"launchctl:bootout:gui/{os.getuid()}/{stale_namespace}.apiserver",
+            commands,
+        )
+
+    def test_does_not_boot_out_a_stale_namespace_without_candidate_ownership(
+        self,
+    ) -> None:
+        stale_namespace = (
+            "io.github.stephenlclarke.container-compose.runtime.unrelated"
+        )
+        self.service_state.write_text(
+            f"991 {stale_namespace}.apiserver\n", encoding="utf-8"
+        )
+        self.process_state.write_text("/usr/bin/true\n", encoding="utf-8")
+
+        result = self._run("quiesce", LEAVE_RUNTIME_STATE="1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        commands = self.command_log.read_text(encoding="utf-8")
+        self.assertNotIn("launchctl:bootout", commands)
 
     def test_rejects_a_failed_process_snapshot(self) -> None:
         result = self._run("quiesce", FAIL_PROCESS_SNAPSHOT="1")
