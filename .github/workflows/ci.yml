@@ -223,6 +223,12 @@ jobs:
         working-directory: container-compose
         run: cp Package.stock.resolved Package.resolved
 
+      - name: Set up Go for the Compose normalizer
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: container-compose/Tools/compose-normalizer/go.mod
+          cache-dependency-path: container-compose/Tools/compose-normalizer/go.sum
+
       - name: Verify stock dependency authority
         working-directory: container-compose
         shell: bash
