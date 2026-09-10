@@ -41,6 +41,7 @@ endif
 override SHELL_QUOTE = '$(subst ','"'"',$(1))'
 SWIFT ?= swift
 SWIFT_RESOLVED_FLAGS ?= --disable-automatic-resolution
+CONTAINER_COMPOSE_BUILD_PROFILE ?= enhanced
 # Additional release compiler flags for deliberate toolchain experiments.
 # Normal releases use SwiftPM's default speed-optimised production build.
 SWIFT_RELEASE_FLAGS ?=
@@ -800,7 +801,8 @@ release-parity-build-info:
 		--container-ref "$(PARITY_CONTAINER_REF)" \
 		--containerization-source "$(CONTAINERIZATION_SOURCE)" \
 		--containerization-ref "$(PARITY_CONTAINERIZATION_REF)" \
-		--compose-go-version "$(COMPOSE_GO_VERSION)"
+		--compose-go-version "$(COMPOSE_GO_VERSION)" \
+		--runtime-profile "$(CONTAINER_COMPOSE_BUILD_PROFILE)"
 
 run:
 	$(SWIFT) run $(SWIFT_RESOLVED_FLAGS) compose version
@@ -2371,7 +2373,8 @@ package-built:
 		--container-ref "$(CONTAINER_REF)" \
 		--containerization-source "$(CONTAINERIZATION_SOURCE)" \
 		--containerization-ref "$(CONTAINERIZATION_REF)" \
-		--compose-go-version "$(COMPOSE_GO_VERSION)"
+		--compose-go-version "$(COMPOSE_GO_VERSION)" \
+		--runtime-profile "$(CONTAINER_COMPOSE_BUILD_PROFILE)"
 	tar -czf "$(PLUGIN_ARCHIVE)" -C "$(DIST_DIR)" compose
 	tar -tzf "$(PLUGIN_ARCHIVE)" | grep -Fx 'compose/resources/container-compose-icon.png' >/dev/null
 	$(PYTHON) Tools/release/write-sha256-sidecar.py "$(PLUGIN_ARCHIVE)"
