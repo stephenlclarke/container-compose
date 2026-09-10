@@ -103,6 +103,14 @@ The 0.14.3 upstream refresh supplied additional first-run evidence:
   9 minutes 32 seconds, compilation 8 minutes 24 seconds, and unit tests 6
   minutes 49 seconds. The classifier correctly skipped Linux service workloads
   and documentation packaging.
+- Compose's exact merged-main workflow completed in 15 minutes 1 second.
+  Source checks took 1 minute 6 seconds, CI tool tests 7 minutes 56 seconds,
+  release tool tests 11 minutes 13 seconds, and runtime, coverage, CLI smoke,
+  and Sonar validation 14 minutes 53 seconds. Its exact Current publication
+  then passed the fail-fast release configuration in 17 seconds and packaged,
+  signed, attested, published, and closure-verified the matched stack in 10
+  minutes 52 seconds; the complete Current workflow took 11 minutes 22
+  seconds.
 
 Two workflow defects failed before expensive release work. The Containerization
 signature gate rejected unsigned commits already present on Apple `main`; it
@@ -130,6 +138,16 @@ its tests. [`containerization#92`](https://github.com/stephenlclarke/containeriz
 records the required path classes so guest images, Linux logging workloads,
 and protobuf generation can fail closed when their inputs change and be
 skipped otherwise.
+
+The first retained stable-release retry stopped before any product build when
+GitHub's trust metadata API returned HTTP 503 after the 111 MB Current VM-init
+archive had downloaded and passed its SHA-256 check. A direct attestation retry
+against those exact retained bytes succeeded in 14.667 seconds, proving the
+download was valid. The controller nevertheless rejected its own staging
+directory on the next invocation. [`container-compose#617`](https://github.com/stephenlclarke/container-compose/issues/617)
+tracks the correction: one safe staged authority is now checksummed, attested,
+rechecked against the unchanged Current tag, and atomically finalized without
+another download; malformed or ambiguous retained evidence remains fail-closed.
 
 A clean Compose worktree's first `make source-preflight` stopped after 1.340
 seconds because the repository-local Hawkeye binary was absent and the Make

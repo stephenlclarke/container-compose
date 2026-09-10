@@ -638,13 +638,7 @@ PY
       )
       github_cli attestation verify "${cache_root}/${cache_asset}" --repo "${repo}"
     else
-      if find "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}" -mindepth 1 -maxdepth 1 \
-        -type d -name ".${containerization_reference}.*" -print -quit \
-        | grep -q .; then
-        printf 'an incomplete VM-init authority attempt is retained for diagnosis; resolve it before retrying: %s/.%s.*\n' \
-          "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}" "${containerization_reference}" >&2
-        return 1
-      fi
+      local staged_attempts staged_attempt_count staged_digest staged_name staged_extra staged_line_count
       current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
       remote_current_before="$(git -C "${path}" ls-remote --tags origin \
         'refs/tags/current' 'refs/tags/current^{}' | awk '{print $1}' | tail -n 1)"
@@ -654,13 +648,49 @@ PY
         return 1
       fi
       asset="container-vminit-current-${current_commit:0:12}-arm64.oci.tar"
-      stage="$(mktemp -d \
-        "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}/.${containerization_reference}.XXXXXX")"
-      github_cli release download current \
-        --repo "${repo}" \
-        --dir "${stage}" \
-        --pattern "${asset}" \
-        --pattern "${asset}.sha256"
+      staged_attempts="$(find "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}" \
+        -mindepth 1 -maxdepth 1 \
+        \( -type d -o -type l \) \
+        -name ".${containerization_reference}.*" -print)"
+      staged_attempt_count="$(printf '%s\n' "${staged_attempts}" \
+        | awk 'NF { count += 1 } END { print count + 0 }')"
+      if ((staged_attempt_count > 1)); then
+        printf 'multiple incomplete VM-init authority attempts are retained; preserving ambiguous evidence: %s/.%s.*\n' \
+          "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}" "${containerization_reference}" >&2
+        return 1
+      elif ((staged_attempt_count == 1)); then
+        stage="${staged_attempts}"
+        if [[ ! -d "${stage}" || -L "${stage}" \
+          || ! -f "${stage}/${asset}" || -L "${stage}/${asset}" \
+          || ! -f "${stage}/${asset}.sha256" || -L "${stage}/${asset}.sha256" ]]; then
+          printf 'retained VM-init authority attempt is incomplete or unsafe; preserving evidence: %s\n' \
+            "${stage}" >&2
+          return 1
+        fi
+        staged_digest=""
+        staged_name=""
+        staged_extra=""
+        staged_line_count="$(wc -l < "${stage}/${asset}.sha256" \
+          | tr -d '[:space:]')"
+        if ! read -r staged_digest staged_name staged_extra \
+          < "${stage}/${asset}.sha256" \
+          || [[ "${staged_line_count}" != "1" \
+          || ! "${staged_digest}" =~ ^[0-9a-f]{64}$ \
+          || "${staged_name}" != "${asset}" || -n "${staged_extra}" ]]; then
+          printf 'retained VM-init authority checksum is malformed; preserving evidence: %s\n' \
+            "${stage}/${asset}.sha256" >&2
+          return 1
+        fi
+        printf 'resuming retained VM-init authority verification: %s\n' "${stage}"
+      else
+        stage="$(mktemp -d \
+          "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}/.${containerization_reference}.XXXXXX")"
+        github_cli release download current \
+          --repo "${repo}" \
+          --dir "${stage}" \
+          --pattern "${asset}" \
+          --pattern "${asset}.sha256"
+      fi
       (
         cd "${stage}"
         shasum -a 256 -c "${asset}.sha256"
