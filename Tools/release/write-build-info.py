@@ -39,6 +39,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--containerization-ref", required=True)
     parser.add_argument("--compose-go-version", required=True)
     parser.add_argument(
+        "--runtime-profile",
+        choices=("stock", "enhanced"),
+        default="enhanced",
+        help="Runtime dependency graph used to compile the Compose executable.",
+    )
+    parser.add_argument(
         "--runtime-capability-manifest",
         type=Path,
         default=Path(__file__).with_name("runtime-capabilities.json"),
@@ -78,9 +84,12 @@ def load_runtime_capability_manifest(path: Path) -> tuple[int, list[str]]:
 
 def main() -> int:
     args = parse_args()
-    runtime_capability_schema_version, runtime_capabilities = (
-        load_runtime_capability_manifest(args.runtime_capability_manifest)
-    )
+    runtime_capability_schema_version = 1
+    runtime_capabilities: list[str] = []
+    if args.runtime_profile == "enhanced":
+        runtime_capability_schema_version, runtime_capabilities = (
+            load_runtime_capability_manifest(args.runtime_capability_manifest)
+        )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     payload = {

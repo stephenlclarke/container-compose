@@ -178,7 +178,9 @@ public struct ComposeExecutionOptions {
         watchPollInterval = .seconds(1)
         materializedConfigSecretDirectory = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
         temporaryDirectory = FileManager.default.temporaryDirectory
-        runtimeCapabilities = ComposeRuntimeCapabilities()
+        runtimeCapabilities = ComposeRuntimeCapabilities(identifiers: [
+            ComposeRuntimeCapabilities.networkScopedAliasesV1Identifier,
+        ])
         sleep = ComposeTaskSleep.sleep
         usesDefaultSleep = true
         confirm = ComposeExecutionOptions.defaultConfirmation

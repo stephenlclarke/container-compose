@@ -31,6 +31,14 @@ struct ComposeRuntimeCapabilitiesTests {
     }
 
     @Test
+    func `network attachment extensions require their exact negotiated identifier`() {
+        #expect(!ComposeRuntimeCapabilities().supportsNetworkScopedAliasesV1)
+        #expect(ComposeRuntimeCapabilities(
+            identifiers: [ComposeRuntimeCapabilities.networkScopedAliasesV1Identifier],
+        ).supportsNetworkScopedAliasesV1)
+    }
+
+    @Test
     func `unknown capabilities remain available without duplicates`() {
         let capabilities = ComposeRuntimeCapabilities(identifiers: ["example.future.v1", "example.future.v1"])
 

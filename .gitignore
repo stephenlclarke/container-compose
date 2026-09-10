@@ -1,4 +1,5 @@
 .build/
+.build-stock/
 .swiftpm/
 .local/
 /.nextflow/
