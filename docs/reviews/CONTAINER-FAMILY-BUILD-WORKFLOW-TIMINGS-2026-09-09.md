@@ -92,6 +92,17 @@ The 0.14.3 upstream refresh supplied additional first-run evidence:
   the strict current-upstream gate took 3.060 seconds after the canonical
   source checkouts were fast-forwarded. The focused consistency/divergence
   regression set ran 22 tests in 2.614 seconds.
+- The follow-up Containerization token-response synchronization passed without
+  a retry. Its Linux compile workflow took 20 minutes 37 seconds, while the
+  macOS workflow took 21 minutes 19 seconds. Within the macOS workflow, the
+  guest initfs producer took 6 minutes 49 seconds, protobuf verification took
+  2 minutes 24 seconds, the main build took 8 minutes 25 seconds, and unit
+  tests took 2 minutes 41 seconds.
+- Container's exact dependency-pin PR also passed without a retry. Its
+  build/test job took 25 minutes 45 seconds: protobuf verification consumed
+  9 minutes 32 seconds, compilation 8 minutes 24 seconds, and unit tests 6
+  minutes 49 seconds. The classifier correctly skipped Linux service workloads
+  and documentation packaging.
 
 Two workflow defects failed before expensive release work. The Containerization
 signature gate rejected unsigned commits already present on Apple `main`; it
@@ -109,7 +120,16 @@ because that step cold-builds both Swift protobuf generators. The integrity
 check is valid, but build-input classification should skip it when neither the
 protobuf inputs nor generator pins changed. That optimization belongs after
 the stable release so this release candidate is not changed while under
-exact-head review.
+exact-head review. [`container#253`](https://github.com/stephenlclarke/container/issues/253)
+tracks the fail-closed path classification and focused regression coverage.
+
+Containerization's token-only synchronization also exposed over nine minutes
+of avoidable work: the workflow built a guest initfs and regenerated
+protobufs even though the change touched only OCI registry token handling and
+its tests. [`containerization#92`](https://github.com/stephenlclarke/containerization/issues/92)
+records the required path classes so guest images, Linux logging workloads,
+and protobuf generation can fail closed when their inputs change and be
+skipped otherwise.
 
 A clean Compose worktree's first `make source-preflight` stopped after 1.340
 seconds because the repository-local Hawkeye binary was absent and the Make

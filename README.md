@@ -128,10 +128,10 @@ in the stable baseline and current candidate. Planned compatibility work is kept
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
 > <!-- upstream-metrics:start -->
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 9 September 2026 snapshot, the three support forks are **1194 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 10 September 2026 snapshot, the three support forks are **1202 commits ahead of Apple upstream**:
 >
-> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 315 ahead** at [`5372b36a691c`](https://github.com/stephenlclarke/containerization/commit/5372b36a691cbb392c4027ccf0ea2b6af7284b5b).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 820 ahead** at [`cc424d2be1cd`](https://github.com/stephenlclarke/container/commit/cc424d2be1cdcefcec57e1d138c3a4cead278d5a).
+> - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 317 ahead** at [`bd8130fea851`](https://github.com/stephenlclarke/containerization/commit/bd8130fea851f6ee264f00fc684e2543a7d2faa3).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 826 ahead** at [`e653616e62ab`](https://github.com/stephenlclarke/container/commit/e653616e62ab7763c3a7d10e88c365d6dca7e0c4).
 > - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 59 ahead** at [`5373d9b4363c`](https://github.com/stephenlclarke/container-builder-shim/commit/5373d9b4363c6e536dc6401199da269c7045abf9).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >
