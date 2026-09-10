@@ -8452,6 +8452,25 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/622"
     },
     {
+      "id": "container-compose-624",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): keep stable authority lookup runner-compatible",
+      "state": "active-draft",
+      "lastVerified": "2026-09-10",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-624.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-625.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/625"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
