@@ -1,4 +1,6 @@
-# Pull request: complete stock Engine socket volume initialization
+# Pull request 634: complete stock Engine socket volume initialization
+
+Pull request [#634](https://github.com/stephenlclarke/container-compose/pull/634) implements issue [#633](https://github.com/stephenlclarke/container-compose/issues/633).
 
 ## Summary
 
