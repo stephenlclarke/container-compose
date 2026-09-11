@@ -215,7 +215,7 @@ create_stable_draft() {
 }
 
 reconcile_stable_draft() {
-  local temporary remote_names asset name downloaded
+  local temporary remote_names expected_names asset name downloaded count
   if [[ "$("${GIT}" rev-list -n 1 "refs/tags/${RELEASE_TAG}")" != "${PUBLISH_SHA}" ]]; then
     printf 'stable draft tag no longer resolves to the requested candidate: %s\n' \
       "${RELEASE_TAG}" >&2
@@ -223,6 +223,28 @@ reconcile_stable_draft() {
   fi
   remote_names="$("${GH}" release view "${RELEASE_TAG}" \
     --repo "${RELEASE_REPOSITORY}" --json assets --jq '.assets[].name')"
+  expected_names=""
+  for asset in "${release_assets[@]}"; do
+    name="$(basename "${asset}")"
+    if grep -Fqx -- "${name}" <<<"${expected_names}"; then
+      printf 'stable draft candidate contains a duplicate asset name: %s\n' \
+        "${name}" >&2
+      return 1
+    fi
+    expected_names+="${name}"$'\n'
+  done
+  while IFS= read -r name; do
+    [[ -n "${name}" ]] || continue
+    if ! grep -Fqx -- "${name}" <<<"${expected_names}"; then
+      printf 'stable draft contains an unexpected asset: %s\n' "${name}" >&2
+      return 1
+    fi
+    count="$(grep -Fxc -- "${name}" <<<"${remote_names}" || true)"
+    if (( count != 1 )); then
+      printf 'stable draft contains a duplicate asset name: %s\n' "${name}" >&2
+      return 1
+    fi
+  done <<<"${remote_names}"
   temporary="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/stable-draft-assets.XXXXXX")"
   trap 'find "${temporary}" -depth -delete >/dev/null 2>&1 || true' RETURN
   for asset in "${release_assets[@]}"; do

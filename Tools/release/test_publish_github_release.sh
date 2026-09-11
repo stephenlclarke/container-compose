@@ -53,6 +53,31 @@ if [[ "$1" == "api" ]]; then
   exit 2
 fi
 
+if [[ "$1" == "release" && "$2" == "view" ]]; then
+  printf '%s' "${MOCK_REMOTE_ASSETS:-}"
+  exit 0
+fi
+
+if [[ "$1" == "release" && "$2" == "download" ]]; then
+  while (( $# > 0 )); do
+    case "$1" in
+      --pattern)
+        pattern="$2"
+        shift 2
+        ;;
+      --dir)
+        directory="$2"
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+  printf '%s' "${MOCK_DOWNLOAD_CONTENT:-}" > "${directory}/${pattern}"
+  exit 0
+fi
+
 printf '%s\n' "$*" >> "${MOCK_GH_CALLS}"
 EOF
 chmod +x "${temporary_directory}/bin/gh"
@@ -109,6 +134,8 @@ run_publisher() {
     RELEASE_RETAINED_COMPLETE_MANIFEST="${retained_manifest}" \
     RELEASE_EXTRA_ASSETS_FILE="${4:-}" \
     MOCK_RELEASE_STATE="$2" \
+    MOCK_REMOTE_ASSETS="${6:-}" \
+    MOCK_DOWNLOAD_CONTENT="${7:-}" \
     MOCK_GH_CALLS="$3" \
     MOCK_GIT_CALLS="${3}.git" \
     "${publisher}"
@@ -142,6 +169,30 @@ grep -Fqx "release upload 1.2.3 ${checksum} --repo stephenlclarke/container-comp
 grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --draft=false --latest" "${stable_draft_calls}"
 if grep -Eq 'release create|clobber|release delete' "${stable_draft_calls}"; then
   printf 'stable draft recovery recreated or clobbered release state\n' >&2
+  exit 1
+fi
+
+stable_draft_unexpected_calls="${temporary_directory}/stable-draft-unexpected.calls"
+if run_publisher tag draft "${stable_draft_unexpected_calls}" "" publish \
+  $'foreign.tar.gz\n'; then
+  printf 'stable draft recovery accepted an unexpected asset\n' >&2
+  exit 1
+fi
+if [[ -e "${stable_draft_unexpected_calls}" ]] && \
+  grep -Eq 'release (upload|edit|create|delete)' "${stable_draft_unexpected_calls}"; then
+  printf 'stable draft recovery mutated a draft with an unexpected asset\n' >&2
+  exit 1
+fi
+
+stable_draft_mismatch_calls="${temporary_directory}/stable-draft-mismatch.calls"
+if run_publisher tag draft "${stable_draft_mismatch_calls}" "" publish \
+  "$(basename "${asset}")" 'conflicting bytes'; then
+  printf 'stable draft recovery accepted a mismatched asset\n' >&2
+  exit 1
+fi
+if [[ -e "${stable_draft_mismatch_calls}" ]] && \
+  grep -Eq 'release (upload|edit|create|delete)' "${stable_draft_mismatch_calls}"; then
+  printf 'stable draft recovery mutated a draft with a mismatched asset\n' >&2
   exit 1
 fi
 

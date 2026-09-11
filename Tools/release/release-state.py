@@ -213,10 +213,16 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
     assets = release.get("assets", [])
     if not isinstance(assets, list):
         return {"reason": "GitHub returned malformed release assets", "state": "unavailable"}
+    if not all(
+        isinstance(asset, dict)
+        and isinstance(asset.get("name"), str)
+        and bool(asset["name"])
+        for asset in assets
+    ):
+        return {"reason": "GitHub returned malformed release assets", "state": "unavailable"}
     names = sorted(
         asset["name"]
         for asset in assets
-        if isinstance(asset, dict) and isinstance(asset.get("name"), str)
     )
     if release.get("draft") is False and release.get("prerelease") is False:
         release_state = "published"
@@ -247,7 +253,26 @@ def reconcile_remote_digests(
 ) -> dict[str, Any]:
     """Bind API-provided remote asset digests to the retained manifest."""
     result = dict(remote)
-    if remote.get("state") != "published" or manifest is None:
+    if remote.get("state") not in {"draft", "published"} or manifest is None:
+        return result
+    names = remote.get("assets")
+    if not isinstance(names, list) or not all(
+        isinstance(name, str) and name for name in names
+    ):
+        result.update(
+            reason="remote release asset inventory is malformed",
+            state="unavailable",
+        )
+        return result
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    unexpected = sorted(set(names) - set(EXPECTED_RELEASE_ASSETS))
+    result["duplicate_assets"] = duplicates
+    result["unexpected_assets"] = unexpected
+    if duplicates or unexpected:
+        result.update(
+            reason="remote release asset inventory conflicts with retained closure",
+            state="conflicting",
+        )
         return result
     observed = remote.get("asset_digests")
     if not isinstance(observed, dict):
@@ -258,9 +283,10 @@ def reconcile_remote_digests(
         return result
     conflicts: dict[str, dict[str, str]] = {}
     unavailable: list[str] = []
-    for name in EXPECTED_RELEASE_ASSETS:
+    for name in names:
         record = manifest["assets"].get(name)
         if not isinstance(record, dict) or not isinstance(record.get("sha256"), str):
+            unavailable.append(name)
             continue
         digest = observed.get(name)
         if digest is None:
@@ -277,7 +303,7 @@ def reconcile_remote_digests(
             reason="remote release asset digests conflict with retained bytes",
             state="conflicting",
         )
-    elif unavailable and not result.get("missing_assets"):
+    elif unavailable:
         result.update(
             reason="remote release asset digests are unavailable",
             state="unavailable",

@@ -159,6 +159,11 @@ class ReleaseStateTests(unittest.TestCase):
         with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
             remote = MODULE.remote_release("owner/repo", "1.2.3", False)
 
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
+        }
+        remote = MODULE.reconcile_remote_digests(remote, {"assets": assets})
         self.assertEqual(remote["state"], "draft")
         action = MODULE.plan_recovery(
             [],
@@ -169,6 +174,41 @@ class ReleaseStateTests(unittest.TestCase):
         )
         self.assertEqual(action["name"], "resume-stable-draft")
         self.assertIn("publish", action["summary"])
+
+    def test_draft_with_unexpected_asset_is_a_conflict(self) -> None:
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
+        }
+        remote = {
+            "asset_digests": {"foreign.tar.gz": "sha256:" + "a" * 64},
+            "assets": ["foreign.tar.gz"],
+            "missing_assets": list(MODULE.EXPECTED_RELEASE_ASSETS),
+            "state": "draft",
+        }
+
+        observed = MODULE.reconcile_remote_digests(remote, {"assets": assets})
+
+        self.assertEqual(observed["state"], "conflicting")
+        self.assertEqual(observed["unexpected_assets"], ["foreign.tar.gz"])
+
+    def test_draft_with_mismatched_asset_digest_is_a_conflict(self) -> None:
+        name = MODULE.EXPECTED_RELEASE_ASSETS[0]
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
+        }
+        remote = {
+            "asset_digests": {name: "sha256:" + "b" * 64},
+            "assets": [name],
+            "missing_assets": sorted(set(MODULE.EXPECTED_RELEASE_ASSETS) - {name}),
+            "state": "draft",
+        }
+
+        observed = MODULE.reconcile_remote_digests(remote, {"assets": assets})
+
+        self.assertEqual(observed["state"], "conflicting")
+        self.assertIn(name, observed["digest_conflicts"])
 
     def test_complete_local_store_plans_missing_remote_assets_before_postconditions(
         self,
@@ -338,7 +378,7 @@ class ReleaseStateTests(unittest.TestCase):
         }
 
         observed = MODULE.reconcile_remote_digests(
-            remote, {"assets": assets}
+            {**remote, "assets": [name]}, {"assets": assets}
         )
 
         self.assertEqual(observed["state"], "conflicting")
@@ -352,7 +392,12 @@ class ReleaseStateTests(unittest.TestCase):
         }
 
         observed = MODULE.reconcile_remote_digests(
-            {"asset_digests": {}, "missing_assets": [], "state": "published"},
+            {
+                "asset_digests": {},
+                "assets": list(MODULE.EXPECTED_RELEASE_ASSETS),
+                "missing_assets": [],
+                "state": "published",
+            },
             {"assets": assets},
         )
 
