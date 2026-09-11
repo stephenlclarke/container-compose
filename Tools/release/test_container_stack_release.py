@@ -2549,6 +2549,39 @@ github_cli() {{
         self.assertIn("wait 812 stable documentation and Pages deployment", active.stdout)
         self.assertIn("retained 0.15.0 812", active.stdout)
 
+    def test_failed_docc_regeneration_retries_the_same_logical_lineage(self) -> None:
+        retried = self.run_release_function(
+            Path("/tmp/unused-release-root"),
+            "dispatch_stable_documentation 0.15.0",
+            shell_setup="\n".join(
+                [
+                    (
+                        "latest_stable_documentation_dispatch() { "
+                        "printf '913\\tcompleted\\tfailure\\n'; }"
+                    ),
+                    "remote_main_commit() { printf '%s\\n' control; }",
+                    (
+                        "documentation_dispatch_mode_for_run() { "
+                        "printf '%s\\n' docs-regenerate-731; }"
+                    ),
+                    (
+                        "dispatch_github_workflow_run() { "
+                        "printf 'dispatch:%s:%s\\n' \"$1\" \"$5\" >&2; "
+                        "printf '%s\\n' 914; }"
+                    ),
+                    "wait_for_github_run_success() { :; }",
+                    (
+                        "retain_stable_documentation_artifacts() { "
+                        "printf 'retained %s %s\\n' \"$1\" \"$2\"; }"
+                    ),
+                ]
+            ),
+        )
+
+        self.assertEqual(retried.returncode, 0, retried.stderr)
+        self.assertIn("dispatch:docs.yml:docs-regenerate-731", retried.stderr)
+        self.assertIn("retained 0.15.0 914", retried.stdout)
+
     def test_release_helper_writes_the_published_k8s_documentation_authority(
         self,
     ) -> None:

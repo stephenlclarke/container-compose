@@ -96,7 +96,11 @@ def validate_record(value: object, request_id: str) -> dict[str, object]:
 
 
 def matching_records(
-    root: Path, workflow: str, version: str, control_sha: str, mode: str
+    root: Path,
+    workflow: str,
+    version: str,
+    control_sha: str,
+    mode: str | None,
 ) -> list[dict[str, object]]:
     directory = root / "release/dispatches"
     matches: list[dict[str, object]] = []
@@ -111,7 +115,7 @@ def matching_records(
                 record.get("workflow") == workflow
                 and record.get("version") == version
                 and record.get("control_sha") == control_sha
-                and record.get("mode", "") == mode
+                and (mode is None or record.get("mode", "") == mode)
             ):
                 matches.append(record)
     matches.sort(key=lambda value: str(value.get("created_at", "")), reverse=True)
@@ -140,7 +144,10 @@ def intent_value(options: argparse.Namespace) -> dict[str, object]:
 
 def main(arguments: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("intent", "unknown", "ack", "fail", "find", "claim"))
+    parser.add_argument(
+        "action",
+        choices=("intent", "unknown", "ack", "fail", "find", "find-run", "claim"),
+    )
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--request-id")
     parser.add_argument("--workflow")
@@ -150,18 +157,31 @@ def main(arguments: list[str] | None = None) -> int:
     parser.add_argument("--mode", default="")
     options = parser.parse_args(arguments)
     try:
-        if options.action in {"find", "claim"}:
+        if options.action in {"find", "find-run", "claim"}:
             if (
                 not options.workflow
                 or VERSION_PATTERN.fullmatch(options.version or "") is None
                 or not re.fullmatch(r"[0-9a-f]{40}", options.control_sha or "")
             ):
                 raise JournalError("dispatch lookup is missing workflow/version/control")
-            if options.action == "find":
+            if options.action in {"find", "find-run"}:
                 matches = matching_records(
-                    options.root, options.workflow, options.version,
-                    options.control_sha, options.mode,
+                    options.root,
+                    options.workflow,
+                    options.version,
+                    options.control_sha,
+                    options.mode if options.action == "find" else None,
                 )
+                if options.action == "find-run":
+                    if not re.fullmatch(r"[0-9]+", options.run_id or ""):
+                        raise JournalError("find-run requires a valid --run-id")
+                    matches = [
+                        record
+                        for record in matches
+                        if record.get("run_id") == options.run_id
+                    ]
+                    if len(matches) > 1:
+                        raise JournalError("workflow run matches multiple dispatch records")
                 print(json.dumps(matches[0] if matches else {}, sort_keys=True))
                 return 0
             if not options.request_id:

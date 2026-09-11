@@ -218,6 +218,12 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
         for asset in assets
         if isinstance(asset, dict) and isinstance(asset.get("name"), str)
     )
+    if release.get("draft") is False and release.get("prerelease") is False:
+        release_state = "published"
+    elif release.get("draft") is True and release.get("prerelease") is False:
+        release_state = "draft"
+    else:
+        release_state = "invalid"
     result = {
         "assets": names,
         "asset_digests": {
@@ -230,9 +236,7 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
         "draft": release.get("draft"),
         "id": release.get("id"),
         "prerelease": release.get("prerelease"),
-        "state": "published"
-        if release.get("draft") is False and release.get("prerelease") is False
-        else "invalid",
+        "state": release_state,
     }
     result["missing_assets"] = sorted(set(EXPECTED_RELEASE_ASSETS) - set(names))
     return result
@@ -706,6 +710,15 @@ def plan_recovery(
             prerequisites=["retained manifest", "remote release identity and digests"],
             side_effects=[],
             authority="release maintainer decision",
+            invalidates=["formulae", "pages"],
+        )
+    if remote.get("state") == "draft" and not missing_release_assets:
+        return recovery_action(
+            "resume-stable-draft",
+            "reconcile and publish the existing stable release draft",
+            prerequisites=["retained-complete manifest", "matching stable draft"],
+            side_effects=["upload missing assets", "publish stable release"],
+            authority="retained publication authority",
             invalidates=["formulae", "pages"],
         )
     if (

@@ -147,6 +147,29 @@ class ReleaseStateTests(unittest.TestCase):
         self.assertEqual(remote["state"], "unavailable")
         self.assertIn("malformed", remote["reason"])
 
+    def test_nonprerelease_draft_is_planned_as_resumable(self) -> None:
+        completed = self.completed(
+            {
+                "assets": [],
+                "draft": True,
+                "id": 123,
+                "prerelease": False,
+            }
+        )
+        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+            remote = MODULE.remote_release("owner/repo", "1.2.3", False)
+
+        self.assertEqual(remote["state"], "draft")
+        action = MODULE.plan_recovery(
+            [],
+            [],
+            [],
+            remote,
+            {"formulae": {"state": "deferred"}, "pages": {"state": "deferred"}},
+        )
+        self.assertEqual(action["name"], "resume-stable-draft")
+        self.assertIn("publish", action["summary"])
+
     def test_complete_local_store_plans_missing_remote_assets_before_postconditions(
         self,
     ) -> None:
