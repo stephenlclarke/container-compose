@@ -417,6 +417,25 @@ func TestInitializeRecoversInterruptedPublication(t *testing.T) {
 	if err := writeJournal(journal, testTransactionID, entries, originalMetadata); err != nil {
 		t.Fatal(err)
 	}
+	firstIdentity, err := identityAt(filepath.Join(destination, "first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondIdentity, err := identityAt(filepath.Join(stage, "second"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := replacePublishingJournal(
+		journal,
+		testTransactionID,
+		[]transactionJournalEntry{
+			{Name: "first", Device: firstIdentity.device, Inode: firstIdentity.inode},
+			{Name: "second", Device: secondIdentity.device, Inode: secondIdentity.inode},
+		},
+		originalMetadata,
+	); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := initialize(source, destination, testTransactionID, recovery); err != nil {
 		t.Fatal(err)
@@ -432,6 +451,108 @@ func TestInitializeRecoversInterruptedPublication(t *testing.T) {
 	for _, path := range []string{stage, journal, journal + ".tmp"} {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("transaction artefact remains at %s: %v", path, err)
+		}
+	}
+}
+
+func TestPreparedJournalNeverDeletesConcurrentUserData(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	destination := filepath.Join(root, "destination")
+	recovery := filepath.Join(root, "recovery")
+	mustMkdir(t, source, 0o755)
+	mustMkdir(t, destination, 0o755)
+	mustMkdir(t, recovery, 0o700)
+	mustWrite(t, filepath.Join(source, "payload"), "source", 0o644)
+	metadata, err := captureRootMetadata(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := filepath.Join(recovery, journalPrefix+testTransactionID)
+	if err := writeJournal(journal, testTransactionID, entries, metadata); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(destination, "payload"), "concurrent-user-data", 0o600)
+
+	err = initialize(source, destination, testTransactionID, recovery)
+	if !errors.Is(err, errDestinationNotEmpty) {
+		t.Fatalf("expected nonempty result after prepared recovery, got %v", err)
+	}
+	value, err := os.ReadFile(filepath.Join(destination, "payload"))
+	if err != nil || string(value) != "concurrent-user-data" {
+		t.Fatalf("prepared recovery changed concurrent user data: %q, %v", value, err)
+	}
+}
+
+func TestPublishingJournalPreservesReplacedUserData(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	destination := filepath.Join(root, "destination")
+	recovery := filepath.Join(root, "recovery")
+	mustMkdir(t, destination, 0o755)
+	mustMkdir(t, recovery, 0o700)
+	stage := filepath.Join(destination, stagePrefix+testTransactionID)
+	mustMkdir(t, stage, 0o700)
+	published := filepath.Join(destination, "payload")
+	mustWrite(t, published, "initializer", 0o600)
+	identity, err := identityAt(published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata, err := captureRootMetadata(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := filepath.Join(recovery, journalPrefix+testTransactionID)
+	if err := replacePublishingJournal(
+		journal,
+		testTransactionID,
+		[]transactionJournalEntry{{
+			Name: "payload", Device: identity.device, Inode: identity.inode,
+		}},
+		metadata,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(published, filepath.Join(root, "initializer-backup")); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, published, "replacement-user-data", 0o600)
+
+	if err := recoverTransaction(destination, testTransactionID, journal); err == nil {
+		t.Fatal("expected changed published identity to fail closed")
+	}
+	value, err := os.ReadFile(published)
+	if err != nil || string(value) != "replacement-user-data" {
+		t.Fatalf("publishing recovery changed replacement data: %q, %v", value, err)
+	}
+	if _, err := os.Stat(journal); err != nil {
+		t.Fatalf("failed recovery removed its journal: %v", err)
+	}
+}
+
+func TestRenameNoReplacePreservesDestination(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	destination := filepath.Join(root, "destination")
+	mustWrite(t, source, "source", 0o600)
+	mustWrite(t, destination, "destination", 0o600)
+
+	if err := renameNoReplace(source, destination); err == nil {
+		t.Fatal("expected an existing destination to reject publication")
+	}
+	for path, expected := range map[string]string{
+		source: "source", destination: "destination",
+	} {
+		value, err := os.ReadFile(path)
+		if err != nil || string(value) != expected {
+			t.Fatalf("no-replace rename changed %s: %q, %v", path, value, err)
 		}
 	}
 }
@@ -471,6 +592,20 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 	}
 	stage := filepath.Join(destination, stagePrefix+testTransactionID)
 	mustMkdir(t, stage, 0o700)
+	partialIdentity, err := identityAt(filepath.Join(destination, "partial"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := replacePublishingJournal(
+		journal,
+		testTransactionID,
+		[]transactionJournalEntry{{
+			Name: "partial", Device: partialIdentity.device, Inode: partialIdentity.inode,
+		}},
+		originalMetadata,
+	); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Chmod(destination, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -509,10 +644,11 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 func TestTransactionRecoveryRejectsUntrustedJournals(t *testing.T) {
 	t.Parallel()
 	for name, payload := range map[string]string{
-		"malformed":      `{`,
-		"wrong identity": `{"version":2,"transaction":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","entries":[]}`,
-		"wrong version":  `{"version":1,"transaction":"01234567-89ab-cdef-0123-456789abcdef","entries":[]}`,
-		"unsafe entry":   `{"version":2,"transaction":"01234567-89ab-cdef-0123-456789abcdef","entries":["../escape"]}`,
+		"malformed":        `{`,
+		"wrong identity":   `{"version":3,"transaction":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","phase":"prepared","entries":[]}`,
+		"wrong version":    `{"version":2,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"prepared","entries":[]}`,
+		"unsafe entry":     `{"version":3,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"prepared","entries":[{"name":"../escape"}]}`,
+		"missing identity": `{"version":3,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"publishing","entries":[{"name":"payload"}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			destination := t.TempDir()
