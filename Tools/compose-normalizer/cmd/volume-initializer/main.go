@@ -189,7 +189,7 @@ func initialize(source, destination, transaction, recovery string) error {
 // makes a source or helper mount overlap. It runs before transaction recovery so
 // an invalid image path cannot mutate either mounted volume.
 func resolveInitializationPaths(source, destination, recovery string) (string, string, string, error) {
-	resolvedSource, err := resolveSourcePath(source)
+	resolvedSource, sourceMissing, err := resolveSourcePath(source)
 	if err != nil {
 		return "", "", "", fmt.Errorf("resolve source: %w", err)
 	}
@@ -201,73 +201,74 @@ func resolveInitializationPaths(source, destination, recovery string) (string, s
 	if err != nil {
 		return "", "", "", fmt.Errorf("resolve recovery directory: %w", err)
 	}
-	if pathsOverlap(resolvedSource, resolvedDestination) ||
-		pathsOverlap(resolvedSource, resolvedRecovery) ||
+	sourceOverlaps := pathsOverlap(resolvedSource, resolvedDestination) ||
+		pathsOverlap(resolvedSource, resolvedRecovery)
+	if sourceMissing {
+		// Traversal has already stopped, so a common existing ancestor is not
+		// itself an overlap. Reject only when that ancestor is inside a mount.
+		sourceOverlaps = pathContains(resolvedDestination, resolvedSource) ||
+			pathContains(resolvedRecovery, resolvedSource)
+	}
+	if sourceOverlaps ||
 		pathsOverlap(resolvedDestination, resolvedRecovery) {
 		return "", "", "", errors.New("image volume helper paths overlap after symlink resolution")
+	}
+	if sourceMissing {
+		// Preserve the kernel-visible path so the post-recovery Stat reports the
+		// accepted missing-source result without lexical normalization.
+		resolvedSource = source
 	}
 	return resolvedSource, resolvedDestination, resolvedRecovery, nil
 }
 
-// resolveSourcePath resolves every existing ancestor even when the final image
-// path is absent. This preserves forward recovery before a missing-source result
-// without allowing an ancestor symlink to conceal a helper-mount overlap.
-func resolveSourcePath(path string) (string, error) {
-	return resolveSourcePathAtDepth(path, 0)
-}
-
-func resolveSourcePathAtDepth(path string, depth int) (string, error) {
-	if depth > 255 {
-		return "", errors.New("too many source symbolic links")
+// resolveSourcePath follows guest path components in kernel order and returns
+// the deepest existing resolved ancestor when the path is absent. It does not
+// clean `missing/..` because the kernel stops before traversing `..`.
+func resolveSourcePath(path string) (resolved string, missing bool, err error) {
+	current := string(filepath.Separator)
+	components := strings.Split(path, string(filepath.Separator))
+	symlinkCount := 0
+	for len(components) > 0 {
+		component := components[0]
+		components = components[1:]
+		switch component {
+		case "", ".":
+			continue
+		case "..":
+			current = filepath.Dir(current)
+			continue
+		}
+		candidate := current
+		if candidate != string(filepath.Separator) {
+			candidate += string(filepath.Separator)
+		}
+		candidate += component
+		info, lstatErr := os.Lstat(candidate)
+		if errors.Is(lstatErr, os.ErrNotExist) {
+			return current, true, nil
+		}
+		if lstatErr != nil {
+			return "", false, lstatErr
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			current = candidate
+			continue
+		}
+		symlinkCount++
+		if symlinkCount > 255 {
+			return "", false, errors.New("too many source symbolic links")
+		}
+		target, readErr := os.Readlink(candidate)
+		if readErr != nil {
+			return "", false, readErr
+		}
+		if filepath.IsAbs(target) {
+			current = string(filepath.Separator)
+		}
+		targetComponents := strings.Split(target, string(filepath.Separator))
+		components = append(targetComponents, components...)
 	}
-	resolved, err := filepath.EvalSymlinks(path)
-	if err == nil {
-		return resolved, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		return "", err
-	}
-	current := filepath.Clean(path)
-	missingComponents := make([]string, 0, 2)
-	for {
-		info, lstatErr := os.Lstat(current)
-		if lstatErr == nil && info.Mode()&os.ModeSymlink != 0 {
-			target, readErr := os.Readlink(current)
-			if readErr != nil {
-				return "", readErr
-			}
-			if !filepath.IsAbs(target) {
-				target = filepath.Join(filepath.Dir(current), target)
-			}
-			resolvedTarget, resolveErr := resolveSourcePathAtDepth(target, depth+1)
-			if resolveErr != nil {
-				return "", resolveErr
-			}
-			for index := len(missingComponents) - 1; index >= 0; index-- {
-				resolvedTarget = filepath.Join(resolvedTarget, missingComponents[index])
-			}
-			return resolvedTarget, nil
-		}
-		if lstatErr != nil && !errors.Is(lstatErr, os.ErrNotExist) {
-			return "", lstatErr
-		}
-		parent := filepath.Dir(current)
-		if parent == current {
-			return "", err
-		}
-		missingComponents = append(missingComponents, filepath.Base(current))
-		resolvedParent, parentErr := filepath.EvalSymlinks(parent)
-		if parentErr == nil {
-			for index := len(missingComponents) - 1; index >= 0; index-- {
-				resolvedParent = filepath.Join(resolvedParent, missingComponents[index])
-			}
-			return resolvedParent, nil
-		}
-		if !errors.Is(parentErr, os.ErrNotExist) {
-			return "", parentErr
-		}
-		current = parent
-	}
+	return current, false, nil
 }
 
 func pathsOverlap(first, second string) bool {

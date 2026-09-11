@@ -332,6 +332,28 @@ func TestInitializeRecoversBeforeAcceptingDanglingSourceSymlink(t *testing.T) {
 	}
 }
 
+func TestInitializeDoesNotCleanMissingTraversalFromDanglingSource(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	realSource := filepath.Join(root, "real-source")
+	destination := filepath.Join(root, "destination")
+	recovery := filepath.Join(root, "recovery")
+	mustMkdir(t, realSource, 0o750)
+	mustMkdir(t, destination, 0o700)
+	mustMkdir(t, recovery, 0o700)
+	mustWrite(t, filepath.Join(realSource, "must-not-copy"), "unrelated", 0o640)
+	source := symlinkPath(t, root, "missing/../real-source")
+
+	err := initialize(source, destination, testTransactionID, recovery)
+	if !errors.Is(err, errSourceMissing) {
+		t.Fatalf("expected missing source, got %v", err)
+	}
+	entries, readErr := os.ReadDir(destination)
+	if readErr != nil || len(entries) != 0 {
+		t.Fatalf("dangling traversal copied an unrelated directory: %v, %v", entries, readErr)
+	}
+}
+
 func symlinkPath(t *testing.T, root, target string) string {
 	t.Helper()
 	return symlinkPathWithName(t, root, "source-link", target)
