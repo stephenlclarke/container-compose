@@ -24,6 +24,8 @@ public struct ComposeRuntimeCapabilities: Equatable, Sendable {
         "io.github.stephenlclarke.container.logging-drivers.v1"
     public static let networkScopedAliasesV1Identifier =
         "io.github.stephenlclarke.container.compose.network-scoped-aliases.v1"
+    public static let networkAliasesV1Identifier =
+        "io.github.stephenlclarke.container.compose.network-aliases.v1"
 
     public private(set) var identifiers: Set<String>
 
@@ -41,5 +43,12 @@ public struct ComposeRuntimeCapabilities: Equatable, Sendable {
     /// can be projected without losing their network-scoped meaning.
     public var supportsNetworkScopedAliasesV1: Bool {
         identifiers.contains(Self.networkScopedAliasesV1Identifier)
+    }
+
+    /// Whether the selected compatibility adapter can preserve service and
+    /// explicit aliases without claiming static-address or interface support.
+    public var supportsNetworkAliasesV1: Bool {
+        supportsNetworkScopedAliasesV1
+            || identifiers.contains(Self.networkAliasesV1Identifier)
     }
 }

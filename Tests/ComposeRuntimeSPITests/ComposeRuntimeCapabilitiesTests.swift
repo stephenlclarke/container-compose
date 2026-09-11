@@ -33,9 +33,18 @@ struct ComposeRuntimeCapabilitiesTests {
     @Test
     func `network attachment extensions require their exact negotiated identifier`() {
         #expect(!ComposeRuntimeCapabilities().supportsNetworkScopedAliasesV1)
+        #expect(!ComposeRuntimeCapabilities().supportsNetworkAliasesV1)
         #expect(ComposeRuntimeCapabilities(
             identifiers: [ComposeRuntimeCapabilities.networkScopedAliasesV1Identifier],
         ).supportsNetworkScopedAliasesV1)
+        #expect(ComposeRuntimeCapabilities(
+            identifiers: [ComposeRuntimeCapabilities.networkScopedAliasesV1Identifier],
+        ).supportsNetworkAliasesV1)
+        let aliasesOnly = ComposeRuntimeCapabilities(
+            identifiers: [ComposeRuntimeCapabilities.networkAliasesV1Identifier],
+        )
+        #expect(aliasesOnly.supportsNetworkAliasesV1)
+        #expect(!aliasesOnly.supportsNetworkScopedAliasesV1)
     }
 
     @Test

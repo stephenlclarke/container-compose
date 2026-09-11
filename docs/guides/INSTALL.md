@@ -95,8 +95,8 @@ non-default socket. Docker, Docker Compose, and Colima are not consulted.
 
 The `devcontainer-compose` dispatcher also supplies
 `CONTAINER_COMPOSE_RUNTIME_CAPABILITIES` when its Docker-free compatibility
-adapter implements an enhanced runtime contract that stock Apple Container
-does not advertise itself. This is an adapter-to-Compose handshake, not a
+adapter implements a narrow runtime contract that stock Apple Container does
+not advertise itself. This is an adapter-to-Compose handshake, not a
 normal user setting; running the stock Compose binary directly leaves the
 overlay empty and retains stock behavior.
 

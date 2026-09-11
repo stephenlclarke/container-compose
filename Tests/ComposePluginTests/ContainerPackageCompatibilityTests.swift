@@ -327,7 +327,7 @@ struct ContainerPackageCompatibilityTests {
 
   @Test("stock compatibility adapter publishes an explicit capability overlay")
   func stockCompatibilityAdapterPublishesExplicitCapabilityOverlay() async throws {
-    let capability = ComposeRuntimeCapabilities.networkScopedAliasesV1Identifier
+    let capability = ComposeRuntimeCapabilities.networkAliasesV1Identifier
     let overlay = ContainerPackageCompatibility.runtimeCapabilityOverlay(environment: [
       ContainerPackageCompatibility.runtimeCapabilityOverlayEnvironmentKey:
         " \(capability),\(capability) ",
@@ -350,7 +350,8 @@ struct ContainerPackageCompatibilityTests {
     )
 
     #expect(failure == nil)
-    #expect(selection.snapshot().supportsNetworkScopedAliasesV1)
+    #expect(selection.snapshot().supportsNetworkAliasesV1)
+    #expect(!selection.snapshot().supportsNetworkScopedAliasesV1)
   }
 
   @Test("failed preflight does not publish optional runtime capabilities")
