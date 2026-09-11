@@ -966,7 +966,9 @@ private func expectProcessDoesNotExist(_ processIdentifier: pid_t) {
 /// Waits for the child to publish its PID before cancellation.
 private func waitForProcessIdentifier(at pidFile: URL) async throws -> pid_t {
     let clock = ContinuousClock()
-    let deadline = clock.now + .seconds(3)
+    // Avoid treating hosted-runner scheduling pressure as a ProcessRunner
+    // failure. Cancellation duration is measured separately after startup.
+    let deadline = clock.now + .seconds(10)
     while clock.now < deadline {
         if
             let data = FileManager.default.contents(atPath: pidFile.path),

@@ -1113,7 +1113,11 @@ private func makeInterruptedPreflightProcess(
 /// Waits for the preflight child to publish its PID before cancellation.
 private func waitForPreflightProcessIdentifier(at pidFile: URL) async throws -> pid_t {
   let clock = ContinuousClock()
-  let deadline = clock.now + .seconds(3)
+  // Hosted macOS runners can spend several seconds scheduling a freshly built
+  // CLI while the full Swift test graph is active. Keep the product latency
+  // assertion below strict, but give process startup enough room to avoid a
+  // scheduler-load false negative.
+  let deadline = clock.now + .seconds(10)
   while clock.now < deadline {
     if let data = FileManager.default.contents(atPath: pidFile.path),
       let value = String(data: data, encoding: .utf8),
@@ -1138,7 +1142,9 @@ private func waitForPreflightCLIExit(
       throw ContainerPackagePreflightTestError.composeProcessStatusMissing
     }
     group.addTask {
-      try await Task.sleep(for: .seconds(3))
+      // This bounds a genuine cleanup hang. The separate five-second assertion
+      // still enforces the expected interruption latency once the child starts.
+      try await Task.sleep(for: .seconds(10))
       throw ContainerPackagePreflightTestError.composeProcessTimedOut
     }
 
