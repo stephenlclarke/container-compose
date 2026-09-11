@@ -231,7 +231,12 @@ func TestInitializeRejectsMissingSourceWithoutMutatingDestination(t *testing.T) 
 
 func TestInitializeRejectsSymlinkResolvedMountOverlapBeforeRecovery(t *testing.T) {
 	t.Parallel()
-	for _, test := range []string{"destination", "recovery", "filesystem root"} {
+	for _, test := range []string{
+		"destination",
+		"destination missing child",
+		"recovery",
+		"filesystem root",
+	} {
 		t.Run(test, func(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
@@ -243,12 +248,18 @@ func TestInitializeRejectsSymlinkResolvedMountOverlapBeforeRecovery(t *testing.T
 			mustWrite(t, staleTemporary, "preserve", 0o600)
 			target := destination
 			switch test {
+			case "destination missing child":
+				source := symlinkPath(t, root, destination)
+				target = filepath.Join(source, "missing")
 			case "recovery":
 				target = recovery
 			case "filesystem root":
 				target = string(filepath.Separator)
 			}
-			source := symlinkPath(t, root, target)
+			source := target
+			if test != "destination missing child" {
+				source = symlinkPath(t, root, target)
+			}
 
 			err := initialize(source, destination, testTransactionID, recovery)
 			if err == nil || !strings.Contains(err.Error(), "paths overlap after symlink resolution") {

@@ -189,14 +189,7 @@ func initialize(source, destination, transaction, recovery string) error {
 // makes a source or helper mount overlap. It runs before transaction recovery so
 // an invalid image path cannot mutate either mounted volume.
 func resolveInitializationPaths(source, destination, recovery string) (string, string, string, error) {
-	resolvedSource, err := filepath.EvalSymlinks(source)
-	if errors.Is(err, os.ErrNotExist) {
-		// A missing source cannot overlap a mounted helper path. Preserve the
-		// existing contract that completes an interrupted transaction before
-		// reporting the missing image path.
-		resolvedSource = filepath.Clean(source)
-		err = nil
-	}
+	resolvedSource, err := resolveSourcePath(source)
 	if err != nil {
 		return "", "", "", fmt.Errorf("resolve source: %w", err)
 	}
@@ -214,6 +207,46 @@ func resolveInitializationPaths(source, destination, recovery string) (string, s
 		return "", "", "", errors.New("image volume helper paths overlap after symlink resolution")
 	}
 	return resolvedSource, resolvedDestination, resolvedRecovery, nil
+}
+
+// resolveSourcePath resolves every existing ancestor even when the final image
+// path is absent. This preserves forward recovery before a missing-source result
+// without allowing an ancestor symlink to conceal a helper-mount overlap.
+func resolveSourcePath(path string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return resolved, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	current := filepath.Clean(path)
+	missingComponents := make([]string, 0, 2)
+	for {
+		info, lstatErr := os.Lstat(current)
+		if lstatErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			return "", errors.New("source symbolic link target does not exist")
+		}
+		if lstatErr != nil && !errors.Is(lstatErr, os.ErrNotExist) {
+			return "", lstatErr
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", err
+		}
+		missingComponents = append(missingComponents, filepath.Base(current))
+		resolvedParent, parentErr := filepath.EvalSymlinks(parent)
+		if parentErr == nil {
+			for index := len(missingComponents) - 1; index >= 0; index-- {
+				resolvedParent = filepath.Join(resolvedParent, missingComponents[index])
+			}
+			return resolvedParent, nil
+		}
+		if !errors.Is(parentErr, os.ErrNotExist) {
+			return "", parentErr
+		}
+		current = parent
+	}
 }
 
 func pathsOverlap(first, second string) bool {
