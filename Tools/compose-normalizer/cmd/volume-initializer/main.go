@@ -17,6 +17,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,7 +28,8 @@ import (
 )
 
 const (
-	stagePrefix = ".compose-volume-init-stage-"
+	stagePrefix   = ".compose-volume-init-stage-"
+	journalPrefix = ".compose-volume-init-journal-"
 )
 
 var (
@@ -43,11 +45,11 @@ func main() {
 // run validates the command contract and maps copy-up outcomes to stable
 // helper exit codes that the host provider can interpret.
 func run(arguments []string, stderr io.Writer) int {
-	if len(arguments) != 2 {
-		fmt.Fprintln(stderr, "usage: compose-volume-initializer SOURCE DESTINATION")
+	if len(arguments) != 3 {
+		fmt.Fprintln(stderr, "usage: compose-volume-initializer SOURCE DESTINATION TRANSACTION")
 		return 2
 	}
-	if err := initialize(arguments[0], arguments[1]); err != nil {
+	if err := initialize(arguments[0], arguments[1], arguments[2]); err != nil {
 		fmt.Fprintln(stderr, err)
 		switch {
 		case errors.Is(err, errSourceMissing):
@@ -63,9 +65,12 @@ func run(arguments []string, stderr io.Writer) int {
 
 // initialize stages the complete tree and rolls back every published entry on
 // failure. The host provider holds the cross-process volume lock.
-func initialize(source, destination string) error {
+func initialize(source, destination, transaction string) error {
 	if !filepath.IsAbs(source) || !filepath.IsAbs(destination) {
 		return errors.New("source and destination must be absolute paths")
+	}
+	if !validTransactionID(transaction) {
+		return errors.New("transaction must be a lowercase UUID")
 	}
 	sourceInfo, err := os.Stat(source)
 	if errors.Is(err, os.ErrNotExist) {
@@ -84,7 +89,7 @@ func initialize(source, destination string) error {
 		return errors.New("image volume destination is not a directory")
 	}
 
-	if err := removeStaleStages(destination); err != nil {
+	if err := recoverTransaction(destination, transaction); err != nil {
 		return err
 	}
 	if err := removeEmptyExt4Scaffolding(destination); err != nil {
@@ -98,8 +103,8 @@ func initialize(source, destination string) error {
 		return errDestinationNotEmpty
 	}
 
-	stage, err := os.MkdirTemp(destination, stagePrefix)
-	if err != nil {
+	stage := filepath.Join(destination, stagePrefix+transaction)
+	if err := os.Mkdir(stage, 0o700); err != nil {
 		return fmt.Errorf("create initialization stage: %w", err)
 	}
 	defer os.RemoveAll(stage)
@@ -116,6 +121,10 @@ func initialize(source, destination string) error {
 		); err != nil {
 			return err
 		}
+	}
+	journal := filepath.Join(destination, journalPrefix+transaction)
+	if err := writeJournal(journal, transaction, entries); err != nil {
+		return err
 	}
 
 	destinationInfo, err := os.Stat(destination)
@@ -141,7 +150,130 @@ func initialize(source, destination string) error {
 		rollback()
 		return fmt.Errorf("apply destination metadata: %w", err)
 	}
+	if err := os.Remove(journal); err != nil {
+		return fmt.Errorf("complete initialization transaction: %w", err)
+	}
 	return nil
+}
+
+type transactionJournal struct {
+	Version     int      `json:"version"`
+	Transaction string   `json:"transaction"`
+	Entries     []string `json:"entries"`
+}
+
+// writeJournal durably records every name that publication may move before
+// the first rename can make source data visible in the volume.
+func writeJournal(path, transaction string, entries []os.DirEntry) error {
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	payload, err := json.Marshal(transactionJournal{
+		Version: 1, Transaction: transaction, Entries: names,
+	})
+	if err != nil {
+		return fmt.Errorf("encode initialization journal: %w", err)
+	}
+	temporary := path + ".tmp"
+	file, err := os.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("create initialization journal: %w", err)
+	}
+	removeTemporary := true
+	defer func() {
+		_ = file.Close()
+		if removeTemporary {
+			_ = os.Remove(temporary)
+		}
+	}()
+	if _, err := file.Write(payload); err != nil {
+		return fmt.Errorf("write initialization journal: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("sync initialization journal: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close initialization journal: %w", err)
+	}
+	if err := os.Rename(temporary, path); err != nil {
+		return fmt.Errorf("publish initialization journal: %w", err)
+	}
+	removeTemporary = false
+	return syncDirectory(filepath.Dir(path))
+}
+
+// recoverTransaction removes only artefacts named by the host-authenticated
+// transaction identity. Stage-shaped user entries from any other identity are
+// never considered internal state.
+func recoverTransaction(destination, transaction string) error {
+	stage := filepath.Join(destination, stagePrefix+transaction)
+	journal := filepath.Join(destination, journalPrefix+transaction)
+	temporary := journal + ".tmp"
+	payload, err := os.ReadFile(journal)
+	switch {
+	case err == nil:
+		var record transactionJournal
+		if decodeErr := json.Unmarshal(payload, &record); decodeErr != nil {
+			return fmt.Errorf("decode initialization journal: %w", decodeErr)
+		}
+		if record.Version != 1 || record.Transaction != transaction {
+			return errors.New("initialization journal identity does not match")
+		}
+		for _, name := range record.Entries {
+			if !safeTopLevelName(name) {
+				return errors.New("initialization journal contains an unsafe entry")
+			}
+			if err := os.RemoveAll(filepath.Join(destination, name)); err != nil {
+				return fmt.Errorf("roll back published entry: %w", err)
+			}
+		}
+	case errors.Is(err, os.ErrNotExist):
+		// Publication cannot start until the complete journal is durable.
+	default:
+		return fmt.Errorf("read initialization journal: %w", err)
+	}
+	for _, path := range []string{stage, journal, temporary} {
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("remove stale initialization transaction: %w", err)
+		}
+	}
+	return nil
+}
+
+// syncDirectory makes the journal rename durable before publication begins.
+func syncDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open initialization directory: %w", err)
+	}
+	defer directory.Close()
+	if err := directory.Sync(); err != nil {
+		return fmt.Errorf("sync initialization directory: %w", err)
+	}
+	return nil
+}
+
+func safeTopLevelName(name string) bool {
+	return name != "" && name != "." && name != ".." && filepath.Base(name) == name
+}
+
+func validTransactionID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for index, character := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			if character != '-' {
+				return false
+			}
+			continue
+		}
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return false
+		}
+	}
+	return true
 }
 
 // removeEmptyExt4Scaffolding removes only the empty recovery directory that
@@ -196,57 +328,14 @@ func applyMountRootMetadata(path string, info os.FileInfo) error {
 	return nil
 }
 
-// destinationIsEmpty ignores only initializer-owned transaction directories.
+// destinationIsEmpty treats every entry as user data after exact transaction
+// recovery has removed only host-authenticated internal artefacts.
 func destinationIsEmpty(destination string) (bool, error) {
 	entries, err := os.ReadDir(destination)
 	if err != nil {
 		return false, fmt.Errorf("read destination: %w", err)
 	}
-	for _, entry := range entries {
-		owned, err := isOwnedStage(entry)
-		if err != nil {
-			return false, err
-		}
-		if !owned {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
-// removeStaleStages removes only transaction directories owned by this helper.
-func removeStaleStages(destination string) error {
-	entries, err := os.ReadDir(destination)
-	if err != nil {
-		return fmt.Errorf("read destination stages: %w", err)
-	}
-	for _, entry := range entries {
-		owned, err := isOwnedStage(entry)
-		if err != nil {
-			return err
-		}
-		if owned {
-			if err := os.RemoveAll(filepath.Join(destination, entry.Name())); err != nil {
-				return fmt.Errorf("remove stale initialization stage: %w", err)
-			}
-		}
-	}
-	return nil
-}
-
-// isOwnedStage recognizes the exact private directory shape produced by
-// os.MkdirTemp when the helper starts a copy-up transaction.
-func isOwnedStage(entry os.DirEntry) (bool, error) {
-	if !strings.HasPrefix(entry.Name(), stagePrefix) {
-		return false, nil
-	}
-	info, err := entry.Info()
-	if err != nil {
-		return false, fmt.Errorf("inspect initialization stage: %w", err)
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	return ok && info.IsDir() && info.Mode().Perm() == 0o700 &&
-		stat.Uid == uint32(os.Geteuid()), nil
+	return len(entries) == 0, nil
 }
 
 type fileIdentity struct {

@@ -373,8 +373,11 @@ struct ComposeEngineRuntimeTests {
             at: volume.appendingPathComponent("lost+found", isDirectory: true),
             withIntermediateDirectories: false
         )
+        let pending = try EngineVolumeInitializationTransaction.create(
+            volumeMountpoint: volume
+        )
         let staleStage = volume.appendingPathComponent(
-            EngineVolumeInitializerBuildContext.stagePrefix + "abandoned",
+            EngineVolumeInitializerBuildContext.stagePrefix + pending.identifier,
             isDirectory: true
         )
         try FileManager.default.createDirectory(
@@ -424,7 +427,8 @@ struct ComposeEngineRuntimeTests {
             #expect(create.body.containsText(#""User":"0""#))
             #expect(create.body.containsText(#""Entrypoint":["/.compose-volume-initializer"]"#))
             #expect(create.body.containsText(#""Image":"devcontainer-volume-initializer:"#))
-            #expect(create.body.containsText(#""Cmd":["/state","/.compose-image-volume-target"]"#))
+            #expect(create.body.containsText(#""Cmd":["/state","/.compose-image-volume-target",""#))
+            #expect(create.body.containsText(pending.identifier))
             #expect(!create.body.containsText("/bin/sh"))
             let build = try #require(requests.first { $0.target.contains("/build?") })
             #expect(build.target.contains("dockerfile=Dockerfile"))
@@ -487,9 +491,16 @@ struct ComposeEngineRuntimeTests {
         let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
         try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
         let userData = volume.appendingPathComponent(
-            EngineVolumeInitializerBuildContext.stagePrefix + "user-data"
+            EngineVolumeInitializerBuildContext.stagePrefix
+                + "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            isDirectory: true
         )
-        try Data("keep\n".utf8).write(to: userData)
+        try FileManager.default.createDirectory(
+            at: userData,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try Data("keep\n".utf8).write(to: userData.appendingPathComponent("value"))
 
         let recorder = RequestRecorder()
         let server = fixture.server(ImageVolumeResponder(
@@ -509,7 +520,12 @@ struct ComposeEngineRuntimeTests {
                 volumeName: "project_state",
             ))
 
-            #expect(try String(contentsOf: userData, encoding: .utf8) == "keep\n")
+            #expect(
+                try String(
+                    contentsOf: userData.appendingPathComponent("value"),
+                    encoding: .utf8
+                ) == "keep\n"
+            )
             let requests = await recorder.requests
             #expect(requests.filter { $0.target.contains("/containers/create?") }.isEmpty)
             #expect(requests.filter { $0.target.contains("/build?") }.isEmpty)
@@ -518,6 +534,74 @@ struct ComposeEngineRuntimeTests {
             throw error
         }
         try await server.shutdown()
+    }
+
+    @Test
+    func `locally built image uses a verified temporary build alias`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
+        try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
+        let recorder = RequestRecorder()
+        let server = fixture.server(ImageVolumeResponder(
+            recorder: recorder,
+            mountpoint: volume.path,
+            hasRepositoryDigest: false
+        ))
+        try await server.start()
+        do {
+            let provider = EngineRuntimeProvider(
+                socketPath: fixture.socketPath,
+                volumeInitializerPath: fixture.volumeInitializerPath
+            )
+            try await provider.initializeImageVolume(.init(
+                image: "local/devcontainer:latest",
+                platform: "linux/arm64",
+                imageSubpath: "/workspace",
+                volumeName: "project_state"
+            ))
+
+            let requests = await recorder.requests
+            let tag = try #require(requests.first {
+                $0.method == .post && $0.target.contains("/tag?repo=devcontainer-volume-source")
+            })
+            #expect(tag.target.contains("/images/local%2Fdevcontainer:latest/tag?"))
+            let build = try #require(requests.first { $0.target.contains("/build?") })
+            #expect(build.body.containsText("FROM devcontainer-volume-source:"))
+            #expect(!build.body.containsText("FROM sha256:source-image"))
+            #expect(requests.contains {
+                $0.method == .delete
+                    && $0.target.contains("/images/devcontainer-volume-source:")
+            })
+        } catch {
+            try? await server.shutdown()
+            throw error
+        }
+        try await server.shutdown()
+    }
+
+    @Test
+    func `image volume transaction is private durable and removable`() throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
+        try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
+
+        let transaction = try EngineVolumeInitializationTransaction.create(
+            volumeMountpoint: volume
+        )
+        #expect(
+            try EngineVolumeInitializationTransaction.load(volumeMountpoint: volume)
+                == transaction
+        )
+        var status = stat()
+        #expect(Darwin.lstat(transaction.path, &status) == 0)
+        #expect(status.st_mode & (S_IRWXG | S_IRWXO) == 0)
+
+        try transaction.complete()
+        #expect(
+            try EngineVolumeInitializationTransaction.load(volumeMountpoint: volume) == nil
+        )
     }
 }
 
@@ -633,6 +717,7 @@ private struct EngineFixtureResponder: DockerHTTPResponder {
 private struct ImageVolumeResponder: DockerHTTPResponder {
     let recorder: RequestRecorder
     let mountpoint: String
+    var hasRepositoryDigest = true
 
     func respond(to request: DockerHTTPRequest) async -> DockerHTTPResponse {
         await recorder.append(request)
@@ -655,9 +740,11 @@ private struct ImageVolumeResponder: DockerHTTPResponder {
         case let (.get, target) where target.contains("devcontainer-volume-initializer"):
             return .fixture(#"{"message":"not found"}"#, status: 404)
         case let (.get, target) where target.contains("/images/"):
+            let digests = hasRepositoryDigest
+                ? #"["example/image@sha256:digest"]"#
+                : "[]"
             return .fixture(
-                // swiftlint:disable:next line_length
-                #"{"Id":"sha256:source-image","RepoTags":["example/image:latest"],"RepoDigests":["example/image@sha256:digest"],"Created":"2026-09-11T00:00:00Z","Size":42,"VirtualSize":42,"Architecture":"arm64","Os":"linux","Config":{}}"#
+                #"{"Id":"sha256:source-image","RepoTags":["example/image:latest"],"RepoDigests":\#(digests),"Created":"2026-09-11T00:00:00Z","Size":42,"VirtualSize":42,"Architecture":"arm64","Os":"linux","Config":{}}"#
             )
         case let (.post, target) where target.contains("/build?"):
             return .empty(status: 200)

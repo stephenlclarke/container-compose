@@ -122,6 +122,141 @@ enum EngineVolumeInitializerBuildContext {
     }
 }
 
+struct EngineVolumeInitializationTransaction: Equatable {
+    private static let fileName = ".compose-image-volume.transaction"
+
+    let identifier: String
+    let path: String
+
+    static func load(volumeMountpoint: URL) throws -> EngineVolumeInitializationTransaction? {
+        let path = transactionPath(volumeMountpoint: volumeMountpoint)
+        guard FileManager.default.fileExists(atPath: path) else {
+            return nil
+        }
+        return try validated(path: path)
+    }
+
+    static func create(volumeMountpoint: URL) throws -> EngineVolumeInitializationTransaction {
+        let path = transactionPath(volumeMountpoint: volumeMountpoint)
+        let identifier = UUID().uuidString.lowercased()
+        let descriptor = Darwin.open(
+            path,
+            O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC | O_NOFOLLOW,
+            S_IRUSR | S_IWUSR
+        )
+        guard descriptor >= 0 else {
+            throw ComposeError.invalidProject(
+                "cannot create image-volume transaction at \(path): \(String(cString: strerror(errno)))"
+            )
+        }
+        do {
+            try write(Data((identifier + "\n").utf8), descriptor: descriptor, path: path)
+            guard Darwin.fsync(descriptor) == 0 else {
+                throw ComposeError.invalidProject(
+                    "cannot sync image-volume transaction at \(path): \(String(cString: strerror(errno)))"
+                )
+            }
+        } catch {
+            Darwin.close(descriptor)
+            _ = Darwin.unlink(path)
+            throw error
+        }
+        Darwin.close(descriptor)
+        do {
+            try syncParentDirectory(of: path)
+        } catch {
+            _ = Darwin.unlink(path)
+            throw error
+        }
+        return EngineVolumeInitializationTransaction(identifier: identifier, path: path)
+    }
+
+    func complete() throws {
+        let current = try Self.validated(path: path)
+        guard current.identifier == identifier else {
+            throw ComposeError.invalidProject(
+                "image-volume transaction identity changed at \(path)"
+            )
+        }
+        guard Darwin.unlink(path) == 0 else {
+            throw ComposeError.invalidProject(
+                "cannot remove image-volume transaction at \(path): \(String(cString: strerror(errno)))"
+            )
+        }
+        try Self.syncParentDirectory(of: path)
+    }
+
+    private static func transactionPath(volumeMountpoint: URL) -> String {
+        volumeMountpoint.deletingLastPathComponent()
+            .appendingPathComponent(fileName)
+            .path
+    }
+
+    private static func syncParentDirectory(of path: String) throws {
+        let parent = URL(fileURLWithPath: path).deletingLastPathComponent().path
+        let descriptor = Darwin.open(parent, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+        guard descriptor >= 0 else {
+            throw ComposeError.invalidProject(
+                "cannot open image-volume transaction directory at \(parent): \(String(cString: strerror(errno)))"
+            )
+        }
+        defer { Darwin.close(descriptor) }
+        guard Darwin.fsync(descriptor) == 0 else {
+            throw ComposeError.invalidProject(
+                "cannot sync image-volume transaction directory at \(parent): \(String(cString: strerror(errno)))"
+            )
+        }
+    }
+
+    private static func validated(path: String) throws -> EngineVolumeInitializationTransaction {
+        var status = stat()
+        guard Darwin.lstat(path, &status) == 0,
+              status.st_mode & S_IFMT == S_IFREG,
+              status.st_uid == geteuid(),
+              status.st_nlink == 1,
+              status.st_mode & (S_IRWXG | S_IRWXO) == 0,
+              status.st_size > 0,
+              status.st_size <= 128
+        else {
+            throw ComposeError.invalidProject(
+                "image-volume transaction is not a private current-user file at \(path)"
+            )
+        }
+        let identifier = try String(contentsOfFile: path, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard UUID(uuidString: identifier) != nil,
+              identifier == identifier.lowercased()
+        else {
+            throw ComposeError.invalidProject(
+                "image-volume transaction has an invalid identity at \(path)"
+            )
+        }
+        return EngineVolumeInitializationTransaction(identifier: identifier, path: path)
+    }
+
+    private static func write(_ data: Data, descriptor: Int32, path: String) throws {
+        try data.withUnsafeBytes { rawBuffer in
+            guard let base = rawBuffer.baseAddress else {
+                return
+            }
+            var offset = 0
+            while offset < rawBuffer.count {
+                let count = Darwin.write(
+                    descriptor,
+                    base.advanced(by: offset),
+                    rawBuffer.count - offset
+                )
+                guard count > 0 else {
+                    throw ComposeError.invalidProject(
+                        "cannot write image-volume transaction at \(path): \(String(cString: strerror(errno)))"
+                    )
+                }
+                offset += count
+            }
+        }
+    }
+}
+
 final class EngineVolumeInitializationFileLock: @unchecked Sendable {
     private let descriptor: Int32
 
