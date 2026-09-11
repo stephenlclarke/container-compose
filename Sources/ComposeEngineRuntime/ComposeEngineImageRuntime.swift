@@ -18,6 +18,50 @@ import ComposeCore
 import ContainerUnixHTTPClient
 import Foundation
 
+private struct EngineImagePlatformQuery: Encodable {
+    let operatingSystem: String
+    let architecture: String
+    let variant: String?
+
+    init(_ value: String) throws {
+        let components = value.split(
+            separator: "/",
+            maxSplits: 2,
+            omittingEmptySubsequences: false
+        )
+        guard (2 ... 3).contains(components.count),
+              components.allSatisfy({ !$0.isEmpty })
+        else {
+            throw ComposeError.commandFailed(
+                command: "Engine image inspect --platform \(value)",
+                status: 1,
+                stderr: "invalid platform"
+            )
+        }
+        operatingSystem = String(components[0])
+        architecture = String(components[1])
+        variant = components.count == 3 ? String(components[2]) : nil
+    }
+
+    func encoded() throws -> String {
+        let data = try JSONEncoder().encode(self)
+        guard let value = String(data: data, encoding: .utf8) else {
+            throw ComposeError.commandFailed(
+                command: "Engine image inspect",
+                status: 1,
+                stderr: "could not encode image platform"
+            )
+        }
+        return value
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case operatingSystem = "os"
+        case architecture
+        case variant
+    }
+}
+
 extension EngineRuntimeProvider: ComposeRuntimeImageManaging {
     public func imageExists(_ reference: String) async throws -> Bool {
         do {
@@ -130,33 +174,37 @@ extension EngineRuntimeProvider: ComposeRuntimeImageManaging {
         _ reference: String,
         platform: String?
     ) async throws -> EngineImageInspect {
-        let platformQuery = platform.map { "?platform=\(query($0))" } ?? ""
+        guard let platform, !platform.isEmpty else {
+            return try await inspectImage(reference)
+        }
+        let requestedPlatform = try EngineImagePlatformQuery(platform)
         let image: EngineImageInspect = try await request(
             .get,
-            "/v1.53/images/\(escaped(reference))/json\(platformQuery)"
+            "/v1.53/images/\(escaped(reference))/json?platform=\(query(try requestedPlatform.encoded()))"
         )
-        guard let platform, !platform.isEmpty else {
-            return image
-        }
-        let components = platform.split(
-            separator: "/",
-            maxSplits: 2,
-            omittingEmptySubsequences: false
+        try Self.validateImagePlatform(
+            image,
+            requested: requestedPlatform,
+            argument: platform
         )
-        let requestedVariant = components.count == 3
-            ? String(components[2])
-            : nil
+        return image
+    }
+
+    private static func validateImagePlatform(
+        _ image: EngineImageInspect,
+        requested: EngineImagePlatformQuery,
+        argument: String
+    ) throws {
         let resolvedVariant = image.variant?.nilIfEmpty
-        let variantMatches = requestedVariant.map {
+        let variantMatches = requested.variant.map {
             Self.normalizedImageVariant($0, architecture: image.architecture)
                 == Self.normalizedImageVariant(
                     resolvedVariant,
                     architecture: image.architecture
                 )
         } ?? true
-        guard components.count >= 2,
-              components[0] == image.operatingSystem,
-              components[1] == image.architecture,
+        guard requested.operatingSystem == image.operatingSystem,
+              requested.architecture == image.architecture,
               variantMatches
         else {
             let resolvedPlatform = [
@@ -165,12 +213,11 @@ extension EngineRuntimeProvider: ComposeRuntimeImageManaging {
                 resolvedVariant,
             ].compactMap(\.self).joined(separator: "/")
             throw ComposeError.commandFailed(
-                command: "Engine image inspect --platform \(platform)",
+                command: "Engine image inspect --platform \(argument)",
                 status: 1,
                 stderr: "resolved \(resolvedPlatform) instead"
             )
         }
-        return image
     }
 
     private static func normalizedImageVariant(

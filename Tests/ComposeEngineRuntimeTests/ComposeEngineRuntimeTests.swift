@@ -590,7 +590,8 @@ struct ComposeEngineRuntimeTests {
                     $0.method == .get
                         && $0.target.contains("/images/example")
                         && $0.target.contains("/json?")
-                        && $0.target.contains("platform=linux/arm64")
+                        && ($0.target.removingPercentEncoding ?? $0.target)
+                        .contains(#"platform={"#)
                 }
             )
             let create = try #require(requests.first { $0.target.contains("/containers/create?") })

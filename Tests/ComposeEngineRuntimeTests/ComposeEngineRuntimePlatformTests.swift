@@ -51,7 +51,14 @@ struct ComposeEngineRuntimePlatformTests {
         }
 
         let requests = await recorder.requests
-        #expect(requests.contains { $0.target.contains("platform=linux/amd64/v3") })
+        #expect(requests.contains {
+            Self.requestsPlatform(
+                $0.target,
+                operatingSystem: "linux",
+                architecture: "amd64",
+                variant: "v3"
+            )
+        })
         #expect(!requests.contains { $0.target.contains("/build?") })
         #expect(!requests.contains { $0.target.contains("/containers/create?") })
         try await server.shutdown()
@@ -87,9 +94,31 @@ struct ComposeEngineRuntimePlatformTests {
         }
 
         let requests = await recorder.requests
-        #expect(requests.contains { $0.target.contains("platform=linux/arm64/v7") })
+        #expect(requests.contains {
+            Self.requestsPlatform(
+                $0.target,
+                operatingSystem: "linux",
+                architecture: "arm64",
+                variant: "v7"
+            )
+        })
         #expect(!requests.contains { $0.target.contains("/build?") })
         #expect(!requests.contains { $0.target.contains("/containers/create?") })
         try await server.shutdown()
+    }
+
+    private static func requestsPlatform(
+        _ target: String,
+        operatingSystem: String,
+        architecture: String,
+        variant: String?
+    ) -> Bool {
+        guard let decoded = target.removingPercentEncoding else {
+            return false
+        }
+        return decoded.contains("platform={")
+            && decoded.contains(#""os":"\#(operatingSystem)""#)
+            && decoded.contains(#""architecture":"\#(architecture)""#)
+            && variant.map { decoded.contains(#""variant":"\#($0)""#) } ?? true
     }
 }
