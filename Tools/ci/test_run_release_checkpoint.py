@@ -301,7 +301,13 @@ class RunReleaseCheckpointTest(unittest.TestCase):
         fingerprint: str,
         status: int = 0,
         seconds: int = 5,
+        required_output: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        output_arguments = (
+            ["--required-output", str(required_output)]
+            if required_output is not None
+            else []
+        )
         return subprocess.run(
             [
                 sys.executable,
@@ -314,6 +320,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 fingerprint,
                 "--seconds",
                 str(seconds),
+                *output_arguments,
                 "--",
                 "/bin/sh",
                 "-c",
@@ -413,6 +420,52 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             self.assertEqual(run_log.read_text(encoding="utf-8"), "run\n" * 3)
             self.assertIn("invalidating release checkpoint", modified.stdout)
             self.assertIn("invalidating release checkpoint", missing.stdout)
+
+    def test_required_product_content_is_part_of_checkpoint_reuse(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints = root / "checkpoints"
+            run_log = root / "runs.log"
+            product = root / "retained-product.tar.gz"
+            product.write_bytes(b"first product")
+
+            first = self.run_stage(
+                checkpoints, run_log, "tree-a", required_output=product
+            )
+            repeated = self.run_stage(
+                checkpoints, run_log, "tree-a", required_output=product
+            )
+            product.write_bytes(b"changed product")
+            changed = self.run_stage(
+                checkpoints, run_log, "tree-a", required_output=product
+            )
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertEqual(changed.returncode, 0, changed.stderr)
+            self.assertEqual(run_log.read_text(encoding="utf-8"), "run\nrun\n")
+            self.assertIn("reusing exact-input release checkpoint", repeated.stdout)
+            self.assertIn("invalidating release checkpoint", changed.stdout)
+            checkpoint = json.loads(
+                (checkpoints / "compose-ci.success.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                checkpoint["required_outputs"][0]["sha256"],
+                hashlib.sha256(product.read_bytes()).hexdigest(),
+            )
+
+    def test_missing_required_product_cannot_record_success(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            completed = self.run_stage(
+                root / "checkpoints",
+                root / "runs.log",
+                "tree-a",
+                required_output=root / "missing.tar.gz",
+            )
+
+            self.assertEqual(completed.returncode, 74)
+            self.assertIn("could not verify release checkpoint products", completed.stderr)
 
     def test_failed_rerun_cannot_revalidate_an_invalidated_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -987,7 +1040,6 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             "hawkeye": {"hawkeye": "/usr/bin/false"},
             "llvm-cov": {"llvm_cov": "/usr/bin/false"},
             "llvm-profdata": {"llvm_profdata": "/usr/bin/false"},
-            "docker-compose": {"docker_compose": "/usr/bin/false compose"},
         }
 
         for name, overrides in selectors.items():
@@ -995,6 +1047,14 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 self.assertNotEqual(
                     self.release_gate_tool_fingerprint(**overrides), baseline
                 )
+
+        self.assertEqual(
+            self.release_gate_tool_fingerprint(
+                docker_compose="/usr/bin/false compose"
+            ),
+            baseline,
+            "normal tool observation must not probe or depend on Docker applications",
+        )
 
     def test_outer_fingerprint_tracks_runtime_compose_binary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

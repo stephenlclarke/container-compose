@@ -178,21 +178,21 @@ jobs:
       REPETITIONS: ${{ inputs.repetitions }}
       RUNTIME_ROOT_PREFIX: /private/tmp/ccpb-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: Select Docker-shared local benchmark root
+      - name: Select separated Docker-oracle benchmark storage
         shell: bash
         run: |
           set -euo pipefail
-          case "${RUNNER_TEMP}" in
-            "${HOME}"/*) ;;
-            *)
-              printf 'RUNNER_TEMP must be on local storage under HOME so Docker can bind-mount benchmark fixtures: %s\n' \
-                "${RUNNER_TEMP}" >&2
-              exit 1
-              ;;
-          esac
-          printf 'BENCHMARK_ROOT=%s/container-compose-published-benchmark-%s-%s\n' \
-            "${RUNNER_TEMP}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
-            >> "${GITHUB_ENV}"
+          [[ -d /Volumes/SSD/github ]]
+          retained_base="${HOME}/Library/Application Support/ContainerFamily/retained/build"
+          transient_base=/Volumes/SSD/cf/build
+          {
+            printf 'BUILD_RETAINED_ROOT=%s\n' "${retained_base}"
+            printf 'BUILD_TRANSIENT_ROOT=%s\n' "${transient_base}"
+            printf 'BENCHMARK_ROOT=%s/benchmarks/published/run-%s-%s\n' \
+              "${transient_base}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"
+            printf 'BENCHMARK_RETAINED_ROOT=%s/published-benchmark/run-%s-%s\n' \
+              "${retained_base}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"
+          } >> "${GITHUB_ENV}"
 
       - name: Checkout documentation and benchmark controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -230,10 +230,13 @@ jobs:
           git config commit.gpgsign true
           git config user.signingkey "${signing_key}"
 
-      - name: Create marker-protected local benchmark root
+      - name: Create marker-protected benchmark roots
         shell: bash
         run: |
           set -euo pipefail
+          make stack-state-init \
+            STACK_RETAINED_ROOT="${BUILD_RETAINED_ROOT}" \
+            STACK_TRANSIENT_ROOT="${BUILD_TRANSIENT_ROOT}"
           if [[ -e "${BENCHMARK_ROOT}" ]]; then
             printf 'benchmark root already exists: %s\n' "${BENCHMARK_ROOT}" >&2
             exit 1
@@ -247,8 +250,18 @@ jobs:
             "${BENCHMARK_ROOT}/downloads/${BASELINE_VERSION}/release" \
             "${BENCHMARK_ROOT}/downloads/${BASELINE_VERSION}/actions" \
             "${BENCHMARK_ROOT}/prepared" \
-            "${BENCHMARK_ROOT}/evidence" \
             "${BENCHMARK_ROOT}/work"
+          if [[ -e "${BENCHMARK_RETAINED_ROOT}" ]]; then
+            printf 'retained benchmark root already exists: %s\n' \
+              "${BENCHMARK_RETAINED_ROOT}" >&2
+            exit 1
+          fi
+          install -d -m 0700 \
+            "${BENCHMARK_RETAINED_ROOT}/downloads" \
+            "${BENCHMARK_RETAINED_ROOT}/evidence" \
+            "${BENCHMARK_RETAINED_ROOT}/prepared"
+          printf 'container-compose retained published benchmark v1\n' \
+            > "${BENCHMARK_RETAINED_ROOT}/.published-benchmark-retained-root"
 
       - name: Download immutable release and Homebrew inputs
         env:
@@ -379,7 +392,41 @@ jobs:
             )
             python3 Tools/release/validate-oci-image-layout.py \
               "${init_archive}" "${init_references[@]}"
+            /usr/bin/install -m 0600 \
+              "${BENCHMARK_ROOT}/prepared/${version}/published-distribution.json" \
+              "${BENCHMARK_RETAINED_ROOT}/prepared/${version}.published-distribution.json"
+            install -d -m 0700 \
+              "${BENCHMARK_RETAINED_ROOT}/downloads/${version}"
+            for checksum in "${release_dir}"/*.sha256 "${actions_dir}"/*.sha256; do
+              [[ -f "${checksum}" && ! -L "${checksum}" ]] || continue
+              /usr/bin/install -m 0600 "${checksum}" \
+                "${BENCHMARK_RETAINED_ROOT}/downloads/${version}/$(basename "${checksum}")"
+            done
           done
+
+      - name: Require a quiet benchmark host
+        shell: bash
+        run: |
+          set -euo pipefail
+          competing=0
+          for process_name in swift-frontend swiftc clang xcodebuild; do
+            if pgrep -x "${process_name}" > \
+              "${BENCHMARK_ROOT}/work/competing-${process_name}.txt" 2>/dev/null; then
+              printf 'competing build process is still active: %s\n' \
+                "${process_name}" >&2
+              competing=1
+            fi
+          done
+          pmset -g therm > "${BENCHMARK_RETAINED_ROOT}/evidence/thermal-before.txt"
+          sysctl -n vm.loadavg > "${BENCHMARK_RETAINED_ROOT}/evidence/load-before.txt"
+          ps -Ao pid,ppid,%cpu,comm -r \
+            > "${BENCHMARK_RETAINED_ROOT}/evidence/processes-before.txt"
+          load_one="$(awk '{ print $2 }' \
+            "${BENCHMARK_RETAINED_ROOT}/evidence/load-before.txt")"
+          cpu_count="$(sysctl -n hw.ncpu)"
+          awk -v load="${load_one}" -v cpus="${cpu_count}" \
+            'BEGIN { exit !(load <= cpus / 2) }'
+          ((competing == 0))
 
       - name: Run same-host published comparisons
         shell: bash
@@ -411,7 +458,7 @@ jobs:
               PARITY_INIT_IMAGE_ARCHIVE="${init_archive}" \
               PARITY_INIT_IMAGE_REFERENCES="${init_references}" \
               PARITY_WORK_ROOT="${run_root}/fixtures" \
-              PARITY_EVIDENCE_DIR="${BENCHMARK_ROOT}/evidence/${version}" \
+              PARITY_EVIDENCE_DIR="${BENCHMARK_RETAINED_ROOT}/evidence/${version}" \
               PARITY_REPETITIONS="${REPETITIONS}" \
               PARITY_INCLUDE_REMOTE_LOGGING=0 \
               PARITY_TIMING_POLICY=record \
@@ -420,6 +467,8 @@ jobs:
           }
           run_version "${BASELINE_VERSION}"
           run_version "${TARGET_VERSION}"
+          pmset -g therm > "${BENCHMARK_RETAINED_ROOT}/evidence/thermal-after.txt"
+          sysctl -n vm.loadavg > "${BENCHMARK_RETAINED_ROOT}/evidence/load-after.txt"
 
       - name: Render repository evidence report
         env:
@@ -429,10 +478,10 @@ jobs:
           set -euo pipefail
           report="docs/benchmarks/${TARGET_VERSION}-vs-${BASELINE_VERSION}.md"
           python3 Tools/parity/published_release_benchmark.py render \
-            --target-evidence "${BENCHMARK_ROOT}/evidence/${TARGET_VERSION}" \
-            --baseline-evidence "${BENCHMARK_ROOT}/evidence/${BASELINE_VERSION}" \
-            --target-distribution "${BENCHMARK_ROOT}/prepared/${TARGET_VERSION}/published-distribution.json" \
-            --baseline-distribution "${BENCHMARK_ROOT}/prepared/${BASELINE_VERSION}/published-distribution.json" \
+            --target-evidence "${BENCHMARK_RETAINED_ROOT}/evidence/${TARGET_VERSION}" \
+            --baseline-evidence "${BENCHMARK_RETAINED_ROOT}/evidence/${BASELINE_VERSION}" \
+            --target-distribution "${BENCHMARK_RETAINED_ROOT}/prepared/${TARGET_VERSION}.published-distribution.json" \
+            --baseline-distribution "${BENCHMARK_RETAINED_ROOT}/prepared/${BASELINE_VERSION}.published-distribution.json" \
             --output "${report}" \
             --workflow-url "${WORKFLOW_URL}"
           printf 'REPORT_PATH=%s\n' "${report}" >> "${GITHUB_ENV}"
@@ -443,9 +492,9 @@ jobs:
         with:
           name: published-benchmark-${{ needs.resolve.outputs.target }}-vs-${{ needs.resolve.outputs.baseline }}
           path: |
-            ${{ runner.temp }}/container-compose-published-benchmark-${{ github.run_id }}-${{ github.run_attempt }}/evidence
-            ${{ runner.temp }}/container-compose-published-benchmark-${{ github.run_id }}-${{ github.run_attempt }}/prepared/*/published-distribution.json
-            ${{ runner.temp }}/container-compose-published-benchmark-${{ github.run_id }}-${{ github.run_attempt }}/downloads/*/*/*.sha256
+            ${{ env.BENCHMARK_RETAINED_ROOT }}/evidence
+            ${{ env.BENCHMARK_RETAINED_ROOT }}/prepared/*.published-distribution.json
+            ${{ env.BENCHMARK_RETAINED_ROOT }}/downloads/*/*.sha256
           if-no-files-found: warn
           retention-days: 90
 

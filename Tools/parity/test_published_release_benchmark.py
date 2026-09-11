@@ -96,7 +96,10 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
             },
             {
                 "databaseId": 12,
-                "displayTitle": "Prebuilt Binaries · 0.13.0",
+                "displayTitle": (
+                    "Prebuilt Binaries · 0.13.0 · package · "
+                    "01234567-89ab-cdef-0123-456789abcdef"
+                ),
                 "event": "workflow_dispatch",
                 "status": "completed",
                 "conclusion": "success",
@@ -134,6 +137,42 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
             ],
             [12, 10],
         )
+
+    def test_current_package_run_name_accepts_only_a_safe_request_suffix(self) -> None:
+        base = {
+            "databaseId": 12,
+            "event": "workflow_dispatch",
+            "status": "completed",
+            "conclusion": "success",
+            "createdAt": "2026-08-24T11:00:00Z",
+            "url": "https://github.com/stephenlclarke/container-compose/actions/runs/12",
+            "headBranch": "main",
+            "headSha": "c" * 40,
+        }
+        accepted = []
+        for suffix in (
+            "automatic",
+            "01234567-89ab-cdef-0123-456789abcdef",
+        ):
+            run = {
+                **base,
+                "displayTitle": f"Prebuilt Binaries · 0.13.0 · package · {suffix}",
+            }
+            accepted.extend(MODULE.packaging_run_candidates([run], "0.13.0"))
+        self.assertEqual([candidate["runId"] for candidate in accepted], [12, 12])
+
+        for title in (
+            "Prebuilt Binaries · 0.13.0 · package · arbitrary",
+            "Prebuilt Binaries · 0.13.0 · package · 01234567-89ab-cdef",
+            "Prebuilt Binaries · 0.13.1 · package · automatic",
+            "Prebuilt Binaries · 0.13.0 · tap-repair · automatic",
+        ):
+            with self.subTest(title=title), self.assertRaisesRegex(
+                MODULE.BenchmarkInputError, "no successful immutable package run"
+            ):
+                MODULE.packaging_run_candidates(
+                    [{**base, "displayTitle": title}], "0.13.0"
+                )
 
     def test_package_run_from_side_branch_is_rejected(self) -> None:
         run = {
@@ -983,29 +1022,45 @@ class PublishedBenchmarkWorkflowTests(unittest.TestCase):
         self.assertIn("if: always()", retain)
         self.assertIn("if-no-files-found: warn", retain)
 
-    def test_workflow_keeps_bind_mounted_fixtures_on_docker_shared_storage(
+    def test_workflow_refuses_to_time_on_a_busy_host(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        quiet = workflow.index("Require a quiet benchmark host")
+        benchmark = workflow.index("Run same-host published comparisons")
+
+        self.assertLess(quiet, benchmark)
+        self.assertIn('pgrep -x "${process_name}"', workflow)
+        self.assertIn("load <= cpus / 2", workflow)
+        self.assertIn("thermal-before.txt", workflow)
+        self.assertIn("thermal-after.txt", workflow)
+
+    def test_workflow_keeps_transient_and_retained_benchmark_data_separate(
         self,
     ) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         root_selection = workflow[
-            workflow.index("Select Docker-shared local benchmark root") :
+            workflow.index("Select separated Docker-oracle benchmark storage") :
             workflow.index("Checkout documentation and benchmark controls")
         ]
 
-        self.assertIn('case "${RUNNER_TEMP}"', root_selection)
-        self.assertIn('"${HOME}"/*', root_selection)
         self.assertIn(
-            '"${RUNNER_TEMP}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"',
+            "transient_base=/Volumes/SSD/cf/build", root_selection
+        )
+        self.assertIn(
+            'retained_base="${HOME}/Library/Application Support/'
+            'ContainerFamily/retained/build"',
             root_selection,
         )
         self.assertNotIn("/private/tmp", root_selection)
         self.assertIn(
-            "${{ runner.temp }}/container-compose-published-benchmark-",
+            "${{ env.BENCHMARK_RETAINED_ROOT }}/evidence",
             workflow,
         )
         self.assertNotIn(
             "BENCHMARK_ROOT: /private/tmp/container-compose-published-benchmark",
             workflow,
+        )
+        self.assertNotIn(
+            'find "${BENCHMARK_RETAINED_ROOT}" -depth -delete', workflow
         )
 
     def test_workflow_rejects_interactive_documentation_signing(self) -> None:

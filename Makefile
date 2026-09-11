@@ -204,13 +204,22 @@ RELEASE_GATE_STACK_TIMEOUT_SECONDS ?= 14400
 RELEASE_GATE_PARITY_TIMEOUT_SECONDS ?= 14400
 PARITY_STAGE_TIMEOUT_SECONDS ?= 900
 CONTAINER_RUNTIME_START_DEADLINE_SECONDS ?= 300
-# Durable stack state lives beside the disposable worktrees when the external
-# development volume is available. A local fallback keeps ordinary source
-# builds usable when that volume is intentionally disconnected.
-STACK_STATE_ROOT ?= $(if $(wildcard /Volumes/SSD/github/.),/Volumes/SSD/github/.container-compose-build,$(abspath .build/stack))
+# Completed artifacts and evidence survive disposal of external workspaces and
+# build scratch. New transient work fails closed when the external volume is
+# unavailable; verification of retained outputs remains local.
+STACK_RETAINED_ROOT ?= $(HOME)/Library/Application Support/ContainerFamily/retained/build
+STACK_TRANSIENT_ROOT ?= /Volumes/SSD/cf/build
+STACK_REQUIRE_SEPARATE_FILESYSTEMS ?= 1
 # BEGIN RECOVERABLE STACK CONFIGURATION
-STACK_MARKER_VALUE := container-compose recoverable build v1
+STACK_RETAINED_MARKER_VALUE := container-compose retained build v2
+STACK_TRANSIENT_MARKER_VALUE := container-compose transient build v2
 STACK_PIN_TOOL := $(abspath Tools/build/stack-pin.py)
+STACK_ARTIFACT_TOOL := $(abspath Tools/build/stack-artifact.py)
+STACK_TRANSIENT_CLEAN_TOOL := $(abspath Tools/build/stack-transient-clean.py)
+STACK_STORAGE_TOOL := $(abspath Tools/build/stack-storage.py)
+STACK_REQUIRED_TRANSIENT_VOLUME ?= /Volumes/SSD
+RELEASE_STATE_TOOL := $(abspath Tools/release/release-state.py)
+RELEASE_RETAINED_ROOT ?= $(HOME)/Library/Application Support/ContainerFamily/retained
 STACK_BUILD_CONTRACT := $(abspath Tools/build/stack-build-contract.json)
 STACK_DEADLINE_TOOL := $(abspath Tools/ci/run-command-with-deadline.py)
 STACK_SWIFT_STACK_TOOL := $(abspath Tools/ci/run-with-local-swift-stack.py)
@@ -218,11 +227,14 @@ STACK_CONFIGURATION ?= debug
 STACK_BUILD_STAGE_TIMEOUT_SECONDS ?= 3600
 STACK_BUILD_TIMEOUT_SECONDS ?= 14400
 STACK_LOCK_TOOL ?= /usr/bin/lockf
-STACK_TIMING_ROOT := $(STACK_STATE_ROOT)/timings
+STACK_TIMING_ROOT := $(STACK_RETAINED_ROOT)/timings
 STACK_TIMING_LOG ?= $(STACK_TIMING_ROOT)/direct-stage.jsonl
-STACK_PIN_DIR := $(STACK_STATE_ROOT)/pins/$(STACK_CONFIGURATION)
-STACK_SCRATCH_ROOT := $(STACK_STATE_ROOT)/scratch
-STACK_ARTIFACT_ROOT := $(STACK_STATE_ROOT)/artifacts/$(STACK_CONFIGURATION)
+STACK_PIN_DIR := $(STACK_RETAINED_ROOT)/pins/$(STACK_CONFIGURATION)
+STACK_PIN_INDEX := $(STACK_RETAINED_ROOT)/pin-index/$(STACK_CONFIGURATION)
+STACK_LOCK_ROOT := $(STACK_RETAINED_ROOT)/control/locks
+STACK_SCRATCH_ROOT := $(STACK_TRANSIENT_ROOT)/scratch
+STACK_PROCESS_TEMP_ROOT := $(STACK_TRANSIENT_ROOT)/process-tmp
+STACK_ARTIFACT_ROOT := $(STACK_RETAINED_ROOT)/artifacts
 STACK_CONTAINERIZATION_PIN := $(STACK_PIN_DIR)/containerization.json
 STACK_ENGINE_API_PIN := $(STACK_PIN_DIR)/container-engine-api.json
 STACK_CONTAINER_PIN := $(STACK_PIN_DIR)/container.json
@@ -235,6 +247,7 @@ STACK_SWIFT_CONTRACT = $(shell "$(PYTHON)" "$(STACK_PIN_TOOL)" contract \
 	--tool $(call SHELL_QUOTE,$(STACK_SWIFT)) \
 	--configuration $(call SHELL_QUOTE,$(STACK_CONFIGURATION)) \
 	--controller "$(STACK_BUILD_CONTRACT)" --controller "$(STACK_PIN_TOOL)" \
+	--controller "$(STACK_ARTIFACT_TOOL)" \
 	--controller "$(STACK_DEADLINE_TOOL)" --controller "$(STACK_SWIFT_STACK_TOOL)" \
 	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK CONFIGURATION::END RECOVERABLE STACK CONFIGURATION" \
 	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK TARGETS::END RECOVERABLE STACK TARGETS")
@@ -245,12 +258,18 @@ STACK_GO_CONTRACT = $(shell GOWORK=off "$(PYTHON)" "$(STACK_PIN_TOOL)" contract 
 	--controller "$(STACK_DEADLINE_TOOL)" \
 	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK CONFIGURATION::END RECOVERABLE STACK CONFIGURATION" \
 	--controller-section "$(abspath Makefile)::BEGIN RECOVERABLE STACK TARGETS::END RECOVERABLE STACK TARGETS")
+STACK_COMPOSE_CONTRACT = $(shell { printf 'swift=%s\ngo=%s\nprofile=%s\n' \
+	$(call SHELL_QUOTE,$(STACK_SWIFT_CONTRACT)) $(call SHELL_QUOTE,$(STACK_GO_CONTRACT)) \
+	$(call SHELL_QUOTE,$(CONTAINER_COMPOSE_BUILD_PROFILE)); \
+	shasum -a 256 config.toml "$(PLUGIN_ICON)" Tools/release/runtime-capabilities.json; \
+	} | shasum -a 256 | awk '{print $$1}')
 # END RECOVERABLE STACK CONFIGURATION
 RELEASE_GATE_CHECKPOINT_DIR = $(if $(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR),$(CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR)/compose-release-gate,)
 PARITY_GATE_CHECKPOINT_DIR = $(if $(RELEASE_GATE_CHECKPOINT_DIR),$(RELEASE_GATE_CHECKPOINT_DIR)/parity,)
 RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT = $(shell if [[ -z "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then printf unset; elif [[ -f "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" ]]; then shasum -a 256 "$(CONTAINER_RUNTIME_INIT_IMAGE_ARCHIVE)" | awk '{print $$1}'; else printf missing; fi)
 RELEASE_GATE_COMPOSE_TEST_BINARY_FINGERPRINT = $(shell { printf 'selector=%s\n' "$(COMPOSE_TEST_BINARY)"; if [[ "$(COMPOSE_TEST_BINARY)" == "$(DEFAULT_COMPOSE_TEST_BINARY)" ]]; then printf 'source-built\n'; elif [[ -f "$(COMPOSE_TEST_BINARY)" ]]; then shasum -a 256 "$(COMPOSE_TEST_BINARY)"; else printf 'missing\n'; fi; } | shasum -a 256 | awk '{print $$1}')
-RELEASE_GATE_TOOL_FINGERPRINT = $(shell { record_tool() { local label="$$1" selector="$$2" executable="$$3" path; if [[ "$$executable" == */* && -e "$$executable" ]]; then path="$$executable"; else path="$$(command -v "$$executable" 2>/dev/null || true)"; fi; printf '%s=%s\n%s-path=%s\n' "$$label" "$$selector" "$$label" "$${path:-missing}"; if [[ -f "$$path" ]]; then shasum -a 256 "$$path"; fi; }; for tool in git make swift clang go gofmt ruby python3 docker hawkeye shellcheck markdownlint markdownlint-cli2 xcodebuild xcrun codesign shasum tar gtar curl jq; do record_tool "$$tool" "$$tool" "$$tool"; done; record_tool selected-swift "$(SWIFT)" "$(firstword $(SWIFT))"; record_tool selected-go "$(GO)" "$(firstword $(GO))"; record_tool selected-python "$(PYTHON)" "$(firstword $(PYTHON))"; record_tool selected-markdownlint "$(MARKDOWNLINT)" "$(firstword $(MARKDOWNLINT))"; record_tool selected-hawkeye "$(HAWKEYE)" "$(firstword $(HAWKEYE))"; record_tool selected-llvm-cov "$(SWIFT_LLVM_COV)" "$(SWIFT_LLVM_COV)"; record_tool selected-llvm-profdata "$(SWIFT_LLVM_PROFDATA)" "$(SWIFT_LLVM_PROFDATA)"; record_tool selected-docker-compose "$(DOCKER_COMPOSE_REFERENCE)" "$(firstword $(DOCKER_COMPOSE_REFERENCE))"; } | shasum -a 256 | awk '{print $$1}')
+RELEASE_GATE_TOOL_FINGERPRINT = $(shell { record_tool() { local label="$$1" selector="$$2" executable="$$3" path; if [[ "$$executable" == */* && -e "$$executable" ]]; then path="$$executable"; else path="$$(command -v "$$executable" 2>/dev/null || true)"; fi; printf '%s=%s\n%s-path=%s\n' "$$label" "$$selector" "$$label" "$${path:-missing}"; if [[ -f "$$path" ]]; then shasum -a 256 "$$path"; fi; }; for tool in git make swift clang go gofmt ruby python3 hawkeye shellcheck markdownlint markdownlint-cli2 xcodebuild xcrun codesign shasum tar gtar curl jq; do record_tool "$$tool" "$$tool" "$$tool"; done; record_tool selected-swift "$(SWIFT)" "$(firstword $(SWIFT))"; record_tool selected-go "$(GO)" "$(firstword $(GO))"; record_tool selected-python "$(PYTHON)" "$(firstword $(PYTHON))"; record_tool selected-markdownlint "$(MARKDOWNLINT)" "$(firstword $(MARKDOWNLINT))"; record_tool selected-hawkeye "$(HAWKEYE)" "$(firstword $(HAWKEYE))"; record_tool selected-llvm-cov "$(SWIFT_LLVM_COV)" "$(SWIFT_LLVM_COV)"; record_tool selected-llvm-profdata "$(SWIFT_LLVM_PROFDATA)" "$(SWIFT_LLVM_PROFDATA)"; } | shasum -a 256 | awk '{print $$1}')
+RELEASE_GATE_DOCKER_ORACLE_FINGERPRINT = $(shell { selector=$(call SHELL_QUOTE,$(DOCKER_COMPOSE_REFERENCE)); executable=$(call SHELL_QUOTE,$(firstword $(DOCKER_COMPOSE_REFERENCE))); if [[ "$$executable" == */* && -e "$$executable" ]]; then path="$$executable"; else path="$$(command -v "$$executable" 2>/dev/null || true)"; fi; printf 'selector=%s\npath=%s\nversion=%s\n' "$$selector" "$${path:-missing}" "$(DOCKER_COMPOSE_REFERENCE_VERSION)"; if [[ -f "$$path" ]]; then shasum -a 256 "$$path"; fi; } | shasum -a 256 | awk '{print $$1}')
 RELEASE_GATE_PARITY_INPUT_FINGERPRINT = $(shell { printf '%s\n' \
 	'targets=$(DOCKER_COMPOSE_PARITY_TARGETS)' \
 	'repetitions=$(PARITY_REPETITIONS)' \
@@ -274,7 +293,7 @@ RELEASE_GATE_PARITY_INPUT_FINGERPRINT = $(shell { printf '%s\n' \
 	'fixture-image-reference='$(call SHELL_QUOTE,$(PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE)) \
 	'work-root='$(call SHELL_QUOTE,$(PARITY_WORK_ROOT)); \
 	} | shasum -a 256 | awk '{print $$1}')
-override RELEASE_GATE_STATIC_FINGERPRINT = compose=$(shell /usr/bin/git rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):builder=$(shell /usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):containerization=$(shell /usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):container=$(shell /usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):homebrew=$(shell if [[ -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" ]]; then shasum -a 256 "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" | awk '{print $$1}'; else printf missing; fi):candidate=$(CONTAINER_RUNTIME_CANDIDATE_SHA256):init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT):compose-test=$(RELEASE_GATE_COMPOSE_TEST_BINARY_FINGERPRINT):tools=$(RELEASE_GATE_TOOL_FINGERPRINT):engine=$(PARITY_CONTAINER_ENGINE_API_REF):container-source=$(CONTAINER_SOURCE):container-ref=$(PARITY_CONTAINER_REF):containerization-source=$(CONTAINERIZATION_SOURCE):containerization-ref=$(PARITY_CONTAINERIZATION_REF):swift=$(shell $(SWIFT) --version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):swift-resolved-flags=$(SWIFT_RESOLVED_FLAGS):swift-test-flags=$(SWIFT_TEST_FLAGS):swift-test-run-flags=$(SWIFT_TEST_RUN_FLAGS):swift-test-attempts=$(SWIFT_TEST_ATTEMPTS):swift-coverage-attempts=$(SWIFT_COVERAGE_TEST_ATTEMPTS):swift-runtime-filter=$(SWIFT_RUNTIME_TEST_FILTER):go=$(shell $(GO) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):go-release-env=$(GO_RELEASE_ENV):go-release-build-flags=$(GO_RELEASE_BUILD_FLAGS):go-release-ldflags=$(GO_RELEASE_LDFLAGS):docker=$(shell $(DOCKER_COMPOSE_REFERENCE) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):reference=$(DOCKER_COMPOSE_REFERENCE_VERSION):fixtures=$(DOCKER_COMPOSE_E2E_REF):parity-inputs=$(RELEASE_GATE_PARITY_INPUT_FINGERPRINT):release-stack-timeout=$(RELEASE_GATE_STACK_TIMEOUT_SECONDS):release-parity-timeout=$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS):parity-stage-timeout=$(PARITY_STAGE_TIMEOUT_SECONDS):runtime-start-deadline=$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS):parity-live=1:build-check-live=1:swift-core-min=$(SWIFT_CORE_COVERAGE_MIN):swift-runtime-spi-min=$(SWIFT_RUNTIME_SPI_COVERAGE_MIN):swift-provider-min=$(SWIFT_PROVIDER_COVERAGE_MIN):swift-plugin-min=$(SWIFT_PLUGIN_COVERAGE_MIN):swift-aggregate-min=$(SWIFT_AGGREGATE_COVERAGE_MIN):go-min=$(GO_COVERAGE_MIN)
+override RELEASE_GATE_STATIC_FINGERPRINT = compose=$(shell /usr/bin/git rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):builder=$(shell /usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):containerization=$(shell /usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):container=$(shell /usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse 'HEAD^{tree}' 2>/dev/null || printf fixture):homebrew=$(shell if [[ -f "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" ]]; then shasum -a 256 "$(HOMEBREW_TAP_REPO)/Formula/container-compose.rb" | awk '{print $$1}'; else printf missing; fi):candidate=$(CONTAINER_RUNTIME_CANDIDATE_SHA256):init=$(RELEASE_GATE_INIT_ARCHIVE_FINGERPRINT):compose-test=$(RELEASE_GATE_COMPOSE_TEST_BINARY_FINGERPRINT):tools=$(RELEASE_GATE_TOOL_FINGERPRINT):engine=$(PARITY_CONTAINER_ENGINE_API_REF):container-source=$(CONTAINER_SOURCE):container-ref=$(PARITY_CONTAINER_REF):containerization-source=$(CONTAINERIZATION_SOURCE):containerization-ref=$(PARITY_CONTAINERIZATION_REF):swift=$(shell $(SWIFT) --version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):swift-resolved-flags=$(SWIFT_RESOLVED_FLAGS):swift-test-flags=$(SWIFT_TEST_FLAGS):swift-test-run-flags=$(SWIFT_TEST_RUN_FLAGS):swift-test-attempts=$(SWIFT_TEST_ATTEMPTS):swift-coverage-attempts=$(SWIFT_COVERAGE_TEST_ATTEMPTS):swift-runtime-filter=$(SWIFT_RUNTIME_TEST_FILTER):go=$(shell $(GO) version 2>/dev/null | shasum -a 256 | awk '{print $$1}'):go-release-env=$(GO_RELEASE_ENV):go-release-build-flags=$(GO_RELEASE_BUILD_FLAGS):go-release-ldflags=$(GO_RELEASE_LDFLAGS):docker-oracle=$(RELEASE_GATE_DOCKER_ORACLE_FINGERPRINT):fixtures=$(DOCKER_COMPOSE_E2E_REF):parity-inputs=$(RELEASE_GATE_PARITY_INPUT_FINGERPRINT):release-stack-timeout=$(RELEASE_GATE_STACK_TIMEOUT_SECONDS):release-parity-timeout=$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS):parity-stage-timeout=$(PARITY_STAGE_TIMEOUT_SECONDS):runtime-start-deadline=$(CONTAINER_RUNTIME_START_DEADLINE_SECONDS):parity-live=1:build-check-live=1:swift-core-min=$(SWIFT_CORE_COVERAGE_MIN):swift-runtime-spi-min=$(SWIFT_RUNTIME_SPI_COVERAGE_MIN):swift-provider-min=$(SWIFT_PROVIDER_COVERAGE_MIN):swift-plugin-min=$(SWIFT_PLUGIN_COVERAGE_MIN):swift-aggregate-min=$(SWIFT_AGGREGATE_COVERAGE_MIN):go-min=$(GO_COVERAGE_MIN)
 PARITY_ENV = \
 	CONTAINER_COMPOSE_CONTAINER="$(CONTAINER_COMPOSE_CONTAINER)" \
 	CONTAINER_COMPOSE_LIVE="$(CONTAINER_COMPOSE_LIVE)" \
@@ -375,7 +394,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 
 .PHONY: all local-build workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-test-direct swift-runtime-test-build swift-runtime-test swift-coverage swift-coverage-check go-test go-coverage-check go-build go-release-check stock-engine-image-volume-smoke cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan release-version package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit swift-style-tools swift-style-paths swift-style-check swift-style-format local-swift-stack-clean
 
-.PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint
+.PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint actions-lint
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: core-runtime-neutrality
 .PHONY: codeql-local codeql-sarif-upload codeql-sarif-upload-dry-run
@@ -385,7 +404,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: docker-compose-stop-defaults-parity docker-compose-cpu-cfs-parity docker-compose-cpu-shares-parity docker-compose-cpuset-parity docker-compose-pid-namespace-parity docker-compose-cgroup-namespace-parity docker-compose-cgroup-parent-parity docker-compose-ipc-uts-namespace-parity docker-compose-userns-mode-parity docker-compose-privileged-parity docker-compose-network-attachable-parity docker-compose-network-ipv6-parity docker-compose-deploy-job-modes-parity
 .PHONY: docker-compose-up-exit-code-from-parity docker-compose-api-socket-client-fixture docker-compose-api-socket-client-parity docker-compose-performance-matrix performance-matrix-harness-test isolation-performance-harness-test signal-log-reliability-harness-test compose-events-harness-test
 .PHONY: docker-terminal-session-oracle docker-terminal-session-oracle-update docker-terminal-session-candidate-oracle docker-rest-logging-oracle docker-rest-logging-candidate docker-rest-logging-parity docker-rest-discovery-oracle docker-rest-discovery-candidate docker-rest-discovery-parity docker-rest-image-discovery-oracle docker-rest-image-discovery-candidate docker-rest-image-discovery-parity docker-rest-image-mutation-oracle docker-rest-image-mutation-candidate docker-rest-image-mutation-parity
-.PHONY: stack-help stack-state-init stack-preflight stack-status stack-self-test stack-build stack-build-locked stack-containerization-build stack-engine-api-build stack-container-build stack-builder-build stack-compose-build
+.PHONY: stack-help stack-state-init stack-preflight stack-status stack-self-test stack-transient-clean-plan stack-transient-clean stack-build stack-build-locked stack-containerization-build stack-engine-api-build stack-container-build stack-builder-build stack-compose-build stack-restore-containerization-pin stack-restore-engine-api-pin stack-restore-container-pin stack-restore-builder-pin stack-restore-compose-pin package-retained
 
 # BEGIN RECOVERABLE STACK TARGETS
 STACK_REQUIRE_LOCK = @[[ "$(STACK_LOCK_HELD)" == 1 ]] || { printf 'stack stage requires the stack-build lock\n' >&2; exit 2; }
@@ -398,6 +417,8 @@ stack-help:
 		'  make stack-preflight Verify tools and clean sibling source repositories.' \
 		'  make stack-build     Build the complete source stack and publish exact pins.' \
 		'  make stack-status    Verify each retained build pin and artifact.' \
+		'  make stack-transient-clean-plan  List disposable external build data.' \
+		'  make stack-transient-clean       Remove only disposable external build data.' \
 		'  make stack-self-test Run the focused receipt/recovery regression tests.' \
 		'  Each full run writes durable JSONL stage timings under the state root.' \
 		'' \
@@ -406,55 +427,24 @@ stack-help:
 		'  container (consumes the first two pins)' \
 		'  container-compose (consumes all Swift pins)' \
 		'' \
-		'All generated state defaults to: $(STACK_STATE_ROOT)'
+		'Retained artifacts and evidence: $(STACK_RETAINED_ROOT)' \
+		'Transient build scratch: $(STACK_TRANSIENT_ROOT)'
 
 stack-state-init:
-	@case "$(STACK_CONFIGURATION)" in debug|release) ;; *) printf 'STACK_CONFIGURATION must be debug or release: %s\n' "$(STACK_CONFIGURATION)" >&2; exit 2 ;; esac; \
-	state_root="$(STACK_STATE_ROOT)"; \
-	case "$$state_root" in /*) ;; *) printf 'STACK_STATE_ROOT must be absolute: %s\n' "$$state_root" >&2; exit 2 ;; esac; \
-	[[ "$$state_root" != / ]] || { printf 'STACK_STATE_ROOT must not be /.\n' >&2; exit 2; }; \
-	if [[ -L "$$state_root" ]]; then \
-		printf 'STACK_STATE_ROOT must not be a symbolic link: %s\n' "$$state_root" >&2; \
-		exit 2; \
-	fi; \
-	if [[ -e "$$state_root" && ! -d "$$state_root" ]]; then \
-		printf 'STACK_STATE_ROOT is not a directory: %s\n' "$$state_root" >&2; \
-		exit 2; \
-	fi; \
-	marker="$$state_root/.container-compose-build-root"; \
-	if [[ -d "$$state_root" && ! -f "$$marker" ]] \
-		&& [[ -n "$$(/usr/bin/find "$$state_root" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then \
-		printf 'refusing to claim non-empty unmarked STACK_STATE_ROOT: %s\n' "$$state_root" >&2; \
-		exit 2; \
-	fi; \
-	/usr/bin/install -d -m 0700 "$$state_root"; \
-	state_root="$$(cd "$$state_root" && pwd -P)"; \
-	marker="$$state_root/.container-compose-build-root"; \
-	if [[ -L "$$marker" ]] || [[ -e "$$marker" && ! -f "$$marker" ]]; then \
-		printf 'build state marker must be a regular file: %s\n' "$$marker" >&2; \
-		exit 2; \
-	fi; \
-	if [[ -f "$$marker" ]] && [[ "$$(<"$$marker")" != "$(STACK_MARKER_VALUE)" ]]; then \
-		printf 'STACK_STATE_ROOT has an unexpected ownership marker: %s\n' "$$marker" >&2; \
-		exit 2; \
-	fi; \
-	if [[ ! -f "$$marker" ]]; then \
-		temporary="$$marker.$$$$.tmp"; \
-		trap '/bin/rm -f "$$temporary"' EXIT; \
-		printf '%s\n' "$(STACK_MARKER_VALUE)" >"$$temporary"; \
-		/bin/chmod 0600 "$$temporary"; \
-		/bin/mv "$$temporary" "$$marker"; \
-		trap - EXIT; \
-	fi; \
-	for managed in "$(STACK_PIN_DIR)" "$(STACK_SCRATCH_ROOT)" "$(STACK_ARTIFACT_ROOT)" "$(STACK_TIMING_ROOT)"; do \
-		if [[ -L "$$managed" ]] || [[ -e "$$managed" && ! -d "$$managed" ]]; then \
-			printf 'build state path must be a direct directory: %s\n' "$$managed" >&2; \
-			exit 2; \
-		fi; \
-		/usr/bin/install -d -m 0700 "$$managed"; \
-		managed="$$(cd "$$managed" && pwd -P)"; \
-		case "$$managed" in "$$state_root"/*) ;; *) printf 'build state path escaped its root: %s\n' "$$managed" >&2; exit 2 ;; esac; \
-	done
+	@case "$(STACK_CONFIGURATION)" in debug|release) ;; *) printf 'STACK_CONFIGURATION must be debug or release: %s\n' "$(STACK_CONFIGURATION)" >&2; exit 2 ;; esac
+	@"$(PYTHON)" "$(STACK_STORAGE_TOOL)" \
+		--retained-root "$(STACK_RETAINED_ROOT)" --transient-root "$(STACK_TRANSIENT_ROOT)" \
+		--transient-volume "$(STACK_REQUIRED_TRANSIENT_VOLUME)" \
+		--retained-marker .container-family-retained-root \
+		--retained-marker-value "$(STACK_RETAINED_MARKER_VALUE)" \
+		--transient-marker .container-family-transient-root \
+		--transient-marker-value "$(STACK_TRANSIENT_MARKER_VALUE)" \
+		--retained-path "$(STACK_PIN_DIR)" --retained-path "$(STACK_PIN_INDEX)" \
+		--retained-path "$(STACK_ARTIFACT_ROOT)" --retained-path "$(STACK_TIMING_ROOT)" \
+		--retained-path "$(STACK_LOCK_ROOT)" \
+		--transient-path "$(STACK_SCRATCH_ROOT)" \
+		--transient-path "$(STACK_PROCESS_TEMP_ROOT)" \
+		$(if $(filter 1,$(STACK_REQUIRE_SEPARATE_FILESYSTEMS)),--require-separate-filesystems,)
 
 stack-preflight: stack-state-init
 	@for tool in /usr/bin/git "$(STACK_LOCK_TOOL)" "$(STACK_SWIFT)" "$(STACK_GO)" "$(PYTHON)"; do \
@@ -471,9 +461,6 @@ stack-preflight: stack-state-init
 			exit 2; \
 		fi; \
 	done; \
-	for contract in "$(STACK_SWIFT_CONTRACT)" "$(STACK_GO_CONTRACT)"; do \
-		[[ "$$contract" =~ ^[0-9a-f]{64}$$ ]] || { printf 'could not establish an exact build contract\n' >&2; exit 2; }; \
-	done; \
 	for timeout in "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" "$(STACK_BUILD_TIMEOUT_SECONDS)"; do \
 		awk 'BEGIN { exit !(ARGV[1] + 0 > 0) }' "$$timeout" || { \
 			printf 'stack build timeouts must be greater than zero: %s\n' "$$timeout" >&2; \
@@ -488,7 +475,7 @@ stack-status:
 		"container-engine-api|$(CONTAINER_ENGINE_API_STACK_REPO)|$(STACK_ENGINE_API_PIN)|$(STACK_SWIFT_CONTRACT)" \
 		"container|$(CONTAINER_STACK_REPO)|$(STACK_CONTAINER_PIN)|$(STACK_SWIFT_CONTRACT)" \
 		"container-builder-shim|$(CONTAINER_BUILDER_SHIM_STACK_REPO)|$(STACK_BUILDER_PIN)|$(STACK_GO_CONTRACT)" \
-		"container-compose|$(CURDIR)|$(STACK_COMPOSE_PIN)|$(STACK_SWIFT_CONTRACT)"; do \
+		"container-compose|$(CURDIR)|$(STACK_COMPOSE_PIN)|$(STACK_COMPOSE_CONTRACT)"; do \
 		IFS='|' read -r repository source receipt contract <<<"$$specification"; \
 		if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet --receipt "$$receipt" \
 			--repository "$$repository" --repository-path "$$source" \
@@ -518,13 +505,42 @@ stack-status:
 stack-self-test:
 	"$(PYTHON)" -m unittest discover Tools/build
 
+stack-transient-clean-plan:
+	@if [[ -d "$(STACK_TRANSIENT_ROOT)" ]]; then \
+		"$(PYTHON)" "$(STACK_TRANSIENT_CLEAN_TOOL)" --root "$(STACK_TRANSIENT_ROOT)"; \
+	else \
+		printf 'No transient stack root exists: %s\n' "$(STACK_TRANSIENT_ROOT)"; \
+	fi
+
+stack-transient-clean:
+	@if [[ -d "$(STACK_TRANSIENT_ROOT)" ]]; then \
+		"$(STACK_LOCK_TOOL)" -t 0 "$(STACK_LOCK_ROOT)/stack-build.lock" \
+			"$(PYTHON)" "$(STACK_TRANSIENT_CLEAN_TOOL)" \
+			--root "$(STACK_TRANSIENT_ROOT)" --execute; \
+	else \
+		printf 'No transient stack root exists: %s\n' "$(STACK_TRANSIENT_ROOT)"; \
+	fi
+
 stack-build: stack-preflight
-	@timing_log="$(STACK_TIMING_ROOT)/$$(date -u +%Y%m%dT%H%M%SZ)-$$$$.jsonl"; \
+	@swift_contract="$(STACK_SWIFT_CONTRACT)"; \
+	go_contract="$(STACK_GO_CONTRACT)"; \
+	for contract in "$$swift_contract" "$$go_contract"; do \
+		[[ "$$contract" =~ ^[0-9a-f]{64}$$ ]] || { printf 'could not establish an exact build contract\n' >&2; exit 2; }; \
+	done; \
+	compose_contract="$$( { printf 'swift=%s\ngo=%s\nprofile=%s\n' \
+		"$$swift_contract" "$$go_contract" "$(CONTAINER_COMPOSE_BUILD_PROFILE)"; \
+		shasum -a 256 config.toml "$(PLUGIN_ICON)" Tools/release/runtime-capabilities.json; \
+	} | shasum -a 256 | awk '{print $$1}')"; \
+	timing_log="$(STACK_TIMING_ROOT)/$$(date -u +%Y%m%dT%H%M%SZ)-$$$$.jsonl"; \
+	TMPDIR="$(STACK_PROCESS_TEMP_ROOT)" TMP="$(STACK_PROCESS_TEMP_ROOT)" \
+	TEMP="$(STACK_PROCESS_TEMP_ROOT)" GOTMPDIR="$(STACK_PROCESS_TEMP_ROOT)" \
 	"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_TIMEOUT_SECONDS)" \
 		--timing-log "$$timing_log" --timing-label stack-total -- \
-		"$(STACK_LOCK_TOOL)" -t 0 "$(STACK_STATE_ROOT)/stack-build.lock" \
+		"$(STACK_LOCK_TOOL)" -t 0 "$(STACK_LOCK_ROOT)/stack-build.lock" \
 		$(MAKE) --no-print-directory stack-build-locked STACK_LOCK_HELD=1 \
-			STACK_STATE_ROOT="$(STACK_STATE_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)" \
+			STACK_RETAINED_ROOT="$(STACK_RETAINED_ROOT)" STACK_TRANSIENT_ROOT="$(STACK_TRANSIENT_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)" \
+			STACK_SWIFT_CONTRACT="$$swift_contract" STACK_GO_CONTRACT="$$go_contract" \
+			STACK_COMPOSE_CONTRACT="$$compose_contract" \
 			STACK_TIMING_LOG="$$timing_log"; \
 	exit_status=$$?; \
 	printf 'Stack timing evidence: %s\n' "$$timing_log"; \
@@ -533,7 +549,7 @@ stack-build: stack-preflight
 stack-build-locked:
 	@[[ "$(STACK_LOCK_HELD)" == 1 ]] || { printf 'stack-build-locked requires the stack-build lock\n' >&2; exit 2; }
 	@$(MAKE) --no-print-directory -j3 stack-builder-build stack-compose-build \
-		STACK_STATE_ROOT="$(STACK_STATE_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)"
+		STACK_RETAINED_ROOT="$(STACK_RETAINED_ROOT)" STACK_TRANSIENT_ROOT="$(STACK_TRANSIENT_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)"
 	@"$(PYTHON)" "$(STACK_PIN_TOOL)" bundle --output "$(STACK_BUNDLE)" \
 		--pin "$(STACK_CONTAINERIZATION_PIN)" --pin "$(STACK_ENGINE_API_PIN)" \
 		--pin "$(STACK_CONTAINER_PIN)" --pin "$(STACK_BUILDER_PIN)" \
@@ -544,7 +560,35 @@ stack-build-locked:
 		--repository container-compose
 	@printf 'Recoverable stack build complete. Pin bundle: %s\n' "$(STACK_BUNDLE)"
 
-stack-containerization-build:
+stack-restore-containerization-pin:
+	@"$(PYTHON)" "$(STACK_PIN_TOOL)" lookup --repository containerization \
+		--repository-path "$(CONTAINERIZATION_STACK_REPO)" --build-contract "$(STACK_SWIFT_CONTRACT)" \
+		--index-root "$(STACK_PIN_INDEX)" --output "$(STACK_CONTAINERIZATION_PIN)" >/dev/null 2>&1 || true
+
+stack-restore-engine-api-pin:
+	@"$(PYTHON)" "$(STACK_PIN_TOOL)" lookup --repository container-engine-api \
+		--repository-path "$(CONTAINER_ENGINE_API_STACK_REPO)" --build-contract "$(STACK_SWIFT_CONTRACT)" \
+		--index-root "$(STACK_PIN_INDEX)" --output "$(STACK_ENGINE_API_PIN)" >/dev/null 2>&1 || true
+
+stack-restore-builder-pin:
+	@"$(PYTHON)" "$(STACK_PIN_TOOL)" lookup --repository container-builder-shim \
+		--repository-path "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" --build-contract "$(STACK_GO_CONTRACT)" \
+		--index-root "$(STACK_PIN_INDEX)" --output "$(STACK_BUILDER_PIN)" >/dev/null 2>&1 || true
+
+stack-restore-container-pin: stack-restore-containerization-pin stack-restore-engine-api-pin
+	@"$(PYTHON)" "$(STACK_PIN_TOOL)" lookup --repository container \
+		--repository-path "$(CONTAINER_STACK_REPO)" --build-contract "$(STACK_SWIFT_CONTRACT)" \
+		--dependency "$(STACK_CONTAINERIZATION_PIN)" --dependency "$(STACK_ENGINE_API_PIN)" \
+		--index-root "$(STACK_PIN_INDEX)" --output "$(STACK_CONTAINER_PIN)" >/dev/null 2>&1 || true
+
+stack-restore-compose-pin: stack-restore-container-pin
+	@"$(PYTHON)" "$(STACK_PIN_TOOL)" lookup --repository container-compose \
+		--repository-path "$(CURDIR)" --build-contract "$(STACK_COMPOSE_CONTRACT)" \
+		--dependency "$(STACK_CONTAINERIZATION_PIN)" --dependency "$(STACK_ENGINE_API_PIN)" \
+		--dependency "$(STACK_CONTAINER_PIN)" --index-root "$(STACK_PIN_INDEX)" \
+		--output "$(STACK_COMPOSE_PIN)" >/dev/null 2>&1 || true
+
+stack-containerization-build: stack-restore-containerization-pin
 	$(STACK_REQUIRE_LOCK)
 	@if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet \
 		--receipt "$(STACK_CONTAINERIZATION_PIN)" --repository containerization \
@@ -565,16 +609,19 @@ stack-containerization-build:
 			--timing-log "$(STACK_TIMING_LOG)" --timing-label containerization-bin-path -- \
 			"$(STACK_SWIFT)" build --scratch-path "$$scratch" \
 			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
+		artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$bin_path/cctl" \
+			--root "$(STACK_ARTIFACT_ROOT)" --name cctl)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository containerization \
 			--repository-path "$(CONTAINERIZATION_STACK_REPO)" \
-			--output "$(STACK_CONTAINERIZATION_PIN)" --artifact "$$bin_path/cctl" \
+			--output "$(STACK_CONTAINERIZATION_PIN)" --artifact "$$artifact" \
+			--index-root "$(STACK_PIN_INDEX)" \
 			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
 			--build-contract "$(STACK_SWIFT_CONTRACT)" \
 			--duration-seconds "$$((SECONDS - started))" \
 			--command-label 'swift build --product cctl' >/dev/null; \
 	fi
 
-stack-engine-api-build:
+stack-engine-api-build: stack-restore-engine-api-pin
 	$(STACK_REQUIRE_LOCK)
 	@if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet \
 		--receipt "$(STACK_ENGINE_API_PIN)" --repository container-engine-api \
@@ -595,16 +642,19 @@ stack-engine-api-build:
 			--timing-log "$(STACK_TIMING_LOG)" --timing-label engine-api-bin-path -- \
 			"$(STACK_SWIFT)" build --scratch-path "$$scratch" \
 			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
+		artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$bin_path/container-engine" \
+			--root "$(STACK_ARTIFACT_ROOT)" --name container-engine)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-engine-api \
 			--repository-path "$(CONTAINER_ENGINE_API_STACK_REPO)" \
-			--output "$(STACK_ENGINE_API_PIN)" --artifact "$$bin_path/container-engine" \
+			--output "$(STACK_ENGINE_API_PIN)" --artifact "$$artifact" \
+			--index-root "$(STACK_PIN_INDEX)" \
 			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
 			--build-contract "$(STACK_SWIFT_CONTRACT)" \
 			--duration-seconds "$$((SECONDS - started))" \
 			--command-label 'swift build --product container-engine' >/dev/null; \
 	fi
 
-stack-container-build: stack-containerization-build stack-engine-api-build
+stack-container-build: stack-containerization-build stack-engine-api-build stack-restore-container-pin
 	$(STACK_REQUIRE_LOCK)
 	@if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet \
 		--receipt "$(STACK_CONTAINER_PIN)" --repository container \
@@ -631,17 +681,20 @@ stack-container-build: stack-containerization-build stack-engine-api-build
 			--timing-log "$(STACK_TIMING_LOG)" --timing-label container-bin-path -- \
 			"$(STACK_SWIFT)" build --scratch-path "$$scratch" \
 			-c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
+		artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$bin_path/container" \
+			--root "$(STACK_ARTIFACT_ROOT)" --name container)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container \
 			--repository-path "$(CONTAINER_STACK_REPO)" --output "$(STACK_CONTAINER_PIN)" \
+			--index-root "$(STACK_PIN_INDEX)" \
 			--dependency "$(STACK_CONTAINERIZATION_PIN)" \
-			--dependency "$(STACK_ENGINE_API_PIN)" --artifact "$$bin_path/container" \
+			--dependency "$(STACK_ENGINE_API_PIN)" --artifact "$$artifact" \
 			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
 			--build-contract "$(STACK_SWIFT_CONTRACT)" \
 			--duration-seconds "$$((SECONDS - started))" \
 			--command-label 'swift build --product container' >/dev/null; \
 	fi
 
-stack-builder-build:
+stack-builder-build: stack-restore-builder-pin
 	$(STACK_REQUIRE_LOCK)
 	@if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet \
 		--receipt "$(STACK_BUILDER_PIN)" --repository container-builder-shim \
@@ -651,33 +704,39 @@ stack-builder-build:
 	else \
 		source_commit="$$(/usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{commit}')"; \
 		source_tree="$$(/usr/bin/git -C "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" rev-parse 'HEAD^{tree}')"; \
-		artifact="$(STACK_ARTIFACT_ROOT)/container-builder-shim/container-builder-shim"; \
-		/usr/bin/install -d -m 0700 "$$(dirname "$$artifact")"; \
+		scratch="$(STACK_SCRATCH_ROOT)/$(STACK_GO_CONTRACT)/container-builder-shim"; \
+		candidate="$$scratch/container-builder-shim"; \
+		/usr/bin/install -d -m 0700 "$$scratch"; \
 		cd "$(CONTAINER_BUILDER_SHIM_STACK_REPO)"; \
 		started=$$SECONDS; \
 		GOWORK=off "$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
 			--timing-log "$(STACK_TIMING_LOG)" --timing-label builder-build -- \
-			"$(STACK_GO)" build -trimpath -o "$$artifact" .; \
+			"$(STACK_GO)" build -trimpath -o "$$candidate" .; \
+		artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$candidate" \
+			--root "$(STACK_ARTIFACT_ROOT)" --name container-builder-shim)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-builder-shim \
 			--repository-path "$(CONTAINER_BUILDER_SHIM_STACK_REPO)" \
 			--output "$(STACK_BUILDER_PIN)" --artifact "$$artifact" \
+			--index-root "$(STACK_PIN_INDEX)" \
 			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
 			--build-contract "$(STACK_GO_CONTRACT)" \
 			--duration-seconds "$$((SECONDS - started))" \
 			--command-label 'go build -trimpath' >/dev/null; \
 	fi
 
-stack-compose-build: stack-container-build
+stack-compose-build: stack-container-build stack-restore-compose-pin
 	$(STACK_REQUIRE_LOCK)
 	@if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet \
 		--receipt "$(STACK_COMPOSE_PIN)" --repository container-compose \
 		--repository-path "$(CURDIR)" \
-		--build-contract "$(STACK_SWIFT_CONTRACT)"; then \
+		--build-contract "$(STACK_COMPOSE_CONTRACT)"; then \
 		printf 'Reusing container-compose build pin.\n'; \
 	else \
 		source_commit="$$(/usr/bin/git -C "$(CURDIR)" rev-parse 'HEAD^{commit}')"; \
 		source_tree="$$(/usr/bin/git -C "$(CURDIR)" rev-parse 'HEAD^{tree}')"; \
 		scratch="$(STACK_SCRATCH_ROOT)/$(STACK_SWIFT_CONTRACT)/container-compose"; \
+		product="$$scratch/retained-product"; \
+		mkdir -p "$$product"; \
 		started=$$SECONDS; \
 		CONTAINER_PACKAGE_PATH="$(CONTAINER_STACK_REPO)" \
 		CONTAINERIZATION_PACKAGE_PATH="$(CONTAINERIZATION_STACK_REPO)" \
@@ -691,14 +750,54 @@ stack-compose-build: stack-container-build
 			"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
 			--timing-log "$(STACK_TIMING_LOG)" --timing-label compose-bin-path -- \
 			"$(STACK_SWIFT)" build --scratch-path "$$scratch" -c "$(STACK_CONFIGURATION)" --show-bin-path)"; \
+		cd Tools/compose-normalizer; \
+		GOWORK=off $(GO_RELEASE_ENV) "$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label compose-normalizer-build -- \
+			"$(STACK_GO)" build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o "$$product/compose-normalizer" .; \
+		GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+			"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label compose-volume-initializer-arm64-build -- \
+			"$(STACK_GO)" build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" \
+			-o "$$product/compose-volume-initializer-linux-arm64" ./cmd/volume-initializer; \
+		GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+			"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label compose-volume-initializer-amd64-build -- \
+			"$(STACK_GO)" build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" \
+			-o "$$product/compose-volume-initializer-linux-amd64" ./cmd/volume-initializer; \
+		cd "$(CURDIR)"; \
+		"$(PYTHON)" Tools/release/write-build-info.py \
+			--output "$$product/build-info.json" --version "$(COMPOSE_VERSION)" \
+			--source "$(CONTAINER_COMPOSE_SOURCE)" --branch "$(CONTAINER_COMPOSE_BRANCH)" \
+			--lane "$(CONTAINER_COMPOSE_LANE)" --commit "$$source_commit" \
+			--build-type "$(STACK_CONFIGURATION)" --container-source "$(CONTAINER_SOURCE)" \
+			--container-ref "$$(/usr/bin/git -C "$(CONTAINER_STACK_REPO)" rev-parse HEAD)" \
+			--containerization-source "$(CONTAINERIZATION_SOURCE)" \
+			--containerization-ref "$$(/usr/bin/git -C "$(CONTAINERIZATION_STACK_REPO)" rev-parse HEAD)" \
+			--compose-go-version "$(COMPOSE_GO_VERSION)" \
+			--runtime-profile "$(CONTAINER_COMPOSE_BUILD_PROFILE)"; \
+		compose_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$bin_path/compose" --root "$(STACK_ARTIFACT_ROOT)" --name compose)"; \
+		normalizer_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$product/compose-normalizer" --root "$(STACK_ARTIFACT_ROOT)" --name compose-normalizer)"; \
+		initializer_arm64_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$product/compose-volume-initializer-linux-arm64" --root "$(STACK_ARTIFACT_ROOT)" --name compose-volume-initializer-linux-arm64)"; \
+		initializer_amd64_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$product/compose-volume-initializer-linux-amd64" --root "$(STACK_ARTIFACT_ROOT)" --name compose-volume-initializer-linux-amd64)"; \
+		config_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$(abspath config.toml)" --root "$(STACK_ARTIFACT_ROOT)" --name config.toml)"; \
+		icon_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$(abspath $(PLUGIN_ICON))" --root "$(STACK_ARTIFACT_ROOT)" --name container-compose-icon.png)"; \
+		metadata_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$product/build-info.json" --root "$(STACK_ARTIFACT_ROOT)" --name build-info.json)"; \
 		"$(PYTHON)" "$(STACK_PIN_TOOL)" create --repository container-compose \
 			--repository-path "$(CURDIR)" --output "$(STACK_COMPOSE_PIN)" \
+			--index-root "$(STACK_PIN_INDEX)" \
 			--dependency "$(STACK_CONTAINERIZATION_PIN)" --dependency "$(STACK_ENGINE_API_PIN)" \
-			--dependency "$(STACK_CONTAINER_PIN)" --artifact "$$bin_path/compose" \
+			--dependency "$(STACK_CONTAINER_PIN)" \
+			--artifact-map "compose/bin/compose=$$compose_artifact" \
+			--artifact-map "compose/config.toml=$$config_artifact" \
+			--artifact-map "compose/resources/build-info.json=$$metadata_artifact" \
+			--artifact-map "compose/resources/compose-normalizer=$$normalizer_artifact" \
+			--artifact-map "compose/resources/volume-initializer/compose-volume-initializer-linux-arm64=$$initializer_arm64_artifact" \
+			--artifact-map "compose/resources/volume-initializer/compose-volume-initializer-linux-amd64=$$initializer_amd64_artifact" \
+			--artifact-map "compose/resources/container-compose-icon.png=$$icon_artifact" \
 			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
-			--build-contract "$(STACK_SWIFT_CONTRACT)" \
+			--build-contract "$(STACK_COMPOSE_CONTRACT)" \
 			--duration-seconds "$$((SECONDS - started))" \
-			--command-label 'swift build --product compose' >/dev/null; \
+			--command-label 'swift build compose + go build normalizer and volume initializers' >/dev/null; \
 	fi
 # END RECOVERABLE STACK TARGETS
 
@@ -728,7 +827,7 @@ print-release-gate-fingerprint: release-gate-environment-fingerprint-check
 
 release-gate:
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory container-stack-release-validation
-	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory ci
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" --required-output "$(abspath .build/debug/compose)" --required-output "$(abspath Tools/compose-normalizer/compose-normalizer)" --required-output "$(abspath $(VOLUME_INITIALIZER_ARM64))" --required-output "$(abspath $(VOLUME_INITIALIZER_AMD64))" -- $(MAKE) --no-print-directory ci
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage swift-runtime --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory swift-runtime-test
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-parity --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory docker-compose-parity
 
@@ -789,7 +888,15 @@ build-release:
 			$(SWIFT) build $(SWIFT_RESOLVED_FLAGS) -c release --product compose $(SWIFT_RELEASE_FLAGS); \
 	fi
 
-.PHONY: release-parity-build-info
+.PHONY: release-status release-recovery-plan release-parity-build-info
+release-status:
+	@[[ "$(VERSION)" =~ ^[0-9]+\.[0-9]+\.[0-9]+$$ ]] || { printf 'VERSION must be a stable semantic version\n' >&2; exit 2; }
+	$(PYTHON) "$(RELEASE_STATE_TOOL)" inspect --root "$(RELEASE_RETAINED_ROOT)" --version "$(VERSION)"
+
+release-recovery-plan:
+	@[[ "$(VERSION)" =~ ^[0-9]+\.[0-9]+\.[0-9]+$$ ]] || { printf 'VERSION must be a stable semantic version\n' >&2; exit 2; }
+	$(PYTHON) "$(RELEASE_STATE_TOOL)" plan --deep --root "$(RELEASE_RETAINED_ROOT)" --version "$(VERSION)"
+
 release-parity-build-info:
 	$(PYTHON) Tools/release/write-build-info.py \
 		--output "$(RELEASE_PARITY_BUILD_INFO)" \
@@ -926,9 +1033,11 @@ go-build:
 	cd Tools/compose-normalizer && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o compose-volume-initializer-linux-amd64 ./cmd/volume-initializer
 	$(MAKE) go-release-check
 
+GO_RELEASE_BINARY ?= Tools/compose-normalizer/compose-normalizer
+
 go-release-check:
-	@test -x Tools/compose-normalizer/compose-normalizer || { \
-		printf 'Tools/compose-normalizer/compose-normalizer is missing; run make go-build first\n' >&2; \
+	@test -x "$(GO_RELEASE_BINARY)" || { \
+		printf '%s is missing; run make go-build first\n' "$(GO_RELEASE_BINARY)" >&2; \
 		exit 1; \
 	}
 	@test -x "$(VOLUME_INITIALIZER_ARM64)" || { \
@@ -971,17 +1080,17 @@ go-release-check:
 			exit 1; \
 			;; \
 	esac
-	@$(GO) version -m Tools/compose-normalizer/compose-normalizer | grep -E '^[[:space:]]*build[[:space:]]+-trimpath=true$$' >/dev/null || { \
+	@$(GO) version -m "$(GO_RELEASE_BINARY)" | grep -E '^[[:space:]]*build[[:space:]]+-trimpath=true$$' >/dev/null || { \
 		printf 'compose-normalizer was not built with -trimpath; Homebrew packages require the release Go build path\n' >&2; \
-		$(GO) version -m Tools/compose-normalizer/compose-normalizer >&2; \
+		$(GO) version -m "$(GO_RELEASE_BINARY)" >&2; \
 		exit 1; \
 	}
-	@$(GO) version -m Tools/compose-normalizer/compose-normalizer | grep -E '^[[:space:]]*build[[:space:]]+CGO_ENABLED=0$$' >/dev/null || { \
+	@$(GO) version -m "$(GO_RELEASE_BINARY)" | grep -E '^[[:space:]]*build[[:space:]]+CGO_ENABLED=0$$' >/dev/null || { \
 		printf 'compose-normalizer was not built with CGO_ENABLED=0; Homebrew packages require the release Go build path\n' >&2; \
-		$(GO) version -m Tools/compose-normalizer/compose-normalizer >&2; \
+		$(GO) version -m "$(GO_RELEASE_BINARY)" >&2; \
 		exit 1; \
 	}
-	@if otool -l Tools/compose-normalizer/compose-normalizer | grep -E '__DWARF|__debug' >/dev/null; then \
+	@if otool -l "$(GO_RELEASE_BINARY)" | grep -E '__DWARF|__debug' >/dev/null; then \
 		printf 'compose-normalizer contains DWARF debug sections; Homebrew packages require stripped release Go binaries\n' >&2; \
 		exit 1; \
 	fi
@@ -2365,6 +2474,11 @@ sonar-scan:
 
 package: package-release
 
+package-retained:
+	$(MAKE) stack-build STACK_CONFIGURATION=release
+	$(MAKE) package-built PACKAGE_BUILD_CONFIGURATION=release \
+		PACKAGE_RETAINED_RECEIPT="$(STACK_RETAINED_ROOT)/pins/release/container-compose.json"
+
 package-release: PACKAGE_BUILD_CONFIGURATION = release
 package-release: build-release go-build
 	$(MAKE) package-built PACKAGE_BUILD_CONFIGURATION="$(PACKAGE_BUILD_CONFIGURATION)"
@@ -2374,8 +2488,17 @@ package-debug: build go-build
 	$(MAKE) package-built PACKAGE_BUILD_CONFIGURATION="$(PACKAGE_BUILD_CONFIGURATION)"
 
 package-built:
-	$(MAKE) go-release-check
 	rm -rf "$(DIST_DIR)"
+
+ifneq ($(strip $(PACKAGE_RETAINED_RECEIPT)),)
+	$(PYTHON) "$(STACK_PIN_TOOL)" materialize \
+		--receipt "$(PACKAGE_RETAINED_RECEIPT)" --output "$(abspath $(DIST_DIR))"
+	$(MAKE) go-release-check \
+		GO_RELEASE_BINARY="$(abspath $(DIST_DIR))/compose/resources/compose-normalizer" \
+		VOLUME_INITIALIZER_ARM64="$(abspath $(DIST_DIR))/compose/resources/volume-initializer/compose-volume-initializer-linux-arm64" \
+		VOLUME_INITIALIZER_AMD64="$(abspath $(DIST_DIR))/compose/resources/volume-initializer/compose-volume-initializer-linux-amd64"
+else
+	$(MAKE) go-release-check
 	mkdir -p "$(DIST_DIR)/compose/bin" "$(DIST_DIR)/compose/resources/volume-initializer"
 	cp ".build/$(PACKAGE_BUILD_CONFIGURATION)/compose" "$(DIST_DIR)/compose/bin/compose"
 	cp config.toml "$(DIST_DIR)/compose/config.toml"
@@ -2383,15 +2506,6 @@ package-built:
 	cp "$(VOLUME_INITIALIZER_ARM64)" "$(DIST_DIR)/compose/resources/volume-initializer/compose-volume-initializer-linux-arm64"
 	cp "$(VOLUME_INITIALIZER_AMD64)" "$(DIST_DIR)/compose/resources/volume-initializer/compose-volume-initializer-linux-amd64"
 	cp "$(PLUGIN_ICON)" "$(DIST_DIR)/compose/resources/container-compose-icon.png"
-	$(CODESIGN) $(CODESIGN_OPTS) \
-		--identifier io.github.stephenlclarke.container-compose \
-		"$(DIST_DIR)/compose/bin/compose"
-	$(CODESIGN) $(CODESIGN_OPTS) \
-		--identifier io.github.stephenlclarke.container-compose.normalizer \
-		"$(DIST_DIR)/compose/resources/compose-normalizer"
-	$(CODESIGN) --verify --strict --verbose=2 "$(DIST_DIR)/compose/bin/compose"
-	$(CODESIGN) --verify --strict --verbose=2 \
-		"$(DIST_DIR)/compose/resources/compose-normalizer"
 	$(PYTHON) Tools/release/write-build-info.py \
 		--output "$(DIST_DIR)/compose/resources/build-info.json" \
 		--version "$(COMPOSE_VERSION)" \
@@ -2406,6 +2520,16 @@ package-built:
 		--containerization-ref "$(CONTAINERIZATION_REF)" \
 		--compose-go-version "$(COMPOSE_GO_VERSION)" \
 		--runtime-profile "$(CONTAINER_COMPOSE_BUILD_PROFILE)"
+endif
+	$(CODESIGN) $(CODESIGN_OPTS) \
+		--identifier io.github.stephenlclarke.container-compose \
+		"$(DIST_DIR)/compose/bin/compose"
+	$(CODESIGN) $(CODESIGN_OPTS) \
+		--identifier io.github.stephenlclarke.container-compose.normalizer \
+		"$(DIST_DIR)/compose/resources/compose-normalizer"
+	$(CODESIGN) --verify --strict --verbose=2 "$(DIST_DIR)/compose/bin/compose"
+	$(CODESIGN) --verify --strict --verbose=2 \
+		"$(DIST_DIR)/compose/resources/compose-normalizer"
 	tar -czf "$(PLUGIN_ARCHIVE)" -C "$(DIST_DIR)" compose
 	tar -tzf "$(PLUGIN_ARCHIVE)" | grep -Fx 'compose/resources/container-compose-icon.png' >/dev/null
 	tar -tzf "$(PLUGIN_ARCHIVE)" | grep -Fx 'compose/resources/volume-initializer/compose-volume-initializer-linux-arm64' >/dev/null
@@ -2414,6 +2538,10 @@ package-built:
 
 coverage-tools-syntax:
 	$(PYTHON) -m py_compile Tools/build/*.py Tools/coverage/*.py Tools/release/*.py Tools/ci/*.py
+
+actions-lint:
+	$(PYTHON) Tools/ci/validate-actions-workflows.py \
+		.github/workflows/*.yml
 
 coverage-python-tools-test: coverage-tools-syntax
 	$(PYTHON) -m unittest discover Tools/coverage

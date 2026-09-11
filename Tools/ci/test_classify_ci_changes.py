@@ -61,12 +61,13 @@ class ClassifyCIChangesTests(unittest.TestCase):
         self.assertTrue(scope.runtime)
         self.assertFalse(scope.tools)
 
-    def test_recoverable_stack_tools_select_tool_tests(self) -> None:
-        scope = CLASSIFIER.classify(["Tools/build/stack-pin.py"])
-
-        self.assertTrue(scope.heavy)
-        self.assertTrue(scope.tools)
-        self.assertFalse(scope.runtime)
+    def test_recoverable_stack_inputs_select_runtime_and_tool_tests(self) -> None:
+        for path in ("Tools/build/stack-pin.py", "Tools/release/stack-refs.json"):
+            with self.subTest(path=path):
+                scope = CLASSIFIER.classify([path])
+                self.assertTrue(scope.heavy)
+                self.assertTrue(scope.tools)
+                self.assertTrue(scope.runtime)
 
     def test_swift_runtime_drivers_select_both_scopes(self) -> None:
         for path in sorted(CLASSIFIER.RUNTIME_DRIVER_PATHS):

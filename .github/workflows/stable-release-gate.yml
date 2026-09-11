@@ -15,6 +15,7 @@
 #===----------------------------------------------------------------------===#
 
 name: Stable Release Gate
+run-name: Stable Release Gate · ${{ inputs.ref }} · ${{ inputs.request_id || 'manual' }}
 
 on:
   workflow_dispatch:
@@ -22,6 +23,14 @@ on:
       ref:
         description: "Bare semantic tag to validate and promote"
         required: true
+        type: string
+      expected_control_sha:
+        description: "Controller-observed main SHA for race-safe dispatch"
+        required: false
+        type: string
+      request_id:
+        description: "Durable controller request identifier"
+        required: false
         type: string
 
 permissions:
@@ -31,6 +40,7 @@ permissions:
 concurrency:
   group: stable-release-gate-${{ inputs.ref }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   resolve-candidate:
@@ -46,6 +56,24 @@ jobs:
       init_image_sha256: ${{ steps.candidate.outputs.init_image_sha256 }}
       init_image_authority_object: ${{ steps.candidate.outputs.init_image_authority_object }}
     steps:
+      - name: Verify dispatch identity
+        env:
+          EXPECTED_CONTROL_SHA: ${{ inputs.expected_control_sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${EXPECTED_CONTROL_SHA}" && \
+            ( ! "${EXPECTED_CONTROL_SHA}" =~ ^[0-9a-f]{40}$ || \
+              "${GITHUB_SHA}" != "${EXPECTED_CONTROL_SHA}" ) ]]; then
+            printf 'stable gate controls changed before execution: expected %s, got %s\n' \
+              "${EXPECTED_CONTROL_SHA:-missing}" "${GITHUB_SHA}" >&2
+            exit 1
+          fi
+          if [[ -n "${REQUEST_ID}" && ! "${REQUEST_ID}" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+            printf 'stable gate request ID is invalid: %s\n' "${REQUEST_ID}" >&2
+            exit 1
+          fi
+
       - name: Require an immutable main tag and green main CI
         id: candidate
         env:
@@ -379,9 +407,35 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${CANDIDATE_SHA}" =~ ^[[:xdigit:]]{40}$ ]]
-          runner_work_root="$(cd "${RUNNER_TEMP}/.." && pwd -P)"
           workspace_root="$(cd "${GITHUB_WORKSPACE}" && pwd -P)"
-          state_parent="${runner_work_root}/.container-compose-release-build"
+          retained_root="${HOME}/Library/Application Support/ContainerFamily/retained"
+          retained_marker="${retained_root}/.container-family-retained-root"
+          [[ ! -L "${retained_root}" ]] || {
+            printf 'Retained release root is a symbolic link: %s\n' \
+              "${retained_root}" >&2
+            exit 2
+          }
+          if [[ -d "${retained_root}" && ! -f "${retained_marker}" ]] && \
+            [[ -n "$(find "${retained_root}" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+            printf 'Refusing to claim non-empty unmarked retained root: %s\n' \
+              "${retained_root}" >&2
+            exit 2
+          fi
+          mkdir -p "${retained_root}"
+          if [[ -L "${retained_marker}" ]] || \
+            [[ -e "${retained_marker}" && ! -f "${retained_marker}" ]]; then
+            printf 'Retained release marker is unsafe: %s\n' \
+              "${retained_marker}" >&2
+            exit 2
+          fi
+          if [[ -f "${retained_marker}" ]]; then
+            [[ "$(<"${retained_marker}")" == \
+              'container-compose retained build v2' ]]
+          else
+            printf 'container-compose retained build v2\n' > "${retained_marker}"
+            chmod 0600 "${retained_marker}"
+          fi
+          state_parent="${retained_root}/release/checkpoints"
           if [[ -L "${state_parent}" ]]; then
             printf 'Release state parent must not be a symbolic link: %s\n' \
               "${state_parent}" >&2
@@ -465,7 +519,7 @@ jobs:
         run: |
           set -euo pipefail
           evidence="${RELEASE_BUILD_STATE_ROOT}/checkpoints/compose-release-gate"
-          bundle="${RUNNER_TEMP}/stable-release-authority"
+          bundle="${RELEASE_BUILD_STATE_ROOT}/authority/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           if [[ -e "${bundle}" || -L "${bundle}" ]]; then
             printf 'stable release authority bundle already exists: %s\n' "${bundle}" >&2
             exit 2
@@ -499,13 +553,14 @@ jobs:
           )"
           [[ "${receipt_sha256}" =~ ^[0-9a-f]{64}$ ]]
           printf 'sha256=%s\n' "${receipt_sha256}" >> "${GITHUB_OUTPUT}"
+          printf 'RELEASE_AUTHORITY_ROOT=%s\n' "${bundle}" >> "${GITHUB_ENV}"
 
       - name: Upload candidate-bound authority receipt
         id: upload-authority
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: stable-release-authority-${{ inputs.ref }}-${{ needs.resolve-candidate.outputs.sha }}
-          path: ${{ runner.temp }}/stable-release-authority
+          path: ${{ env.RELEASE_AUTHORITY_ROOT }}
           if-no-files-found: error
           retention-days: 90
 

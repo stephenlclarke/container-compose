@@ -61,7 +61,7 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 240
     env:
-      BUILD_STATE_ROOT: /Volumes/SSD/github/.container-compose-build/historical-benchmark
+      BUILD_TRANSIENT_ROOT: /Volumes/SSD/cf/build
       REPETITIONS: ${{ inputs.repetitions }}
       FIXTURE_GROUPS: ${{ inputs.fixture_groups }}
       FIXTURE_IMAGE: alpine:3.20
@@ -70,13 +70,20 @@ jobs:
       FIXTURE_IMAGE_MANIFEST_MEDIA_TYPE: application/vnd.oci.image.manifest.v1+json
       RUNTIME_ROOT_PREFIX: /private/tmp/cchr-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - name: Select local benchmark root
+      - name: Select separated benchmark storage
         shell: bash
         run: |
           set -euo pipefail
-          printf 'BENCHMARK_ROOT=%s/container-compose-historical-benchmark-%s-%s\n' \
-            "${RUNNER_TEMP}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" \
-            >> "${GITHUB_ENV}"
+          retained_base="${HOME}/Library/Application Support/ContainerFamily/retained"
+          {
+            printf 'BUILD_RETAINED_ROOT=%s/build\n' "${retained_base}"
+            printf 'BENCHMARK_ROOT=%s/benchmarks/historical/run-%s-%s\n' \
+              "${BUILD_TRANSIENT_ROOT}" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"
+            printf 'BENCHMARK_RETAINED_ROOT=%s/historical-benchmark/run-%s-%s\n' \
+              "${retained_base}/build" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}"
+            printf 'BENCHMARK_CACHE_ROOT=%s/historical-benchmark/cache\n' \
+              "${retained_base}/build"
+          } >> "${GITHUB_ENV}"
 
       - name: Checkout benchmark controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -168,19 +175,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          resolution_root="$(mktemp -d \
+            /Volumes/SSD/github/container-compose-release-resolution.XXXXXX)"
+          trap 'find "${resolution_root}" -depth -delete' EXIT
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-            > "${RUNNER_TEMP}/published-release-pages.json"
+            > "${resolution_root}/published-release-pages.json"
           jq '[.[][] | {
               tagName: .tag_name,
               isDraft: .draft,
               isPrerelease: .prerelease,
               publishedAt: .published_at
-            }]' "${RUNNER_TEMP}/published-release-pages.json" \
-            > "${RUNNER_TEMP}/published-releases.json"
+            }]' "${resolution_root}/published-release-pages.json" \
+            > "${resolution_root}/published-releases.json"
           arguments=(
             resolve
-            --releases "${RUNNER_TEMP}/published-releases.json"
+            --releases "${resolution_root}/published-releases.json"
             --target "${TARGET_INPUT}"
           )
           if [[ -n "${BASELINE_INPUT}" ]]; then
@@ -188,9 +198,9 @@ jobs:
           fi
           /usr/bin/python3 Tools/parity/published_release_benchmark.py \
             "${arguments[@]}" \
-            > "${RUNNER_TEMP}/comparison.json"
-          target="$(jq -r '.target' "${RUNNER_TEMP}/comparison.json")"
-          baseline="$(jq -r '.baseline' "${RUNNER_TEMP}/comparison.json")"
+            > "${resolution_root}/comparison.json"
+          target="$(jq -r '.target' "${resolution_root}/comparison.json")"
+          baseline="$(jq -r '.baseline' "${resolution_root}/comparison.json")"
 
           # Resolve one published release to its immutable object and tag identities.
           resolve_release() {
@@ -232,10 +242,15 @@ jobs:
         run: |
           set -euo pipefail
           [[ -d /Volumes/SSD/github ]]
-          make stack-state-init STACK_STATE_ROOT="${BUILD_STATE_ROOT}"
-          [[ -f "${BUILD_STATE_ROOT}/.container-compose-build-root" ]]
-          [[ "$(<"${BUILD_STATE_ROOT}/.container-compose-build-root")" == \
-            'container-compose recoverable build v1' ]]
+          make stack-state-init \
+            STACK_RETAINED_ROOT="${BUILD_RETAINED_ROOT}" \
+            STACK_TRANSIENT_ROOT="${BUILD_TRANSIENT_ROOT}"
+          [[ -f "${BUILD_RETAINED_ROOT}/.container-family-retained-root" ]]
+          [[ "$(<"${BUILD_RETAINED_ROOT}/.container-family-retained-root")" == \
+            'container-compose retained build v2' ]]
+          [[ -f "${BUILD_TRANSIENT_ROOT}/.container-family-transient-root" ]]
+          [[ "$(<"${BUILD_TRANSIENT_ROOT}/.container-family-transient-root")" == \
+            'container-compose transient build v2' ]]
           if [[ -e "${BENCHMARK_ROOT}" ]]; then
             printf 'benchmark root already exists: %s\n' "${BENCHMARK_ROOT}" >&2
             exit 1
@@ -246,43 +261,41 @@ jobs:
           install -d -m 0700 \
             "${BENCHMARK_ROOT}/downloads" \
             "${BENCHMARK_ROOT}/prepared" \
-            "${BENCHMARK_ROOT}/evidence" \
             "${BENCHMARK_ROOT}/fixtures" \
             "${BENCHMARK_ROOT}/work"
+          if [[ -e "${BENCHMARK_RETAINED_ROOT}" ]]; then
+            printf 'retained benchmark root already exists: %s\n' \
+              "${BENCHMARK_RETAINED_ROOT}" >&2
+            exit 1
+          fi
+          install -d -m 0700 \
+            "${BENCHMARK_CACHE_ROOT}/fixtures" \
+            "${BENCHMARK_RETAINED_ROOT}/downloads" \
+            "${BENCHMARK_RETAINED_ROOT}/evidence" \
+            "${BENCHMARK_RETAINED_ROOT}/prepared"
+          printf 'container-compose retained historical benchmark v1\n' \
+            > "${BENCHMARK_RETAINED_ROOT}/.historical-benchmark-retained-root"
 
-      - name: Prepare pinned offline fixture image
+      - name: Prepare pinned fixture for candidate and Docker oracle
         shell: bash
         run: |
           set -euo pipefail
           command -v /opt/homebrew/bin/skopeo >/dev/null
-          docker_metadata="${BENCHMARK_ROOT}/evidence/fixture-docker-image.json"
+          fixture_metadata="${BENCHMARK_RETAINED_ROOT}/evidence/fixture-image.json"
           expected_reference="alpine@${FIXTURE_IMAGE_INDEX_DIGEST}"
-          recovery_command="docker pull ${expected_reference} && docker image tag ${expected_reference} ${FIXTURE_IMAGE}"
-          if ! docker image inspect "${FIXTURE_IMAGE}" > "${docker_metadata}"; then
-            printf 'the pinned local fixture is unavailable: expected %s, found []\n' \
-              "${expected_reference}" >&2
-            printf 'recover before retrying with: %s\n' \
-              "${recovery_command}" >&2
-            exit 1
-          fi
-          jq -e --arg expected "${expected_reference}" \
-            '.[0].RepoDigests | index($expected) != null' \
-            "${docker_metadata}" >/dev/null || {
-            printf 'the pinned local fixture is unavailable: expected %s, found %s\n' \
-              "${expected_reference}" \
-              "$(jq -c '.[0].RepoDigests // []' "${docker_metadata}")" >&2
-            printf 'recover before retrying with: %s\n' \
-              "${recovery_command}" >&2
-            exit 1
-          }
           archive="${BENCHMARK_ROOT}/fixtures/alpine-3.20-arm64.oci.tar"
-          docker_host="$(docker context inspect --format \
-            '{{(index .Endpoints "docker").Host}}')"
-          [[ "${docker_host}" == unix:///* ]]
-          [[ -S "${docker_host#unix://}" ]]
-          /opt/homebrew/bin/skopeo copy --format oci \
-            --src-daemon-host "${docker_host}" \
-            "docker-daemon:${FIXTURE_IMAGE}" "oci-archive:${archive}:3.20"
+          cached_archive="${BENCHMARK_CACHE_ROOT}/fixtures/alpine-${FIXTURE_IMAGE_MANIFEST_DIGEST#sha256:}.oci.tar"
+          if [[ -f "${cached_archive}" && ! -L "${cached_archive}" ]]; then
+            /bin/cp "${cached_archive}" "${archive}"
+          else
+            [[ ! -e "${cached_archive}" ]] || {
+              printf 'cached fixture is not a regular file: %s\n' \
+                "${cached_archive}" >&2
+              exit 1
+            }
+            /opt/homebrew/bin/skopeo copy --format oci \
+              "docker://${expected_reference}" "oci-archive:${archive}:3.20"
+          fi
           archive_digest="$(/opt/homebrew/bin/skopeo inspect \
             "oci-archive:${archive}:3.20" | jq -r '.Digest')"
           [[ "${archive_digest}" == "${FIXTURE_IMAGE_MANIFEST_DIGEST}" ]]
@@ -291,8 +304,19 @@ jobs:
           [[ "${archive_media_type}" == "${FIXTURE_IMAGE_MANIFEST_MEDIA_TYPE}" ]]
           /usr/bin/python3 Tools/release/validate-oci-image-layout.py \
             "${archive}" 3.20
+          if [[ ! -e "${cached_archive}" ]]; then
+            cache_partial="${cached_archive}.partial.${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}"
+            /usr/bin/install -m 0444 "${archive}" "${cache_partial}"
+            /bin/mv "${cache_partial}" "${cached_archive}"
+          fi
+          /opt/homebrew/bin/skopeo inspect \
+            "oci-archive:${archive}:3.20" > "${fixture_metadata}"
+          # Docker is retained only as this benchmark's isolated reference
+          # oracle. Both lanes consume bytes fetched by immutable digest.
+          /opt/homebrew/bin/skopeo copy \
+            "oci-archive:${archive}:3.20" "docker-daemon:${FIXTURE_IMAGE}"
           shasum -a 256 "${archive}" \
-            > "${BENCHMARK_ROOT}/evidence/fixture-image.sha256"
+            > "${BENCHMARK_RETAINED_ROOT}/evidence/fixture-image.sha256"
           printf 'PARITY_FIXTURE_IMAGE_ARCHIVE=%s\n' "${archive}" \
             >> "${GITHUB_ENV}"
           printf 'PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE=3.20\n' \
@@ -503,7 +527,6 @@ jobs:
               --digest "${initfs_artifact_digest}" --output "${initfs_root}"
 
             source_worktree="${BENCHMARK_ROOT}/work/containerization-${version}"
-            cctl_pin="${version_root}/containerization-cctl.pin.json"
             git -C containerization-source worktree add --detach \
               "${source_worktree}" "${containerization_ref}"
             source_commit="$(git -C "${source_worktree}" rev-parse 'HEAD^{commit}')"
@@ -512,27 +535,37 @@ jobs:
               --tool /usr/bin/swift --configuration release \
               --controller "$(pwd -P)/.github/workflows/historical-benchmark.yml" \
               --controller "$(pwd -P)/Tools/build/stack-pin.py")"
-            scratch="${BUILD_STATE_ROOT}/scratch/${cctl_contract}/containerization-${containerization_ref}"
-            started=${SECONDS}
-            /usr/bin/swift build --package-path "${source_worktree}" \
-              --disable-automatic-resolution --scratch-path "${scratch}" \
-              -c release --product cctl
-            cctl_bin_path="$(/usr/bin/swift build --package-path "${source_worktree}" \
-              --scratch-path "${scratch}" -c release --show-bin-path)"
-            /usr/bin/install -m 0755 "${cctl_bin_path}/cctl" \
-              "${version_root}/cctl"
-            /usr/bin/python3 Tools/build/stack-pin.py create \
-              --repository containerization \
-              --repository-path "${source_worktree}" --output "${cctl_pin}" \
-              --artifact "${version_root}/cctl" \
-              --expected-commit "${source_commit}" --expected-tree "${source_tree}" \
-              --build-contract "${cctl_contract}" \
-              --duration-seconds "$((SECONDS - started))" \
-              --command-label 'swift build -c release --product cctl' >/dev/null
+            scratch="${BUILD_TRANSIENT_ROOT}/scratch/${cctl_contract}/containerization-${containerization_ref}"
+            cctl_cache="${BENCHMARK_CACHE_ROOT}/cctl/${cctl_contract}/${containerization_ref}"
+            cctl_pin="${cctl_cache}/pin.json"
+            if [[ ! -f "${cctl_pin}" ]]; then
+              [[ ! -e "${cctl_pin}" ]]
+              install -d -m 0700 "${cctl_cache}"
+              started=${SECONDS}
+              /usr/bin/swift build --package-path "${source_worktree}" \
+                --disable-automatic-resolution --scratch-path "${scratch}" \
+                -c release --product cctl
+              cctl_bin_path="$(/usr/bin/swift build --package-path "${source_worktree}" \
+                --scratch-path "${scratch}" -c release --show-bin-path)"
+              retained_cctl="$(/usr/bin/python3 Tools/build/stack-artifact.py \
+                --source "${cctl_bin_path}/cctl" \
+                --root "${BUILD_RETAINED_ROOT}/artifacts" --name cctl)"
+              /usr/bin/python3 Tools/build/stack-pin.py create \
+                --repository containerization \
+                --repository-path "${source_worktree}" --output "${cctl_pin}" \
+                --artifact "${retained_cctl}" \
+                --expected-commit "${source_commit}" --expected-tree "${source_tree}" \
+                --build-contract "${cctl_contract}" \
+                --duration-seconds "$((SECONDS - started))" \
+                --command-label 'swift build -c release --product cctl' >/dev/null
+            fi
             /usr/bin/python3 Tools/build/stack-pin.py verify --quiet \
               --receipt "${cctl_pin}" --repository containerization \
               --repository-path "${source_worktree}" \
               --build-contract "${cctl_contract}"
+            retained_cctl="$(jq -er '.artifacts | if length == 1 then .[0].path else error("expected one cctl artifact") end' \
+              "${cctl_pin}")"
+            /usr/bin/install -m 0755 "${retained_cctl}" "${version_root}/cctl"
             cctl_result="${version_root}/cctl-result.json"
             jq -e '
               if .schema == 1 and
@@ -579,6 +612,11 @@ jobs:
             jq -s '.[0] + .[1]' \
               "${version_root}/guest-provenance.json" "${cctl_result}" \
               > "${version_root}/guest-provenance.complete.json"
+            install -d -m 0700 \
+              "${BENCHMARK_RETAINED_ROOT}/downloads/${version}"
+            /usr/bin/install -m 0600 \
+              "${version_root}/guest-provenance.complete.json" \
+              "${BENCHMARK_RETAINED_ROOT}/downloads/${version}/guest-provenance.complete.json"
 
             /usr/bin/python3 Tools/parity/historical_reconstruction_benchmark.py prepare \
               --version "${version}" --distribution "${distribution}" \
@@ -590,6 +628,9 @@ jobs:
             /usr/bin/python3 Tools/release/validate-oci-image-layout.py \
               "${BENCHMARK_ROOT}/prepared/${version}/init/container-vminit-arm64.oci.tar" \
               vminit:container-compose "${exact_reference}"
+            /usr/bin/install -m 0600 \
+              "${BENCHMARK_ROOT}/prepared/${version}/published-distribution.json" \
+              "${BENCHMARK_RETAINED_ROOT}/prepared/${version}.published-distribution.json"
           done
 
       - name: Require a quiet benchmark host
@@ -605,12 +646,12 @@ jobs:
               competing=1
             fi
           done
-          pmset -g therm > "${BENCHMARK_ROOT}/evidence/thermal-before.txt"
-          sysctl -n vm.loadavg > "${BENCHMARK_ROOT}/evidence/load-before.txt"
+          pmset -g therm > "${BENCHMARK_RETAINED_ROOT}/evidence/thermal-before.txt"
+          sysctl -n vm.loadavg > "${BENCHMARK_RETAINED_ROOT}/evidence/load-before.txt"
           ps -Ao pid,ppid,%cpu,comm -r \
-            > "${BENCHMARK_ROOT}/evidence/processes-before.txt"
+            > "${BENCHMARK_RETAINED_ROOT}/evidence/processes-before.txt"
           load_one="$(awk '{ print $2 }' \
-            "${BENCHMARK_ROOT}/evidence/load-before.txt")"
+            "${BENCHMARK_RETAINED_ROOT}/evidence/load-before.txt")"
           cpu_count="$(sysctl -n hw.ncpu)"
           awk -v load="${load_one}" -v cpus="${cpu_count}" \
             'BEGIN { exit !(load <= cpus / 2) }'
@@ -665,7 +706,7 @@ jobs:
                 PARITY_FIXTURE_IMAGE_ARCHIVE="${PARITY_FIXTURE_IMAGE_ARCHIVE}" \
                 PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE="${PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE}" \
                 PARITY_WORK_ROOT="${run_root}/fixtures" \
-                PARITY_EVIDENCE_DIR="${BENCHMARK_ROOT}/evidence/${version}" \
+                PARITY_EVIDENCE_DIR="${BENCHMARK_RETAINED_ROOT}/evidence/${version}" \
                 PARITY_EVIDENCE_MODE="${evidence_mode}" \
                 PARITY_FINALIZE_EVIDENCE=0 \
                 PARITY_FIXTURE_GROUPS="${phase}" \
@@ -676,7 +717,7 @@ jobs:
                   Tools/parity/check-compose-performance-matrix.sh --strict
               evidence_mode=append
             done
-            PARITY_EVIDENCE_DIR="${BENCHMARK_ROOT}/evidence/${version}" \
+            PARITY_EVIDENCE_DIR="${BENCHMARK_RETAINED_ROOT}/evidence/${version}" \
               PARITY_FIXTURE_GROUPS="${FIXTURE_GROUPS}" \
               PARITY_REPETITIONS="${REPETITIONS}" \
               PARITY_INCLUDE_REMOTE_LOGGING=0 \
@@ -685,8 +726,8 @@ jobs:
           }
           run_version "${BASELINE_VERSION}"
           run_version "${TARGET_VERSION}"
-          pmset -g therm > "${BENCHMARK_ROOT}/evidence/thermal-after.txt"
-          sysctl -n vm.loadavg > "${BENCHMARK_ROOT}/evidence/load-after.txt"
+          pmset -g therm > "${BENCHMARK_RETAINED_ROOT}/evidence/thermal-after.txt"
+          sysctl -n vm.loadavg > "${BENCHMARK_RETAINED_ROOT}/evidence/load-after.txt"
 
       - name: Render reconstruction evidence report
         if: inputs.fixture_groups == 'all'
@@ -697,10 +738,10 @@ jobs:
           set -euo pipefail
           report="docs/benchmarks/${TARGET_VERSION}-vs-${BASELINE_VERSION}.md"
           /usr/bin/python3 Tools/parity/published_release_benchmark.py render \
-            --target-evidence "${BENCHMARK_ROOT}/evidence/${TARGET_VERSION}" \
-            --baseline-evidence "${BENCHMARK_ROOT}/evidence/${BASELINE_VERSION}" \
-            --target-distribution "${BENCHMARK_ROOT}/prepared/${TARGET_VERSION}/published-distribution.json" \
-            --baseline-distribution "${BENCHMARK_ROOT}/prepared/${BASELINE_VERSION}/published-distribution.json" \
+            --target-evidence "${BENCHMARK_RETAINED_ROOT}/evidence/${TARGET_VERSION}" \
+            --baseline-evidence "${BENCHMARK_RETAINED_ROOT}/evidence/${BASELINE_VERSION}" \
+            --target-distribution "${BENCHMARK_RETAINED_ROOT}/prepared/${TARGET_VERSION}.published-distribution.json" \
+            --baseline-distribution "${BENCHMARK_RETAINED_ROOT}/prepared/${BASELINE_VERSION}.published-distribution.json" \
             --output "${report}" --workflow-url "${WORKFLOW_URL}"
           printf 'REPORT_PATH=%s\n' "${report}" >> "${GITHUB_ENV}"
 
@@ -710,9 +751,9 @@ jobs:
         with:
           name: historical-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ env.BENCHMARK_ROOT }}/evidence
-            ${{ env.BENCHMARK_ROOT }}/prepared/*/published-distribution.json
-            ${{ env.BENCHMARK_ROOT }}/downloads/*/guest-provenance.complete.json
+            ${{ env.BENCHMARK_RETAINED_ROOT }}/evidence
+            ${{ env.BENCHMARK_RETAINED_ROOT }}/prepared/*.published-distribution.json
+            ${{ env.BENCHMARK_RETAINED_ROOT }}/downloads/*/guest-provenance.complete.json
           if-no-files-found: warn
           retention-days: 90
 

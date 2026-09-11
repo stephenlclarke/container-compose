@@ -50,6 +50,12 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     fingerprint.add_argument("--fingerprint-command")
     parser.add_argument("--seconds", type=int, required=True)
     parser.add_argument(
+        "--required-output",
+        action="append",
+        default=[],
+        help="regular output file whose content must remain valid for reuse",
+    )
+    parser.add_argument(
         "--supervised-worker", action="store_true", help=argparse.SUPPRESS
     )
     parser.add_argument("--active-output", default="", help=argparse.SUPPRESS)
@@ -99,7 +105,11 @@ def sha256_file(path: Path) -> str:
 
 
 def stage_digest(
-    stage: str, fingerprint: str, seconds: int, command: Sequence[str]
+    stage: str,
+    fingerprint: str,
+    seconds: int,
+    command: Sequence[str],
+    required_outputs: Sequence[str] = (),
 ) -> str:
     encoded = json.dumps(
         {
@@ -108,6 +118,7 @@ def stage_digest(
             "seconds": seconds,
             "schema": SCHEMA_VERSION,
             "stage": stage,
+            "required_outputs": list(required_outputs),
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -139,6 +150,36 @@ def checkpoint_output_is_valid(
         return False
     try:
         return sha256_file(output_path) == recorded_digest
+    except OSError:
+        return False
+
+
+def required_output_path(value: str) -> Path:
+    return Path(os.path.abspath(os.path.expanduser(value)))
+
+
+def required_output_record(path: Path) -> dict[str, object]:
+    if path.is_symlink():
+        raise OSError(f"release checkpoint required output is indirect: {path}")
+    status = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(status.st_mode):
+        raise OSError(f"release checkpoint required output is not regular: {path}")
+    return {
+        "mode": stat.S_IMODE(status.st_mode),
+        "path": str(path),
+        "sha256": sha256_file(path),
+        "size": status.st_size,
+    }
+
+
+def required_outputs_are_valid(
+    checkpoint: dict[str, object], required_outputs: Sequence[Path]
+) -> bool:
+    recorded = checkpoint.get("required_outputs", [])
+    if not isinstance(recorded, list) or len(recorded) != len(required_outputs):
+        return False
+    try:
+        return recorded == [required_output_record(path) for path in required_outputs]
     except OSError:
         return False
 
@@ -307,8 +348,13 @@ def run_supervised(options: argparse.Namespace) -> int:
     fingerprint_after = fingerprint_before
 
     digest = stage_digest(
-        options.stage, fingerprint, options.seconds, options.command
+        options.stage,
+        fingerprint,
+        options.seconds,
+        options.command,
+        options.required_output,
     )
+    required_outputs = [required_output_path(value) for value in options.required_output]
     checkpoint_directory = (
         Path(options.checkpoint_dir).expanduser().resolve()
         if options.checkpoint_dir
@@ -351,7 +397,9 @@ def run_supervised(options: argparse.Namespace) -> int:
         checkpoint = read_checkpoint(success_path)
         if checkpoint is not None and checkpoint.get("digest") == digest:
             assert output_path is not None
-            if checkpoint_output_is_valid(checkpoint, output_path):
+            if checkpoint_output_is_valid(
+                checkpoint, output_path
+            ) and required_outputs_are_valid(checkpoint, required_outputs):
                 print(f"reusing exact-input release checkpoint: {options.stage}")
                 return 0
             print(
@@ -424,6 +472,15 @@ def run_supervised(options: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
                 status = 75
+    required_output_records: list[dict[str, object]] = []
+    if status == 0:
+        try:
+            required_output_records = [
+                required_output_record(path) for path in required_outputs
+            ]
+        except OSError as error:
+            print(f"could not verify release checkpoint products: {error}", file=sys.stderr)
+            status = 74
     result: dict[str, object] = {
         "command_sha256": hashlib.sha256(
             json.dumps(options.command, separators=(",", ":")).encode("utf-8")
@@ -444,6 +501,8 @@ def run_supervised(options: argparse.Namespace) -> int:
     if output_digest is not None and output_file is not None:
         result["output_sha256"] = output_digest
         result["output_file"] = output_file
+    if required_output_records:
+        result["required_outputs"] = required_output_records
     if result_path is not None:
         write_json_atomically(result_path, result)
     if status == 0 and success_path is not None:

@@ -15,7 +15,7 @@
 #===----------------------------------------------------------------------===#
 
 name: Prebuilt Binaries
-run-name: Prebuilt Binaries · ${{ inputs.ref || github.event.workflow_run.head_branch || github.ref_name }}
+run-name: Prebuilt Binaries · ${{ inputs.ref || github.event.workflow_run.head_branch || github.ref_name }} · ${{ inputs.repair_tap && 'tap-repair' || 'package' }} · ${{ inputs.request_id || 'automatic' }}
 
 on:
   workflow_run:
@@ -36,6 +36,14 @@ on:
         required: false
         default: false
         type: boolean
+      expected_control_sha:
+        description: "Controller-observed main SHA for race-safe dispatch"
+        required: false
+        type: string
+      request_id:
+        description: "Durable controller request identifier"
+        required: false
+        type: string
 
 permissions:
   actions: read
@@ -50,6 +58,7 @@ concurrency:
   # stable promotion and a current promotion from racing the shared tap branch.
   group: container-stack-package-and-tap
   cancel-in-progress: false
+  queue: max
 
 jobs:
   resolve-publish-context:
@@ -72,6 +81,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DISPATCH_REF: ${{ inputs.ref }}
           REPAIR_TAP: ${{ inputs.repair_tap }}
+          EXPECTED_CONTROL_SHA: ${{ inputs.expected_control_sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
           WORKFLOW_RUN_EVENT: ${{ github.event.workflow_run.event }}
           WORKFLOW_RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
           WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -79,6 +90,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == workflow_dispatch ]]; then
+            if [[ -n "${EXPECTED_CONTROL_SHA}" && \
+              ( ! "${EXPECTED_CONTROL_SHA}" =~ ^[0-9a-f]{40}$ || \
+                "${GITHUB_SHA}" != "${EXPECTED_CONTROL_SHA}" ) ]]; then
+              printf 'package controls changed before dispatch execution: expected %s, got %s\n' \
+                "${EXPECTED_CONTROL_SHA:-missing}" "${GITHUB_SHA}" >&2
+              exit 1
+            fi
+          if [[ -n "${REQUEST_ID}" && ! "${REQUEST_ID}" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+              printf 'package request ID is invalid: %s\n' "${REQUEST_ID}" >&2
+              exit 1
+            fi
+          fi
 
           publish=false
           ref_type=""
@@ -781,6 +806,27 @@ jobs:
     runs-on: [self-hosted, macOS, ARM64, container-compose-release, container-compose-current]
     timeout-minutes: 120
     steps:
+      - name: Enforce local storage lifetime boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for transient in "${GITHUB_WORKSPACE}" "${RUNNER_TEMP}"; do
+            resolved="$(cd "${transient}" && pwd -P)"
+            [[ "${resolved}" == /Volumes/SSD/* ]] || {
+              printf 'self-hosted transient path is not on /Volumes/SSD: %s\n' \
+                "${resolved}" >&2
+              exit 1
+            }
+          done
+          retained="${CONTAINER_FAMILY_RETAINED_ROOT:-${HOME}/Library/Application Support/ContainerFamily/retained}"
+          case "${retained}" in
+            /Volumes/SSD|/Volumes/SSD/*)
+              printf 'retained release state must be on the internal disk: %s\n' \
+                "${retained}" >&2
+              exit 1
+              ;;
+          esac
+
       - name: Checkout container-compose
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -1153,6 +1199,50 @@ jobs:
         shell: /bin/bash --noprofile --norc -e -o pipefail {0}
         run: |
           set -euo pipefail
+          retained_root="${CONTAINER_FAMILY_RETAINED_ROOT:-${HOME}/Library/Application Support/ContainerFamily/retained}"
+          retained_archive="$(
+            python3 release-tools/Tools/release/retain-local-release-assets.py path \
+              --root "${retained_root}" --version "${PUBLISH_REF_NAME}" \
+              --name stable-release-authority.tar.gz 2>/dev/null || true
+          )"
+          retained_sidecar="$(
+            python3 release-tools/Tools/release/retain-local-release-assets.py path \
+              --root "${retained_root}" --version "${PUBLISH_REF_NAME}" \
+              --name stable-release-authority.tar.gz.sha256 2>/dev/null || true
+          )"
+          if [[ -n "${retained_archive}" && -n "${retained_sidecar}" ]]; then
+            init_authority_object="$(
+              gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/stable-init-image-authority/${PUBLISH_REF_NAME}" \
+                --jq '.object.sha'
+            )"
+            init_authority="$(
+              gh api "repos/${GITHUB_REPOSITORY}/git/tags/${init_authority_object}"
+            )"
+            if [[ "$(jq -r '.verification.verified' <<< "${init_authority}")" != "true" ]] ||
+              [[ "$(jq -r '.object.sha' <<< "${init_authority}")" != "${PUBLISH_SHA}" ]]; then
+              printf 'stable init-image authority no longer verifies the package source\n' >&2
+              exit 1
+            fi
+            init_image_sha256="$(
+              jq -r '.message' <<< "${init_authority}" |
+                sed -nE 's/^Guest init image SHA-256: ([0-9a-f]{64})[.]$/\1/p'
+            )"
+            python3 release-tools/Tools/release/verify-stable-authority-bundle.py \
+              --archive "${retained_archive}" --release-tag "${PUBLISH_REF_NAME}" \
+              --candidate-sha "${PUBLISH_SHA}" --builder-ref "${BUILDER_REF}" \
+              --containerization-ref "${CONTAINERIZATION_REF}" \
+              --container-ref "${CONTAINER_REF}" \
+              --init-image-sha256 "${init_image_sha256}" \
+              --receipt-sha256 "${AUTHORITY_RECEIPT_SHA256}" >/dev/null
+            local_archive="${RUNNER_TEMP}/stable-release-authority.tar.gz"
+            cp "${retained_archive}" "${local_archive}"
+            cp "${retained_sidecar}" "${local_archive}.sha256"
+            {
+              printf 'asset=stable-release-authority.tar.gz\n'
+              printf 'local_asset=%s\n' "${local_archive}"
+            } >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
           authority_root="${RUNNER_TEMP}/stable-release-authority-${PUBLISH_REF_NAME}"
           mkdir "${authority_root}"
           artifact_json="${authority_root}/artifact.json"
@@ -1193,10 +1283,12 @@ jobs:
             jq -r '.message' <<< "${init_authority}" |
               sed -nE 's/^Guest init image SHA-256: ([0-9a-f]{64})[.]$/\1/p'
           )"
-          homebrew_tap_ref="$(
-            git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git \
-              refs/heads/main | awk '{print $1}' | tail -n 1
-          )"
+          # Build authority is immutable. A later Current publication may move
+          # the tap before this package consumes the receipt, so verify the
+          # snapshot recorded by the gate and handle tap movement only in the
+          # conflict-checked formula publication transaction.
+          homebrew_tap_ref="$(jq -er '.components["homebrew-tap"]' "${receipt}")"
+          [[ "${homebrew_tap_ref}" =~ ^[0-9a-f]{40}$ ]]
           [[ "$(git -C release-tools rev-parse HEAD)" == "${GITHUB_SHA}" ]]
           python3 release-tools/Tools/release/stable-release-authority.py verify \
             --evidence-dir "${authority_root}/bundle" \
@@ -1785,6 +1877,17 @@ jobs:
               printf 'stable release tag is missing: %s\n' "${RELEASE_TAG}" >&2
               exit 1
             fi
+            retained_root="${CONTAINER_FAMILY_RETAINED_ROOT:-${HOME}/Library/Application Support/ContainerFamily/retained}"
+            python3 ../release-tools/Tools/release/retain-local-release-assets.py retain \
+              --root "${retained_root}" --version "${COMPOSE_VERSION}" \
+              --asset "${RUNNER_TEMP}/${ASSET}" \
+              --asset "${RUNNER_TEMP}/${ASSET}.sha256" \
+              --asset "${{ steps.runtime-package.outputs.local_asset }}" \
+              --asset "${{ steps.runtime-package.outputs.local_asset }}.sha256" \
+              --asset "${{ steps.authority-bundle.outputs.local_asset }}" \
+              --asset "${{ steps.authority-bundle.outputs.local_asset }}.sha256" \
+              --asset "${highlights}" --asset "${quality_snapshot_svg}"
+            retained_complete_manifest="${retained_root}/release/releases/${COMPOSE_VERSION}/assets.json"
           fi
 
           release_mutable="false"
@@ -1808,6 +1911,7 @@ jobs:
             PUBLISH_SHA="${PUBLISH_SHA}" \
             RELEASE_ASSET_PATH="${RUNNER_TEMP}/${ASSET}" \
             RELEASE_CHECKSUM_PATH="${RUNNER_TEMP}/${ASSET}.sha256" \
+            RELEASE_RETAINED_COMPLETE_MANIFEST="${retained_complete_manifest:-}" \
             ../release-tools/Tools/release/publish-github-release.sh
 
       - name: Checkout Homebrew tap
@@ -1899,9 +2003,9 @@ jobs:
             fi
           done
 
-          # Finalizing Current recreates the mutable release. Carry the last
-          # successful, non-authoritative demo through that replacement so a
-          # failed asynchronous recording never leaves the README asset absent.
+          # Finalizing Current edits the mutable release in place. Carry the
+          # last successful, non-authoritative demo through the idempotent asset
+          # upload so a failed asynchronous recording never removes it.
           retained_demo="${RUNNER_TEMP}/container-compose-demo-current.gif"
           demo_asset_present="$(
             gh release view "${RELEASE_TAG}" \

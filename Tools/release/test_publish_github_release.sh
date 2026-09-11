@@ -28,8 +28,16 @@ cat > "${temporary_directory}/bin/gh" <<'EOF'
 set -Eeuo pipefail
 
 if [[ "$1" == "api" ]]; then
+  if [[ " $* " == *" --silent "* ]]; then
+    printf 'release lookup must preserve the response body\n' >&2
+    exit 64
+  fi
   case "${MOCK_RELEASE_STATE}" in
     exists)
+      exit 0
+      ;;
+    draft)
+      printf '{"draft":true}\n'
       exit 0
       ;;
     missing)
@@ -54,13 +62,17 @@ cat > "${temporary_directory}/bin/git" <<'EOF'
 set -Eeuo pipefail
 
 printf '%s\n' "$*" >> "${MOCK_GIT_CALLS}"
+if [[ "$1" == rev-list ]]; then
+  printf '0123456789012345678901234567890123456789\n'
+fi
 EOF
 chmod +x "${temporary_directory}/bin/git"
 
 asset="${temporary_directory}/container-compose-plugin-release-arm64.tar.gz"
 checksum="${asset}.sha256"
 notes="${temporary_directory}/notes.md"
-touch "${asset}" "${checksum}" "${notes}"
+retained_manifest="${temporary_directory}/retained-complete.json"
+touch "${asset}" "${checksum}" "${notes}" "${retained_manifest}"
 
 # Run the publisher with a temporary, recorded GitHub CLI implementation.
 run_publisher() {
@@ -94,6 +106,7 @@ run_publisher() {
     PUBLISH_SHA="0123456789012345678901234567890123456789" \
     RELEASE_ASSET_PATH="${asset}" \
     RELEASE_CHECKSUM_PATH="${checksum}" \
+    RELEASE_RETAINED_COMPLETE_MANIFEST="${retained_manifest}" \
     RELEASE_EXTRA_ASSETS_FILE="${4:-}" \
     MOCK_RELEASE_STATE="$2" \
     MOCK_GH_CALLS="$3" \
@@ -113,9 +126,22 @@ fi
 
 stable_create_calls="${temporary_directory}/stable-create.calls"
 run_publisher tag missing "${stable_create_calls}"
-grep -Fqx "release create 1.2.3 ${asset} ${checksum} --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --verify-tag --latest" "${stable_create_calls}"
-if grep -Eq 'release (edit|upload)|clobber' "${stable_create_calls}"; then
-  printf 'stable publication attempted a mutable release operation\n' >&2
+grep -Fqx "release create 1.2.3 --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --verify-tag --latest --draft" "${stable_create_calls}"
+grep -Fqx "release upload 1.2.3 ${asset} --repo stephenlclarke/container-compose" "${stable_create_calls}"
+grep -Fqx "release upload 1.2.3 ${checksum} --repo stephenlclarke/container-compose" "${stable_create_calls}"
+grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --draft=false --latest" "${stable_create_calls}"
+if grep -Eq 'clobber|release delete' "${stable_create_calls}"; then
+  printf 'stable publication attempted to replace immutable state\n' >&2
+  exit 1
+fi
+
+stable_draft_calls="${temporary_directory}/stable-draft.calls"
+run_publisher tag draft "${stable_draft_calls}"
+grep -Fqx "release upload 1.2.3 ${asset} --repo stephenlclarke/container-compose" "${stable_draft_calls}"
+grep -Fqx "release upload 1.2.3 ${checksum} --repo stephenlclarke/container-compose" "${stable_draft_calls}"
+grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --draft=false --latest" "${stable_draft_calls}"
+if grep -Eq 'release create|clobber|release delete' "${stable_draft_calls}"; then
+  printf 'stable draft recovery recreated or clobbered release state\n' >&2
   exit 1
 fi
 
@@ -147,11 +173,10 @@ main_finalize_calls="${temporary_directory}/main-finalize.calls"
 run_publisher branch exists "${main_finalize_calls}" "" finalize
 grep -Fqx "tag --no-sign --force current 0123456789012345678901234567890123456789" "${main_finalize_calls}.git"
 grep -Fqx "push --force origin refs/tags/current" "${main_finalize_calls}.git"
-grep -Fqx "release delete current --repo stephenlclarke/container-compose --yes" "${main_finalize_calls}"
-grep -Fqx "release create current ${asset} ${checksum} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --verify-tag --prerelease --latest=false" "${main_finalize_calls}"
-grep -Fqx "release edit current --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --prerelease" "${main_finalize_calls}"
-if grep -Eq 'release upload' "${main_finalize_calls}" || grep -Fq -- '--cleanup-tag' "${main_finalize_calls}"; then
-  printf 'current finalization unexpectedly changed staged assets or removed the current tag\n' >&2
+grep -Fqx "release upload current ${asset} ${checksum} --repo stephenlclarke/container-compose --clobber" "${main_finalize_calls}"
+grep -Fqx "release edit current --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --title Current build --notes-file ${notes} --prerelease --latest=false" "${main_finalize_calls}"
+if grep -Eq 'release (create|delete)' "${main_finalize_calls}" || grep -Fq -- '--cleanup-tag' "${main_finalize_calls}"; then
+  printf 'current finalization replaced the release object or removed the current tag\n' >&2
   exit 1
 fi
 
@@ -175,7 +200,8 @@ touch "${runtime_asset}" "${runtime_checksum}"
 printf '%s\n%s\n' "${runtime_asset}" "${runtime_checksum}" > "${extra_assets}"
 stable_extra_calls="${temporary_directory}/stable-extra.calls"
 run_publisher tag missing "${stable_extra_calls}" "${extra_assets}"
-grep -Fqx "release create 1.2.3 ${asset} ${checksum} ${runtime_asset} ${runtime_checksum} --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --verify-tag --latest" "${stable_extra_calls}"
+grep -Fqx "release upload 1.2.3 ${runtime_asset} --repo stephenlclarke/container-compose" "${stable_extra_calls}"
+grep -Fqx "release upload 1.2.3 ${runtime_checksum} --repo stephenlclarke/container-compose" "${stable_extra_calls}"
 
 current_extra_calls="${temporary_directory}/current-extra.calls"
 run_publisher branch exists "${current_extra_calls}" "${extra_assets}" stage

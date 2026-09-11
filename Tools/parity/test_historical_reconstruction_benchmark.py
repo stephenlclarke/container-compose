@@ -309,18 +309,27 @@ class HistoricalWorkflowTests(unittest.TestCase):
 
     def test_workflow_keeps_runtime_inputs_local_and_noninteractive(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn('"${RUNNER_TEMP}" "${GITHUB_RUN_ID}"', workflow)
-        self.assertIn("BUILD_STATE_ROOT: /Volumes/SSD/github/", workflow)
+        self.assertIn("BUILD_TRANSIENT_ROOT: /Volumes/SSD/cf/build", workflow)
+        self.assertIn(
+            'retained_base="${HOME}/Library/Application Support/ContainerFamily/retained"',
+            workflow,
+        )
+        self.assertIn('STACK_RETAINED_ROOT="${BUILD_RETAINED_ROOT}"', workflow)
+        self.assertIn('STACK_TRANSIENT_ROOT="${BUILD_TRANSIENT_ROOT}"', workflow)
+        self.assertIn("container-compose retained build v2", workflow)
+        self.assertIn("container-compose transient build v2", workflow)
         self.assertIn("PARITY_INCLUDE_REMOTE_LOGGING=0", workflow)
         self.assertIn("CONTAINER_RUNTIME_LOCAL_EXECUTION_ROOT=/private/tmp", workflow)
         self.assertIn("ssh-keygen -y -P ''", workflow)
         self.assertNotIn("security import", workflow)
         self.assertNotIn("crane auth", workflow)
 
-    def test_workflow_preloads_a_pinned_fixture_without_registry_access(self) -> None:
+    def test_workflow_reuses_a_pinned_fixture_and_isolates_docker_as_oracle(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         makefile = MAKEFILE.read_text(encoding="utf-8")
-        prepare = workflow.index("Prepare pinned offline fixture image")
+        prepare = workflow.index(
+            "Prepare pinned fixture for candidate and Docker oracle"
+        )
         quiet_host = workflow.index("Require a quiet benchmark host")
 
         self.assertLess(prepare, quiet_host)
@@ -335,22 +344,20 @@ class HistoricalWorkflowTests(unittest.TestCase):
             "application/vnd.oci.image.manifest.v1+json",
             workflow,
         )
-        self.assertIn("docker-daemon:${FIXTURE_IMAGE}", workflow)
+        self.assertIn('"docker://${expected_reference}"', workflow)
+        self.assertIn('"docker-daemon:${FIXTURE_IMAGE}"', workflow)
         self.assertIn(
-            'if ! docker image inspect "${FIXTURE_IMAGE}" > "${docker_metadata}"; then',
+            "Docker is retained only as this benchmark's isolated reference",
             workflow,
         )
-        self.assertIn("docker pull ${expected_reference}", workflow)
-        self.assertIn(
-            "docker image tag ${expected_reference} ${FIXTURE_IMAGE}", workflow
-        )
-        self.assertNotIn(
-            "recover before retrying with: docker pull %s", workflow
-        )
+        self.assertNotIn("docker pull", workflow)
+        self.assertNotIn("docker image tag", workflow)
+        self.assertNotIn("docker image inspect", workflow)
         self.assertIn("skopeo copy --format oci", workflow)
         self.assertNotIn("--preserve-digests", workflow)
-        self.assertIn("--src-daemon-host", workflow)
-        self.assertIn("docker context inspect", workflow)
+        self.assertNotIn("--src-daemon-host", workflow)
+        self.assertNotIn("docker context inspect", workflow)
+        self.assertIn('cached_archive="${BENCHMARK_CACHE_ROOT}/fixtures/', workflow)
         self.assertIn("expected exactly one manifest", workflow)
         self.assertIn(
             '[[ "${archive_media_type}" == "${FIXTURE_IMAGE_MANIFEST_MEDIA_TYPE}" ]]',
@@ -396,10 +403,12 @@ class HistoricalWorkflowTests(unittest.TestCase):
 
     def test_recoverable_build_uses_native_cache_and_authenticated_pin(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn('scratch="${BUILD_STATE_ROOT}/scratch/', workflow)
+        self.assertIn('scratch="${BUILD_TRANSIENT_ROOT}/scratch/', workflow)
         self.assertIn("--disable-automatic-resolution", workflow)
         self.assertIn("--repository containerization", workflow)
-        self.assertIn('--artifact "${version_root}/cctl"', workflow)
+        self.assertIn('cctl_cache="${BENCHMARK_CACHE_ROOT}/cctl/', workflow)
+        self.assertIn("Tools/build/stack-artifact.py", workflow)
+        self.assertIn('--artifact "${retained_cctl}"', workflow)
         self.assertNotIn("nextflow", workflow.lower())
 
     def test_cleanup_unregisters_temporary_git_worktrees(self) -> None:
@@ -413,6 +422,12 @@ class HistoricalWorkflowTests(unittest.TestCase):
         self.assertIn("git -C containerization-source worktree prune", workflow)
         self.assertIn(
             "refusing to remove symbolic-link benchmark worktree", workflow
+        )
+        self.assertNotIn(
+            'find "${BENCHMARK_RETAINED_ROOT}" -depth -delete', workflow
+        )
+        self.assertIn(
+            '${{ env.BENCHMARK_RETAINED_ROOT }}/evidence', workflow
         )
 
 

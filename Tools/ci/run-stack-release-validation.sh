@@ -60,6 +60,11 @@ for path in "${compose_repo}" "${builder_repo}" "${containerization_repo}" "${co
     exit 2
   fi
 done
+compose_repo="$(cd "${compose_repo}" && pwd -P)"
+builder_repo="$(cd "${builder_repo}" && pwd -P)"
+containerization_repo="$(cd "${containerization_repo}" && pwd -P)"
+container_repo="$(cd "${container_repo}" && pwd -P)"
+homebrew_tap_repo="$(cd "${homebrew_tap_repo}" && pwd -P)"
 if [[ ! -f "${homebrew_tap_repo}/Formula/container-compose.rb" ]]; then
   printf 'Homebrew tap formula is required at %s/Formula/container-compose.rb\n' "${homebrew_tap_repo}" >&2
   exit 2
@@ -314,7 +319,7 @@ if [[ -n "${checkpoint_directory}" ]]; then
         "${RELEASE_GATE_INHERITED_ENVIRONMENT_FINGERPRINT:-}"
       printf 'environment=RELEASE_GATE_TOOL_FINGERPRINT=%s\n' \
         "${RELEASE_GATE_TOOL_FINGERPRINT:-}"
-      for tool_name in git make swift clang go ruby python3 docker hawkeye shellcheck xcodebuild; do
+      for tool_name in git make swift clang go ruby python3 hawkeye shellcheck xcodebuild; do
         tool_path=$(command -v "${tool_name}" 2>/dev/null || true)
         printf 'tool=%s:path=%s\n' "${tool_name}" "${tool_path:-missing}"
         if [[ -n "${tool_path}" && -f "${tool_path}" ]]; then
@@ -338,8 +343,6 @@ if [[ -n "${checkpoint_directory}" ]]; then
         fi
         printf 'tool=%s:version=%s\n' "${tool_name}" "${tool_version}"
       done
-      printf 'docker:buildx=%s\n' "$(docker buildx version 2>&1 || true)"
-      printf 'docker:compose=%s\n' "$(docker compose version 2>&1 || true)"
       uname -a
     } | shasum -a 256 | awk '{print $1}'
   )
@@ -546,6 +549,33 @@ validation_fingerprint_for_stage() {
 }
 
 # Runs one stage unless its own exact inputs already have a successful stamp.
+stage_output_identity() {
+  local stage="$1" path
+  local paths=()
+  case "${stage}" in
+    builder-build) paths+=("${builder_repo}/bin/container-builder-shim") ;;
+    builder-coverage) paths+=("${builder_repo}/coverage.out") ;;
+    containerization-containerization)
+      paths+=("${containerization_repo}/bin/cctl")
+      paths+=("${containerization_repo}/bin/containerization-integration")
+      ;;
+    containerization-docs) paths+=("${containerization_repo}/_site/index.html") ;;
+    container-container) paths+=("${container_repo}/bin/container") ;;
+    container-docs) paths+=("${container_repo}/_site/index.html") ;;
+    *) printf 'none\n'; return ;;
+  esac
+  for path in "${paths[@]}"; do
+    if [[ -f "${path}" && ! -L "${path}" ]]; then
+      printf '%s:%s:%s\n' "${path}" \
+        "$(/usr/bin/stat -f '%Lp:%z' "${path}" 2>/dev/null || /usr/bin/stat -c '%a:%s' "${path}")" \
+        "$(shasum -a 256 "${path}" | awk '{print $1}')"
+    else
+      printf '%s:missing\n' "${path}"
+    fi
+  done | shasum -a 256 | awk '{print $1}'
+}
+
+# Runs one stage unless its exact inputs and declared products remain valid.
 run_checkpointed() {
   local stage=$1
   shift
@@ -558,8 +588,9 @@ run_checkpointed() {
 
   mkdir -p "${checkpoint_directory}"
   local stamp="${checkpoint_directory}/${mode}-${stage}.sha256"
-  local expected_before
-  expected_before="$(validation_fingerprint_for_stage "${stage}"):${stage}"
+  local fingerprint_before expected_before
+  fingerprint_before="$(validation_fingerprint_for_stage "${stage}")"
+  expected_before="${fingerprint_before}:${stage}:$(stage_output_identity "${stage}")"
   local actual=""
   if [[ -f "${stamp}" ]]; then
     IFS= read -r actual <"${stamp}" || true
@@ -572,9 +603,10 @@ run_checkpointed() {
 
   "$@"
   verify_runtime_cli_identity
-  local expected_after
-  expected_after="$(validation_fingerprint_for_stage "${stage}"):${stage}"
-  if [[ "${expected_after}" != "${expected_before}" ]]; then
+  local fingerprint_after expected_after
+  fingerprint_after="$(validation_fingerprint_for_stage "${stage}")"
+  expected_after="${fingerprint_after}:${stage}:$(stage_output_identity "${stage}")"
+  if [[ "${fingerprint_after}" != "${fingerprint_before}" ]]; then
     printf 'stack validation inputs changed while stage ran; refusing stale success: %s\n' \
       "${stage}" >&2
     return 75

@@ -88,18 +88,31 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     create.add_argument("--repository-path", type=Path, required=True)
     create.add_argument("--output", type=Path, required=True)
     create.add_argument("--artifact", type=Path, action="append", default=[])
+    create.add_argument(
+        "--artifact-map",
+        action="append",
+        default=[],
+        metavar="LOGICAL_PATH=FILE",
+        help="retain a file under a package-relative logical path",
+    )
     create.add_argument("--dependency", type=Path, action="append", default=[])
     create.add_argument("--command-label", required=True)
     create.add_argument("--build-contract", required=True)
     create.add_argument("--duration-seconds", type=float, required=True)
     create.add_argument("--expected-commit", required=True)
     create.add_argument("--expected-tree", required=True)
+    create.add_argument("--index-root", type=Path)
 
     verify = subparsers.add_parser("verify")
     verify.add_argument("--receipt", type=Path, required=True)
     verify.add_argument("--repository")
     verify.add_argument("--repository-path", type=Path)
     verify.add_argument("--build-contract")
+    verify.add_argument(
+        "--retained-only",
+        action="store_true",
+        help="verify retained receipts and artifacts without requiring source checkouts",
+    )
     verify.add_argument("--quiet", action="store_true")
 
     value = subparsers.add_parser("value")
@@ -114,6 +127,18 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     verify_bundle_parser.add_argument("--bundle", type=Path, required=True)
     verify_bundle_parser.add_argument("--repository", action="append", default=[])
     verify_bundle_parser.add_argument("--quiet", action="store_true")
+
+    materialize = subparsers.add_parser("materialize")
+    materialize.add_argument("--receipt", type=Path, required=True)
+    materialize.add_argument("--output", type=Path, required=True)
+
+    lookup = subparsers.add_parser("lookup")
+    lookup.add_argument("--repository", required=True)
+    lookup.add_argument("--repository-path", type=Path, required=True)
+    lookup.add_argument("--build-contract", required=True)
+    lookup.add_argument("--dependency", type=Path, action="append", default=[])
+    lookup.add_argument("--index-root", type=Path, required=True)
+    lookup.add_argument("--output", type=Path, required=True)
 
     contract = subparsers.add_parser("contract")
     contract.add_argument("--tool", required=True)
@@ -175,6 +200,20 @@ def payload_digest(payload: dict[str, Any]) -> str:
     unsigned = dict(payload)
     unsigned.pop("receipt_sha256", None)
     return sha256_bytes(canonical_json(unsigned))
+
+
+def output_manifest_digest(artifacts: list[dict[str, Any]]) -> str:
+    """Return location-independent identity for a retained product closure."""
+    members = [
+        {
+            "mode": artifact["mode"],
+            "name": artifact["name"],
+            "sha256": artifact["sha256"],
+            "size": artifact["size"],
+        }
+        for artifact in artifacts
+    ]
+    return sha256_bytes(canonical_json({"members": members, "schema": 1}))
 
 
 def git_output(repository_path: Path, *arguments: str) -> str:
@@ -498,17 +537,20 @@ def verify_artifacts(receipt: dict[str, Any]) -> None:
     artifacts = receipt.get("artifacts")
     if not isinstance(artifacts, list) or not artifacts:
         raise PinError("build receipt has no artifacts")
-    recorded_paths: list[str] = []
+    recorded_names: list[str] = []
     for artifact in artifacts:
         if not isinstance(artifact, dict):
             raise PinError("build receipt has a malformed artifact")
         path_value = artifact.get("path")
         if not isinstance(path_value, str):
             raise PinError("build receipt artifact has no path")
-        recorded_paths.append(path_value)
+        recorded_names.append(
+            validate_logical_path(str(artifact.get("name", Path(path_value).name)))
+        )
         path = Path(path_value)
         expected = validate_digest(artifact.get("sha256"), f"artifact {path} digest")
         expected_mode = artifact.get("mode")
+        expected_size = artifact.get("size")
         if (
             isinstance(expected_mode, bool)
             or not isinstance(expected_mode, int)
@@ -516,6 +558,12 @@ def verify_artifacts(receipt: dict[str, Any]) -> None:
             or expected_mode > 0o7777
         ):
             raise PinError(f"artifact {path} has an invalid file mode")
+        if expected_size is not None and (
+            isinstance(expected_size, bool)
+            or not isinstance(expected_size, int)
+            or expected_size < 0
+        ):
+            raise PinError(f"artifact {path} has an invalid size")
         try:
             actual = sha256_file(path)
             actual_mode = stat.S_IMODE(path.stat(follow_symlinks=False).st_mode)
@@ -530,8 +578,10 @@ def verify_artifacts(receipt: dict[str, Any]) -> None:
                 f"build artifact mode changed: {path} "
                 f"(expected {expected_mode:#o}, got {actual_mode:#o})"
             )
-    if recorded_paths != sorted(set(recorded_paths)):
-        raise PinError("build receipt artifact paths are duplicated or not canonical")
+        if expected_size is not None and path.stat(follow_symlinks=False).st_size != expected_size:
+            raise PinError(f"build artifact size changed: {path}")
+    if recorded_names != sorted(set(recorded_names)):
+        raise PinError("build receipt artifact names are duplicated or not canonical")
 
 
 def verify_receipt(
@@ -539,6 +589,7 @@ def verify_receipt(
     expected_repository: str | None = None,
     expected_path: Path | None = None,
     expected_build_contract: str | None = None,
+    verify_source: bool = True,
     seen: set[Path] | None = None,
 ) -> dict[str, Any]:
     if path.is_symlink():
@@ -610,34 +661,33 @@ def verify_receipt(
         source = receipt.get("source")
         if not isinstance(source, dict) or not isinstance(source.get("path"), str):
             raise PinError(f"build pin has no source path: {resolved_receipt}")
-        source_path = Path(source["path"])
-        current_source = repository_record(source_path)
-        if expected_path is not None and current_source["path"] != str(
-            expected_path.resolve(strict=True)
-        ):
-            raise PinError(
-                f"build pin source is {current_source['path']}, expected "
-                f"{expected_path.resolve(strict=True)}"
-            )
+        # The recorded path is build-time audit evidence, not artifact identity.
+        # A clean checkout may be recreated elsewhere after external workspace
+        # cleanup. When a caller supplies its current path, validate that exact
+        # repository against the recorded commit/tree/origin.
         for field in ("commit", "tree"):
             recorded = source.get(field)
             if not isinstance(recorded, str) or not OBJECT_ID_PATTERN.fullmatch(recorded):
                 raise PinError(
                     f"build pin has an invalid source {field}: {resolved_receipt}"
                 )
-            if current_source[field] != recorded:
-                raise PinError(
-                    f"{repository} {field} changed: expected {recorded}, "
-                    f"got {current_source[field]}"
-                )
         recorded_remote = source.get("remote")
         if not isinstance(recorded_remote, str):
             raise PinError(f"build pin has no source remote: {resolved_receipt}")
-        if current_source["remote"] != recorded_remote:
-            raise PinError(
-                f"{repository} remote changed: expected {recorded_remote!r}, "
-                f"got {current_source['remote']!r}"
-            )
+        if verify_source:
+            source_path = expected_path if expected_path is not None else Path(source["path"])
+            current_source = repository_record(source_path)
+            for field in ("commit", "tree"):
+                if current_source[field] != source[field]:
+                    raise PinError(
+                        f"{repository} {field} changed: expected {source[field]}, "
+                        f"got {current_source[field]}"
+                    )
+            if current_source["remote"] != recorded_remote:
+                raise PinError(
+                    f"{repository} remote changed: expected {recorded_remote!r}, "
+                    f"got {current_source['remote']!r}"
+                )
         dependencies = receipt.get("dependencies")
         if not isinstance(dependencies, list):
             raise PinError(f"build pin has malformed dependencies: {resolved_receipt}")
@@ -650,6 +700,11 @@ def verify_receipt(
             dependency_digest = validate_digest(
                 dependency.get("receipt_sha256"), "dependency receipt digest"
             )
+            dependency_output_digest = dependency.get("output_manifest_digest")
+            if dependency_output_digest is not None:
+                dependency_output_digest = validate_digest(
+                    dependency_output_digest, "dependency output manifest digest"
+                )
             if not isinstance(dependency_path, str) or not isinstance(
                 dependency_name, str
             ):
@@ -659,11 +714,23 @@ def verify_receipt(
             verified = verify_receipt(
                 Path(dependency_path),
                 expected_repository=dependency_name,
+                verify_source=False,
                 seen=seen,
             )
-            if verified["receipt_sha256"] != dependency_digest:
+            if (
+                dependency_output_digest is None
+                and verified["receipt_sha256"] != dependency_digest
+            ):
                 raise PinError(
                     f"dependency pin changed for {dependency_name}: "
+                    f"{dependency_path}"
+                )
+            if (
+                dependency_output_digest is not None
+                and verified.get("output_manifest_digest") != dependency_output_digest
+            ):
+                raise PinError(
+                    f"dependency output changed for {dependency_name}: "
                     f"{dependency_path}"
                 )
         if dependency_names != sorted(set(dependency_names)):
@@ -671,6 +738,13 @@ def verify_receipt(
                 f"build pin dependencies are duplicated or not canonical: {resolved_receipt}"
             )
         verify_artifacts(receipt)
+        recorded_output_digest = receipt.get("output_manifest_digest")
+        if recorded_output_digest is not None:
+            recorded_output_digest = validate_digest(
+                recorded_output_digest, f"receipt {resolved_receipt} output manifest"
+            )
+            if recorded_output_digest != output_manifest_digest(receipt["artifacts"]):
+                raise PinError(f"build pin output manifest changed: {resolved_receipt}")
         return receipt
     finally:
         seen.remove(resolved_receipt)
@@ -679,20 +753,48 @@ def verify_receipt(
 def dependency_record(path: Path) -> dict[str, str]:
     receipt = verify_receipt(path)
     return {
+        "output_manifest_digest": receipt.get(
+            "output_manifest_digest", output_manifest_digest(receipt["artifacts"])
+        ),
         "receipt": str(path.resolve(strict=True)),
         "receipt_sha256": receipt["receipt_sha256"],
         "repository": receipt["repository"],
     }
 
 
-def artifact_record(path: Path) -> dict[str, str | int]:
+def validate_logical_path(value: str) -> str:
+    path = Path(value)
+    if (
+        not value
+        or path.is_absolute()
+        or ".." in path.parts
+        or any(component in {"", "."} for component in path.parts)
+    ):
+        raise PinError(f"invalid artifact logical path: {value!r}")
+    return path.as_posix()
+
+
+def artifact_record(path: Path, logical_path: str | None = None) -> dict[str, str | int]:
     if not path.is_absolute():
         raise PinError(f"artifact path must be absolute: {path}")
     if path.is_symlink():
         raise PinError(f"artifact path must not be a symbolic link: {path}")
     resolved = path.resolve(strict=True)
     mode = stat.S_IMODE(resolved.stat(follow_symlinks=False).st_mode)
-    return {"mode": mode, "path": str(resolved), "sha256": sha256_file(resolved)}
+    return {
+        "mode": mode,
+        "name": validate_logical_path(logical_path or resolved.name),
+        "path": str(resolved),
+        "sha256": sha256_file(resolved),
+        "size": resolved.stat(follow_symlinks=False).st_size,
+    }
+
+
+def mapped_artifact(value: str) -> tuple[str, Path]:
+    logical, separator, source = value.partition("=")
+    if not separator or not source:
+        raise PinError(f"artifact map must be LOGICAL_PATH=FILE: {value!r}")
+    return validate_logical_path(logical), Path(source)
 
 
 def write_json_atomically(path: Path, value: dict[str, Any]) -> None:
@@ -721,6 +823,35 @@ def write_json_atomically(path: Path, value: dict[str, Any]) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
+def receipt_input_key(
+    repository: str,
+    source: dict[str, str],
+    build_contract: str,
+    dependencies: list[dict[str, str]],
+) -> str:
+    semantic_dependencies = [
+        {
+            "repository": dependency["repository"],
+            "output_manifest_digest": dependency["output_manifest_digest"],
+        }
+        for dependency in dependencies
+    ]
+    return sha256_bytes(
+        canonical_json(
+            {
+                "build_contract": validate_digest(build_contract, "build contract"),
+                "dependencies": semantic_dependencies,
+                "repository": validate_repository_name(repository),
+                "source": {
+                    "commit": source["commit"],
+                    "remote": source["remote"],
+                    "tree": source["tree"],
+                },
+            }
+        )
+    )
+
+
 def create_receipt(options: argparse.Namespace) -> dict[str, Any]:
     repository = validate_repository_name(options.repository)
     source = repository_record(options.repository_path)
@@ -735,18 +866,20 @@ def create_receipt(options: argparse.Namespace) -> dict[str, Any]:
                 f"{repository} {field} changed while the build ran: "
                 f"expected {expected}, got {source[field]}"
             )
-    if not options.artifact:
+    if not options.artifact and not options.artifact_map:
         raise PinError("at least one --artifact is required")
     if not math.isfinite(options.duration_seconds) or options.duration_seconds < 0:
         raise PinError("build duration must be finite and non-negative")
     if not options.command_label.strip():
         raise PinError("build command label must not be empty")
-    artifacts = sorted(
-        (artifact_record(path) for path in options.artifact),
-        key=lambda record: record["path"],
+    artifacts = [artifact_record(path) for path in options.artifact]
+    artifacts.extend(
+        artifact_record(source, logical)
+        for logical, source in (mapped_artifact(value) for value in options.artifact_map)
     )
-    if len({artifact["path"] for artifact in artifacts}) != len(artifacts):
-        raise PinError("build receipt contains duplicate artifact paths")
+    artifacts.sort(key=lambda record: str(record["name"]))
+    if len({artifact["name"] for artifact in artifacts}) != len(artifacts):
+        raise PinError("build receipt contains duplicate artifact logical paths")
     dependencies = sorted(
         (dependency_record(path) for path in options.dependency),
         key=lambda record: record["repository"],
@@ -768,7 +901,44 @@ def create_receipt(options: argparse.Namespace) -> dict[str, Any]:
         "schema": SCHEMA_VERSION,
         "source": source,
     }
+    receipt["output_manifest_digest"] = output_manifest_digest(artifacts)
     receipt["receipt_sha256"] = payload_digest(receipt)
+    write_json_atomically(options.output, receipt)
+    if options.index_root is not None:
+        if not options.index_root.is_absolute() or options.index_root == Path("/"):
+            raise PinError(f"unsafe build pin index: {options.index_root}")
+        input_key = receipt_input_key(
+            repository, source, receipt["build"]["contract"], dependencies
+        )
+        indexed = options.index_root / repository / f"{input_key}.json"
+        if indexed.exists():
+            existing = verify_receipt(indexed, verify_source=False)
+            if existing["receipt_sha256"] != receipt["receipt_sha256"]:
+                # Attempt metadata may differ while the same semantic input is
+                # rebuilt. Preserve the first valid result as the reusable one.
+                return receipt
+        else:
+            write_json_atomically(indexed, receipt)
+    return receipt
+
+
+def lookup_receipt(options: argparse.Namespace) -> dict[str, Any]:
+    repository = validate_repository_name(options.repository)
+    source = repository_record(options.repository_path)
+    dependencies = sorted(
+        (dependency_record(path) for path in options.dependency),
+        key=lambda record: record["repository"],
+    )
+    input_key = receipt_input_key(
+        repository, source, options.build_contract, dependencies
+    )
+    indexed = options.index_root / repository / f"{input_key}.json"
+    receipt = verify_receipt(
+        indexed,
+        expected_repository=repository,
+        expected_path=options.repository_path,
+        expected_build_contract=options.build_contract,
+    )
     write_json_atomically(options.output, receipt)
     return receipt
 
@@ -825,7 +995,7 @@ def verify_bundle(
             raise PinError(f"stack pin bundle contains duplicate pin: {repository}")
         repositories.add(repository)
         receipt = verify_receipt(
-            Path(receipt_path), expected_repository=repository
+            Path(receipt_path), expected_repository=repository, verify_source=False
         )
         if receipt["receipt_sha256"] != recorded_digest:
             raise PinError(f"bundled receipt changed for {repository}: {receipt_path}")
@@ -851,6 +1021,31 @@ def receipt_value(receipt: dict[str, Any], field: str) -> object:
     return value
 
 
+def materialize_receipt(receipt_path: Path, output: Path) -> None:
+    receipt = verify_receipt(receipt_path, verify_source=False)
+    if not output.is_absolute() or output == Path("/") or output.is_symlink():
+        raise PinError(f"unsafe materialization output: {output}")
+    if output.exists() and any(output.iterdir()):
+        raise PinError(f"materialization output is not empty: {output}")
+    output.mkdir(parents=True, exist_ok=True, mode=0o700)
+    resolved_output = output.resolve(strict=True)
+    if resolved_output != Path(os.path.abspath(output)):
+        raise PinError(f"materialization output contains a symbolic link: {output}")
+    for artifact in receipt["artifacts"]:
+        logical = validate_logical_path(str(artifact.get("name", Path(artifact["path"]).name)))
+        destination = resolved_output / logical
+        destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if destination.parent.resolve(strict=True) != destination.parent:
+            raise PinError(f"materialization path contains a symbolic link: {destination}")
+        shutil.copyfile(Path(artifact["path"]), destination, follow_symlinks=False)
+        if sha256_file(destination) != artifact["sha256"]:
+            raise PinError(f"materialized artifact changed: {logical}")
+        # The retained object is immutable. A materialization is a transient
+        # staging copy which must remain writable for operations such as code
+        # signing without ever mutating the shared retained object.
+        os.chmod(destination, int(artifact["mode"]) | stat.S_IWUSR)
+
+
 def main(arguments: Sequence[str] | None = None) -> int:
     options = parse_arguments(sys.argv[1:] if arguments is None else arguments)
     try:
@@ -863,11 +1058,12 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 expected_repository=options.repository,
                 expected_path=options.repository_path,
                 expected_build_contract=options.build_contract,
+                verify_source=not options.retained_only,
             )
             if not options.quiet:
                 print(receipt["receipt_sha256"])
         elif options.action == "value":
-            receipt = verify_receipt(options.receipt)
+            receipt = verify_receipt(options.receipt, verify_source=False)
             print(receipt_value(receipt, options.field))
         elif options.action == "bundle":
             bundle = create_bundle(options)
@@ -878,6 +1074,11 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 print(bundle["receipt_sha256"])
         elif options.action == "contract":
             print(build_contract(options))
+        elif options.action == "materialize":
+            materialize_receipt(options.receipt, options.output)
+        elif options.action == "lookup":
+            receipt = lookup_receipt(options)
+            print(receipt["receipt_sha256"])
         else:  # pragma: no cover - argparse enforces the action.
             raise AssertionError(options.action)
     except (OSError, PinError) as error:

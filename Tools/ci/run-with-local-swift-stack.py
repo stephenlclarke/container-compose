@@ -27,6 +27,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -362,6 +363,24 @@ def unedit_dependencies(
     return status
 
 
+def quarantine_workspace(root: Path, original_lock: bytes) -> Path:
+    """Atomically retire an unrecoverable SwiftPM workspace without deleting it."""
+    build_root = root / ".build"
+    if build_root.is_symlink() or not build_root.is_dir():
+        raise SystemExit(
+            "could not quarantine unrecoverable SwiftPM workspace; "
+            "recovery state retained"
+        )
+    suffix = f"{sha256(original_lock)[:12]}-{os.getpid()}-{time.time_ns()}"
+    destination = root / f".build.local-swift-stack-quarantine-{suffix}"
+    if destination.exists() or destination.is_symlink():
+        raise SystemExit(
+            "could not allocate SwiftPM workspace quarantine; recovery state retained"
+        )
+    os.replace(build_root, destination)
+    return destination
+
+
 def recover(
     root: Path,
     lockfile: Path,
@@ -382,11 +401,15 @@ def recover(
     active_identities = tuple(
         identity for identity in identities if identity in active_edits
     )
-    if unedit_dependencies(swift, active_identities, environment) != 0:
-        raise SystemExit(
-            "could not recover interrupted SwiftPM edits; recovery state retained"
-        )
     restore_lockfile(lockfile, original_lock)
+    if unedit_dependencies(swift, active_identities, environment) != 0:
+        quarantine = quarantine_workspace(root, original_lock)
+        print(
+            "Recovered interrupted SwiftPM edits by quarantining the incompatible "
+            f"workspace at {quarantine}.",
+            file=sys.stderr,
+        )
+        return
     journal, backup = recovery_paths(root)
     journal.unlink()
     if backup.exists():
@@ -591,7 +614,18 @@ def run(arguments: argparse.Namespace) -> int:
                 )
                 if final_cleanup_status != 0:
                     cleanup_status = final_cleanup_status
-            if cleanup_status == 0 and (not arguments.retain_edits or setup_failed):
+                    quarantine = quarantine_workspace(root, original_lock)
+                    print(
+                        "Preserved an incompatible SwiftPM workspace at "
+                        f"{quarantine}.",
+                        file=sys.stderr,
+                    )
+                    cleanup_status = 0
+            if (
+                cleanup_status == 0
+                and (not arguments.retain_edits or setup_failed)
+                and journal.exists()
+            ):
                 journal.unlink()
         if lock_changed:
             print(
