@@ -54,7 +54,16 @@ if [[ "$1" == "api" ]]; then
 fi
 
 if [[ "$1" == "release" && "$2" == "view" ]]; then
-  printf '%s' "${MOCK_REMOTE_ASSETS:-}"
+  view_count=0
+  if [[ -f "${MOCK_VIEW_COUNT_FILE}" ]]; then
+    view_count="$(<"${MOCK_VIEW_COUNT_FILE}")"
+  fi
+  view_count=$((view_count + 1))
+  printf '%s\n' "${view_count}" > "${MOCK_VIEW_COUNT_FILE}"
+  if (( view_count == 2 )) && [[ -n "${MOCK_RACE_ASSET:-}" ]]; then
+    printf '%s\n' "${MOCK_RACE_ASSET}" >> "${MOCK_REMOTE_STATE}"
+  fi
+  cat "${MOCK_REMOTE_STATE}"
   exit 0
 fi
 
@@ -76,6 +85,10 @@ if [[ "$1" == "release" && "$2" == "download" ]]; then
   done
   printf '%s' "${MOCK_DOWNLOAD_CONTENT:-}" > "${directory}/${pattern}"
   exit 0
+fi
+
+if [[ "$1" == "release" && "$2" == "upload" ]]; then
+  basename "$4" >> "${MOCK_REMOTE_STATE}"
 fi
 
 printf '%s\n' "$*" >> "${MOCK_GH_CALLS}"
@@ -116,6 +129,8 @@ run_publisher() {
     release_prerelease="false"
     release_mutable="false"
   fi
+  printf '%s' "${6:-}" > "${3}.remote"
+  printf '0\n' > "${3}.views"
 
   GH="${temporary_directory}/bin/gh" \
     GIT="${temporary_directory}/bin/git" \
@@ -136,6 +151,9 @@ run_publisher() {
     MOCK_RELEASE_STATE="$2" \
     MOCK_REMOTE_ASSETS="${6:-}" \
     MOCK_DOWNLOAD_CONTENT="${7:-}" \
+    MOCK_RACE_ASSET="${8:-}" \
+    MOCK_REMOTE_STATE="${3}.remote" \
+    MOCK_VIEW_COUNT_FILE="${3}.views" \
     MOCK_GH_CALLS="$3" \
     MOCK_GIT_CALLS="${3}.git" \
     "${publisher}"
@@ -205,6 +223,18 @@ fi
 if [[ -e "${stable_draft_late_mismatch_calls}" ]] && \
   grep -Eq 'release (upload|edit|create|delete)' "${stable_draft_late_mismatch_calls}"; then
   printf 'stable draft recovery mutated before validating every existing asset\n' >&2
+  exit 1
+fi
+
+stable_draft_race_calls="${temporary_directory}/stable-draft-race.calls"
+if run_publisher tag draft "${stable_draft_race_calls}" "" publish \
+  "" "" 'foreign-after-upload.tar.gz'; then
+  printf 'stable draft recovery published after a concurrent inventory change\n' >&2
+  exit 1
+fi
+if ! grep -Fq 'release upload' "${stable_draft_race_calls}" || \
+  grep -Fq 'release edit' "${stable_draft_race_calls}"; then
+  printf 'stable draft recovery did not block publication after the inventory race\n' >&2
   exit 1
 fi
 

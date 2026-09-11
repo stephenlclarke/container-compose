@@ -214,8 +214,33 @@ create_stable_draft() {
     --verify-tag "${release_flags[@]}" --draft
 }
 
+validate_stable_draft_asset_names() {
+  local remote_names="$1" expected_names="$2" require_complete="$3" name count
+  while IFS= read -r name; do
+    [[ -n "${name}" ]] || continue
+    if ! grep -Fqx -- "${name}" <<<"${expected_names}"; then
+      printf 'stable draft contains an unexpected asset: %s\n' "${name}" >&2
+      return 1
+    fi
+    count="$(grep -Fxc -- "${name}" <<<"${remote_names}" || true)"
+    if (( count != 1 )); then
+      printf 'stable draft contains a duplicate asset name: %s\n' "${name}" >&2
+      return 1
+    fi
+  done <<<"${remote_names}"
+  if [[ "${require_complete}" == "true" ]]; then
+    while IFS= read -r name; do
+      [[ -n "${name}" ]] || continue
+      if ! grep -Fqx -- "${name}" <<<"${remote_names}"; then
+        printf 'stable draft is missing an uploaded asset: %s\n' "${name}" >&2
+        return 1
+      fi
+    done <<<"${expected_names}"
+  fi
+}
+
 reconcile_stable_draft() {
-  local temporary remote_names expected_names asset name downloaded count
+  local temporary verification remote_names expected_names asset name downloaded
   local missing_assets=()
   if [[ "$("${GIT}" rev-list -n 1 "refs/tags/${RELEASE_TAG}")" != "${PUBLISH_SHA}" ]]; then
     printf 'stable draft tag no longer resolves to the requested candidate: %s\n' \
@@ -234,20 +259,10 @@ reconcile_stable_draft() {
     fi
     expected_names+="${name}"$'\n'
   done
-  while IFS= read -r name; do
-    [[ -n "${name}" ]] || continue
-    if ! grep -Fqx -- "${name}" <<<"${expected_names}"; then
-      printf 'stable draft contains an unexpected asset: %s\n' "${name}" >&2
-      return 1
-    fi
-    count="$(grep -Fxc -- "${name}" <<<"${remote_names}" || true)"
-    if (( count != 1 )); then
-      printf 'stable draft contains a duplicate asset name: %s\n' "${name}" >&2
-      return 1
-    fi
-  done <<<"${remote_names}"
+  validate_stable_draft_asset_names "${remote_names}" "${expected_names}" false
   temporary="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/stable-draft-assets.XXXXXX")"
-  trap 'find "${temporary}" -depth -delete >/dev/null 2>&1 || true' RETURN
+  verification=""
+  trap 'find "${temporary}" -depth -delete >/dev/null 2>&1 || true; if [[ -n "${verification:-}" ]]; then find "${verification}" -depth -delete >/dev/null 2>&1 || true; fi' RETURN
   for asset in "${release_assets[@]}"; do
     name="$(basename "${asset}")"
     if grep -Fqx "${name}" <<<"${remote_names}"; then
@@ -268,6 +283,23 @@ reconcile_stable_draft() {
   for asset in "${missing_assets[@]}"; do
     "${GH}" release upload "${RELEASE_TAG}" "${asset}" \
       --repo "${RELEASE_REPOSITORY}"
+  done
+  remote_names="$("${GH}" release view "${RELEASE_TAG}" \
+    --repo "${RELEASE_REPOSITORY}" --json assets --jq '.assets[].name')"
+  validate_stable_draft_asset_names "${remote_names}" "${expected_names}" true
+  verification="$(mktemp -d \
+    "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/stable-draft-final.XXXXXX")"
+  for asset in "${release_assets[@]}"; do
+    name="$(basename "${asset}")"
+    "${GH}" release download "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
+      --pattern "${name}" --dir "${verification}"
+    downloaded="${verification}/${name}"
+    if [[ ! -f "${downloaded}" ]] || \
+      [[ "$(shasum -a 256 "${downloaded}" | awk '{print $1}')" != \
+        "$(shasum -a 256 "${asset}" | awk '{print $1}')" ]]; then
+      printf 'stable draft asset changed before publication: %s\n' "${name}" >&2
+      return 1
+    fi
   done
   "${GH}" release edit "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
     --title "${RELEASE_TITLE}" --notes-file "${RELEASE_NOTES_FILE}" \
