@@ -40,7 +40,7 @@ let containerDependency: Package.Dependency = {
     return enhancedRuntime
         ? .package(
             url: "https://github.com/stephenlclarke/container.git",
-            revision: "ccf99d73b75626ed49a0d638c640bd3b9851e2de",
+            revision: "f2986139a4cd5d2fcbbaa7bc516ed43673b5ceb2",
         )
         : .package(url: "https://github.com/apple/container.git", exact: "1.4.1")
 }()
@@ -161,7 +161,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
         .package(
             url: "https://github.com/stephenlclarke/container-engine-api.git",
-            revision: "276a7cfdba91fef60c232177a44c054e5de9ae8f",
+            revision: "48e44d74d738ca3d24351ba02c4869be1a3e6998",
         ),
     ] + runtimeOnlyDependencies,
     targets: [
