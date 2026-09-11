@@ -37,7 +37,7 @@ if [[ "$1" == "api" ]]; then
       exit 0
       ;;
     draft)
-      printf '{"draft":true}\n'
+      printf '{"draft":true,"name":"Foreign title","body":"foreign notes","prerelease":true}\n'
       exit 0
       ;;
     missing)
@@ -156,7 +156,7 @@ run_publisher tag missing "${stable_create_calls}"
 grep -Fqx "release create 1.2.3 --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --verify-tag --latest --draft" "${stable_create_calls}"
 grep -Fqx "release upload 1.2.3 ${asset} --repo stephenlclarke/container-compose" "${stable_create_calls}"
 grep -Fqx "release upload 1.2.3 ${checksum} --repo stephenlclarke/container-compose" "${stable_create_calls}"
-grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --draft=false --latest" "${stable_create_calls}"
+grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --draft=false --prerelease=false --latest" "${stable_create_calls}"
 if grep -Eq 'clobber|release delete' "${stable_create_calls}"; then
   printf 'stable publication attempted to replace immutable state\n' >&2
   exit 1
@@ -166,7 +166,7 @@ stable_draft_calls="${temporary_directory}/stable-draft.calls"
 run_publisher tag draft "${stable_draft_calls}"
 grep -Fqx "release upload 1.2.3 ${asset} --repo stephenlclarke/container-compose" "${stable_draft_calls}"
 grep -Fqx "release upload 1.2.3 ${checksum} --repo stephenlclarke/container-compose" "${stable_draft_calls}"
-grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --draft=false --latest" "${stable_draft_calls}"
+grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --draft=false --prerelease=false --latest" "${stable_draft_calls}"
 if grep -Eq 'release create|clobber|release delete' "${stable_draft_calls}"; then
   printf 'stable draft recovery recreated or clobbered release state\n' >&2
   exit 1

@@ -266,7 +266,8 @@ reconcile_stable_draft() {
     fi
   done
   "${GH}" release edit "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
-    --draft=false "${release_flags[@]}"
+    --title "${RELEASE_TITLE}" --notes-file "${RELEASE_NOTES_FILE}" \
+    --draft=false --prerelease="${RELEASE_PRERELEASE}" "${release_flags[@]}"
 }
 
 if [[ "${published_release_state}" == "draft" ]]; then
