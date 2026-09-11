@@ -475,6 +475,46 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 	}
 }
 
+func TestInitializeRecoversFinalMetadataFromDurableMarker(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	destination := filepath.Join(root, "destination")
+	mustMkdir(t, source, 0o751)
+	mustMkdir(t, destination, 0o700)
+	mustWrite(t, filepath.Join(destination, "published"), "complete", 0o644)
+	desiredTime := time.Unix(1_700_000_000, 123_456_789)
+	if err := os.Chtimes(source, desiredTime, desiredTime); err != nil {
+		t.Fatal(err)
+	}
+	marker := recoveryXattr + testTransactionID
+	if err := unix.Setxattr(source, marker, []byte("source-value"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Setxattr(destination, marker, []byte(testTransactionID), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	err := initialize(source, destination, testTransactionID)
+	if !errors.Is(err, errDestinationNotEmpty) {
+		t.Fatalf("expected completed publication result, got %v", err)
+	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o751 || !info.ModTime().Equal(desiredTime) {
+		t.Fatalf("final root metadata was not recovered: mode=%o time=%s", info.Mode().Perm(), info.ModTime())
+	}
+	value := make([]byte, len("source-value"))
+	if _, err := unix.Getxattr(destination, marker, value); err != nil {
+		t.Fatal(err)
+	}
+	if string(value) != "source-value" {
+		t.Fatalf("source recovery attribute was not restored: %q", value)
+	}
+}
+
 func TestTransactionRecoveryRejectsUntrustedJournals(t *testing.T) {
 	t.Parallel()
 	for name, payload := range map[string]string{
@@ -487,7 +527,7 @@ func TestTransactionRecoveryRejectsUntrustedJournals(t *testing.T) {
 			destination := t.TempDir()
 			journal := filepath.Join(destination, journalPrefix+testTransactionID)
 			mustWrite(t, journal, payload, 0o600)
-			if err := recoverTransaction(destination, testTransactionID); err == nil {
+			if err := recoverTransaction(destination, destination, testTransactionID); err == nil {
 				t.Fatal("expected untrusted journal failure")
 			}
 			if _, err := os.Stat(journal); err != nil {
@@ -562,7 +602,7 @@ func TestFilesystemFailuresRemainExplicit(t *testing.T) {
 	if _, err := destinationIsEmpty(occupied); err == nil {
 		t.Fatal("expected destination read failure")
 	}
-	if err := recoverTransaction(occupied, testTransactionID); err == nil {
+	if err := recoverTransaction(occupied, occupied, testTransactionID); err == nil {
 		t.Fatal("expected transaction recovery failure")
 	}
 	if err := copyEntry(missing, filepath.Join(root, "copy"), nil); err == nil {

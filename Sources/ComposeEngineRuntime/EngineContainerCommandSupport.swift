@@ -82,14 +82,17 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
         "--cgroup-parent", "--cgroupns", "--cpu-period", "--cpu-quota",
         "--cpu-shares", "--cpus", "--cpuset-cpus", "--device",
         "--device-cgroup-rule", "--dns", "--dns-option", "--dns-search",
-        "--domainname", "--engine-api-socket", "--entrypoint", "--env",
+        "--domainname", "--entrypoint", "--env",
         "--env-file", "--expose", "--gpus", "--group-add", "--hostname",
+        "--health-cmd", "--health-interval", "--health-retries",
+        "--health-start-interval", "--health-start-period", "--health-timeout",
         "--init-image", "--ipc", "--isolation", "--label", "--log-driver",
-        "--memory", "--memory-reservation", "--memory-swap", "--name",
-        "--network", "--oom-score-adj", "--pid", "--pids-limit", "--platform",
-        "--publish", "--runtime", "--security-opt", "--shm-size", "--stop-signal",
-        "--stop-timeout", "--sysctl", "--tmpfs", "--ulimit", "--user",
-        "--userns", "--uts", "--workdir",
+        "--log-opt", "--memory", "--memory-reservation", "--memory-swap",
+        "--name", "--network", "--oom-score-adj", "--pid", "--pids-limit",
+        "--platform", "--publish", "--restart", "--restart-delay",
+        "--restart-window", "--runtime", "--security-opt", "--shm-size",
+        "--stop-signal", "--stop-timeout", "--sysctl", "--tmpfs", "--ulimit",
+        "--user", "--userns", "--uts", "--workdir",
     ]
 
     private func managedShortVolume(_ value: String) async throws -> String? {
