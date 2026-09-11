@@ -440,6 +440,7 @@ struct ComposePluginMain {
                 lane: composeBuildInfo.lane,
                 expectedContainerRef: composeBuildInfo.containerRef,
                 expectedContainerizationRef: composeBuildInfo.containerizationRef,
+                stockRuntimeCapabilities: ContainerPackageCompatibility.runtimeCapabilityOverlay(),
                 onCompatibleRuntime: { installedRuntimeCapabilities.replace(with: $0) },
             ) {
                 FileHandle.standardError.write(Data((failure + "\n").utf8))

@@ -44,6 +44,25 @@ private let appleSystemVersionJSON = """
   ]
   """
 
+private let coherentAppleSystemVersionJSON = """
+  [
+    {
+      "appName": "container",
+      "buildType": "release",
+      "commit": "abc123",
+      "distribution": "apple",
+      "source": "apple/container",
+      "version": "1.4.1"
+    },
+    {
+      "appName": "container-apiserver",
+      "buildType": "release",
+      "commit": "abc123",
+      "version": "1.4.1"
+    }
+  ]
+  """
+
 private let matchingSystemVersionJSON = """
   [
     {
@@ -304,6 +323,34 @@ struct ContainerPackageCompatibilityTests {
     #expect(failure == nil)
     #expect(selection.snapshot().supportsLoggingDriversV1)
     #expect(selection.snapshot().identifiers.contains(optionalCapability))
+  }
+
+  @Test("stock compatibility adapter publishes an explicit capability overlay")
+  func stockCompatibilityAdapterPublishesExplicitCapabilityOverlay() async throws {
+    let capability = ComposeRuntimeCapabilities.networkScopedAliasesV1Identifier
+    let overlay = ContainerPackageCompatibility.runtimeCapabilityOverlay(environment: [
+      ContainerPackageCompatibility.runtimeCapabilityOverlayEnvironmentKey:
+        " \(capability),\(capability) ",
+    ])
+    #expect(overlay == [capability])
+    let selection = InstalledRuntimeCapabilities()
+
+    let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+      arguments: ["up"],
+      lane: "stock",
+      runtimeProfile: .stock,
+      stockRuntimeCapabilities: overlay,
+      onCompatibleRuntime: { selection.replace(with: $0) },
+      run: { arguments in
+        if arguments == ["system", "version", "--format", "json"] {
+          return Data(coherentAppleSystemVersionJSON.utf8)
+        }
+        return Data()
+      }
+    )
+
+    #expect(failure == nil)
+    #expect(selection.snapshot().supportsNetworkScopedAliasesV1)
   }
 
   @Test("failed preflight does not publish optional runtime capabilities")

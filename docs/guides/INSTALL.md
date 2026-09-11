@@ -93,6 +93,13 @@ assignment is optional and shown only to make the selection explicit. Override
 `CONTAINER_COMPOSE_ENGINE_SOCKET` when the Dev Containers engine uses a
 non-default socket. Docker, Docker Compose, and Colima are not consulted.
 
+The `devcontainer-compose` dispatcher also supplies
+`CONTAINER_COMPOSE_RUNTIME_CAPABILITIES` when its Docker-free compatibility
+adapter implements an enhanced runtime contract that stock Apple Container
+does not advertise itself. This is an adapter-to-Compose handshake, not a
+normal user setting; running the stock Compose binary directly leaves the
+overlay empty and retains stock behavior.
+
 If the machine has a mixed Homebrew/Apple install, use the [reset flow](#troubleshooting) instead of the normal install path.
 
 ## Install The Current Matched Stack
