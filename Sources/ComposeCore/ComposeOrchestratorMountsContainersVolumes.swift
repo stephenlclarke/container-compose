@@ -703,7 +703,7 @@ extension ComposeOrchestrator {
             options.emit("+ " + shellQuoted([options.containerBinary] + redactedLoggingArguments(arguments)))
             return CommandResult(status: 0, stdout: "", stderr: "")
         }
-        if options.runtimeCapabilities.supportsLoggingDriversV1, let logging {
+        if options.runtimeCapabilities.supportsContainerLaunchV1, let logging {
             guard let commandName = arguments.first,
                   let command = ComposeRuntimeContainerLaunchCommand(rawValue: commandName)
             else {

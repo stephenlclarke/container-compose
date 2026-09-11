@@ -100,6 +100,8 @@ not advertise itself. This is an adapter-to-Compose handshake, not a
 normal user setting; running the stock Compose binary directly leaves the
 overlay empty and retains stock behavior.
 
+The stock package also includes an Apache-2.0, static Linux arm64 volume initializer. When Docker-compatible named-volume copy-up is required, Compose asks the local Apple-backed Engine to use Apple Container's bundled builder to add the helper as a cached layer on the source image. Compose then overrides the temporary derived container's user and entrypoint and mounts the target volume. This uses Dockerfile syntax as an Apple build input but does not invoke or require Docker. The helper does not depend on a shell or utilities in the source image, and host-side file locks serialize both cache construction and initialization across Compose processes before the helper stages and atomically publishes the copied tree.
+
 If the machine has a mixed Homebrew/Apple install, use the [reset flow](#troubleshooting) instead of the normal install path.
 
 ## Install The Current Matched Stack

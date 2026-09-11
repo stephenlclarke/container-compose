@@ -24,7 +24,70 @@ import Logging
 import Testing
 
 @Suite(.serialized)
+// swiftlint:disable:next type_body_length
 struct ComposeEngineRuntimeTests {
+    @Test
+    func `volume initializer build context is deterministic portable ustar`() async throws {
+        let helper = Data([0, 1, 127, 128, 255])
+        let first = try await EngineVolumeInitializerBuildContext.make(
+            sourceImage: "example/image:latest",
+            helper: helper,
+        )
+        let second = try await EngineVolumeInitializerBuildContext.make(
+            sourceImage: "example/image:latest",
+            helper: helper,
+        )
+
+        #expect(first == second)
+        #expect(first.count.isMultiple(of: 512))
+        #expect(first.tarEntryName(at: 0) == "Dockerfile")
+        #expect(first.tarMagic(at: 0) == "ustar")
+        let helperOffset = try #require(first.nextTarEntryOffset(after: 0))
+        #expect(first.tarEntryName(at: helperOffset) == "compose-volume-initializer-linux-arm64")
+        #expect(first.tarMagic(at: helperOffset) == "ustar")
+        #expect(first.tarContents(at: helperOffset) == helper)
+        #expect(first.suffix(1024).allSatisfy { $0 == 0 })
+    }
+
+    @Test
+    func `volume initializer lock rejects links and non-private files`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let target = fixture.root.appendingPathComponent("target.lock")
+        try Data().write(to: target)
+        let link = fixture.root.appendingPathComponent("linked.lock")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        await #expect(throws: ComposeError.self) {
+            _ = try await EngineVolumeInitializationFileLock.acquire(path: link.path)
+        }
+
+        let exposed = fixture.root.appendingPathComponent("exposed.lock")
+        try Data().write(to: exposed)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o644],
+            ofItemAtPath: exposed.path
+        )
+        await #expect(throws: ComposeError.self) {
+            _ = try await EngineVolumeInitializationFileLock.acquire(path: exposed.path)
+        }
+    }
+
+    @Test
+    func `volume initializer mount never obscures the selected image directory`() throws {
+        #expect(
+            try EngineRuntimeProvider.helperMountPath(imageSubpath: "/workspace")
+                == "/.compose-image-volume-target"
+        )
+        #expect(
+            try EngineRuntimeProvider.helperMountPath(
+                imageSubpath: "/.compose-image-volume-target/data"
+            ) == "/mnt/.compose-image-volume-target"
+        )
+        #expect(throws: ComposeError.self) {
+            _ = try EngineRuntimeProvider.helperMountPath(imageSubpath: "/")
+        }
+    }
+
     @Test
     func `discovery maps Engine list and inspect responses`() async throws {
         let fixture = try EngineFixture()
@@ -76,7 +139,7 @@ struct ComposeEngineRuntimeTests {
             #expect(volumes == [
                 .init(
                     name: "project_data",
-                    source: "/volumes/project_data",
+                    source: "/volumes/project_data/_data",
                     labels: ["project": "demo"],
                 ),
             ])
@@ -99,6 +162,140 @@ struct ComposeEngineRuntimeTests {
             throw error
         }
         try await server.shutdown()
+    }
+
+    @Test
+    func `exec resolves Engine identity and invokes only the Apple container CLI`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let runner = RecordingRunner(responses: [
+            .init(status: 23, stdout: "", stderr: ""),
+            .init(status: 0, stdout: "", stderr: ""),
+        ])
+        let server = fixture.server(EngineFixtureResponder())
+        try await server.start()
+        do {
+            let provider = EngineRuntimeProvider(
+                socketPath: fixture.socketPath,
+                runner: runner,
+                containerBinary: "/usr/local/bin/container"
+            )
+            let status = try await provider.execAttached(request: .init(
+                id: "abc",
+                command: ["sh", "-c", "printf ok"],
+                environment: ["A=B"],
+                user: "1000:1000",
+                workingDirectory: "/workspace",
+                terminal: .init(interactive: true, tty: true)
+            ))
+            #expect(status == 23)
+
+            let emitted = LockedStrings()
+            try await provider.execDetached(
+                request: .init(id: "abc", command: ["sleep", "1"]),
+                emit: { emitted.append($0) }
+            )
+            #expect(emitted.values == ["abc"])
+            let commands = runner.commands
+            #expect(commands.count == 2)
+            #expect(commands[0].executable == "/usr/local/bin/container")
+            #expect(commands[0].arguments == [
+                "exec", "--env", "A=B", "--user", "1000:1000",
+                "--workdir", "/workspace", "--interactive", "--tty",
+                "demo", "sh", "-c", "printf ok",
+            ])
+            #expect(commands[0].io == .inherited)
+            #expect(commands[1].executable == "/usr/local/bin/container")
+            #expect(commands[1].arguments == ["exec", "--detach", "demo", "sleep", "1"])
+            #expect(commands[1].io == .captured(input: nil))
+        } catch {
+            try? await server.shutdown()
+            throw error
+        }
+        try await server.shutdown()
+    }
+
+    @Test
+    // swiftlint:disable:next function_body_length
+    func `stock launch binds the Engine managed volume data directory`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let runner = RecordingRunner()
+        let server = fixture.server(EngineFixtureResponder())
+        try await server.start()
+        do {
+            let provider = EngineRuntimeProvider(
+                socketPath: fixture.socketPath,
+                runner: runner,
+                containerBinary: "/usr/local/bin/container",
+                environmentLauncher: "/usr/bin/env"
+            )
+            let launchStatus = try await provider.launchContainer(.init(
+                command: .create,
+                arguments: [
+                    "--name", "demo", "--volume", "project_data:/data:ro",
+                    "docker.io/library/alpine:3.20",
+                ],
+                logging: .init(driver: nil, options: [:])
+            ))
+            let bindStatus = try await provider.launchContainer(.init(
+                command: .create,
+                arguments: ["--volume", "/tmp/source:/workspace", "alpine"],
+                logging: .init(driver: nil, options: [:])
+            ))
+            let foregroundStatus = try await provider.launchContainer(.init(
+                command: .run,
+                arguments: ["--volume", "project_data:/data", "alpine", "true"],
+                logging: .init(driver: nil, options: [:])
+            ))
+
+            #expect(launchStatus == 0)
+            #expect(bindStatus == 0)
+            #expect(foregroundStatus == 0)
+            let commands = runner.commands
+            let command = try #require(commands.first)
+            #expect(command.executable == "/usr/bin/env")
+            #expect(command.arguments == [
+                "/usr/local/bin/container", "create", "--name", "demo", "--volume",
+                "/volumes/project_data/_data:/data:ro",
+                "docker.io/library/alpine:3.20",
+            ])
+            #expect(commands[1].arguments == [
+                "/usr/local/bin/container", "create", "--volume",
+                "/tmp/source:/workspace", "alpine",
+            ])
+            #expect(commands[1].io == .captured(input: nil))
+            #expect(commands[2].arguments == [
+                "/usr/local/bin/container", "run", "--volume",
+                "/volumes/project_data/_data:/data", "alpine", "true",
+            ])
+            #expect(commands[2].io == .inherited)
+        } catch {
+            try? await server.shutdown()
+            throw error
+        }
+        try await server.shutdown()
+    }
+
+    @Test
+    func `stock exec rejects unsupported privileged mode before process launch`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let runner = RecordingRunner()
+        let provider = EngineRuntimeProvider(
+            socketPath: fixture.socketPath,
+            runner: runner,
+            containerBinary: "/usr/local/bin/container"
+        )
+
+        await #expect(throws: ComposeError.self) {
+            _ = try await provider.execAttached(request: .init(
+                id: "abc",
+                command: ["true"],
+                privileged: true
+            ))
+        }
+        #expect(runner.commands.isEmpty)
     }
 
     @Test
@@ -136,11 +333,16 @@ struct ComposeEngineRuntimeTests {
     }
 
     @Test
+    // swiftlint:disable:next function_body_length
     func `image volume initialization seeds only an empty Engine volume`() async throws {
         let fixture = try EngineFixture()
         defer { fixture.cleanup() }
         let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
         try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: volume.appendingPathComponent("lost+found", isDirectory: true),
+            withIntermediateDirectories: false
+        )
 
         let recorder = RequestRecorder()
         let server = fixture.server(ImageVolumeResponder(
@@ -149,7 +351,10 @@ struct ComposeEngineRuntimeTests {
         ))
         try await server.start()
         do {
-            let provider = EngineRuntimeProvider(socketPath: fixture.socketPath)
+            let provider = EngineRuntimeProvider(
+                socketPath: fixture.socketPath,
+                volumeInitializerPath: fixture.volumeInitializerPath,
+            )
             let request = ComposeImageVolumeInitializationRequest(
                 image: "example/image:latest",
                 platform: "linux/arm64",
@@ -166,15 +371,24 @@ struct ComposeEngineRuntimeTests {
 
             let requests = await recorder.requests
             #expect(requests.filter { $0.target.contains("/containers/create?") }.count == 1)
+            #expect(requests.filter { $0.target.contains("/build?") }.count == 1)
             #expect(requests.filter { $0.target.contains("/start") }.count == 1)
             #expect(requests.filter { $0.target.contains("/wait?") }.count == 1)
             #expect(requests.filter { $0.method == .delete }.count == 1)
             #expect(requests.contains { $0.target.contains("platform=linux/arm64") })
             let create = try #require(requests.first { $0.target.contains("/containers/create?") })
             #expect(create.body.containsText(#""Source":"project_state""#))
-            #expect(create.body.containsText(#""Target":"/.compose-image-volume""#))
-            #expect(create.body.containsText("chown"))
-            #expect(create.body.containsText("chmod"))
+            #expect(create.body.containsText(#""Target":"/.compose-image-volume-target""#))
+            #expect(create.body.containsText(#""User":"0""#))
+            #expect(create.body.containsText(#""Entrypoint":["/.compose-volume-initializer"]"#))
+            #expect(create.body.containsText(#""Image":"devcontainer-volume-initializer:"#))
+            #expect(create.body.containsText(#""Cmd":["/state","/.compose-image-volume-target"]"#))
+            #expect(!create.body.containsText("/bin/sh"))
+            let build = try #require(requests.first { $0.target.contains("/build?") })
+            #expect(build.target.contains("dockerfile=Dockerfile"))
+            #expect(build.target.contains("platform=linux/arm64"))
+            #expect(build.body.containsText("FROM example/image:latest"))
+            #expect(build.body.containsText(#"ENTRYPOINT ["/.compose-volume-initializer"]"#))
         } catch {
             try? await server.shutdown()
             throw error
@@ -195,15 +409,22 @@ struct ComposeEngineRuntimeTests {
         ))
         try await server.start()
         do {
-            let provider = EngineRuntimeProvider(socketPath: fixture.socketPath)
+            let firstProvider = EngineRuntimeProvider(
+                socketPath: fixture.socketPath,
+                volumeInitializerPath: fixture.volumeInitializerPath,
+            )
+            let secondProvider = EngineRuntimeProvider(
+                socketPath: fixture.socketPath,
+                volumeInitializerPath: fixture.volumeInitializerPath,
+            )
             let request = ComposeImageVolumeInitializationRequest(
                 image: "example/image:latest",
                 platform: nil,
                 imageSubpath: "/state",
                 volumeName: "project_state",
             )
-            async let first: Void = provider.initializeImageVolume(request)
-            async let second: Void = provider.initializeImageVolume(request)
+            async let first: Void = firstProvider.initializeImageVolume(request)
+            async let second: Void = secondProvider.initializeImageVolume(request)
             _ = try await (first, second)
 
             let requests = await recorder.requests
@@ -220,6 +441,7 @@ struct ComposeEngineRuntimeTests {
 private struct EngineFixture {
     let root: URL
     let socketPath: String
+    let volumeInitializerPath: String
 
     init() throws {
         root = URL(fileURLWithPath: "/private/tmp")
@@ -230,6 +452,19 @@ private struct EngineFixture {
             attributes: [.posixPermissions: 0o700],
         )
         socketPath = root.appendingPathComponent("engine.sock").path
+        let initializerDirectory = root.appendingPathComponent("volume-initializer")
+        try FileManager.default.createDirectory(
+            at: initializerDirectory,
+            withIntermediateDirectories: false,
+        )
+        let initializer = initializerDirectory
+            .appendingPathComponent("compose-volume-initializer-linux-arm64")
+        try Data().write(to: initializer)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: initializer.path,
+        )
+        volumeInitializerPath = initializer.path
     }
 
     func server(_ responder: some DockerHTTPResponder) -> ContainerUnixHTTPServer {
@@ -272,6 +507,7 @@ private struct EngineFixtureResponder: DockerHTTPResponder {
         self.recorder = recorder
     }
 
+    // swiftlint:disable:next cyclomatic_complexity
     func respond(to request: DockerHTTPRequest) async -> DockerHTTPResponse {
         await recorder?.append(request)
         if request.target.contains("missing") {
@@ -290,6 +526,8 @@ private struct EngineFixtureResponder: DockerHTTPResponder {
             return .fixture(Self.volume, status: 201)
         case (.get, "/v1.53/volumes"):
             return .fixture(#"{"Volumes":["# + Self.volume + #"],"Warnings":[]}"#)
+        case let (.get, target) where target.hasPrefix("/v1.53/volumes/"):
+            return .fixture(Self.volume)
         case (.get, "/v1.53/images/json"):
             return .fixture(Self.imageList)
         case let (.get, target) where target.hasSuffix("/json") && target.contains("/images/"):
@@ -303,7 +541,7 @@ private struct EngineFixtureResponder: DockerHTTPResponder {
     // swiftlint:disable line_length
     private static let containerList = #"[{"Id":"abc","Names":["/demo"],"Image":"alpine:3.22","ImageID":"sha256:img","Command":"sleep","Created":1,"State":"running","Status":"Up","Ports":[{"IP":"127.0.0.1","PrivatePort":80,"PublicPort":8080,"Type":"tcp"}],"Labels":{"project":"demo"},"Mounts":[{"Type":"bind","Name":"","Source":"/tmp/workspace","Destination":"/workspace","Driver":"","Mode":"","RW":true,"Propagation":""}]}]"#
     private static let containerInspect = #"{"Id":"abc","Created":"2026-09-10T00:00:00.000Z","Path":"/bin/sh","Args":[],"Name":"/demo","State":{"Status":"running","Running":true,"Paused":false,"Restarting":false,"OOMKilled":false,"Dead":false,"Pid":1,"ExitCode":0,"Error":"","StartedAt":"2026-09-10T00:00:00.000Z","FinishedAt":"2026-09-10T00:00:00.000Z","Health":{"Status":"healthy","FailingStreak":0,"Log":[]}},"Image":"sha256:img","Config":{"Hostname":"demo","User":"","AttachStdin":false,"AttachStdout":false,"AttachStderr":false,"Tty":false,"OpenStdin":false,"Env":[],"Cmd":[],"Image":"alpine:3.22","ExposedPorts":{},"Volumes":{},"WorkingDir":"","Entrypoint":[],"Labels":{"project":"demo"}},"HostConfig":{"Binds":[],"NetworkMode":"default"},"Mounts":[],"NetworkSettings":{"Ports":{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"}]},"Networks":{"project_default":{"IPAddress":"192.168.1.2"}}}}"#
-    private static let volume = #"{"CreatedAt":"2026-09-10T00:00:00Z","Driver":"local","Labels":{"project":"demo"},"Mountpoint":"/volumes/project_data","Name":"project_data","Options":{},"Scope":"local"}"#
+    private static let volume = #"{"CreatedAt":"2026-09-10T00:00:00Z","Driver":"local","Labels":{"project":"demo"},"Mountpoint":"/volumes/project_data/_data","Name":"project_data","Options":{},"Scope":"local"}"#
     private static let imageInspect = #"{"Id":"sha256:img","RepoTags":["alpine:3.22"],"RepoDigests":["alpine@sha256:digest"],"Created":"2026-09-10T00:00:00Z","Size":42,"VirtualSize":42,"Architecture":"arm64","Variant":"v8","Os":"linux","Config":{"User":"1000:1000","Env":["A=B"],"Entrypoint":["/bin/sh"],"Cmd":["sleep","1"],"Labels":{"purpose":"test"},"WorkingDir":"/workspace","ExposedPorts":{"8080/tcp":{}},"Volumes":{"/data":{}},"StopSignal":"SIGTERM","Healthcheck":{"Test":["CMD","true"],"Interval":1000,"Timeout":500,"StartPeriod":0,"Retries":3}}}"#
     private static let imageList = #"[{"Containers":-1,"Created":1,"Id":"sha256:img","Labels":{"purpose":"test"},"ParentId":"","RepoDigests":["alpine@sha256:digest"],"RepoTags":["alpine:3.22"],"SharedSize":-1,"Size":42,"VirtualSize":42}]"#
     // swiftlint:enable line_length
@@ -331,6 +569,15 @@ private struct ImageVolumeResponder: DockerHTTPResponder {
                 headers: ["Content-Type": "application/json"],
                 body: .bytes(body ?? Data()),
             )
+        case let (.get, target) where target.contains("devcontainer-volume-initializer"):
+            return .fixture(#"{"message":"not found"}"#, status: 404)
+        case let (.get, target) where target.contains("/images/"):
+            return .fixture(
+                // swiftlint:disable:next line_length
+                #"{"Id":"sha256:source-image","RepoTags":["example/image:latest"],"RepoDigests":["example/image@sha256:digest"],"Created":"2026-09-11T00:00:00Z","Size":42,"VirtualSize":42,"Architecture":"arm64","Os":"linux","Config":{}}"#
+            )
+        case let (.post, target) where target.contains("/build?"):
+            return .empty(status: 200)
         case let (.post, target) where target.contains("/containers/create?"):
             return .fixture(#"{"Id":"helper-id","Warnings":[]}"#, status: 201)
         case let (.post, target) where target.contains("/wait?"):
@@ -356,6 +603,47 @@ private extension DockerHTTPResponse {
 
 private extension Data {
     func containsText(_ value: String) -> Bool {
-        String(data: self, encoding: .utf8)?.contains(value) == true
+        range(of: Data(value.utf8)) != nil
+    }
+
+    func tarEntryName(at offset: Int) -> String? {
+        tarString(offset: offset, length: 100)
+    }
+
+    func tarMagic(at offset: Int) -> String? {
+        tarString(offset: offset + 257, length: 6)
+    }
+
+    func tarContents(at offset: Int) -> Data? {
+        guard let size = tarSize(at: offset) else {
+            return nil
+        }
+        let start = offset + 512
+        guard start + size <= count else {
+            return nil
+        }
+        return self[start ..< start + size]
+    }
+
+    func nextTarEntryOffset(after offset: Int) -> Int? {
+        guard let size = tarSize(at: offset) else {
+            return nil
+        }
+        return offset + 512 + ((size + 511) / 512 * 512)
+    }
+
+    private func tarSize(at offset: Int) -> Int? {
+        guard let value = tarString(offset: offset + 124, length: 12) else {
+            return nil
+        }
+        return Int(value, radix: 8)
+    }
+
+    private func tarString(offset: Int, length: Int) -> String? {
+        guard offset >= 0, offset + length <= count else {
+            return nil
+        }
+        let field = self[offset ..< offset + length].prefix { $0 != 0 }
+        return String(bytes: field, encoding: .utf8)
     }
 }

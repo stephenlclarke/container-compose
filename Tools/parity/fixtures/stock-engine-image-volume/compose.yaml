@@ -1,0 +1,11 @@
+services:
+  seed:
+    image: docker.io/library/alpine:3.20
+    command: ["sleep", "600"]
+    volumes:
+      - type: volume
+        source: seeded-apk-keys
+        target: /usr/share/apk
+
+volumes:
+  seeded-apk-keys: {}

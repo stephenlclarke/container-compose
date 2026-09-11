@@ -22,6 +22,8 @@
 public struct ComposeRuntimeCapabilities: Equatable, Sendable {
     public static let loggingDriversV1Identifier =
         "io.github.stephenlclarke.container.logging-drivers.v1"
+    public static let containerLaunchV1Identifier =
+        "io.github.stephenlclarke.container.compose.container-launch.v1"
     public static let networkScopedAliasesV1Identifier =
         "io.github.stephenlclarke.container.compose.network-scoped-aliases.v1"
     public static let networkAliasesV1Identifier =
@@ -37,6 +39,12 @@ public struct ComposeRuntimeCapabilities: Equatable, Sendable {
     /// request and exposes driver-neutral read and attach operations.
     public var supportsLoggingDriversV1: Bool {
         identifiers.contains(Self.loggingDriversV1Identifier)
+    }
+
+    /// Whether Compose should use its configured authority-backed launch
+    /// adapter instead of spawning the unmodified container command directly.
+    public var supportsContainerLaunchV1: Bool {
+        supportsLoggingDriversV1 || identifiers.contains(Self.containerLaunchV1Identifier)
     }
 
     /// Whether network attachment options beyond stock Apple's `mac` and `mtu`

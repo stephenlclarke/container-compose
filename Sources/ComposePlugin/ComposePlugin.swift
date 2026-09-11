@@ -38,6 +38,14 @@ private func selectedRuntimeDependencies(
     #endif
 }
 
+private func selectedRuntimeCapabilities() -> ComposeRuntimeCapabilities {
+    var identifiers = installedRuntimeCapabilities.snapshot().identifiers
+    #if !CONTAINER_COMPOSE_ENHANCED_RUNTIME
+        identifiers.insert(ComposeRuntimeCapabilities.containerLaunchV1Identifier)
+    #endif
+    return ComposeRuntimeCapabilities(identifiers: identifiers)
+}
+
 private let composeBuildInfo = ComposeBuildInfo.load()
 private let composePluginVersionNumber = composeBuildInfo.version
 private let composePluginVersionString = "container-compose \(composePluginVersionNumber)"
@@ -609,7 +617,7 @@ struct GlobalOptions: ParsableArguments {
             $0.reportOrphans = true
             $0.emitStatus = { statusOutput.write(Data(($0 + "\n").utf8)) }
             $0.progress = progressReporter()
-            $0.runtimeCapabilities = installedRuntimeCapabilities.snapshot()
+            $0.runtimeCapabilities = selectedRuntimeCapabilities()
         }
         return ComposeOrchestrator(
             options: options,
@@ -806,7 +814,7 @@ struct BridgeRuntimeOptions: ParsableArguments {
     func orchestrator() -> ComposeOrchestrator {
         let options = ComposeExecutionOptions {
             $0.dryRun = effectiveDryRun
-            $0.runtimeCapabilities = installedRuntimeCapabilities.snapshot()
+            $0.runtimeCapabilities = selectedRuntimeCapabilities()
         }
         return ComposeOrchestrator(
             options: options,

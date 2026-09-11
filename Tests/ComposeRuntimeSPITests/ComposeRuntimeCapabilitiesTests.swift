@@ -22,12 +22,19 @@ struct ComposeRuntimeCapabilitiesTests {
     @Test
     func `logging v2 requires its exact negotiated identifier`() {
         #expect(!ComposeRuntimeCapabilities().supportsLoggingDriversV1)
+        #expect(!ComposeRuntimeCapabilities().supportsContainerLaunchV1)
         #expect(!ComposeRuntimeCapabilities(
             identifiers: ["io.github.stephenlclarke.container.logging-drivers.v2"],
         ).supportsLoggingDriversV1)
         #expect(ComposeRuntimeCapabilities(
             identifiers: [ComposeRuntimeCapabilities.loggingDriversV1Identifier],
         ).supportsLoggingDriversV1)
+        #expect(ComposeRuntimeCapabilities(
+            identifiers: [ComposeRuntimeCapabilities.loggingDriversV1Identifier],
+        ).supportsContainerLaunchV1)
+        #expect(ComposeRuntimeCapabilities(
+            identifiers: [ComposeRuntimeCapabilities.containerLaunchV1Identifier],
+        ).supportsContainerLaunchV1)
     }
 
     @Test

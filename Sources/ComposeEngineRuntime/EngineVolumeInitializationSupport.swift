@@ -1,0 +1,184 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2026 container-compose project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
+import ComposeCore
+import Darwin
+import Foundation
+
+enum EngineVolumeInitializerBuildContext {
+    private struct Entry {
+        let name: String
+        let mode: UInt64
+        let contents: Data
+    }
+
+    static func make(sourceImage: String, helper: Data) async throws -> Data {
+        let helperName = "compose-volume-initializer-linux-arm64"
+        let dockerfile = Data("""
+        FROM \(sourceImage)
+        COPY --chmod=0755 \(helperName) /.compose-volume-initializer
+        USER 0:0
+        ENTRYPOINT [\"/.compose-volume-initializer\"]
+        """.utf8)
+        return ustar([
+            Entry(name: "Dockerfile", mode: 0o644, contents: dockerfile),
+            Entry(name: helperName, mode: 0o755, contents: helper),
+        ])
+    }
+
+    /// Apple's Engine build endpoint accepts a portable ustar context. Building
+    /// the two-entry archive directly also avoids host PAX/xattr records and
+    /// makes identical inputs byte-for-byte reproducible on every macOS host.
+    private static func ustar(
+        _ entries: [Entry]
+    ) -> Data {
+        var archive = Data()
+        for entry in entries {
+            var header = Data(repeating: 0, count: 512)
+            write(entry.name, to: &header, offset: 0, length: 100)
+            writeOctal(entry.mode, to: &header, offset: 100, length: 8)
+            writeOctal(0, to: &header, offset: 108, length: 8)
+            writeOctal(0, to: &header, offset: 116, length: 8)
+            writeOctal(UInt64(entry.contents.count), to: &header, offset: 124, length: 12)
+            writeOctal(0, to: &header, offset: 136, length: 12)
+            header.replaceSubrange(148 ..< 156, with: repeatElement(UInt8(ascii: " "), count: 8))
+            header[156] = UInt8(ascii: "0")
+            write("ustar", to: &header, offset: 257, length: 6)
+            write("00", to: &header, offset: 263, length: 2)
+            write("root", to: &header, offset: 265, length: 32)
+            write("root", to: &header, offset: 297, length: 32)
+            let checksum = header.reduce(0) { $0 + UInt64($1) }
+            let checksumText = String(format: "%06llo", checksum)
+            write(checksumText, to: &header, offset: 148, length: 7)
+            header[155] = UInt8(ascii: " ")
+
+            archive.append(header)
+            archive.append(entry.contents)
+            let padding = (512 - (entry.contents.count % 512)) % 512
+            archive.append(Data(repeating: 0, count: padding))
+        }
+        archive.append(Data(repeating: 0, count: 1024))
+        return archive
+    }
+
+    private static func write(
+        _ value: String,
+        to data: inout Data,
+        offset: Int,
+        length: Int
+    ) {
+        let bytes = Array(value.utf8.prefix(length - 1))
+        data.replaceSubrange(offset ..< offset + bytes.count, with: bytes)
+    }
+
+    private static func writeOctal(
+        _ value: UInt64,
+        to data: inout Data,
+        offset: Int,
+        length: Int
+    ) {
+        let text = String(format: "%0*llo", length - 1, value)
+        write(text, to: &data, offset: offset, length: length)
+    }
+
+    static func fnv1aHex(_ values: [Data]) -> String {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for value in values {
+            for byte in value {
+                hash ^= UInt64(byte)
+                hash &*= 1_099_511_628_211
+            }
+        }
+        return String(format: "%016llx", hash)
+    }
+}
+
+final class EngineVolumeInitializationFileLock: @unchecked Sendable {
+    private let descriptor: Int32
+
+    private init(descriptor: Int32) {
+        self.descriptor = descriptor
+    }
+
+    static func acquire(volumeMountpoint: URL) async throws -> EngineVolumeInitializationFileLock {
+        let path = volumeMountpoint.deletingLastPathComponent()
+            .appendingPathComponent(".compose-image-volume.lock")
+            .path
+        return try await acquire(path: path)
+    }
+
+    static func acquire(path: String) async throws -> EngineVolumeInitializationFileLock {
+        try await Task.detached {
+            let descriptor = Darwin.open(path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o600)
+            guard descriptor >= 0 else {
+                throw ComposeError.invalidProject(
+                    "cannot open image-volume initialization lock at \(path): \(String(cString: strerror(errno)))"
+                )
+            }
+            var status = stat()
+            guard Darwin.fstat(descriptor, &status) == 0,
+                  status.st_mode & S_IFMT == S_IFREG,
+                  status.st_uid == geteuid(),
+                  status.st_nlink == 1,
+                  status.st_mode & (S_IRWXG | S_IRWXO) == 0
+            else {
+                Darwin.close(descriptor)
+                throw ComposeError.invalidProject(
+                    "image-volume initialization lock is not a private current-user file at \(path)"
+                )
+            }
+            while Darwin.lockf(descriptor, F_LOCK, 0) != 0 {
+                guard errno == EINTR else {
+                    let message = String(cString: strerror(errno))
+                    Darwin.close(descriptor)
+                    throw ComposeError.invalidProject(
+                        "cannot lock image-volume initialization at \(path): \(message)"
+                    )
+                }
+            }
+            return EngineVolumeInitializationFileLock(descriptor: descriptor)
+        }.value
+    }
+
+    deinit {
+        _ = Darwin.lockf(descriptor, F_ULOCK, 0)
+        Darwin.close(descriptor)
+    }
+}
+
+actor EngineVolumeInitializationCoordinator {
+    private var held: Set<String> = []
+    private var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+
+    func acquire(_ volumeName: String) async {
+        guard !held.insert(volumeName).inserted else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters[volumeName, default: []].append(continuation)
+        }
+    }
+
+    func release(_ volumeName: String) {
+        guard var queued = waiters[volumeName], !queued.isEmpty else {
+            held.remove(volumeName)
+            return
+        }
+        let continuation = queued.removeFirst()
+        waiters[volumeName] = queued.isEmpty ? nil : queued
+        continuation.resume()
+    }
+}

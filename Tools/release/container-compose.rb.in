@@ -38,5 +38,6 @@ class ContainerCompose < Formula
     assert_path_exists libexec/"container-plugins/compose/config.toml"
     assert_path_exists libexec/"container-plugins/compose/resources/container-compose-icon.png"
     assert_predicate libexec/"container-plugins/compose/resources/compose-normalizer", :executable?
+    assert_predicate libexec/"container-plugins/compose/resources/volume-initializer/compose-volume-initializer-linux-arm64", :executable?
   end
 end
