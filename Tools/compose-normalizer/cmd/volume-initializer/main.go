@@ -142,12 +142,6 @@ func initialize(source, destination, transaction, recovery string) error {
 	if err := os.Mkdir(stage, 0o700); err != nil {
 		return fmt.Errorf("create initialization stage: %w", err)
 	}
-	stagePresent := true
-	defer func() {
-		if stagePresent {
-			_ = os.RemoveAll(stage)
-		}
-	}()
 	hardlinks := make(map[fileIdentity]string)
 	for _, entry := range entries {
 		if err := copyEntry(
@@ -167,64 +161,17 @@ func initialize(source, destination, transaction, recovery string) error {
 		transaction,
 		publishingEntries,
 		destinationMetadata,
+		sourceMetadata,
 	); err != nil {
 		return err
 	}
-	for _, entry := range publishingEntries {
-		if err := renameNoReplace(
-			filepath.Join(stage, entry.Name),
-			filepath.Join(destination, entry.Name),
-		); err != nil {
-			_ = rollbackPublishingEntries(
-				destination,
-				stage,
-				publishingEntries,
-				destinationMetadata,
-			)
-			return fmt.Errorf("publish %s: %w", entry.Name, err)
-		}
-	}
-	if err := applyRootMetadata(destination, sourceMetadata); err != nil {
-		_ = rollbackPublishingEntries(
-			destination,
-			stage,
-			publishingEntries,
-			destinationMetadata,
-		)
-		return fmt.Errorf("apply destination metadata: %w", err)
-	}
-	if err := syncPublishedEntries(destination, entries); err != nil {
-		_ = rollbackPublishingEntries(
-			destination,
-			stage,
-			publishingEntries,
-			destinationMetadata,
-		)
-		return err
-	}
-	if err := syncDirectory(destination); err != nil {
-		_ = rollbackPublishingEntries(
-			destination,
-			stage,
-			publishingEntries,
-			destinationMetadata,
-		)
-		return err
-	}
-	if err := os.RemoveAll(stage); err != nil {
-		return fmt.Errorf("remove initialization stage: %w", err)
-	}
-	stagePresent = false
-	if err := applyRootMetadata(destination, sourceMetadata); err != nil {
-		return fmt.Errorf("restore destination metadata: %w", err)
-	}
-	if err := syncDirectory(destination); err != nil {
-		return err
-	}
-	if err := os.Remove(journal); err != nil {
-		return fmt.Errorf("complete initialization transaction: %w", err)
-	}
-	return syncDirectory(recovery)
+	return completePublishingTransaction(
+		destination,
+		stage,
+		journal,
+		publishingEntries,
+		sourceMetadata,
+	)
 }
 
 type transactionJournal struct {
@@ -233,6 +180,7 @@ type transactionJournal struct {
 	Phase       string                    `json:"phase"`
 	Entries     []transactionJournalEntry `json:"entries"`
 	Root        transactionRootMetadata   `json:"root"`
+	FinalRoot   *transactionRootMetadata  `json:"finalRoot,omitempty"`
 }
 
 type transactionJournalEntry struct {
@@ -263,7 +211,7 @@ func writeJournal(
 		records = append(records, transactionJournalEntry{Name: entry.Name()})
 	}
 	return publishJournal(path, transactionJournal{
-		Version: 4, Transaction: transaction, Phase: journalPhasePrepared,
+		Version: 5, Transaction: transaction, Phase: journalPhasePrepared,
 		Entries: records, Root: root,
 	}, false)
 }
@@ -272,10 +220,11 @@ func replacePublishingJournal(
 	path, transaction string,
 	entries []transactionJournalEntry,
 	root transactionRootMetadata,
+	finalRoot transactionRootMetadata,
 ) error {
 	return publishJournal(path, transactionJournal{
-		Version: 4, Transaction: transaction, Phase: journalPhasePublishing,
-		Entries: entries, Root: root,
+		Version: 5, Transaction: transaction, Phase: journalPhasePublishing,
+		Entries: entries, Root: root, FinalRoot: &finalRoot,
 	}, true)
 }
 
@@ -317,9 +266,8 @@ func publishJournal(path string, record transactionJournal, replace bool) error 
 	return syncDirectory(filepath.Dir(path))
 }
 
-// recoverTransaction removes only artefacts named by the host-authenticated
-// transaction identity. A published name is removed only when its filesystem
-// identity proves that it is the inode previously staged by this transaction.
+// recoverTransaction completes an authenticated publication forward. Once any
+// entry can have been visible, recovery never recursively deletes volume data.
 func recoverTransaction(destination, transaction, journal string) error {
 	stage := filepath.Join(destination, stagePrefix+transaction)
 	temporary := journal + ".tmp"
@@ -330,7 +278,7 @@ func recoverTransaction(destination, transaction, journal string) error {
 		if decodeErr := json.Unmarshal(payload, &record); decodeErr != nil {
 			return fmt.Errorf("decode initialization journal: %w", decodeErr)
 		}
-		if record.Version != 4 || record.Transaction != transaction ||
+		if record.Version != 5 || record.Transaction != transaction ||
 			(record.Phase != journalPhasePrepared && record.Phase != journalPhasePublishing) {
 			return errors.New("initialization journal identity does not match")
 		}
@@ -348,32 +296,30 @@ func recoverTransaction(destination, transaction, journal string) error {
 					!validTreeDigest(entry.TreeDigest) {
 					return errors.New("publishing journal entry has no filesystem identity")
 				}
-				if err := rollbackPublishingEntry(destination, stage, entry); err != nil {
-					return err
-				}
+			} else if entry.Device != 0 || entry.Inode != 0 || entry.NodeCount != 0 ||
+				entry.TreeDigest != "" {
+				return errors.New("prepared journal entry unexpectedly has a filesystem identity")
 			}
+		}
+		if record.Phase == journalPhasePrepared && record.FinalRoot != nil {
+			return errors.New("prepared journal unexpectedly has final root metadata")
+		}
+		if record.Phase == journalPhasePublishing && record.FinalRoot == nil {
+			return errors.New("publishing journal has no final root metadata")
 		}
 		if err := os.Remove(temporary); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove stale initialization journal temporary: %w", err)
 		}
-		if record.Phase == journalPhasePublishing {
-			if err := verifyStageContents(stage, record.Entries); err != nil {
-				return err
-			}
+		if record.Phase == journalPhasePrepared {
+			return recoverPreparedTransaction(destination, stage, journal, record.Root)
 		}
-		if err := os.RemoveAll(stage); err != nil {
-			return fmt.Errorf("remove stale initialization transaction: %w", err)
-		}
-		if err := applyRootMetadata(destination, record.Root); err != nil {
-			return fmt.Errorf("restore volume root metadata: %w", err)
-		}
-		if err := syncDirectory(destination); err != nil {
-			return err
-		}
-		if err := os.Remove(journal); err != nil {
-			return fmt.Errorf("remove stale initialization journal: %w", err)
-		}
-		return syncDirectory(filepath.Dir(journal))
+		return completePublishingTransaction(
+			destination,
+			stage,
+			journal,
+			record.Entries,
+			*record.FinalRoot,
+		)
 	case errors.Is(err, os.ErrNotExist):
 		if _, stageErr := os.Lstat(stage); stageErr == nil {
 			return errors.New("initialization stage exists without its recovery journal")
@@ -383,10 +329,32 @@ func recoverTransaction(destination, transaction, journal string) error {
 	default:
 		return fmt.Errorf("read initialization journal: %w", err)
 	}
-	if err := os.RemoveAll(temporary); err != nil {
+	if err := os.Remove(temporary); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove stale initialization journal temporary: %w", err)
 	}
 	return syncDirectory(filepath.Dir(journal))
+}
+
+func recoverPreparedTransaction(
+	destination, stage, journal string,
+	root transactionRootMetadata,
+) error {
+	if err := removeEmptyStage(stage); err != nil {
+		return err
+	}
+	empty, err := destinationIsLogicallyEmpty(destination)
+	if err != nil {
+		return err
+	}
+	if empty {
+		if err := applyRootMetadata(destination, root); err != nil {
+			return fmt.Errorf("restore volume root metadata: %w", err)
+		}
+	}
+	if err := syncDirectory(destination); err != nil {
+		return err
+	}
+	return completeJournal(journal)
 }
 
 func capturePublishingEntries(
@@ -407,29 +375,46 @@ func capturePublishingEntries(
 	return records, nil
 }
 
-func rollbackPublishingEntries(
-	destination, stage string,
+func completePublishingTransaction(
+	destination, stage, journal string,
 	entries []transactionJournalEntry,
-	root transactionRootMetadata,
+	finalRoot transactionRootMetadata,
 ) error {
-	for _, entry := range entries {
-		if err := rollbackPublishingEntry(destination, stage, entry); err != nil {
-			return err
-		}
-	}
 	if err := verifyStageContents(stage, entries); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(stage); err != nil {
-		return fmt.Errorf("remove initialization stage: %w", err)
+	for _, entry := range entries {
+		if err := publishOrVerifyEntry(destination, stage, entry); err != nil {
+			return err
+		}
 	}
-	if err := applyRootMetadata(destination, root); err != nil {
-		return fmt.Errorf("restore volume root metadata: %w", err)
+	for _, entry := range entries {
+		identity, err := captureTreeIdentity(filepath.Join(destination, entry.Name))
+		if err != nil {
+			return fmt.Errorf("verify published initialization entry: %w", err)
+		}
+		if !entry.matches(identity) {
+			return errors.New("published initialization entry identity changed")
+		}
 	}
-	return syncDirectory(destination)
+	if err := removeEmptyStage(stage); err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := syncPublishedPath(filepath.Join(destination, entry.Name)); err != nil {
+			return err
+		}
+	}
+	if err := applyRootMetadata(destination, finalRoot); err != nil {
+		return fmt.Errorf("apply destination metadata: %w", err)
+	}
+	if err := syncDirectory(destination); err != nil {
+		return err
+	}
+	return completeJournal(journal)
 }
 
-func rollbackPublishingEntry(
+func publishOrVerifyEntry(
 	destination, stage string,
 	entry transactionJournalEntry,
 ) error {
@@ -440,7 +425,13 @@ func rollbackPublishingEntry(
 		if !entry.matches(identity) {
 			return errors.New("staged initialization entry identity changed")
 		}
-		return nil
+		if err := renameNoReplace(
+			staged,
+			filepath.Join(destination, entry.Name),
+		); err != nil {
+			return fmt.Errorf("publish %s: %w", entry.Name, err)
+		}
+		return syncDirectory(destination)
 	case !errors.Is(err, os.ErrNotExist):
 		return fmt.Errorf("inspect staged initialization entry: %w", err)
 	}
@@ -448,52 +439,36 @@ func rollbackPublishingEntry(
 	identity, err = captureTreeIdentity(published)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return nil
+		return errors.New("journaled initialization entry is missing")
 	case err != nil:
 		return fmt.Errorf("inspect published initialization entry: %w", err)
 	case !entry.matches(identity):
 		return errors.New("published initialization entry identity changed")
 	}
-	if err := renameNoReplace(published, staged); err != nil {
-		return fmt.Errorf("quarantine published initialization entry: %w", err)
-	}
-	if err := syncDirectory(destination); err != nil {
-		return err
-	}
-	return removeQuarantinedPublishingEntry(staged, published, entry)
+	return nil
 }
 
-// removeQuarantinedPublishingEntry authenticates the entry again after its
-// atomic removal from the published namespace. If an independently mounted
-// container changed the entry during the verification-to-rename window, the
-// changed tree is restored rather than recursively removed.
-func removeQuarantinedPublishingEntry(
-	staged, published string,
-	entry transactionJournalEntry,
-) error {
-	identity, err := captureTreeIdentity(staged)
-	if err != nil {
-		return fmt.Errorf("inspect quarantined initialization entry: %w", err)
+func removeEmptyStage(stage string) error {
+	contents, err := os.ReadDir(stage)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("inspect initialization stage: %w", err)
+	case len(contents) != 0:
+		return errors.New("initialization stage contains data that cannot be safely removed")
 	}
-	if !entry.matches(identity) {
-		if restoreErr := renameNoReplace(staged, published); restoreErr != nil {
-			return fmt.Errorf(
-				"quarantined initialization entry identity changed; restore failed: %w",
-				restoreErr,
-			)
-		}
-		if syncErr := syncDirectory(filepath.Dir(published)); syncErr != nil {
-			return fmt.Errorf(
-				"quarantined initialization entry identity changed; restore sync failed: %w",
-				syncErr,
-			)
-		}
-		return errors.New("quarantined initialization entry identity changed")
-	}
-	if err := os.RemoveAll(staged); err != nil {
-		return fmt.Errorf("remove quarantined initialization entry: %w", err)
+	if err := os.Remove(stage); err != nil {
+		return fmt.Errorf("remove empty initialization stage: %w", err)
 	}
 	return nil
+}
+
+func completeJournal(journal string) error {
+	if err := os.Remove(journal); err != nil {
+		return fmt.Errorf("complete initialization transaction: %w", err)
+	}
+	return syncDirectory(filepath.Dir(journal))
 }
 
 func captureRootMetadata(path string) (transactionRootMetadata, error) {

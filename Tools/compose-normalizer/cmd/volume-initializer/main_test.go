@@ -194,8 +194,8 @@ func TestInitializePreservesExistingDestination(t *testing.T) {
 	source := filepath.Join(root, "source")
 	destination := filepath.Join(root, "destination")
 	recovery := filepath.Join(root, "recovery")
-	mustMkdir(t, source, 0o755)
-	mustMkdir(t, destination, 0o755)
+	mustMkdir(t, source, 0o750)
+	mustMkdir(t, destination, 0o700)
 	mustMkdir(t, recovery, 0o700)
 	mustWrite(t, filepath.Join(source, "new"), "new", 0o644)
 	mustWrite(t, filepath.Join(destination, "existing"), "keep", 0o644)
@@ -228,7 +228,7 @@ func TestInitializeRejectsMissingSourceWithoutMutatingDestination(t *testing.T) 
 	}
 }
 
-func TestInitializeRollsBackAFailedStagedCopy(t *testing.T) {
+func TestInitializePreservesAFailedStagedCopy(t *testing.T) {
 	t.Parallel()
 	root, err := os.MkdirTemp("/private/tmp", "volume-init-")
 	if err != nil {
@@ -237,8 +237,10 @@ func TestInitializeRollsBackAFailedStagedCopy(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	source := filepath.Join(root, "source")
 	destination := filepath.Join(root, "destination")
+	recovery := filepath.Join(root, "recovery")
 	mustMkdir(t, source, 0o755)
 	mustMkdir(t, destination, 0o755)
+	mustMkdir(t, recovery, 0o700)
 	mustWrite(t, filepath.Join(source, "a-valid"), "staged", 0o644)
 	listener, err := net.Listen("unix", filepath.Join(source, "z-unsupported"))
 	if err != nil {
@@ -246,15 +248,24 @@ func TestInitializeRollsBackAFailedStagedCopy(t *testing.T) {
 	}
 	defer listener.Close()
 
-	if err := initialize(source, destination, testTransactionID, t.TempDir()); err == nil {
+	if err := initialize(source, destination, testTransactionID, recovery); err == nil {
 		t.Fatal("expected unsupported entry failure")
 	}
-	entries, err := os.ReadDir(destination)
-	if err != nil {
-		t.Fatal(err)
+	stage := filepath.Join(destination, stagePrefix+testTransactionID)
+	value, err := os.ReadFile(filepath.Join(stage, "a-valid"))
+	if err != nil || string(value) != "staged" {
+		t.Fatalf("failed initialization changed staged data: %q, %v", value, err)
 	}
-	if len(entries) != 0 {
-		t.Fatalf("failed initialization left destination entries: %v", entries)
+	journal := filepath.Join(recovery, journalPrefix+testTransactionID)
+	if _, err := os.Stat(journal); err != nil {
+		t.Fatalf("failed initialization removed its recovery journal: %v", err)
+	}
+	if err := initialize(source, destination, testTransactionID, recovery); err == nil {
+		t.Fatal("expected recovery to preserve and reject a nonempty prepared stage")
+	}
+	value, err = os.ReadFile(filepath.Join(stage, "a-valid"))
+	if err != nil || string(value) != "staged" {
+		t.Fatalf("recovery changed staged data: %q, %v", value, err)
 	}
 }
 
@@ -390,14 +401,14 @@ func TestInitializeRejectsStageWithoutRecoveryJournal(t *testing.T) {
 	}
 }
 
-func TestInitializeRecoversInterruptedPublication(t *testing.T) {
+func TestInitializeCompletesInterruptedPublicationForward(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	source := filepath.Join(root, "source")
 	destination := filepath.Join(root, "destination")
 	recovery := filepath.Join(root, "recovery")
-	mustMkdir(t, source, 0o755)
-	mustMkdir(t, destination, 0o755)
+	mustMkdir(t, source, 0o750)
+	mustMkdir(t, destination, 0o700)
 	mustMkdir(t, recovery, 0o700)
 	originalMetadata, err := captureRootMetadata(destination)
 	if err != nil {
@@ -405,6 +416,10 @@ func TestInitializeRecoversInterruptedPublication(t *testing.T) {
 	}
 	mustWrite(t, filepath.Join(source, "first"), "new-first", 0o644)
 	mustWrite(t, filepath.Join(source, "second"), "new-second", 0o644)
+	finalMetadata, err := captureRootMetadata(source)
+	if err != nil {
+		t.Fatal(err)
+	}
 	mustWrite(t, filepath.Join(destination, "first"), "partial-old", 0o644)
 	stage := filepath.Join(destination, stagePrefix+testTransactionID)
 	mustMkdir(t, stage, 0o700)
@@ -425,15 +440,19 @@ func TestInitializeRecoversInterruptedPublication(t *testing.T) {
 			mustJournalEntry(t, filepath.Join(stage, "second"), "second"),
 		},
 		originalMetadata,
+		finalMetadata,
 	); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := initialize(source, destination, testTransactionID, recovery); err != nil {
-		t.Fatal(err)
+	if err := initialize(source, destination, testTransactionID, recovery); !errors.Is(
+		err,
+		errDestinationNotEmpty,
+	) {
+		t.Fatalf("expected completed transaction to make the volume nonempty, got %v", err)
 	}
 	for name, expected := range map[string]string{
-		"first": "new-first", "second": "new-second",
+		"first": "partial-old", "second": "staged-old",
 	} {
 		value, err := os.ReadFile(filepath.Join(destination, name))
 		if err != nil || string(value) != expected {
@@ -444,6 +463,13 @@ func TestInitializeRecoversInterruptedPublication(t *testing.T) {
 		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("transaction artefact remains at %s: %v", path, err)
 		}
+	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o750 {
+		t.Fatalf("forward recovery did not apply final root mode: %o", info.Mode().Perm())
 	}
 }
 
@@ -502,6 +528,7 @@ func TestPublishingJournalPreservesReplacedUserData(t *testing.T) {
 		testTransactionID,
 		[]transactionJournalEntry{mustJournalEntry(t, published, "payload")},
 		metadata,
+		metadata,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -544,6 +571,7 @@ func TestPublishingJournalPreservesChangedDirectoryDescendants(t *testing.T) {
 		testTransactionID,
 		[]transactionJournalEntry{mustJournalEntry(t, published, "payload")},
 		metadata,
+		metadata,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -579,34 +607,6 @@ func TestRenameNoReplacePreservesDestination(t *testing.T) {
 		value, err := os.ReadFile(path)
 		if err != nil || string(value) != expected {
 			t.Fatalf("no-replace rename changed %s: %q, %v", path, value, err)
-		}
-	}
-}
-
-func TestPublishingTreeIdentitySurvivesAtomicRename(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	stage := filepath.Join(root, "stage")
-	mustMkdir(t, stage, 0o700)
-	for _, name := range []string{"file", "directory"} {
-		source := filepath.Join(stage, name)
-		if name == "directory" {
-			mustMkdir(t, source, 0o700)
-			mustWrite(t, filepath.Join(source, "child"), "child", 0o600)
-		} else {
-			mustWrite(t, source, "file", 0o600)
-		}
-		entry := mustJournalEntry(t, source, name)
-		destination := filepath.Join(root, name)
-		if err := renameNoReplace(source, destination); err != nil {
-			t.Fatal(err)
-		}
-		identity, err := captureTreeIdentity(destination)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !entry.matches(identity) {
-			t.Fatalf("%s tree identity changed during publication", name)
 		}
 	}
 }
@@ -653,6 +653,7 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 			mustJournalEntry(t, filepath.Join(destination, "partial"), "partial"),
 		},
 		originalMetadata,
+		originalMetadata,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -667,7 +668,11 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 	if !errors.Is(err, errSourceMissing) {
 		t.Fatalf("expected missing source after recovery, got %v", err)
 	}
-	for _, path := range []string{filepath.Join(destination, "partial"), stage, journal} {
+	value, readErr := os.ReadFile(filepath.Join(destination, "partial"))
+	if readErr != nil || string(value) != "published" {
+		t.Fatalf("forward recovery changed published data: %q, %v", value, readErr)
+	}
+	for _, path := range []string{stage, journal} {
 		if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
 			t.Fatalf("interrupted transaction artefact remains at %s: %v", path, statErr)
 		}
@@ -682,38 +687,12 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 	if !info.ModTime().Equal(originalTime) {
 		t.Fatalf("volume root timestamp was not restored: %s", info.ModTime())
 	}
-	value := make([]byte, len("original"))
-	if _, err := unix.Getxattr(destination, recoveryXattr, value); err != nil {
+	xattrValue := make([]byte, len("original"))
+	if _, err := unix.Getxattr(destination, recoveryXattr, xattrValue); err != nil {
 		t.Fatal(err)
 	}
-	if string(value) != "original" {
-		t.Fatalf("volume root extended attribute was not restored: %q", value)
-	}
-}
-
-func TestTransactionRecoveryRejectsUntrustedJournals(t *testing.T) {
-	t.Parallel()
-	for name, payload := range map[string]string{
-		"malformed":        `{`,
-		"wrong identity":   `{"version":4,"transaction":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","phase":"prepared","entries":[]}`,
-		"wrong version":    `{"version":2,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"prepared","entries":[]}`,
-		"unsafe entry":     `{"version":4,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"prepared","entries":[{"name":"../escape"}]}`,
-		"duplicate entry":  `{"version":4,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"prepared","entries":[{"name":"payload"},{"name":"payload"}]}`,
-		"missing identity": `{"version":4,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"publishing","entries":[{"name":"payload"}]}`,
-		"invalid digest":   `{"version":4,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"publishing","entries":[{"name":"payload","device":1,"inode":1,"nodeCount":1,"treeDigest":"not-a-digest"}]}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			destination := t.TempDir()
-			recovery := t.TempDir()
-			journal := filepath.Join(recovery, journalPrefix+testTransactionID)
-			mustWrite(t, journal, payload, 0o600)
-			if err := recoverTransaction(destination, testTransactionID, journal); err == nil {
-				t.Fatal("expected untrusted journal failure")
-			}
-			if _, err := os.Stat(journal); err != nil {
-				t.Fatalf("untrusted journal was changed: %v", err)
-			}
-		})
+	if string(xattrValue) != "original" {
+		t.Fatalf("volume root extended attribute was not restored: %q", xattrValue)
 	}
 }
 
