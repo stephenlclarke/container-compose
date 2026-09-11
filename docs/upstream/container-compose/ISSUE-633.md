@@ -17,14 +17,14 @@ The failure was reproduced against unmodified `apple/container` 1.4.1 through th
 - Preserve a volume that already contains user data.
 - Build and cache a project-owned helper layer through the stock Apple builder. Use an immutable repository digest when one exists; otherwise snapshot the local image behind a unique tag and verify its image identity before building.
 - Copy the requested image subtree inside a temporary Engine container so file ownership and modes remain those of the image.
-- Install and select native static helpers for both `linux/arm64` and `linux/amd64`, including valid OCI variants and when Homebrew exposes `compose` through a symlinked prefix.
+- Install and select native static helpers for both `linux/arm64` and `linux/amd64`, including valid OCI variants, an omitted platform resolved from the inspected image rather than the host, and Homebrew exposing `compose` through a symlinked prefix.
 - Preserve extended attributes, including Linux file-capability and ACL metadata on both copied entries and the mounted directory root, together with ownership, modes, timestamps, links, and named pipes.
 - Synchronize copied file data, directories, the destination root, and journal removal in publication order before reporting success.
 - Seed only the contents of the selected image directory into an empty volume.
 - Treat a missing image path as Docker's empty-volume case.
 - Remove the temporary container on success, failure, or a concurrent initialization race.
 - Serialize initializers for the same volume and helper-image builds across processes so concurrent services preserve first-mount-wins semantics without racing a shared tag.
-- Recover an interrupted multi-entry publication only when a private host transaction identifies the exact guest journal; prepared names never authorize deletion, publishing records bind every entry to its staged device/inode identity, and exclusive renames cannot overwrite a concurrently created destination.
+- Recover an interrupted multi-entry publication only when a private host transaction identifies the exact guest journal; prepared names never authorize deletion, publishing records bind every entry to its staged device/inode plus complete-tree identity, changed descendants fail closed, and exclusive renames cannot overwrite a concurrently created destination.
 - Keep the authenticated journal in a separate private host directory mounted only into the helper, rather than consuming the target volume root's constrained extended-attribute budget or exposing recovery state as volume data.
 - Classify a fresh ext4 volume without mutation, capture its untouched root metadata, and durably publish the recovery journal before removing Apple's empty `lost+found` scaffolding or creating any staging entry.
 - Recover that authenticated transaction before inspecting the current image path, so a changed or missing source cannot turn partial publication into accepted user data.

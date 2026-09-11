@@ -22,6 +22,42 @@ import Testing
 
 struct ComposeEngineRuntimePlatformTests {
     @Test
+    func `image volume initialization derives an omitted platform from the image`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
+        try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
+        let recorder = RequestRecorder()
+        let server = fixture.server(ImageVolumeResponder(
+            recorder: recorder,
+            mountpoint: volume.path,
+            architecture: "amd64"
+        ))
+        try await server.start()
+        let provider = EngineRuntimeProvider(
+            socketPath: fixture.socketPath,
+            volumeInitializerPath: fixture.volumeInitializerPath
+        )
+
+        try await provider.initializeImageVolume(.init(
+            image: "example/image:latest",
+            platform: nil,
+            imageSubpath: "/state",
+            volumeName: "project_state"
+        ))
+
+        let requests = await recorder.requests
+        #expect(requests.contains {
+            $0.target.contains("/build?") && $0.target.contains("platform=linux/amd64")
+        })
+        #expect(requests.contains {
+            $0.target.contains("/containers/create?")
+                && $0.target.contains("platform=linux/amd64")
+        })
+        try await server.shutdown()
+    }
+
+    @Test
     func `platform aware image metadata uses the selected variant`() async throws {
         let fixture = try EngineFixture()
         defer { fixture.cleanup() }

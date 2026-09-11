@@ -417,20 +417,12 @@ func TestInitializeRecoversInterruptedPublication(t *testing.T) {
 	if err := writeJournal(journal, testTransactionID, entries, originalMetadata); err != nil {
 		t.Fatal(err)
 	}
-	firstIdentity, err := identityAt(filepath.Join(destination, "first"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	secondIdentity, err := identityAt(filepath.Join(stage, "second"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := replacePublishingJournal(
 		journal,
 		testTransactionID,
 		[]transactionJournalEntry{
-			{Name: "first", Device: firstIdentity.device, Inode: firstIdentity.inode},
-			{Name: "second", Device: secondIdentity.device, Inode: secondIdentity.inode},
+			mustJournalEntry(t, filepath.Join(destination, "first"), "first"),
+			mustJournalEntry(t, filepath.Join(stage, "second"), "second"),
 		},
 		originalMetadata,
 	); err != nil {
@@ -500,10 +492,6 @@ func TestPublishingJournalPreservesReplacedUserData(t *testing.T) {
 	mustMkdir(t, stage, 0o700)
 	published := filepath.Join(destination, "payload")
 	mustWrite(t, published, "initializer", 0o600)
-	identity, err := identityAt(published)
-	if err != nil {
-		t.Fatal(err)
-	}
 	metadata, err := captureRootMetadata(destination)
 	if err != nil {
 		t.Fatal(err)
@@ -512,9 +500,7 @@ func TestPublishingJournalPreservesReplacedUserData(t *testing.T) {
 	if err := replacePublishingJournal(
 		journal,
 		testTransactionID,
-		[]transactionJournalEntry{{
-			Name: "payload", Device: identity.device, Inode: identity.inode,
-		}},
+		[]transactionJournalEntry{mustJournalEntry(t, published, "payload")},
 		metadata,
 	); err != nil {
 		t.Fatal(err)
@@ -530,6 +516,46 @@ func TestPublishingJournalPreservesReplacedUserData(t *testing.T) {
 	value, err := os.ReadFile(published)
 	if err != nil || string(value) != "replacement-user-data" {
 		t.Fatalf("publishing recovery changed replacement data: %q, %v", value, err)
+	}
+	if _, err := os.Stat(journal); err != nil {
+		t.Fatalf("failed recovery removed its journal: %v", err)
+	}
+}
+
+func TestPublishingJournalPreservesChangedDirectoryDescendants(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	destination := filepath.Join(root, "destination")
+	recovery := filepath.Join(root, "recovery")
+	mustMkdir(t, destination, 0o755)
+	mustMkdir(t, recovery, 0o700)
+	stage := filepath.Join(destination, stagePrefix+testTransactionID)
+	mustMkdir(t, stage, 0o700)
+	published := filepath.Join(destination, "payload")
+	mustMkdir(t, published, 0o700)
+	mustWrite(t, filepath.Join(published, "initializer"), "initializer", 0o600)
+	metadata, err := captureRootMetadata(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := filepath.Join(recovery, journalPrefix+testTransactionID)
+	if err := replacePublishingJournal(
+		journal,
+		testTransactionID,
+		[]transactionJournalEntry{mustJournalEntry(t, published, "payload")},
+		metadata,
+	); err != nil {
+		t.Fatal(err)
+	}
+	concurrent := filepath.Join(published, "concurrent-user-data")
+	mustWrite(t, concurrent, "keep", 0o600)
+
+	if err := recoverTransaction(destination, testTransactionID, journal); err == nil {
+		t.Fatal("expected a changed published tree to fail closed")
+	}
+	value, err := os.ReadFile(concurrent)
+	if err != nil || string(value) != "keep" {
+		t.Fatalf("publishing recovery changed descendant user data: %q, %v", value, err)
 	}
 	if _, err := os.Stat(journal); err != nil {
 		t.Fatalf("failed recovery removed its journal: %v", err)
@@ -553,6 +579,34 @@ func TestRenameNoReplacePreservesDestination(t *testing.T) {
 		value, err := os.ReadFile(path)
 		if err != nil || string(value) != expected {
 			t.Fatalf("no-replace rename changed %s: %q, %v", path, value, err)
+		}
+	}
+}
+
+func TestPublishingTreeIdentitySurvivesAtomicRename(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	stage := filepath.Join(root, "stage")
+	mustMkdir(t, stage, 0o700)
+	for _, name := range []string{"file", "directory"} {
+		source := filepath.Join(stage, name)
+		if name == "directory" {
+			mustMkdir(t, source, 0o700)
+			mustWrite(t, filepath.Join(source, "child"), "child", 0o600)
+		} else {
+			mustWrite(t, source, "file", 0o600)
+		}
+		entry := mustJournalEntry(t, source, name)
+		destination := filepath.Join(root, name)
+		if err := renameNoReplace(source, destination); err != nil {
+			t.Fatal(err)
+		}
+		identity, err := captureTreeIdentity(destination)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !entry.matches(identity) {
+			t.Fatalf("%s tree identity changed during publication", name)
 		}
 	}
 }
@@ -592,16 +646,12 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 	}
 	stage := filepath.Join(destination, stagePrefix+testTransactionID)
 	mustMkdir(t, stage, 0o700)
-	partialIdentity, err := identityAt(filepath.Join(destination, "partial"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := replacePublishingJournal(
 		journal,
 		testTransactionID,
-		[]transactionJournalEntry{{
-			Name: "partial", Device: partialIdentity.device, Inode: partialIdentity.inode,
-		}},
+		[]transactionJournalEntry{
+			mustJournalEntry(t, filepath.Join(destination, "partial"), "partial"),
+		},
 		originalMetadata,
 	); err != nil {
 		t.Fatal(err)
@@ -645,10 +695,12 @@ func TestTransactionRecoveryRejectsUntrustedJournals(t *testing.T) {
 	t.Parallel()
 	for name, payload := range map[string]string{
 		"malformed":        `{`,
-		"wrong identity":   `{"version":3,"transaction":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","phase":"prepared","entries":[]}`,
+		"wrong identity":   `{"version":4,"transaction":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","phase":"prepared","entries":[]}`,
 		"wrong version":    `{"version":2,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"prepared","entries":[]}`,
-		"unsafe entry":     `{"version":3,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"prepared","entries":[{"name":"../escape"}]}`,
-		"missing identity": `{"version":3,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"publishing","entries":[{"name":"payload"}]}`,
+		"unsafe entry":     `{"version":4,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"prepared","entries":[{"name":"../escape"}]}`,
+		"duplicate entry":  `{"version":4,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"prepared","entries":[{"name":"payload"},{"name":"payload"}]}`,
+		"missing identity": `{"version":4,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"publishing","entries":[{"name":"payload"}]}`,
+		"invalid digest":   `{"version":4,"transaction":"01234567-89ab-cdef-0123-456789abcdef","phase":"publishing","entries":[{"name":"payload","device":1,"inode":1,"nodeCount":1,"treeDigest":"not-a-digest"}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			destination := t.TempDir()
@@ -930,5 +982,17 @@ func mustWrite(t *testing.T, path, value string, mode os.FileMode) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(value), mode); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func mustJournalEntry(t *testing.T, path, name string) transactionJournalEntry {
+	t.Helper()
+	identity, err := captureTreeIdentity(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return transactionJournalEntry{
+		Name: name, Device: identity.device, Inode: identity.inode,
+		NodeCount: identity.nodeCount, TreeDigest: identity.digest,
 	}
 }

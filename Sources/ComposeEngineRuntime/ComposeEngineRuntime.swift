@@ -70,7 +70,7 @@ public enum ComposeEngineRuntime {
 public final class EngineRuntimeProvider: @unchecked Sendable {
     private let client: Result<ContainerUnixHTTPClient, any Error>
     private static let volumeInitializations = EngineVolumeInitializationCoordinator()
-    private let volumeInitializerPathOverride: String?
+    let volumeInitializerPathOverride: String?
     let runner: CommandRunning
     let containerBinary: String
     let environmentLauncher: String
@@ -304,13 +304,6 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         guard try pendingTransaction != nil || volumeIsEmpty(destination) else {
             return
         }
-        let volumeInitializerPath = try volumeInitializerPath(for: request.platform)
-        guard FileManager.default.isExecutableFile(atPath: volumeInitializerPath) else {
-            throw ComposeError.invalidProject(
-                "Docker-free image-volume initializer is not executable at \(volumeInitializerPath)"
-            )
-        }
-
         let helperImage = try await volumeInitializerImage(
             sourceImage: request.image,
             platform: request.platform,
@@ -324,6 +317,7 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         let helper = try await createVolumeInitializationHelper(
             request,
             image: helperImage.tag,
+            platform: helperImage.platform,
             helperPath: helperImage.helperPath,
             transaction: transaction
         )
@@ -334,6 +328,7 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
     private func createVolumeInitializationHelper(
         _ request: ComposeImageVolumeInitializationRequest,
         image: String,
+        platform: String?,
         helperPath: String,
         transaction: EngineVolumeInitializationTransaction
     ) async throws -> EngineContainerCreateResponse {
@@ -347,7 +342,7 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             .post,
             target(
                 "/v1.53/containers/create",
-                queryFields: [("name", helperName), ("platform", request.platform)],
+                queryFields: [("name", helperName), ("platform", platform)],
             ),
             body: EngineContainerCreateRequest(
                 image: image,
@@ -389,24 +384,21 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
                 "image reference for Docker-free volume initialization contains whitespace"
             )
         }
-        let helperURL = URL(
-            fileURLWithPath: try volumeInitializerPath(for: platform)
-        )
-        let helper = try Data(
-            contentsOf: helperURL,
-            options: [.mappedIfSafe]
-        )
         let buildLock = try await EngineVolumeInitializationFileLock.acquire(
             path: Self.volumeInitializerBuildLockPath(volumeMountpoint)
         )
         defer { withExtendedLifetime(buildLock) {} }
         for _ in 0 ..< 3 {
             let image = try await inspectImage(sourceImage, platform: platform)
+            let input = try volumeInitializerBuildInput(
+                requestedPlatform: platform,
+                image: image
+            )
             let build = try Self.volumeInitializerBuild(
                 image: image,
-                platform: platform,
-                helper: helper,
-                helperName: helperURL.lastPathComponent,
+                platform: input.platform,
+                helper: input.helper,
+                helperName: input.name,
                 imageSubpath: imageSubpath
             )
             guard try await !imageExists(build.tag) else {
@@ -423,7 +415,7 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
                 sourceReference: sourceImage,
                 sourceID: image.id,
                 build: build,
-                platform: platform
+                platform: input.platform
             ) {
                 return build
             }
@@ -457,13 +449,6 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             helperName: helperName,
             helperPath: helperPath
         )
-    }
-
-    private func volumeInitializerPath(for platform: String?) throws -> String {
-        if let volumeInitializerPathOverride, !volumeInitializerPathOverride.isEmpty {
-            return volumeInitializerPathOverride
-        }
-        return try ComposeEngineRuntime.volumeInitializerPath(platform: platform)
     }
 
     private static func volumeInitializerBuildLockPath(_ volumeMountpoint: URL) -> String {

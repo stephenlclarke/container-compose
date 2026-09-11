@@ -62,6 +62,60 @@ extension ComposeEngineRuntime {
     }
 }
 
+struct EngineVolumeInitializerBuildInput {
+    let platform: String
+    let helper: Data
+    let name: String
+}
+
+extension EngineRuntimeProvider {
+    func volumeInitializerBuildInput(
+        requestedPlatform: String?,
+        image: EngineImageInspect
+    ) throws -> EngineVolumeInitializerBuildInput {
+        let platform = try Self.volumeInitializerPlatform(
+            requested: requestedPlatform,
+            image: image
+        )
+        let path = try volumeInitializerPath(for: platform)
+        guard FileManager.default.isExecutableFile(atPath: path) else {
+            throw ComposeError.invalidProject(
+                "Docker-free image-volume initializer is not executable at \(path)"
+            )
+        }
+        return try EngineVolumeInitializerBuildInput(
+            platform: platform,
+            helper: Data(contentsOf: URL(fileURLWithPath: path), options: [.mappedIfSafe]),
+            name: URL(fileURLWithPath: path).lastPathComponent
+        )
+    }
+
+    func volumeInitializerPath(for platform: String?) throws -> String {
+        if let volumeInitializerPathOverride, !volumeInitializerPathOverride.isEmpty {
+            return volumeInitializerPathOverride
+        }
+        return try ComposeEngineRuntime.volumeInitializerPath(platform: platform)
+    }
+
+    static func volumeInitializerPlatform(
+        requested: String?,
+        image: EngineImageInspect
+    ) throws -> String {
+        if let requested, !requested.isEmpty {
+            return requested
+        }
+        guard image.operatingSystem == "linux",
+              image.architecture == "arm64" || image.architecture == "amd64"
+        else {
+            throw ComposeError.unsupported(
+                "stock Apple image-volume copy-up does not support resolved platform "
+                    + "\(image.operatingSystem)/\(image.architecture)"
+            )
+        }
+        return "linux/\(image.architecture)"
+    }
+}
+
 struct EngineVolumeInitializerImageBuild {
     let tag: String
     let platform: String?

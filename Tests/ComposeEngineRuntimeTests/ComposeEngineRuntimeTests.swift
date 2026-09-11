@@ -882,6 +882,7 @@ struct ImageVolumeResponder: DockerHTTPResponder {
     let recorder: RequestRecorder
     let mountpoint: String
     var hasRepositoryDigest = true
+    var architecture = "arm64"
 
     func respond(to request: DockerHTTPRequest) async -> DockerHTTPResponse {
         await recorder.append(request)
@@ -908,7 +909,7 @@ struct ImageVolumeResponder: DockerHTTPResponder {
                 ? #"["example/image@sha256:digest"]"#
                 : "[]"
             return .fixture(
-                #"{"Id":"sha256:source-image","RepoTags":["example/image:latest"],"RepoDigests":\#(digests),"Created":"2026-09-11T00:00:00Z","Size":42,"VirtualSize":42,"Architecture":"arm64","Os":"linux","Config":{"Env":["PLATFORM=arm64"],"Volumes":{"/state":{}},"Healthcheck":{"Test":["CMD","true"]}}}"#
+                #"{"Id":"sha256:source-image","RepoTags":["example/image:latest"],"RepoDigests":\#(digests),"Created":"2026-09-11T00:00:00Z","Size":42,"VirtualSize":42,"Architecture":"\#(architecture)","Os":"linux","Config":{"Env":["PLATFORM=\#(architecture)"],"Volumes":{"/state":{}},"Healthcheck":{"Test":["CMD","true"]}}}"#
             )
         case let (.post, target) where target.contains("/build?"):
             return .empty(status: 200)

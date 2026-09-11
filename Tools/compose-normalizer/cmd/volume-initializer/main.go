@@ -236,9 +236,11 @@ type transactionJournal struct {
 }
 
 type transactionJournalEntry struct {
-	Name   string `json:"name"`
-	Device uint64 `json:"device,omitempty"`
-	Inode  uint64 `json:"inode,omitempty"`
+	Name       string `json:"name"`
+	Device     uint64 `json:"device,omitempty"`
+	Inode      uint64 `json:"inode,omitempty"`
+	NodeCount  uint64 `json:"nodeCount,omitempty"`
+	TreeDigest string `json:"treeDigest,omitempty"`
 }
 
 type transactionRootMetadata struct {
@@ -261,7 +263,7 @@ func writeJournal(
 		records = append(records, transactionJournalEntry{Name: entry.Name()})
 	}
 	return publishJournal(path, transactionJournal{
-		Version: 3, Transaction: transaction, Phase: journalPhasePrepared,
+		Version: 4, Transaction: transaction, Phase: journalPhasePrepared,
 		Entries: records, Root: root,
 	}, false)
 }
@@ -272,7 +274,7 @@ func replacePublishingJournal(
 	root transactionRootMetadata,
 ) error {
 	return publishJournal(path, transactionJournal{
-		Version: 3, Transaction: transaction, Phase: journalPhasePublishing,
+		Version: 4, Transaction: transaction, Phase: journalPhasePublishing,
 		Entries: entries, Root: root,
 	}, true)
 }
@@ -328,16 +330,22 @@ func recoverTransaction(destination, transaction, journal string) error {
 		if decodeErr := json.Unmarshal(payload, &record); decodeErr != nil {
 			return fmt.Errorf("decode initialization journal: %w", decodeErr)
 		}
-		if record.Version != 3 || record.Transaction != transaction ||
+		if record.Version != 4 || record.Transaction != transaction ||
 			(record.Phase != journalPhasePrepared && record.Phase != journalPhasePublishing) {
 			return errors.New("initialization journal identity does not match")
 		}
+		seenEntries := make(map[string]struct{}, len(record.Entries))
 		for _, entry := range record.Entries {
 			if !safeTopLevelName(entry.Name) {
 				return errors.New("initialization journal contains an unsafe entry")
 			}
+			if _, duplicate := seenEntries[entry.Name]; duplicate {
+				return errors.New("initialization journal contains a duplicate entry")
+			}
+			seenEntries[entry.Name] = struct{}{}
 			if record.Phase == journalPhasePublishing {
-				if entry.Device == 0 || entry.Inode == 0 {
+				if entry.Device == 0 || entry.Inode == 0 || entry.NodeCount == 0 ||
+					!validTreeDigest(entry.TreeDigest) {
 					return errors.New("publishing journal entry has no filesystem identity")
 				}
 				if err := rollbackPublishingEntry(destination, stage, entry); err != nil {
@@ -347,6 +355,11 @@ func recoverTransaction(destination, transaction, journal string) error {
 		}
 		if err := os.Remove(temporary); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("remove stale initialization journal temporary: %w", err)
+		}
+		if record.Phase == journalPhasePublishing {
+			if err := verifyStageContents(stage, record.Entries); err != nil {
+				return err
+			}
 		}
 		if err := os.RemoveAll(stage); err != nil {
 			return fmt.Errorf("remove stale initialization transaction: %w", err)
@@ -382,12 +395,13 @@ func capturePublishingEntries(
 ) ([]transactionJournalEntry, error) {
 	records := make([]transactionJournalEntry, 0, len(entries))
 	for _, entry := range entries {
-		identity, err := identityAt(filepath.Join(stage, entry.Name()))
+		identity, err := captureTreeIdentity(filepath.Join(stage, entry.Name()))
 		if err != nil {
 			return nil, fmt.Errorf("inspect staged entry %s: %w", entry.Name(), err)
 		}
 		records = append(records, transactionJournalEntry{
 			Name: entry.Name(), Device: identity.device, Inode: identity.inode,
+			NodeCount: identity.nodeCount, TreeDigest: identity.digest,
 		})
 	}
 	return records, nil
@@ -403,6 +417,9 @@ func rollbackPublishingEntries(
 			return err
 		}
 	}
+	if err := verifyStageContents(stage, entries); err != nil {
+		return err
+	}
 	if err := os.RemoveAll(stage); err != nil {
 		return fmt.Errorf("remove initialization stage: %w", err)
 	}
@@ -416,12 +433,11 @@ func rollbackPublishingEntry(
 	destination, stage string,
 	entry transactionJournalEntry,
 ) error {
-	expected := fileIdentity{device: entry.Device, inode: entry.Inode}
 	staged := filepath.Join(stage, entry.Name)
-	identity, err := identityAt(staged)
+	identity, err := captureTreeIdentity(staged)
 	switch {
 	case err == nil:
-		if identity != expected {
+		if !entry.matches(identity) {
 			return errors.New("staged initialization entry identity changed")
 		}
 		return nil
@@ -429,31 +445,19 @@ func rollbackPublishingEntry(
 		return fmt.Errorf("inspect staged initialization entry: %w", err)
 	}
 	published := filepath.Join(destination, entry.Name)
-	identity, err = identityAt(published)
+	identity, err = captureTreeIdentity(published)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return nil
 	case err != nil:
 		return fmt.Errorf("inspect published initialization entry: %w", err)
-	case identity != expected:
+	case !entry.matches(identity):
 		return errors.New("published initialization entry identity changed")
 	}
 	if err := os.RemoveAll(published); err != nil {
 		return fmt.Errorf("roll back published entry: %w", err)
 	}
 	return nil
-}
-
-func identityAt(path string) (fileIdentity, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return fileIdentity{}, err
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fileIdentity{}, errors.New("filesystem identity is unavailable")
-	}
-	return fileIdentity{device: uint64(stat.Dev), inode: uint64(stat.Ino)}, nil
 }
 
 func captureRootMetadata(path string) (transactionRootMetadata, error) {
