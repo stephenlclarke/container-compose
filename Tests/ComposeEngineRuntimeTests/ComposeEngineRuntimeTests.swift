@@ -47,6 +47,36 @@ struct ComposeEngineRuntimeTests {
         #expect(first.tarMagic(at: helperOffset) == "ustar")
         #expect(first.tarContents(at: helperOffset) == helper)
         #expect(first.suffix(1024).allSatisfy { $0 == 0 })
+        #expect(first.containsText("FROM example/image:latest"))
+    }
+
+    @Test
+    func `volume initializer cache separates platforms and helper bytes`() {
+        let helper = Data([0, 1, 2])
+        let arm = EngineVolumeInitializerBuildContext.cacheTag(
+            sourceDigest: "example/image@sha256:digest",
+            platform: "linux/arm64",
+            helper: helper
+        )
+        let amd = EngineVolumeInitializerBuildContext.cacheTag(
+            sourceDigest: "example/image@sha256:digest",
+            platform: "linux/amd64",
+            helper: helper
+        )
+        let selectedDefault = EngineVolumeInitializerBuildContext.cacheTag(
+            sourceDigest: "example/image@sha256:digest",
+            platform: nil,
+            helper: helper
+        )
+        let changedHelper = EngineVolumeInitializerBuildContext.cacheTag(
+            sourceDigest: "example/image@sha256:digest",
+            platform: "linux/arm64",
+            helper: Data([0, 1, 3])
+        )
+
+        #expect(arm != amd)
+        #expect(arm != selectedDefault)
+        #expect(arm != changedHelper)
     }
 
     @Test
@@ -343,6 +373,18 @@ struct ComposeEngineRuntimeTests {
             at: volume.appendingPathComponent("lost+found", isDirectory: true),
             withIntermediateDirectories: false
         )
+        let staleStage = volume.appendingPathComponent(
+            EngineVolumeInitializerBuildContext.stagePrefix + "abandoned",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: staleStage,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try Data("partial\n".utf8).write(
+            to: staleStage.appendingPathComponent("partial.txt")
+        )
 
         let recorder = RequestRecorder()
         let server = fixture.server(ImageVolumeResponder(
@@ -387,7 +429,8 @@ struct ComposeEngineRuntimeTests {
             let build = try #require(requests.first { $0.target.contains("/build?") })
             #expect(build.target.contains("dockerfile=Dockerfile"))
             #expect(build.target.contains("platform=linux/arm64"))
-            #expect(build.body.containsText("FROM example/image:latest"))
+            #expect(build.body.containsText("FROM example/image@sha256:digest"))
+            #expect(!build.body.containsText("FROM example/image:latest"))
             #expect(build.body.containsText(#"ENTRYPOINT ["/.compose-volume-initializer"]"#))
         } catch {
             try? await server.shutdown()
@@ -430,6 +473,46 @@ struct ComposeEngineRuntimeTests {
             let requests = await recorder.requests
             #expect(requests.filter { $0.target.contains("/containers/create?") }.count == 1)
             #expect(requests.filter { $0.target.contains("/wait?") }.count == 1)
+        } catch {
+            try? await server.shutdown()
+            throw error
+        }
+        try await server.shutdown()
+    }
+
+    @Test
+    func `image volume initialization preserves stage-like user data`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
+        try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
+        let userData = volume.appendingPathComponent(
+            EngineVolumeInitializerBuildContext.stagePrefix + "user-data"
+        )
+        try Data("keep\n".utf8).write(to: userData)
+
+        let recorder = RequestRecorder()
+        let server = fixture.server(ImageVolumeResponder(
+            recorder: recorder,
+            mountpoint: volume.path,
+        ))
+        try await server.start()
+        do {
+            let provider = EngineRuntimeProvider(
+                socketPath: fixture.socketPath,
+                volumeInitializerPath: fixture.volumeInitializerPath,
+            )
+            try await provider.initializeImageVolume(.init(
+                image: "example/image:latest",
+                platform: nil,
+                imageSubpath: "/state",
+                volumeName: "project_state",
+            ))
+
+            #expect(try String(contentsOf: userData, encoding: .utf8) == "keep\n")
+            let requests = await recorder.requests
+            #expect(requests.filter { $0.target.contains("/containers/create?") }.isEmpty)
+            #expect(requests.filter { $0.target.contains("/build?") }.isEmpty)
         } catch {
             try? await server.shutdown()
             throw error

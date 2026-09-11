@@ -19,6 +19,8 @@ import Darwin
 import Foundation
 
 enum EngineVolumeInitializerBuildContext {
+    static let stagePrefix = ".compose-volume-init-stage-"
+
     private struct Entry {
         let name: String
         let mode: UInt64
@@ -103,6 +105,20 @@ enum EngineVolumeInitializerBuildContext {
             }
         }
         return String(format: "%016llx", hash)
+    }
+
+    static func cacheTag(
+        sourceDigest: String,
+        platform: String?,
+        helper: Data
+    ) -> String {
+        let platformIdentity = platform ?? "<default>"
+        let digest = fnv1aHex([
+            Data(sourceDigest.utf8), Data([0]),
+            Data(platformIdentity.utf8), Data([0]),
+            helper,
+        ])
+        return "devcontainer-volume-initializer:\(digest)"
     }
 }
 

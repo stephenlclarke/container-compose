@@ -184,8 +184,9 @@ func applyMountRootMetadata(path string, info os.FileInfo) error {
 		!metadataAlreadyMatches(path, stat.Uid, stat.Gid, true) {
 		return err
 	}
-	if err := os.Chmod(path, info.Mode().Perm()); err != nil &&
-		!modeAlreadyMatches(path, info.Mode().Perm()) {
+	mode := preservedMode(info.Mode())
+	if err := os.Chmod(path, mode); err != nil &&
+		!modeAlreadyMatches(path, mode) {
 		return err
 	}
 	if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil &&
@@ -202,7 +203,11 @@ func destinationIsEmpty(destination string) (bool, error) {
 		return false, fmt.Errorf("read destination: %w", err)
 	}
 	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), stagePrefix) {
+		owned, err := isOwnedStage(entry)
+		if err != nil {
+			return false, err
+		}
+		if !owned {
 			return false, nil
 		}
 	}
@@ -216,13 +221,32 @@ func removeStaleStages(destination string) error {
 		return fmt.Errorf("read destination stages: %w", err)
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), stagePrefix) {
+		owned, err := isOwnedStage(entry)
+		if err != nil {
+			return err
+		}
+		if owned {
 			if err := os.RemoveAll(filepath.Join(destination, entry.Name())); err != nil {
 				return fmt.Errorf("remove stale initialization stage: %w", err)
 			}
 		}
 	}
 	return nil
+}
+
+// isOwnedStage recognizes the exact private directory shape produced by
+// os.MkdirTemp when the helper starts a copy-up transaction.
+func isOwnedStage(entry os.DirEntry) (bool, error) {
+	if !strings.HasPrefix(entry.Name(), stagePrefix) {
+		return false, nil
+	}
+	info, err := entry.Info()
+	if err != nil {
+		return false, fmt.Errorf("inspect initialization stage: %w", err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && info.IsDir() && info.Mode().Perm() == 0o700 &&
+		stat.Uid == uint32(os.Geteuid()), nil
 }
 
 type fileIdentity struct {
@@ -322,8 +346,9 @@ func applyMetadata(path string, info os.FileInfo, followLink bool) error {
 			!metadataAlreadyMatches(path, stat.Uid, stat.Gid, true) {
 			return err
 		}
-		if err := os.Chmod(path, info.Mode().Perm()); err != nil &&
-			!modeAlreadyMatches(path, info.Mode().Perm()) {
+		mode := preservedMode(info.Mode())
+		if err := os.Chmod(path, mode); err != nil &&
+			!modeAlreadyMatches(path, mode) {
 			return err
 		}
 		return os.Chtimes(path, info.ModTime(), info.ModTime())
@@ -356,7 +381,13 @@ func metadataAlreadyMatches(path string, uid, gid uint32, followLink bool) bool 
 // VirtioFS permission update.
 func modeAlreadyMatches(path string, mode os.FileMode) bool {
 	info, err := os.Stat(path)
-	return err == nil && info.Mode().Perm() == mode
+	return err == nil && preservedMode(info.Mode()) == preservedMode(mode)
+}
+
+// preservedMode returns the permission and special bits that chmod can
+// reproduce without carrying file-type bits from the source inode.
+func preservedMode(mode os.FileMode) os.FileMode {
+	return mode.Perm() | mode&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky)
 }
 
 // regularFileIdentity returns a hard-link identity only for linked regular files.

@@ -71,6 +71,45 @@ func TestInitializeCopiesMetadataLinksAndFiles(t *testing.T) {
 	}
 }
 
+func TestInitializePreservesSpecialPermissionBits(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	destination := filepath.Join(root, "destination")
+	mustMkdir(t, source, 0o750)
+	mustMkdir(t, destination, 0o700)
+	executable := filepath.Join(source, "privileged")
+	mustWrite(t, executable, "executable\n", 0o750)
+	shared := filepath.Join(source, "shared")
+	mustMkdir(t, shared, 0o770)
+	if err := os.Chmod(source, 0o750|os.ModeSetgid); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(executable, 0o750|os.ModeSetuid|os.ModeSetgid); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(shared, 0o770|os.ModeSticky|os.ModeSetgid); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := initialize(source, destination); err != nil {
+		t.Fatal(err)
+	}
+	assertMode := func(path string, expected os.FileMode) {
+		t.Helper()
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actual := preservedMode(info.Mode()); actual != expected {
+			t.Fatalf("unexpected mode for %s: got %v, want %v", path, actual, expected)
+		}
+	}
+	assertMode(destination, 0o750|os.ModeSetgid)
+	assertMode(filepath.Join(destination, "privileged"), 0o750|os.ModeSetuid|os.ModeSetgid)
+	assertMode(filepath.Join(destination, "shared"), 0o770|os.ModeSticky|os.ModeSetgid)
+}
+
 func TestInitializePreservesExistingDestination(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -262,6 +301,29 @@ func TestInitializeRemovesOwnedStaleStage(t *testing.T) {
 	}
 	if value, err := os.ReadFile(filepath.Join(destination, "current")); err != nil || string(value) != "current" {
 		t.Fatalf("current source was not published: %q, %v", value, err)
+	}
+}
+
+func TestInitializePreservesStageLikeUserEntries(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	destination := filepath.Join(root, "destination")
+	mustMkdir(t, source, 0o755)
+	mustMkdir(t, destination, 0o755)
+	stageLikeFile := filepath.Join(destination, stagePrefix+"user-file")
+	mustWrite(t, stageLikeFile, "keep", 0o600)
+	stageLikeDirectory := filepath.Join(destination, stagePrefix+"shared-directory")
+	mustMkdir(t, stageLikeDirectory, 0o755)
+
+	if err := initialize(source, destination); !errors.Is(err, errDestinationNotEmpty) {
+		t.Fatalf("expected non-empty destination, got %v", err)
+	}
+	if value, err := os.ReadFile(stageLikeFile); err != nil || string(value) != "keep" {
+		t.Fatalf("stage-like file was changed: %q, %v", value, err)
+	}
+	if _, err := os.Stat(stageLikeDirectory); err != nil {
+		t.Fatalf("stage-like directory was changed: %v", err)
 	}
 }
 

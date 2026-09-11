@@ -214,3 +214,11 @@ private struct EngineContainerIdentity: Decodable {
         case name = "Name"
     }
 }
+
+extension ISO8601DateFormatter {
+    static func engineDate(from value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: value)
+    }
+}

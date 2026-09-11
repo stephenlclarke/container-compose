@@ -18,6 +18,7 @@ import ComposeCore
 import ComposeRuntimeSPI
 import ContainerEngineWire
 import ContainerUnixHTTPClient
+import Darwin
 import Foundation
 
 /// Wires Compose to the runtime-neutral, current-user Container Engine socket.
@@ -396,7 +397,11 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             contentsOf: URL(fileURLWithPath: volumeInitializerPath),
             options: [.mappedIfSafe]
         )
-        let tag = "devcontainer-volume-initializer:\(EngineVolumeInitializerBuildContext.fnv1aHex([Data(sourceDigest.utf8), helper]))"
+        let tag = EngineVolumeInitializerBuildContext.cacheTag(
+            sourceDigest: sourceDigest,
+            platform: platform,
+            helper: helper
+        )
         let buildLock = try await EngineVolumeInitializationFileLock.acquire(
             path: volumeMountpoint.deletingLastPathComponent()
                 .deletingLastPathComponent()
@@ -409,7 +414,7 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         }
 
         let context = try await EngineVolumeInitializerBuildContext.make(
-            sourceImage: sourceImage,
+            sourceImage: sourceDigest,
             helper: helper
         )
         try await request(
@@ -465,8 +470,11 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             throw ComposeError.invalidProject("runtime volume mountpoint is not a directory")
         }
         let entries = try FileManager.default.contentsOfDirectory(atPath: destination.path)
-        guard entries == ["lost+found"] else {
-            return entries.isEmpty
+        let userEntries = try entries.filter {
+            try !isRecoverableInitializerStage(destination.appendingPathComponent($0))
+        }
+        guard userEntries == ["lost+found"] else {
+            return userEntries.isEmpty
         }
         let recovery = destination.appendingPathComponent("lost+found", isDirectory: true)
         let values = try recovery.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
@@ -474,6 +482,20 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             return false
         }
         return try FileManager.default.contentsOfDirectory(atPath: recovery.path).isEmpty
+    }
+
+    private func isRecoverableInitializerStage(_ entry: URL) throws -> Bool {
+        guard entry.lastPathComponent.hasPrefix(EngineVolumeInitializerBuildContext.stagePrefix) else {
+            return false
+        }
+        var status = stat()
+        guard entry.path.withCString({ Darwin.lstat($0, &status) }) == 0 else {
+            throw ComposeError.invalidProject(
+                "cannot inspect image-volume initialization stage at \(entry.path)"
+            )
+        }
+        return status.st_mode & S_IFMT == S_IFDIR
+            && status.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO) == S_IRWXU
     }
 }
 
@@ -972,13 +994,5 @@ private struct EngineImageSummary: Decodable {
     enum CodingKeys: String, CodingKey {
         case containers = "Containers", created = "Created", id = "Id", labels = "Labels", parentID = "ParentId"
         case repoDigests = "RepoDigests", repoTags = "RepoTags", sharedSize = "SharedSize", size = "Size"
-    }
-}
-
-private extension ISO8601DateFormatter {
-    static func engineDate(from value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: value)
     }
 }
