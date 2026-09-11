@@ -102,10 +102,7 @@ func initialize(source, destination, transaction, recovery string) error {
 	if !sourceInfo.IsDir() {
 		return errors.New("image volume source is not a directory")
 	}
-	if err := removeEmptyExt4Scaffolding(destination); err != nil {
-		return err
-	}
-	empty, err := destinationIsEmpty(destination)
+	empty, err := destinationIsLogicallyEmpty(destination)
 	if err != nil {
 		return err
 	}
@@ -127,6 +124,16 @@ func initialize(source, destination, transaction, recovery string) error {
 	}
 	if err := writeJournal(journal, transaction, entries, destinationMetadata); err != nil {
 		return err
+	}
+	if err := removeEmptyExt4Scaffolding(destination); err != nil {
+		return err
+	}
+	empty, err = destinationIsEmpty(destination)
+	if err != nil {
+		return err
+	}
+	if !empty {
+		return errDestinationNotEmpty
 	}
 
 	stage := filepath.Join(destination, stagePrefix+transaction)
@@ -413,6 +420,36 @@ func destinationIsEmpty(destination string) (bool, error) {
 		return false, fmt.Errorf("read destination: %w", err)
 	}
 	return len(entries) == 0, nil
+}
+
+// destinationIsLogicallyEmpty recognizes only the empty ext4 recovery
+// directory created by stock Apple container. It performs no mutation, so the
+// untouched root metadata can be journaled before the recovery directory is
+// removed.
+func destinationIsLogicallyEmpty(destination string) (bool, error) {
+	entries, err := os.ReadDir(destination)
+	if err != nil {
+		return false, fmt.Errorf("read destination: %w", err)
+	}
+	if len(entries) == 0 {
+		return true, nil
+	}
+	if len(entries) != 1 || entries[0].Name() != "lost+found" {
+		return false, nil
+	}
+	path := filepath.Join(destination, entries[0].Name())
+	info, err := os.Lstat(path)
+	if err != nil {
+		return false, fmt.Errorf("inspect ext4 recovery directory: %w", err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return false, nil
+	}
+	recoveryEntries, err := os.ReadDir(path)
+	if err != nil {
+		return false, fmt.Errorf("read ext4 recovery directory: %w", err)
+	}
+	return len(recoveryEntries) == 0, nil
 }
 
 type fileIdentity struct {

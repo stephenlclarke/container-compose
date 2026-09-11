@@ -193,17 +193,22 @@ func TestInitializePreservesExistingDestination(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "source")
 	destination := filepath.Join(root, "destination")
+	recovery := filepath.Join(root, "recovery")
 	mustMkdir(t, source, 0o755)
 	mustMkdir(t, destination, 0o755)
+	mustMkdir(t, recovery, 0o700)
 	mustWrite(t, filepath.Join(source, "new"), "new", 0o644)
 	mustWrite(t, filepath.Join(destination, "existing"), "keep", 0o644)
 
-	err := initialize(source, destination, testTransactionID, t.TempDir())
+	err := initialize(source, destination, testTransactionID, recovery)
 	if !errors.Is(err, errDestinationNotEmpty) {
 		t.Fatalf("expected nonempty error, got %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(destination, "new")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("source content was unexpectedly published: %v", err)
+	}
+	if entries, err := os.ReadDir(recovery); err != nil || len(entries) != 0 {
+		t.Fatalf("nonempty destination created recovery state: %v, %v", entries, err)
 	}
 }
 
@@ -438,6 +443,8 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 	recovery := filepath.Join(root, "recovery")
 	mustMkdir(t, destination, 0o750)
 	mustMkdir(t, recovery, 0o700)
+	lostAndFound := filepath.Join(destination, "lost+found")
+	mustMkdir(t, lostAndFound, 0o700)
 	recoveryXattr := "io.github.stephenlclarke.container-compose.recovery"
 	if err := unix.Setxattr(destination, recoveryXattr, []byte("original"), 0); err != nil {
 		t.Fatal(err)
@@ -457,6 +464,9 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 	}
 	journal := filepath.Join(recovery, journalPrefix+testTransactionID)
 	if err := writeJournal(journal, testTransactionID, entries, originalMetadata); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(lostAndFound); err != nil {
 		t.Fatal(err)
 	}
 	stage := filepath.Join(destination, stagePrefix+testTransactionID)
