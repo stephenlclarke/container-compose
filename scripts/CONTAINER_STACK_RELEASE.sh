@@ -6127,6 +6127,30 @@ latest_stable_documentation_dispatch() {
     --jq "map(select((.displayTitle | startswith(\"${title}\")) and .headSha == \"${control_sha}\")) | .[0] | [(.databaseId // \"\"), (.status // \"\"), (.conclusion // \"\")] | @tsv"
 }
 
+# Recover the logical dispatch mode for one acknowledged documentation run.
+documentation_dispatch_mode_for_run() {
+  local version="$1" control_sha="$2" run_id="$3" record mode
+  record="$(python3 "${RELEASE_DISPATCH_JOURNAL_TOOL}" find-run \
+    --root "${RELEASE_RETAINED_ROOT}" --workflow docs.yml \
+    --version "${version}" --control-sha "${control_sha}" \
+    --run-id "${run_id}")"
+  if jq -e 'length == 0' <<<"${record}" >/dev/null; then
+    printf 'docs-regenerate-%s\n' "${run_id}"
+    return 0
+  fi
+  mode="$(jq -r '.mode // empty' <<<"${record}")"
+  if [[ -z "${mode}" ]]; then
+    printf 'docs-regenerate-%s\n' "${run_id}"
+    return 0
+  fi
+  if [[ "${mode}" != docs && ! "${mode}" =~ ^docs-regenerate-[1-9][0-9]*$ ]]; then
+    printf 'documentation run %s has no safe retained dispatch mode\n' \
+      "${run_id}" >&2
+    return 2
+  fi
+  printf '%s\n' "${mode}"
+}
+
 # Dispatch a workflow through the API that returns its exact run ID. The
 # expected control SHA is also an input, so a moving main branch fails before
 # expensive or mutating work instead of leaving title-based polling ambiguous.
@@ -7194,7 +7218,7 @@ retain_stable_documentation_artifacts() {
 
 # Dispatch or reuse the exact documentation workflow for a stable release.
 dispatch_stable_documentation() {
-  local version="$1" details previous_run status conclusion control_sha run_id
+  local version="$1" details previous_run status conclusion control_sha run_id retry_mode
   print_header "publish released documentation for ${version}"
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -7242,7 +7266,13 @@ dispatch_stable_documentation() {
     return 0
   fi
 
-  run_id="$(dispatch_github_workflow_run docs.yml "${version}" "${control_sha}")"
+  retry_mode=docs
+  if [[ -n "${previous_run}" && "${status}" == "completed" ]]; then
+    retry_mode="$(documentation_dispatch_mode_for_run \
+      "${version}" "${control_sha}" "${previous_run}")"
+  fi
+  run_id="$(dispatch_github_workflow_run docs.yml "${version}" \
+    "${control_sha}" "" "${retry_mode}")"
   printf 'stable documentation started: %s\n' "${run_id}"
   if ! wait_for_github_run_success \
     "${run_id}" "stable documentation and Pages deployment" \

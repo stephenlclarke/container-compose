@@ -45,18 +45,20 @@ FORMULA = importlib.util.module_from_spec(FORMULA_SPEC)
 FORMULA_SPEC.loader.exec_module(FORMULA)
 SEMVER = re.compile(r"[0-9]+[.][0-9]+[.][0-9]+")
 REQUEST_ID = re.compile(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}")
-EXPECTED_RELEASE_ASSETS = (
+EXPECTED_DRAFT_ASSETS = (
     "container-compose-plugin-release-arm64.tar.gz",
     "container-compose-plugin-release-arm64.tar.gz.sha256",
     "container-release-arm64.tar.gz",
     "container-release-arm64.tar.gz.sha256",
-    "container-vminit-arm64.oci.tar",
-    "container-vminit-arm64.oci.tar.sha256",
     "stable-release-authority.tar.gz",
     "stable-release-authority.tar.gz.sha256",
     "release-highlights.json",
     "quality-snapshot.svg",
 )
+EXPECTED_RELEASE_ASSETS = EXPECTED_DRAFT_ASSETS[:4] + (
+    "container-vminit-arm64.oci.tar",
+    "container-vminit-arm64.oci.tar.sha256",
+) + EXPECTED_DRAFT_ASSETS[4:]
 EXPECTED_DOCUMENTATION_ASSETS = (
     "compose.tgz",
     "container.tgz",
@@ -213,11 +215,23 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
     assets = release.get("assets", [])
     if not isinstance(assets, list):
         return {"reason": "GitHub returned malformed release assets", "state": "unavailable"}
+    if not all(
+        isinstance(asset, dict)
+        and isinstance(asset.get("name"), str)
+        and bool(asset["name"])
+        for asset in assets
+    ):
+        return {"reason": "GitHub returned malformed release assets", "state": "unavailable"}
     names = sorted(
         asset["name"]
         for asset in assets
-        if isinstance(asset, dict) and isinstance(asset.get("name"), str)
     )
+    if release.get("draft") is False and release.get("prerelease") is False:
+        release_state = "published"
+    elif release.get("draft") is True:
+        release_state = "draft"
+    else:
+        release_state = "invalid"
     result = {
         "assets": names,
         "asset_digests": {
@@ -230,11 +244,12 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
         "draft": release.get("draft"),
         "id": release.get("id"),
         "prerelease": release.get("prerelease"),
-        "state": "published"
-        if release.get("draft") is False and release.get("prerelease") is False
-        else "invalid",
+        "state": release_state,
     }
-    result["missing_assets"] = sorted(set(EXPECTED_RELEASE_ASSETS) - set(names))
+    expected = (
+        EXPECTED_DRAFT_ASSETS if release_state == "draft" else EXPECTED_RELEASE_ASSETS
+    )
+    result["missing_assets"] = sorted(set(expected) - set(names))
     return result
 
 
@@ -243,7 +258,31 @@ def reconcile_remote_digests(
 ) -> dict[str, Any]:
     """Bind API-provided remote asset digests to the retained manifest."""
     result = dict(remote)
-    if remote.get("state") != "published" or manifest is None:
+    if remote.get("state") not in {"draft", "published"} or manifest is None:
+        return result
+    names = remote.get("assets")
+    if not isinstance(names, list) or not all(
+        isinstance(name, str) and name for name in names
+    ):
+        result.update(
+            reason="remote release asset inventory is malformed",
+            state="unavailable",
+        )
+        return result
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    expected = (
+        EXPECTED_DRAFT_ASSETS
+        if remote.get("state") == "draft"
+        else EXPECTED_RELEASE_ASSETS
+    )
+    unexpected = sorted(set(names) - set(expected))
+    result["duplicate_assets"] = duplicates
+    result["unexpected_assets"] = unexpected
+    if duplicates or unexpected:
+        result.update(
+            reason="remote release asset inventory conflicts with retained closure",
+            state="conflicting",
+        )
         return result
     observed = remote.get("asset_digests")
     if not isinstance(observed, dict):
@@ -254,9 +293,10 @@ def reconcile_remote_digests(
         return result
     conflicts: dict[str, dict[str, str]] = {}
     unavailable: list[str] = []
-    for name in EXPECTED_RELEASE_ASSETS:
+    for name in names:
         record = manifest["assets"].get(name)
         if not isinstance(record, dict) or not isinstance(record.get("sha256"), str):
+            unavailable.append(name)
             continue
         digest = observed.get(name)
         if digest is None:
@@ -273,7 +313,7 @@ def reconcile_remote_digests(
             reason="remote release asset digests conflict with retained bytes",
             state="conflicting",
         )
-    elif unavailable and not result.get("missing_assets"):
+    elif unavailable:
         result.update(
             reason="remote release asset digests are unavailable",
             state="unavailable",
@@ -663,7 +703,12 @@ def plan_recovery(
     postconditions: dict[str, Any],
 ) -> dict[str, Any]:
     """Return a pure, single-next-step recovery plan from typed observations."""
-    missing_release_assets = sorted(set(missing) & set(EXPECTED_RELEASE_ASSETS))
+    expected_release_assets = (
+        EXPECTED_DRAFT_ASSETS
+        if remote.get("state") == "draft"
+        else EXPECTED_RELEASE_ASSETS
+    )
+    missing_release_assets = sorted(set(missing) & set(expected_release_assets))
     missing_documentation = sorted(
         set(missing) & set(EXPECTED_DOCUMENTATION_ASSETS)
     )
@@ -706,6 +751,15 @@ def plan_recovery(
             prerequisites=["retained manifest", "remote release identity and digests"],
             side_effects=[],
             authority="release maintainer decision",
+            invalidates=["formulae", "pages"],
+        )
+    if remote.get("state") == "draft" and not missing_release_assets:
+        return recovery_action(
+            "resume-stable-draft",
+            "reconcile and publish the existing stable release draft",
+            prerequisites=["retained-complete manifest", "matching stable draft"],
+            side_effects=["upload missing assets", "publish stable release"],
+            authority="retained publication authority",
             invalidates=["formulae", "pages"],
         )
     if (

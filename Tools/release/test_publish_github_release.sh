@@ -32,12 +32,16 @@ if [[ "$1" == "api" ]]; then
     printf 'release lookup must preserve the response body\n' >&2
     exit 64
   fi
+  if [[ "$2" == */releases/latest ]]; then
+    printf '%s\n' "${MOCK_LATEST_TAG:-1.2.3}"
+    exit 0
+  fi
   case "${MOCK_RELEASE_STATE}" in
     exists)
       exit 0
       ;;
     draft)
-      printf '{"draft":true}\n'
+      printf '{"draft":true,"name":"Foreign title","body":"foreign notes","prerelease":true}\n'
       exit 0
       ;;
     missing)
@@ -53,6 +57,74 @@ if [[ "$1" == "api" ]]; then
   exit 2
 fi
 
+if [[ "$1" == "release" && "$2" == "view" ]]; then
+  view_count=0
+  if [[ -f "${MOCK_VIEW_COUNT_FILE}" ]]; then
+    view_count="$(<"${MOCK_VIEW_COUNT_FILE}")"
+  fi
+  view_count=$((view_count + 1))
+  printf '%s\n' "${view_count}" > "${MOCK_VIEW_COUNT_FILE}"
+  if (( view_count == 2 )) && [[ -n "${MOCK_RACE_ASSET:-}" ]]; then
+    printf '%s\n' "${MOCK_RACE_ASSET}" >> "${MOCK_REMOTE_STATE}"
+  fi
+  if (( view_count == 4 )) && [[ -n "${MOCK_POST_PUBLISH_RACE_ASSET:-}" ]]; then
+    printf '%s\n' "${MOCK_POST_PUBLISH_RACE_ASSET}" >> "${MOCK_REMOTE_STATE}"
+  fi
+  if [[ " $* " == *"isDraft"* ]]; then
+    digest="$(printf '%s' "${MOCK_DOWNLOAD_CONTENT:-}" | shasum -a 256 | awk '{print $1}')"
+    if [[ "${MOCK_RELEASE_STATE}" == "exists" ]] || (( view_count >= 4 )); then
+      draft=false
+    else
+      draft="${MOCK_FINAL_DRAFT_STATE:-true}"
+    fi
+    printf '{"isDraft":%s,"isImmutable":%s,"isPrerelease":false,"tagName":"1.2.3","targetCommitish":"0123456789012345678901234567890123456789","name":"%s","body":"%s","assets":[' \
+      "${draft}" "${MOCK_PUBLISHED_IMMUTABLE:-true}" \
+      "${MOCK_PUBLISHED_NAME:-1.2.3}" "${MOCK_PUBLISHED_BODY:-}"
+    separator=""
+    while IFS= read -r name; do
+      [[ -n "${name}" ]] || continue
+      if [[ -n "${MOCK_FINAL_DIGEST_MISMATCH:-}" && \
+        "${name}" == "${MOCK_FINAL_DIGEST_MISMATCH}" ]]; then
+        asset_digest="$(printf '%064d' 0)"
+      else
+        asset_digest="${digest}"
+      fi
+      printf '%s' "${separator}"
+      jq -cn --arg name "${name}" --arg digest "sha256:${asset_digest}" \
+        '{name: $name, digest: $digest}'
+      separator=,
+    done < "${MOCK_REMOTE_STATE}"
+    printf ']}\n'
+  else
+    cat "${MOCK_REMOTE_STATE}"
+  fi
+  exit 0
+fi
+
+if [[ "$1" == "release" && "$2" == "download" ]]; then
+  while (( $# > 0 )); do
+    case "$1" in
+      --pattern)
+        pattern="$2"
+        shift 2
+        ;;
+      --dir)
+        directory="$2"
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+  printf '%s' "${MOCK_DOWNLOAD_CONTENT:-}" > "${directory}/${pattern}"
+  exit 0
+fi
+
+if [[ "$1" == "release" && "$2" == "upload" ]]; then
+  basename "$4" >> "${MOCK_REMOTE_STATE}"
+fi
+
 printf '%s\n' "$*" >> "${MOCK_GH_CALLS}"
 EOF
 chmod +x "${temporary_directory}/bin/gh"
@@ -64,6 +136,10 @@ set -Eeuo pipefail
 printf '%s\n' "$*" >> "${MOCK_GIT_CALLS}"
 if [[ "$1" == rev-list ]]; then
   printf '0123456789012345678901234567890123456789\n'
+fi
+if [[ "$1" == ls-remote ]]; then
+  printf '%s\trefs/tags/1.2.3\n' \
+    "${MOCK_REMOTE_TAG_SHA:-0123456789012345678901234567890123456789}"
 fi
 EOF
 chmod +x "${temporary_directory}/bin/git"
@@ -91,6 +167,8 @@ run_publisher() {
     release_prerelease="false"
     release_mutable="false"
   fi
+  printf '%s' "${6:-}" > "${3}.remote"
+  printf '0\n' > "${3}.views"
 
   GH="${temporary_directory}/bin/gh" \
     GIT="${temporary_directory}/bin/git" \
@@ -109,6 +187,19 @@ run_publisher() {
     RELEASE_RETAINED_COMPLETE_MANIFEST="${retained_manifest}" \
     RELEASE_EXTRA_ASSETS_FILE="${4:-}" \
     MOCK_RELEASE_STATE="$2" \
+    MOCK_REMOTE_ASSETS="${6:-}" \
+    MOCK_DOWNLOAD_CONTENT="${7:-}" \
+    MOCK_RACE_ASSET="${8:-}" \
+    MOCK_FINAL_DIGEST_MISMATCH="${9:-}" \
+    MOCK_FINAL_DRAFT_STATE="${10:-true}" \
+    MOCK_POST_PUBLISH_RACE_ASSET="${11:-}" \
+    MOCK_PUBLISHED_IMMUTABLE="${12:-true}" \
+    MOCK_PUBLISHED_NAME="${13:-1.2.3}" \
+    MOCK_PUBLISHED_BODY="${14:-}" \
+    MOCK_LATEST_TAG="${15:-1.2.3}" \
+    MOCK_REMOTE_TAG_SHA="${16:-0123456789012345678901234567890123456789}" \
+    MOCK_REMOTE_STATE="${3}.remote" \
+    MOCK_VIEW_COUNT_FILE="${3}.views" \
     MOCK_GH_CALLS="$3" \
     MOCK_GIT_CALLS="${3}.git" \
     "${publisher}"
@@ -124,12 +215,21 @@ if [[ -e "${stable_existing_calls}" ]]; then
   exit 1
 fi
 
+stable_existing_exact_calls="${temporary_directory}/stable-existing-exact.calls"
+run_publisher tag exists "${stable_existing_exact_calls}" "" publish \
+  $'container-compose-plugin-release-arm64.tar.gz\ncontainer-compose-plugin-release-arm64.tar.gz.sha256\n'
+if [[ -e "${stable_existing_exact_calls}" ]] && \
+  grep -Eq 'release (upload|edit|create|delete)' "${stable_existing_exact_calls}"; then
+  printf 'exact published stable recovery performed a mutation\n' >&2
+  exit 1
+fi
+
 stable_create_calls="${temporary_directory}/stable-create.calls"
 run_publisher tag missing "${stable_create_calls}"
-grep -Fqx "release create 1.2.3 --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --verify-tag --latest --draft" "${stable_create_calls}"
+grep -Fqx "release create 1.2.3 --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --target 0123456789012345678901234567890123456789 --verify-tag --latest --draft" "${stable_create_calls}"
 grep -Fqx "release upload 1.2.3 ${asset} --repo stephenlclarke/container-compose" "${stable_create_calls}"
 grep -Fqx "release upload 1.2.3 ${checksum} --repo stephenlclarke/container-compose" "${stable_create_calls}"
-grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --draft=false --latest" "${stable_create_calls}"
+grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --title 1.2.3 --notes-file ${notes} --draft=false --prerelease=false --latest" "${stable_create_calls}"
 if grep -Eq 'clobber|release delete' "${stable_create_calls}"; then
   printf 'stable publication attempted to replace immutable state\n' >&2
   exit 1
@@ -139,9 +239,128 @@ stable_draft_calls="${temporary_directory}/stable-draft.calls"
 run_publisher tag draft "${stable_draft_calls}"
 grep -Fqx "release upload 1.2.3 ${asset} --repo stephenlclarke/container-compose" "${stable_draft_calls}"
 grep -Fqx "release upload 1.2.3 ${checksum} --repo stephenlclarke/container-compose" "${stable_draft_calls}"
-grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --draft=false --latest" "${stable_draft_calls}"
+grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --title 1.2.3 --notes-file ${notes} --draft=false --prerelease=false --latest" "${stable_draft_calls}"
 if grep -Eq 'release create|clobber|release delete' "${stable_draft_calls}"; then
   printf 'stable draft recovery recreated or clobbered release state\n' >&2
+  exit 1
+fi
+
+stable_draft_unexpected_calls="${temporary_directory}/stable-draft-unexpected.calls"
+if run_publisher tag draft "${stable_draft_unexpected_calls}" "" publish \
+  $'container-vminit-arm64.oci.tar\ncontainer-vminit-arm64.oci.tar.sha256\n'; then
+  printf 'stable draft recovery accepted an unexpected asset\n' >&2
+  exit 1
+fi
+if [[ -e "${stable_draft_unexpected_calls}" ]] && \
+  grep -Eq 'release (upload|edit|create|delete)' "${stable_draft_unexpected_calls}"; then
+  printf 'stable draft recovery mutated a draft with an unexpected asset\n' >&2
+  exit 1
+fi
+
+stable_draft_mismatch_calls="${temporary_directory}/stable-draft-mismatch.calls"
+if run_publisher tag draft "${stable_draft_mismatch_calls}" "" publish \
+  "$(basename "${asset}")" 'conflicting bytes'; then
+  printf 'stable draft recovery accepted a mismatched asset\n' >&2
+  exit 1
+fi
+if [[ -e "${stable_draft_mismatch_calls}" ]] && \
+  grep -Eq 'release (upload|edit|create|delete)' "${stable_draft_mismatch_calls}"; then
+  printf 'stable draft recovery mutated a draft with a mismatched asset\n' >&2
+  exit 1
+fi
+
+stable_draft_late_mismatch_calls="${temporary_directory}/stable-draft-late-mismatch.calls"
+if run_publisher tag draft "${stable_draft_late_mismatch_calls}" "" publish \
+  "$(basename "${checksum}")" 'conflicting bytes'; then
+  printf 'stable draft recovery accepted a later mismatched asset\n' >&2
+  exit 1
+fi
+if [[ -e "${stable_draft_late_mismatch_calls}" ]] && \
+  grep -Eq 'release (upload|edit|create|delete)' "${stable_draft_late_mismatch_calls}"; then
+  printf 'stable draft recovery mutated before validating every existing asset\n' >&2
+  exit 1
+fi
+
+stable_draft_race_calls="${temporary_directory}/stable-draft-race.calls"
+if run_publisher tag draft "${stable_draft_race_calls}" "" publish \
+  "" "" 'foreign-after-upload.tar.gz'; then
+  printf 'stable draft recovery published after a concurrent inventory change\n' >&2
+  exit 1
+fi
+if ! grep -Fq 'release upload' "${stable_draft_race_calls}" || \
+  grep -Fq 'release edit' "${stable_draft_race_calls}"; then
+  printf 'stable draft recovery did not block publication after the inventory race\n' >&2
+  exit 1
+fi
+
+stable_draft_digest_race_calls="${temporary_directory}/stable-draft-digest-race.calls"
+if run_publisher tag draft "${stable_draft_digest_race_calls}" "" publish \
+  "" "" "" "$(basename "${asset}")"; then
+  printf 'stable draft recovery published after a concurrent digest change\n' >&2
+  exit 1
+fi
+if ! grep -Fq 'release upload' "${stable_draft_digest_race_calls}" || \
+  grep -Fq 'release edit' "${stable_draft_digest_race_calls}"; then
+  printf 'stable draft recovery did not block publication after the digest race\n' >&2
+  exit 1
+fi
+
+stable_draft_published_race_calls="${temporary_directory}/stable-draft-published-race.calls"
+if run_publisher tag draft "${stable_draft_published_race_calls}" "" publish \
+  "" "" "" "" false; then
+  printf 'stable draft recovery edited a concurrently published release\n' >&2
+  exit 1
+fi
+if ! grep -Fq 'release upload' "${stable_draft_published_race_calls}" || \
+  grep -Fq 'release edit' "${stable_draft_published_race_calls}"; then
+  printf 'stable draft recovery did not stop after concurrent publication\n' >&2
+  exit 1
+fi
+
+stable_post_publish_race_calls="${temporary_directory}/stable-post-publish-race.calls"
+if run_publisher tag draft "${stable_post_publish_race_calls}" "" publish \
+  "" "" "" "" true 'foreign-after-publication.tar.gz'; then
+  printf 'stable publication accepted a changed immutable snapshot\n' >&2
+  exit 1
+fi
+if ! grep -Fq 'release edit' "${stable_post_publish_race_calls}"; then
+  printf 'stable publication did not exercise post-publication verification\n' >&2
+  exit 1
+fi
+
+stable_mutable_publication_calls="${temporary_directory}/stable-mutable-publication.calls"
+if run_publisher tag draft "${stable_mutable_publication_calls}" "" publish \
+  "" "" "" "" true "" false; then
+  printf 'stable publication accepted a mutable published release\n' >&2
+  exit 1
+fi
+
+stable_metadata_drift_calls="${temporary_directory}/stable-metadata-drift.calls"
+if run_publisher tag exists "${stable_metadata_drift_calls}" "" publish \
+  $'container-compose-plugin-release-arm64.tar.gz\ncontainer-compose-plugin-release-arm64.tar.gz.sha256\n' \
+  "" "" "" true "" true 'Foreign title'; then
+  printf 'stable recovery accepted changed release metadata\n' >&2
+  exit 1
+fi
+
+stable_latest_drift_calls="${temporary_directory}/stable-latest-drift.calls"
+if run_publisher tag exists "${stable_latest_drift_calls}" "" publish \
+  $'container-compose-plugin-release-arm64.tar.gz\ncontainer-compose-plugin-release-arm64.tar.gz.sha256\n' \
+  "" "" "" true "" true 1.2.3 "" 1.2.2; then
+  printf 'stable recovery accepted a changed latest-release pointer\n' >&2
+  exit 1
+fi
+
+stable_tag_drift_calls="${temporary_directory}/stable-tag-drift.calls"
+if run_publisher tag exists "${stable_tag_drift_calls}" "" publish \
+  $'container-compose-plugin-release-arm64.tar.gz\ncontainer-compose-plugin-release-arm64.tar.gz.sha256\n' \
+  "" "" "" true "" true 1.2.3 "" 1.2.3 \
+  1111111111111111111111111111111111111111; then
+  printf 'stable recovery accepted a retargeted published tag\n' >&2
+  exit 1
+fi
+if ! grep -Fq 'release edit' "${stable_mutable_publication_calls}"; then
+  printf 'stable immutable verification did not run after publication\n' >&2
   exit 1
 fi
 

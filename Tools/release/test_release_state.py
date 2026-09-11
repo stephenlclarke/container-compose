@@ -147,6 +147,123 @@ class ReleaseStateTests(unittest.TestCase):
         self.assertEqual(remote["state"], "unavailable")
         self.assertIn("malformed", remote["reason"])
 
+    def test_nonprerelease_draft_is_planned_as_resumable(self) -> None:
+        completed = self.completed(
+            {
+                "assets": [],
+                "draft": True,
+                "id": 123,
+                "prerelease": False,
+            }
+        )
+        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+            remote = MODULE.remote_release("owner/repo", "1.2.3", False)
+
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
+        }
+        remote = MODULE.reconcile_remote_digests(remote, {"assets": assets})
+        self.assertEqual(remote["state"], "draft")
+        action = MODULE.plan_recovery(
+            [],
+            [],
+            [
+                "container-vminit-arm64.oci.tar",
+                "container-vminit-arm64.oci.tar.sha256",
+            ],
+            remote,
+            {"formulae": {"state": "deferred"}, "pages": {"state": "deferred"}},
+        )
+        self.assertEqual(action["name"], "resume-stable-draft")
+        self.assertIn("publish", action["summary"])
+
+    def test_stale_prerelease_draft_is_planned_as_resumable(self) -> None:
+        completed = self.completed(
+            {
+                "assets": [],
+                "draft": True,
+                "id": 123,
+                "prerelease": True,
+            }
+        )
+        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+            remote = MODULE.remote_release("owner/repo", "1.2.3", False)
+
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
+        }
+        remote = MODULE.reconcile_remote_digests(remote, {"assets": assets})
+        action = MODULE.plan_recovery(
+            [],
+            [],
+            [],
+            remote,
+            {"formulae": {"state": "deferred"}, "pages": {"state": "deferred"}},
+        )
+
+        self.assertEqual(remote["state"], "draft")
+        self.assertEqual(action["name"], "resume-stable-draft")
+
+    def test_draft_with_unexpected_asset_is_a_conflict(self) -> None:
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
+        }
+        remote = {
+            "asset_digests": {"foreign.tar.gz": "sha256:" + "a" * 64},
+            "assets": ["foreign.tar.gz"],
+            "missing_assets": list(MODULE.EXPECTED_RELEASE_ASSETS),
+            "state": "draft",
+        }
+
+        observed = MODULE.reconcile_remote_digests(remote, {"assets": assets})
+
+        self.assertEqual(observed["state"], "conflicting")
+        self.assertEqual(observed["unexpected_assets"], ["foreign.tar.gz"])
+
+    def test_draft_rejects_postpublication_init_asset_pair(self) -> None:
+        names = [
+            "container-vminit-arm64.oci.tar",
+            "container-vminit-arm64.oci.tar.sha256",
+        ]
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
+        }
+        remote = {
+            "asset_digests": {
+                name: "sha256:" + str(assets[name]["sha256"]) for name in names
+            },
+            "assets": names,
+            "missing_assets": list(MODULE.EXPECTED_DRAFT_ASSETS),
+            "state": "draft",
+        }
+
+        observed = MODULE.reconcile_remote_digests(remote, {"assets": assets})
+
+        self.assertEqual(observed["state"], "conflicting")
+        self.assertEqual(observed["unexpected_assets"], sorted(names))
+
+    def test_draft_with_mismatched_asset_digest_is_a_conflict(self) -> None:
+        name = MODULE.EXPECTED_RELEASE_ASSETS[0]
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
+        }
+        remote = {
+            "asset_digests": {name: "sha256:" + "b" * 64},
+            "assets": [name],
+            "missing_assets": sorted(set(MODULE.EXPECTED_RELEASE_ASSETS) - {name}),
+            "state": "draft",
+        }
+
+        observed = MODULE.reconcile_remote_digests(remote, {"assets": assets})
+
+        self.assertEqual(observed["state"], "conflicting")
+        self.assertIn(name, observed["digest_conflicts"])
+
     def test_complete_local_store_plans_missing_remote_assets_before_postconditions(
         self,
     ) -> None:
@@ -315,7 +432,7 @@ class ReleaseStateTests(unittest.TestCase):
         }
 
         observed = MODULE.reconcile_remote_digests(
-            remote, {"assets": assets}
+            {**remote, "assets": [name]}, {"assets": assets}
         )
 
         self.assertEqual(observed["state"], "conflicting")
@@ -329,7 +446,12 @@ class ReleaseStateTests(unittest.TestCase):
         }
 
         observed = MODULE.reconcile_remote_digests(
-            {"asset_digests": {}, "missing_assets": [], "state": "published"},
+            {
+                "asset_digests": {},
+                "assets": list(MODULE.EXPECTED_RELEASE_ASSETS),
+                "missing_assets": [],
+                "state": "published",
+            },
             {"assets": assets},
         )
 

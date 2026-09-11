@@ -211,11 +211,118 @@ create_release() {
 create_stable_draft() {
   "${GH}" release create "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
     --title "${RELEASE_TITLE}" --notes-file "${RELEASE_NOTES_FILE}" \
-    --verify-tag "${release_flags[@]}" --draft
+    --target "${PUBLISH_SHA}" --verify-tag "${release_flags[@]}" --draft
+}
+
+validate_stable_draft_asset_names() {
+  local remote_names="$1" expected_names="$2" require_complete="$3" name count
+  while IFS= read -r name; do
+    [[ -n "${name}" ]] || continue
+    if ! grep -Fqx -- "${name}" <<<"${expected_names}"; then
+      printf 'stable draft contains an unexpected asset: %s\n' "${name}" >&2
+      return 1
+    fi
+    count="$(grep -Fxc -- "${name}" <<<"${remote_names}" || true)"
+    if (( count != 1 )); then
+      printf 'stable draft contains a duplicate asset name: %s\n' "${name}" >&2
+      return 1
+    fi
+  done <<<"${remote_names}"
+  if [[ "${require_complete}" == "true" ]]; then
+    while IFS= read -r name; do
+      [[ -n "${name}" ]] || continue
+      if ! grep -Fqx -- "${name}" <<<"${remote_names}"; then
+        printf 'stable draft is missing an uploaded asset: %s\n' "${name}" >&2
+        return 1
+      fi
+    done <<<"${expected_names}"
+  fi
+}
+
+# Verify GitHub's final asset inventory and server-computed digests immediately
+# before making an immutable stable release public.
+validate_stable_draft_asset_digests() {
+  local remote_assets="$1" asset name expected_digest remote_digest count
+  for asset in "${release_assets[@]}"; do
+    name="$(basename "${asset}")"
+    count="$(awk -F '\t' -v name="${name}" '$1 == name { count += 1 } END { print count + 0 }' \
+      <<<"${remote_assets}")"
+    if (( count != 1 )); then
+      printf 'stable draft final inventory changed for asset: %s\n' "${name}" >&2
+      return 1
+    fi
+    remote_digest="$(awk -F '\t' -v name="${name}" '$1 == name { print $2 }' \
+      <<<"${remote_assets}")"
+    expected_digest="sha256:$(shasum -a 256 "${asset}" | awk '{print $1}')"
+    if [[ "${remote_digest}" != "${expected_digest}" ]]; then
+      printf 'stable draft final digest changed for asset: %s\n' "${name}" >&2
+      return 1
+    fi
+  done
+}
+
+# GitHub does not support conditional PATCH requests for the release update
+# endpoint. The workflow's repository-wide concurrency group is therefore the
+# exclusive writer for supported publication and recovery runs. Verify the
+# server's immutable post-publication snapshot so a privileged out-of-band
+# mutation or a lost publish response can never be reported as success.
+verify_published_stable_release() {
+  local expected_names="$1"
+  local snapshot remote_assets remote_names latest_tag remote_tag_sha
+  local field actual expected
+  snapshot="$("${GH}" release view "${RELEASE_TAG}" \
+    --repo "${RELEASE_REPOSITORY}" \
+    --json isDraft,isImmutable,isPrerelease,tagName,targetCommitish,name,body,assets)"
+
+  while IFS=$'\t' read -r field actual expected; do
+    if [[ "${actual}" != "${expected}" ]]; then
+      printf 'published stable release %s mismatch: expected %s, got %s\n' \
+        "${field}" "${expected}" "${actual}" >&2
+      return 1
+    fi
+  done < <(
+    jq -r --arg tag "${RELEASE_TAG}" --arg target "${PUBLISH_SHA}" \
+      --arg name "${RELEASE_TITLE}" --rawfile body "${RELEASE_NOTES_FILE}" \
+      --argjson prerelease "${RELEASE_PRERELEASE}" \
+      '["draft state", .isDraft, false], ["immutability", .isImmutable, true], ["prerelease state", .isPrerelease, $prerelease], ["tag", .tagName, $tag], ["target", .targetCommitish, $target], ["title", .name, $name], ["notes", .body, $body] | @tsv' \
+      <<<"${snapshot}"
+  )
+
+  remote_assets="$(jq -r '.assets[] | [.name, (.digest // "")] | @tsv' \
+    <<<"${snapshot}")"
+  remote_names="$(cut -f 1 <<<"${remote_assets}")"
+  validate_stable_draft_asset_names "${remote_names}" "${expected_names}" true
+  validate_stable_draft_asset_digests "${remote_assets}"
+
+  latest_tag="$("${GH}" api "repos/${RELEASE_REPOSITORY}/releases/latest" \
+    --jq '.tag_name')"
+  if [[ "${RELEASE_LATEST}" == "true" && "${latest_tag}" != "${RELEASE_TAG}" ]]; then
+    printf 'published stable release is not latest: expected %s, got %s\n' \
+      "${RELEASE_TAG}" "${latest_tag}" >&2
+    return 1
+  fi
+  if [[ "${RELEASE_LATEST}" != "true" && "${latest_tag}" == "${RELEASE_TAG}" ]]; then
+    printf 'published stable release unexpectedly became latest: %s\n' \
+      "${RELEASE_TAG}" >&2
+    return 1
+  fi
+
+  remote_tag_sha="$(
+    "${GIT}" ls-remote --tags "https://github.com/${RELEASE_REPOSITORY}.git" \
+      "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" |
+      awk '$2 ~ /\^\{\}$/ { peeled = $1 } $2 !~ /\^\{\}$/ { direct = $1 } END { print peeled ? peeled : direct }'
+  )"
+  if [[ "${remote_tag_sha}" != "${PUBLISH_SHA}" ]]; then
+    printf 'published stable tag target mismatch: expected %s, got %s\n' \
+      "${PUBLISH_SHA}" "${remote_tag_sha:-missing}" >&2
+    return 1
+  fi
 }
 
 reconcile_stable_draft() {
-  local temporary remote_names asset name downloaded
+  local temporary verification final_snapshot remote_names remote_assets
+  local expected_names asset name downloaded
+  local missing_assets=()
   if [[ "$("${GIT}" rev-list -n 1 "refs/tags/${RELEASE_TAG}")" != "${PUBLISH_SHA}" ]]; then
     printf 'stable draft tag no longer resolves to the requested candidate: %s\n' \
       "${RELEASE_TAG}" >&2
@@ -223,8 +330,20 @@ reconcile_stable_draft() {
   fi
   remote_names="$("${GH}" release view "${RELEASE_TAG}" \
     --repo "${RELEASE_REPOSITORY}" --json assets --jq '.assets[].name')"
+  expected_names=""
+  for asset in "${release_assets[@]}"; do
+    name="$(basename "${asset}")"
+    if grep -Fqx -- "${name}" <<<"${expected_names}"; then
+      printf 'stable draft candidate contains a duplicate asset name: %s\n' \
+        "${name}" >&2
+      return 1
+    fi
+    expected_names+="${name}"$'\n'
+  done
+  validate_stable_draft_asset_names "${remote_names}" "${expected_names}" false
   temporary="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/stable-draft-assets.XXXXXX")"
-  trap 'find "${temporary}" -depth -delete >/dev/null 2>&1 || true' RETURN
+  verification=""
+  trap 'find "${temporary}" -depth -delete >/dev/null 2>&1 || true; if [[ -n "${verification:-}" ]]; then find "${verification}" -depth -delete >/dev/null 2>&1 || true; fi' RETURN
   for asset in "${release_assets[@]}"; do
     name="$(basename "${asset}")"
     if grep -Fqx "${name}" <<<"${remote_names}"; then
@@ -239,12 +358,47 @@ reconcile_stable_draft() {
         return 1
       fi
     else
-      "${GH}" release upload "${RELEASE_TAG}" "${asset}" \
-        --repo "${RELEASE_REPOSITORY}"
+      missing_assets+=("${asset}")
     fi
   done
+  for asset in "${missing_assets[@]}"; do
+    "${GH}" release upload "${RELEASE_TAG}" "${asset}" \
+      --repo "${RELEASE_REPOSITORY}"
+  done
+  remote_names="$("${GH}" release view "${RELEASE_TAG}" \
+    --repo "${RELEASE_REPOSITORY}" --json assets --jq '.assets[].name')"
+  validate_stable_draft_asset_names "${remote_names}" "${expected_names}" true
+  verification="$(mktemp -d \
+    "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/stable-draft-final.XXXXXX")"
+  for asset in "${release_assets[@]}"; do
+    name="$(basename "${asset}")"
+    "${GH}" release download "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
+      --pattern "${name}" --dir "${verification}"
+    downloaded="${verification}/${name}"
+    if [[ ! -f "${downloaded}" ]] || \
+      [[ "$(shasum -a 256 "${downloaded}" | awk '{print $1}')" != \
+        "$(shasum -a 256 "${asset}" | awk '{print $1}')" ]]; then
+      printf 'stable draft asset changed before publication: %s\n' "${name}" >&2
+      return 1
+    fi
+  done
+  final_snapshot="$("${GH}" release view "${RELEASE_TAG}" \
+    --repo "${RELEASE_REPOSITORY}" --json isDraft,assets)"
+  if [[ "$(jq -r '.isDraft' <<<"${final_snapshot}")" != true ]]; then
+    printf 'stable release is no longer a draft before publication: %s\n' \
+      "${RELEASE_TAG}" >&2
+    return 1
+  fi
+  remote_assets="$(jq -r '.assets[] | [.name, (.digest // "")] | @tsv' \
+    <<<"${final_snapshot}")"
+  remote_names="$(cut -f 1 <<<"${remote_assets}")"
+  validate_stable_draft_asset_names "${remote_names}" "${expected_names}" true
+  validate_stable_draft_asset_digests "${remote_assets}"
   "${GH}" release edit "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
-    --draft=false "${release_flags[@]}"
+    --target "${PUBLISH_SHA}" --title "${RELEASE_TITLE}" \
+    --notes-file "${RELEASE_NOTES_FILE}" \
+    --draft=false --prerelease="${RELEASE_PRERELEASE}" "${release_flags[@]}"
+  verify_published_stable_release "${expected_names}"
 }
 
 if [[ "${published_release_state}" == "draft" ]]; then
@@ -258,9 +412,18 @@ fi
 
 if [[ "${published_release_state}" == "exists" ]]; then
   if [[ "${RELEASE_MUTABLE}" != "true" ]]; then
-    printf 'release %s already exists; published releases are immutable\n' \
-      "${RELEASE_TAG}" >&2
-    exit 1
+    expected_names=""
+    for asset in "${release_assets[@]}"; do
+      name="$(basename "${asset}")"
+      if grep -Fqx -- "${name}" <<<"${expected_names}"; then
+        printf 'stable release candidate contains a duplicate asset name: %s\n' \
+          "${name}" >&2
+        exit 1
+      fi
+      expected_names+="${name}"$'\n'
+    done
+    verify_published_stable_release "${expected_names}"
+    exit 0
   fi
 
   if [[ "${RELEASE_PHASE}" == "stage" ]]; then

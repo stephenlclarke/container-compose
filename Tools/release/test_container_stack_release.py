@@ -2549,6 +2549,80 @@ github_cli() {{
         self.assertIn("wait 812 stable documentation and Pages deployment", active.stdout)
         self.assertIn("retained 0.15.0 812", active.stdout)
 
+    def test_failed_docc_regeneration_retries_the_same_logical_lineage(self) -> None:
+        retried = self.run_release_function(
+            Path("/tmp/unused-release-root"),
+            "dispatch_stable_documentation 0.15.0",
+            shell_setup="\n".join(
+                [
+                    (
+                        "latest_stable_documentation_dispatch() { "
+                        "printf '913\\tcompleted\\tfailure\\n'; }"
+                    ),
+                    "remote_main_commit() { printf '%s\\n' control; }",
+                    (
+                        "documentation_dispatch_mode_for_run() { "
+                        "printf '%s\\n' docs-regenerate-731; }"
+                    ),
+                    (
+                        "dispatch_github_workflow_run() { "
+                        "printf 'dispatch:%s:%s\\n' \"$1\" \"$5\" >&2; "
+                        "printf '%s\\n' 914; }"
+                    ),
+                    "wait_for_github_run_success() { :; }",
+                    (
+                        "retain_stable_documentation_artifacts() { "
+                        "printf 'retained %s %s\\n' \"$1\" \"$2\"; }"
+                    ),
+                ]
+            ),
+        )
+
+        self.assertEqual(retried.returncode, 0, retried.stderr)
+        self.assertIn("dispatch:docs.yml:docs-regenerate-731", retried.stderr)
+        self.assertIn("retained 0.15.0 914", retried.stdout)
+
+    def test_unjournaled_failed_docc_run_starts_a_new_logical_lineage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            retried = self.run_release_function(
+                Path(directory),
+                "documentation_dispatch_mode_for_run 0.15.0 "
+                f"{'a' * 40} 913",
+            )
+
+        self.assertEqual(retried.returncode, 0, retried.stderr)
+        self.assertEqual(retried.stdout.strip(), "docs-regenerate-913")
+
+    def test_legacy_mode_less_docc_run_starts_a_new_logical_lineage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request_id = "11111111-1111-1111-1111-111111111111"
+            dispatches = root / "retained" / "release" / "dispatches"
+            dispatches.mkdir(parents=True)
+            (dispatches / f"{request_id}.json").write_text(
+                json.dumps(
+                    {
+                        "control_sha": "a" * 40,
+                        "created_at": "2026-09-11T00:00:00+00:00",
+                        "request_id": request_id,
+                        "run_id": "913",
+                        "schema": 1,
+                        "state": "failed",
+                        "version": "0.15.0",
+                        "workflow": "docs.yml",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            retried = self.run_release_function(
+                root,
+                "documentation_dispatch_mode_for_run 0.15.0 "
+                f"{'a' * 40} 913",
+            )
+
+        self.assertEqual(retried.returncode, 0, retried.stderr)
+        self.assertEqual(retried.stdout.strip(), "docs-regenerate-913")
+
     def test_release_helper_writes_the_published_k8s_documentation_authority(
         self,
     ) -> None:

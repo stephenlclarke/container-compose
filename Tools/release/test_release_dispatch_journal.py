@@ -153,6 +153,40 @@ class ReleaseDispatchJournalTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(json.loads(output.getvalue())["request_id"], self.request)
 
+    def test_find_run_recovers_the_original_logical_mode(self) -> None:
+        common = [
+            "--workflow",
+            "docs.yml",
+            "--version",
+            "0.15.0",
+            "--control-sha",
+            "a" * 40,
+            "--mode",
+            "docs-regenerate-731",
+        ]
+        self.assertEqual(self.invoke("intent", *common), 0)
+        self.assertEqual(self.invoke("ack", "--run-id", "987"), 0)
+        output = StringIO()
+        with redirect_stdout(output):
+            result = MODULE.main(
+                [
+                    "find-run",
+                    "--root",
+                    str(self.root),
+                    "--workflow",
+                    "docs.yml",
+                    "--version",
+                    "0.15.0",
+                    "--control-sha",
+                    "a" * 40,
+                    "--run-id",
+                    "987",
+                ]
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(json.loads(output.getvalue())["mode"], "docs-regenerate-731")
+
     def test_claim_reuses_one_logical_operation(self) -> None:
         arguments = [
             "claim", "--root", str(self.root), "--workflow", "docs.yml",
