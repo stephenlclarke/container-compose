@@ -22,20 +22,36 @@ struct ComposeRuntimeCapabilitiesTests {
     @Test
     func `logging v2 requires its exact negotiated identifier`() {
         #expect(!ComposeRuntimeCapabilities().supportsLoggingDriversV1)
+        #expect(!ComposeRuntimeCapabilities().supportsContainerLaunchV1)
         #expect(!ComposeRuntimeCapabilities(
             identifiers: ["io.github.stephenlclarke.container.logging-drivers.v2"],
         ).supportsLoggingDriversV1)
         #expect(ComposeRuntimeCapabilities(
             identifiers: [ComposeRuntimeCapabilities.loggingDriversV1Identifier],
         ).supportsLoggingDriversV1)
+        #expect(ComposeRuntimeCapabilities(
+            identifiers: [ComposeRuntimeCapabilities.loggingDriversV1Identifier],
+        ).supportsContainerLaunchV1)
+        #expect(ComposeRuntimeCapabilities(
+            identifiers: [ComposeRuntimeCapabilities.containerLaunchV1Identifier],
+        ).supportsContainerLaunchV1)
     }
 
     @Test
     func `network attachment extensions require their exact negotiated identifier`() {
         #expect(!ComposeRuntimeCapabilities().supportsNetworkScopedAliasesV1)
+        #expect(!ComposeRuntimeCapabilities().supportsNetworkAliasesV1)
         #expect(ComposeRuntimeCapabilities(
             identifiers: [ComposeRuntimeCapabilities.networkScopedAliasesV1Identifier],
         ).supportsNetworkScopedAliasesV1)
+        #expect(ComposeRuntimeCapabilities(
+            identifiers: [ComposeRuntimeCapabilities.networkScopedAliasesV1Identifier],
+        ).supportsNetworkAliasesV1)
+        let aliasesOnly = ComposeRuntimeCapabilities(
+            identifiers: [ComposeRuntimeCapabilities.networkAliasesV1Identifier],
+        )
+        #expect(aliasesOnly.supportsNetworkAliasesV1)
+        #expect(!aliasesOnly.supportsNetworkScopedAliasesV1)
     }
 
     @Test

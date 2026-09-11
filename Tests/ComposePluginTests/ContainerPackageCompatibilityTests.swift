@@ -44,6 +44,25 @@ private let appleSystemVersionJSON = """
   ]
   """
 
+private let coherentAppleSystemVersionJSON = """
+  [
+    {
+      "appName": "container",
+      "buildType": "release",
+      "commit": "abc123",
+      "distribution": "apple",
+      "source": "apple/container",
+      "version": "1.4.1"
+    },
+    {
+      "appName": "container-apiserver",
+      "buildType": "release",
+      "commit": "abc123",
+      "version": "1.4.1"
+    }
+  ]
+  """
+
 private let matchingSystemVersionJSON = """
   [
     {
@@ -304,6 +323,35 @@ struct ContainerPackageCompatibilityTests {
     #expect(failure == nil)
     #expect(selection.snapshot().supportsLoggingDriversV1)
     #expect(selection.snapshot().identifiers.contains(optionalCapability))
+  }
+
+  @Test("stock compatibility adapter publishes an explicit capability overlay")
+  func stockCompatibilityAdapterPublishesExplicitCapabilityOverlay() async throws {
+    let capability = ComposeRuntimeCapabilities.networkAliasesV1Identifier
+    let overlay = ContainerPackageCompatibility.runtimeCapabilityOverlay(environment: [
+      ContainerPackageCompatibility.runtimeCapabilityOverlayEnvironmentKey:
+        " \(capability),\(capability) ",
+    ])
+    #expect(overlay == [capability])
+    let selection = InstalledRuntimeCapabilities()
+
+    let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+      arguments: ["up"],
+      lane: "stock",
+      runtimeProfile: .stock,
+      stockRuntimeCapabilities: overlay,
+      onCompatibleRuntime: { selection.replace(with: $0) },
+      run: { arguments in
+        if arguments == ["system", "version", "--format", "json"] {
+          return Data(coherentAppleSystemVersionJSON.utf8)
+        }
+        return Data()
+      }
+    )
+
+    #expect(failure == nil)
+    #expect(selection.snapshot().supportsNetworkAliasesV1)
+    #expect(!selection.snapshot().supportsNetworkScopedAliasesV1)
   }
 
   @Test("failed preflight does not publish optional runtime capabilities")
@@ -1065,7 +1113,11 @@ private func makeInterruptedPreflightProcess(
 /// Waits for the preflight child to publish its PID before cancellation.
 private func waitForPreflightProcessIdentifier(at pidFile: URL) async throws -> pid_t {
   let clock = ContinuousClock()
-  let deadline = clock.now + .seconds(3)
+  // Hosted macOS runners can spend several seconds scheduling a freshly built
+  // CLI while the full Swift test graph is active. Keep the product latency
+  // assertion below strict, but give process startup enough room to avoid a
+  // scheduler-load false negative.
+  let deadline = clock.now + .seconds(10)
   while clock.now < deadline {
     if let data = FileManager.default.contents(atPath: pidFile.path),
       let value = String(data: data, encoding: .utf8),
@@ -1090,7 +1142,9 @@ private func waitForPreflightCLIExit(
       throw ContainerPackagePreflightTestError.composeProcessStatusMissing
     }
     group.addTask {
-      try await Task.sleep(for: .seconds(3))
+      // This bounds a genuine cleanup hang. The separate five-second assertion
+      // still enforces the expected interruption latency once the child starts.
+      try await Task.sleep(for: .seconds(10))
       throw ContainerPackagePreflightTestError.composeProcessTimedOut
     }
 

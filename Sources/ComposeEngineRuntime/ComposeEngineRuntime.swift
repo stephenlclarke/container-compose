@@ -18,6 +18,7 @@ import ComposeCore
 import ComposeRuntimeSPI
 import ContainerEngineWire
 import ContainerUnixHTTPClient
+import Darwin
 import Foundation
 
 /// Wires Compose to the runtime-neutral, current-user Container Engine socket.
@@ -27,6 +28,8 @@ import Foundation
 /// `container` CLI so an unmodified stock installation can own VM lifecycle.
 public enum ComposeEngineRuntime {
     public static let socketEnvironmentVariable = "CONTAINER_COMPOSE_ENGINE_SOCKET"
+    public static let volumeInitializerEnvironmentVariable =
+        "CONTAINER_COMPOSE_VOLUME_INITIALIZER"
 
     public static func dependencies(
         runner: CommandRunning = ProcessRunner(),
@@ -35,12 +38,18 @@ public enum ComposeEngineRuntime {
     ) -> ComposeOrchestratorDependencies {
         let provider = EngineRuntimeProvider(
             socketPath: environment[socketEnvironmentVariable] ?? defaultSocketPath(),
+            volumeInitializerPath: environment[volumeInitializerEnvironmentVariable],
+            runner: runner,
+            containerBinary: options.containerBinary,
+            environmentLauncher: options.environmentLauncher,
         )
         return ComposeOrchestratorDependencies(
             runner: runner,
             options: options,
+            commands: .init(execManager: provider, launchManager: provider),
             runtime: ComposeOrchestratorRuntimeDependencies(
                 services: .init(
+                    imageVolumeInitializer: provider,
                     lifecycleManager: provider,
                     resourceManager: provider,
                 ),
@@ -55,16 +64,32 @@ public enum ComposeEngineRuntime {
             .appendingPathComponent("Library/Application Support/devcontainer/engine.sock")
             .path
     }
+
 }
 
 public final class EngineRuntimeProvider: @unchecked Sendable {
     private let client: Result<ContainerUnixHTTPClient, any Error>
+    private static let volumeInitializations = EngineVolumeInitializationCoordinator()
+    let volumeInitializerPathOverride: String?
+    let runner: CommandRunning
+    let containerBinary: String
+    let environmentLauncher: String
 
-    public init(socketPath: String) {
+    public init(
+        socketPath: String,
+        volumeInitializerPath: String? = nil,
+        runner: CommandRunning = ProcessRunner(),
+        containerBinary: String = ComposeExecutionOptions.defaultContainerBinary(),
+        environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher
+    ) {
         client = Result { try ContainerUnixHTTPClient(socketPath: socketPath) }
+        volumeInitializerPathOverride = volumeInitializerPath
+        self.runner = runner
+        self.containerBinary = containerBinary
+        self.environmentLauncher = environmentLauncher
     }
 
-    private func request<Response: Decodable>(
+    func request<Response: Decodable>(
         _ method: DockerHTTPMethod,
         _ target: String,
         body: (any Encodable)? = nil,
@@ -86,7 +111,7 @@ public final class EngineRuntimeProvider: @unchecked Sendable {
         return try JSONDecoder.engine.decode(Response.self, from: response.body)
     }
 
-    private func request(
+    func request(
         _ method: DockerHTTPMethod,
         _ target: String,
         body: (any Encodable)? = nil,
@@ -107,12 +132,19 @@ public final class EngineRuntimeProvider: @unchecked Sendable {
         )
     }
 
-    private func escaped(_ component: String) -> String {
+    func escaped(_ component: String) -> String {
         component.addingPercentEncoding(withAllowedCharacters: .urlPathSegmentAllowed) ?? component
     }
 
-    private func query(_ value: String) -> String {
+    func query(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? value
+    }
+
+    private func target(_ path: String, queryFields: [(String, String?)]) -> String {
+        let fields = queryFields.compactMap { key, value in
+            value.map { "\(key)=\(query($0))" }
+        }
+        return fields.isEmpty ? path : path + "?" + fields.joined(separator: "&")
     }
 }
 
@@ -244,98 +276,302 @@ extension EngineRuntimeProvider: ComposeRuntimeResourceManaging {
     }
 }
 
-extension EngineRuntimeProvider: ComposeRuntimeImageManaging {
-    public func imageExists(_ reference: String) async throws -> Bool {
+extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
+    public func initializeImageVolume(_ request: ComposeImageVolumeInitializationRequest) async throws {
+        await Self.volumeInitializations.acquire(request.volumeName)
         do {
-            let _: EngineImageInspect = try await request(.get, "/v1.53/images/\(escaped(reference))/json")
-            return true
-        } catch ContainerUnixHTTPClientError.server(status: 404, message: _) {
-            return false
+            try await initializeSerializedImageVolume(request)
+            await Self.volumeInitializations.release(request.volumeName)
+        } catch {
+            await Self.volumeInitializations.release(request.volumeName)
+            throw error
         }
     }
 
-    public func imageDigest(_ reference: String) async throws -> String {
-        let image: EngineImageInspect = try await request(.get, "/v1.53/images/\(escaped(reference))/json")
-        return image.repoDigests.first ?? image.id
-    }
-
-    public func imageHealthCheck(_ reference: String, platform _: String?) async throws -> ComposeImageHealthCheck? {
-        try await inspectImage(reference).healthCheck
-    }
-
-    public func imageMetadata(_ reference: String) async throws -> ComposeImageMetadata {
-        let image = try await inspectImage(reference)
-        return ComposeImageMetadata(reference: reference) {
-            $0.displayReference = image.repoTags.first ?? reference
-            $0.user = image.config.user.nilIfEmpty
-            $0.environment = image.config.environment
-            $0.entrypoint = image.config.entrypoint
-            $0.command = image.config.command
-            $0.workingDir = image.config.workingDirectory.nilIfEmpty
-            $0.labels = image.config.labels
-            $0.exposedPorts = image.config.exposedPorts.keys.sorted()
-            $0.stopSignal = image.config.stopSignal
-            $0.healthCheck = image.healthCheck
-            $0.declaredVolumeTargets = image.config.volumes.keys.sorted()
+    private func initializeSerializedImageVolume(_ request: ComposeImageVolumeInitializationRequest) async throws {
+        let volume: EngineVolume = try await self.request(
+            .get,
+            "/v1.53/volumes/\(escaped(request.volumeName))",
+        )
+        let destination = URL(fileURLWithPath: volume.mountpoint, isDirectory: true)
+        let fileLock = try await EngineVolumeInitializationFileLock.acquire(
+            volumeMountpoint: destination
+        )
+        defer { withExtendedLifetime(fileLock) {} }
+        let pendingTransaction = try EngineVolumeInitializationTransaction.load(
+            volumeMountpoint: destination
+        )
+        guard try pendingTransaction != nil || volumeIsEmpty(destination) else {
+            return
         }
+        let helperImage = try await volumeInitializerImage(
+            sourceImage: request.image,
+            platform: request.platform,
+            volumeMountpoint: destination,
+            imageSubpath: request.imageSubpath
+        )
+        let transaction = try pendingTransaction
+            ?? EngineVolumeInitializationTransaction.create(
+                volumeMountpoint: destination
+            )
+        let helper = try await createVolumeInitializationHelper(
+            request,
+            image: helperImage.tag,
+            platform: helperImage.platform,
+            helperPath: helperImage.helperPath,
+            transaction: transaction
+        )
+        try await runVolumeInitializationHelper(helper.id)
+        try transaction.complete()
     }
 
-    public func imageMetadataIfAvailable(_ reference: String, platform _: String?) async throws -> ComposeImageMetadata? {
-        guard try await imageExists(reference) else { return nil }
-        return try await imageMetadata(reference)
-    }
-
-    public func bridgeTransformers() async throws -> [ComposeBridgeTransformer] {
-        let images: [EngineImageSummary] = try await request(.get, "/v1.53/images/json")
-        return images.flatMap { image in
-            let references = image.repoTags.isEmpty ? [""] : image.repoTags
-            return references.map { reference in
-                ComposeBridgeTransformer(
-                    id: image.id,
-                    reference: reference,
-                    details: .init(
-                        createdAtUnix: image.created,
-                        containers: image.containers,
-                        labels: image.labels,
-                        parentID: image.parentID,
-                        repoDigests: image.repoDigests,
-                        repoTags: image.repoTags,
-                        size: .init(sharedSizeInBytes: image.sharedSize, sizeInBytes: Int64(image.size)),
+    private func createVolumeInitializationHelper(
+        _ request: ComposeImageVolumeInitializationRequest,
+        image: String,
+        platform: String?,
+        helperPath: String,
+        transaction: EngineVolumeInitializationTransaction
+    ) async throws -> EngineContainerCreateResponse {
+        let helperName = "compose-volume-init-\(UUID().uuidString.lowercased())"
+        let helperMountPath = try Self.helperMountPath(imageSubpath: request.imageSubpath)
+        let recoveryMountPath = try Self.helperRecoveryMountPath(
+            imageSubpath: request.imageSubpath,
+            volumeMountPath: helperMountPath
+        )
+        return try await self.request(
+            .post,
+            target(
+                "/v1.53/containers/create",
+                queryFields: [("name", helperName), ("platform", platform)],
+            ),
+            body: EngineContainerCreateRequest(
+                image: image,
+                labels: ["com.apple.container.compose.internal": "image-volume-init"],
+                user: "0",
+                entrypoint: [helperPath],
+                command: [
+                    request.imageSubpath,
+                    helperMountPath,
+                    transaction.identifier,
+                    recoveryMountPath,
+                ],
+                hostConfig: .init(mounts: [
+                    .init(
+                        type: "volume",
+                        source: request.volumeName,
+                        target: helperMountPath,
+                        readOnly: false
                     ),
+                    .init(
+                        type: "bind",
+                        source: transaction.recoveryPath,
+                        target: recoveryMountPath,
+                        readOnly: false
+                    ),
+                ]),
+            ),
+        )
+    }
+
+    private func volumeInitializerImage(
+        sourceImage: String,
+        platform: String?,
+        volumeMountpoint: URL,
+        imageSubpath: String
+    ) async throws -> EngineVolumeInitializerImageBuild {
+        guard !sourceImage.contains(where: \.isWhitespace) else {
+            throw ComposeError.invalidProject(
+                "image reference for Docker-free volume initialization contains whitespace"
+            )
+        }
+        let buildLock = try await EngineVolumeInitializationFileLock.acquire(
+            path: Self.volumeInitializerBuildLockPath(volumeMountpoint)
+        )
+        defer { withExtendedLifetime(buildLock) {} }
+        for _ in 0 ..< 3 {
+            let image = try await inspectImage(sourceImage, platform: platform)
+            let input = try volumeInitializerBuildInput(
+                requestedPlatform: platform,
+                image: image
+            )
+            let build = try Self.volumeInitializerBuild(
+                image: image,
+                platform: input.platform,
+                helper: input.helper,
+                helperName: input.name,
+                imageSubpath: imageSubpath
+            )
+            guard try await !imageExists(build.tag) else {
+                return build
+            }
+            if let digest = image.repoDigests.first {
+                try await buildVolumeInitializerImage(
+                    sourceImage: digest,
+                    build: build
                 )
+                return build
+            }
+            if try await buildFromVerifiedLocalImage(
+                sourceReference: sourceImage,
+                sourceID: image.id,
+                build: build,
+                platform: input.platform
+            ) {
+                return build
             }
         }
+        throw ComposeError.commandFailed(
+            command: "Engine image-volume initializer source snapshot",
+            status: 1,
+            stderr: "image reference changed repeatedly while creating an immutable build alias"
+        )
     }
 
-    public func pullImage(_ reference: String) async throws {
-        try await request(.post, "/v1.53/images/create?fromImage=\(query(reference))", maximumBodyBytes: 64 * 1024 * 1024)
+    private static func volumeInitializerBuild(
+        image: EngineImageInspect,
+        platform: String?,
+        helper: Data,
+        helperName: String,
+        imageSubpath: String
+    ) throws -> EngineVolumeInitializerImageBuild {
+        let sourceDigest = image.repoDigests.first ?? image.id
+        let helperPath = try helperExecutablePath(
+            sourceDigest: sourceDigest,
+            platform: platform,
+            helperName: helperName,
+            helper: helper,
+            imageSubpath: imageSubpath
+        )
+        return EngineVolumeInitializerImageBuild.make(
+            sourceDigest: sourceDigest,
+            platform: platform,
+            helper: helper,
+            helperName: helperName,
+            helperPath: helperPath
+        )
     }
 
-    public func pushImage(_ reference: String, emit: @escaping @Sendable (String) -> Void) async throws {
-        try await request(.post, "/v1.53/images/\(escaped(reference))/push", maximumBodyBytes: 64 * 1024 * 1024)
-        emit(reference)
+    private static func volumeInitializerBuildLockPath(_ volumeMountpoint: URL) -> String {
+        volumeMountpoint.deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(".compose-volume-initializer-image.lock")
+            .path
     }
 
-    public func deleteImage(_ reference: String, force: Bool, emit: @escaping @Sendable (String) -> Void) async throws {
-        try await request(.delete, "/v1.53/images/\(escaped(reference))?force=\(force ? 1 : 0)")
-        emit(reference)
+    private func buildFromVerifiedLocalImage(
+        sourceReference: String,
+        sourceID: String,
+        build: EngineVolumeInitializerImageBuild,
+        platform: String?
+    ) async throws -> Bool {
+        let aliasTag = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
+        let alias = "devcontainer-volume-source:\(aliasTag)"
+        try await tagImage(source: sourceReference, repository: "devcontainer-volume-source", tag: aliasTag)
+        do {
+            let aliased = try await inspectImage(alias, platform: platform)
+            guard aliased.id == sourceID else {
+                try await deleteImageReference(alias)
+                return false
+            }
+            try await buildVolumeInitializerImage(
+                sourceImage: alias,
+                build: build
+            )
+            try await deleteImageReference(alias)
+            return true
+        } catch {
+            try? await deleteImageReference(alias)
+            throw error
+        }
     }
 
-    public func loadImageArchive(_ path: String, emit: @escaping @Sendable (String) -> Void) async throws {
-        let archive = try Data(contentsOf: URL(fileURLWithPath: path), options: [.mappedIfSafe])
+    private func buildVolumeInitializerImage(
+        sourceImage: String,
+        build: EngineVolumeInitializerImageBuild
+    ) async throws {
+        let context = try await EngineVolumeInitializerBuildContext.make(
+            sourceImage: sourceImage,
+            helper: build.helper,
+            helperName: build.helperName,
+            helperPath: build.helperPath
+        )
         try await request(
             .post,
-            "/v1.53/images/load",
-            rawBody: archive,
+            target(
+                "/v1.53/build",
+                queryFields: [
+                    ("t", build.tag),
+                    ("dockerfile", "Dockerfile"),
+                    ("platform", build.platform),
+                ]
+            ),
+            rawBody: context,
             contentType: "application/x-tar",
-            maximumBodyBytes: 64 * 1024 * 1024,
+            maximumBodyBytes: 64 * 1024 * 1024
         )
-        emit(path)
     }
 
-    private func inspectImage(_ reference: String) async throws -> EngineImageInspect {
-        try await request(.get, "/v1.53/images/\(escaped(reference))/json")
+    private func tagImage(source: String, repository: String, tag: String) async throws {
+        try await request(
+            .post,
+            target(
+                "/v1.53/images/\(escaped(source))/tag",
+                queryFields: [("repo", repository), ("tag", tag)]
+            )
+        )
     }
+
+    private func deleteImageReference(_ reference: String) async throws {
+        try await request(.delete, "/v1.53/images/\(escaped(reference))?force=0")
+    }
+
+    private func runVolumeInitializationHelper(_ helperID: String) async throws {
+        do {
+            try await request(
+                .post,
+                "/v1.53/containers/\(escaped(helperID))/start"
+            )
+            let wait: EngineWaitResponse = try await request(
+                .post,
+                "/v1.53/containers/\(escaped(helperID))/wait?condition=not-running"
+            )
+            guard wait.statusCode == 0 || wait.statusCode == 44 || wait.statusCode == 45 else {
+                throw ComposeError.commandFailed(
+                    command: "Engine image-volume initialization helper",
+                    status: wait.statusCode,
+                    stderr: "runtime-side image volume copy failed",
+                )
+            }
+            try await removeInitializationHelper(helperID)
+        } catch {
+            try? await removeInitializationHelper(helperID)
+            throw error
+        }
+    }
+
+    private func removeInitializationHelper(_ id: String) async throws {
+        try await request(.delete, "/v1.53/containers/\(escaped(id))?force=1&v=1")
+    }
+
+    private func volumeIsEmpty(_ destination: URL) throws -> Bool {
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: destination.path, isDirectory: &isDirectory),
+              isDirectory.boolValue
+        else {
+            throw ComposeError.invalidProject("runtime volume mountpoint is not a directory")
+        }
+        let entries = try FileManager.default.contentsOfDirectory(atPath: destination.path)
+        guard entries == ["lost+found"] else {
+            return entries.isEmpty
+        }
+        let recovery = destination.appendingPathComponent("lost+found", isDirectory: true)
+        let values = try recovery.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        guard values.isDirectory == true, values.isSymbolicLink != true else {
+            return false
+        }
+        return try FileManager.default.contentsOfDirectory(atPath: recovery.path).isEmpty
+    }
+
 }
 
 private struct AnyEncodable: Encodable {
@@ -387,7 +623,7 @@ private extension CharacterSet {
     }()
 }
 
-private extension String {
+extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self
     }
@@ -611,7 +847,7 @@ private struct EngineVolumeListResponse: Decodable {
     enum CodingKeys: String, CodingKey { case volumes = "Volumes" }
 }
 
-private struct EngineVolume: Decodable {
+struct EngineVolume: Decodable {
     let driver: String
     let labels: [String: String]
     let mountpoint: String
@@ -622,13 +858,53 @@ private struct EngineVolume: Decodable {
     }
 }
 
-private struct EngineImageInspect: Decodable {
+private struct EngineContainerCreateRequest: Encodable {
+    let image: String
+    let labels: [String: String]
+    let user: String
+    let entrypoint: [String]
+    let command: [String]
+    let hostConfig: EngineContainerHostConfig
+
+    enum CodingKeys: String, CodingKey {
+        case image = "Image", labels = "Labels", user = "User"
+        case entrypoint = "Entrypoint", command = "Cmd", hostConfig = "HostConfig"
+    }
+}
+
+private struct EngineContainerHostConfig: Encodable {
+    let mounts: [EngineContainerMount]
+    enum CodingKeys: String, CodingKey { case mounts = "Mounts" }
+}
+
+private struct EngineContainerMount: Encodable {
+    let type: String
+    let source: String
+    let target: String
+    let readOnly: Bool
+    enum CodingKeys: String, CodingKey {
+        case type = "Type", source = "Source", target = "Target", readOnly = "ReadOnly"
+    }
+}
+
+private struct EngineContainerCreateResponse: Decodable {
+    let id: String
+    enum CodingKeys: String, CodingKey { case id = "Id" }
+}
+
+struct EngineImageInspect: Decodable {
     let id: String
     let repoTags: [String]
     let repoDigests: [String]
+    let architecture: String
+    let variant: String?
+    let operatingSystem: String
     let config: EngineImageConfig
     enum CodingKeys: String, CodingKey {
+        case architecture = "Architecture"
         case id = "Id"
+        case operatingSystem = "Os"
+        case variant = "Variant"
         case repoTags = "RepoTags"
         case repoDigests = "RepoDigests"
         case config = "Config"
@@ -647,7 +923,7 @@ private struct EngineImageInspect: Decodable {
     }
 }
 
-private struct EngineImageConfig: Decodable {
+struct EngineImageConfig: Decodable {
     let user: String
     let environment: [String]
     let entrypoint: [String]?
@@ -679,9 +955,9 @@ private struct EngineImageConfig: Decodable {
     }
 }
 
-private struct EmptyObject: Decodable {}
+struct EmptyObject: Decodable {}
 
-private struct EngineHealthCheck: Decodable {
+struct EngineHealthCheck: Decodable {
     let test: [String]?
     let interval: Int64?
     let timeout: Int64?
@@ -692,7 +968,7 @@ private struct EngineHealthCheck: Decodable {
     }
 }
 
-private struct EngineImageSummary: Decodable {
+struct EngineImageSummary: Decodable {
     let containers: Int64
     let created: Int64
     let id: String
@@ -705,13 +981,5 @@ private struct EngineImageSummary: Decodable {
     enum CodingKeys: String, CodingKey {
         case containers = "Containers", created = "Created", id = "Id", labels = "Labels", parentID = "ParentId"
         case repoDigests = "RepoDigests", repoTags = "RepoTags", sharedSize = "SharedSize", size = "Size"
-    }
-}
-
-private extension ISO8601DateFormatter {
-    static func engineDate(from value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: value)
     }
 }

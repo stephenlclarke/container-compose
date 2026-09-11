@@ -15,11 +15,20 @@
 //===----------------------------------------------------------------------===//
 
 import ArgumentParser
+@testable import ComposeCore
 @testable import ComposePlugin
 import Testing
 
 @Suite("Compose environment defaults")
 struct ComposeEnvironmentTests {
+    #if !CONTAINER_COMPOSE_ENHANCED_RUNTIME
+        @Test
+        func `stock executable selects authority backed container launch`() throws {
+            let options = try GlobalOptions.parse([])
+            #expect(options.orchestrator().options.runtimeCapabilities.supportsContainerLaunchV1)
+        }
+    #endif
+
     @Test
     func `truthy Compose environment values are opt-in`() {
         let environment = ComposeEnvironment(values: [
