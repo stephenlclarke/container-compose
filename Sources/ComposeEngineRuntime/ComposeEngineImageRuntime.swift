@@ -143,16 +143,47 @@ extension EngineRuntimeProvider: ComposeRuntimeImageManaging {
             maxSplits: 2,
             omittingEmptySubsequences: false
         )
+        let requestedVariant = components.count == 3
+            ? String(components[2])
+            : nil
+        let resolvedVariant = image.variant?.nilIfEmpty
+        let variantMatches = requestedVariant.map {
+            Self.normalizedImageVariant($0, architecture: image.architecture)
+                == Self.normalizedImageVariant(
+                    resolvedVariant,
+                    architecture: image.architecture
+                )
+        } ?? true
         guard components.count >= 2,
               components[0] == image.operatingSystem,
-              components[1] == image.architecture
+              components[1] == image.architecture,
+              variantMatches
         else {
+            let resolvedPlatform = [
+                image.operatingSystem,
+                image.architecture,
+                resolvedVariant,
+            ].compactMap(\.self).joined(separator: "/")
             throw ComposeError.commandFailed(
                 command: "Engine image inspect --platform \(platform)",
                 status: 1,
-                stderr: "resolved \(image.operatingSystem)/\(image.architecture) instead"
+                stderr: "resolved \(resolvedPlatform) instead"
             )
         }
         return image
+    }
+
+    private static func normalizedImageVariant(
+        _ variant: String?,
+        architecture: String
+    ) -> String? {
+        switch (architecture, variant) {
+        case ("arm64", nil), ("arm64", "8"):
+            "v8"
+        case ("amd64", "v1"):
+            nil
+        default:
+            variant
+        }
     }
 }

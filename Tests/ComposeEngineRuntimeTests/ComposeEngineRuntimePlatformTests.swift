@@ -56,4 +56,40 @@ struct ComposeEngineRuntimePlatformTests {
         #expect(!requests.contains { $0.target.contains("/containers/create?") })
         try await server.shutdown()
     }
+
+    @Test
+    func `image volume initialization rejects a mismatched platform variant`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
+        try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
+        let recorder = RequestRecorder()
+        let server = fixture.server(ImageVolumeResponder(
+            recorder: recorder,
+            mountpoint: volume.path,
+            hasRepositoryDigest: false
+        ))
+        try await server.start()
+        let provider = EngineRuntimeProvider(
+            socketPath: fixture.socketPath,
+            volumeInitializerPath: fixture.volumeInitializerPath
+        )
+
+        await #expect(throws: ComposeError.self) {
+            try await provider.initializeImageVolume(
+                ComposeImageVolumeInitializationRequest(
+                    image: "example/image:latest",
+                    platform: "linux/arm64/v7",
+                    imageSubpath: "/state",
+                    volumeName: "project_state"
+                )
+            )
+        }
+
+        let requests = await recorder.requests
+        #expect(requests.contains { $0.target.contains("platform=linux/arm64/v7") })
+        #expect(!requests.contains { $0.target.contains("/build?") })
+        #expect(!requests.contains { $0.target.contains("/containers/create?") })
+        try await server.shutdown()
+    }
 }

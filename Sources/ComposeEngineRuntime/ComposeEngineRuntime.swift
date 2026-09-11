@@ -897,12 +897,14 @@ struct EngineImageInspect: Decodable {
     let repoTags: [String]
     let repoDigests: [String]
     let architecture: String
+    let variant: String?
     let operatingSystem: String
     let config: EngineImageConfig
     enum CodingKeys: String, CodingKey {
         case architecture = "Architecture"
         case id = "Id"
         case operatingSystem = "Os"
+        case variant = "Variant"
         case repoTags = "RepoTags"
         case repoDigests = "RepoDigests"
         case config = "Config"
