@@ -4,5 +4,4 @@
 ARG SOURCE_IMAGE
 FROM ${SOURCE_IMAGE}
 COPY --chmod=0755 compose-volume-initializer-linux-arm64 /.compose-volume-initializer
-USER 0:0
 ENTRYPOINT ["/.compose-volume-initializer"]
