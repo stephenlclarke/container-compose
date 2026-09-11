@@ -213,6 +213,13 @@ func resolveInitializationPaths(source, destination, recovery string) (string, s
 // path is absent. This preserves forward recovery before a missing-source result
 // without allowing an ancestor symlink to conceal a helper-mount overlap.
 func resolveSourcePath(path string) (string, error) {
+	return resolveSourcePathAtDepth(path, 0)
+}
+
+func resolveSourcePathAtDepth(path string, depth int) (string, error) {
+	if depth > 255 {
+		return "", errors.New("too many source symbolic links")
+	}
 	resolved, err := filepath.EvalSymlinks(path)
 	if err == nil {
 		return resolved, nil
@@ -225,7 +232,21 @@ func resolveSourcePath(path string) (string, error) {
 	for {
 		info, lstatErr := os.Lstat(current)
 		if lstatErr == nil && info.Mode()&os.ModeSymlink != 0 {
-			return "", errors.New("source symbolic link target does not exist")
+			target, readErr := os.Readlink(current)
+			if readErr != nil {
+				return "", readErr
+			}
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(current), target)
+			}
+			resolvedTarget, resolveErr := resolveSourcePathAtDepth(target, depth+1)
+			if resolveErr != nil {
+				return "", resolveErr
+			}
+			for index := len(missingComponents) - 1; index >= 0; index-- {
+				resolvedTarget = filepath.Join(resolvedTarget, missingComponents[index])
+			}
+			return resolvedTarget, nil
 		}
 		if lstatErr != nil && !errors.Is(lstatErr, os.ErrNotExist) {
 			return "", lstatErr

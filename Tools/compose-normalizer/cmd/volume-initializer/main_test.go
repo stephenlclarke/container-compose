@@ -234,6 +234,7 @@ func TestInitializeRejectsSymlinkResolvedMountOverlapBeforeRecovery(t *testing.T
 	for _, test := range []string{
 		"destination",
 		"destination missing child",
+		"dangling destination child",
 		"recovery",
 		"filesystem root",
 	} {
@@ -247,17 +248,18 @@ func TestInitializeRejectsSymlinkResolvedMountOverlapBeforeRecovery(t *testing.T
 			staleTemporary := filepath.Join(recovery, journalPrefix+testTransactionID+".tmp")
 			mustWrite(t, staleTemporary, "preserve", 0o600)
 			target := destination
+			var source string
 			switch test {
 			case "destination missing child":
-				source := symlinkPath(t, root, destination)
-				target = filepath.Join(source, "missing")
+				source = filepath.Join(symlinkPath(t, root, destination), "missing")
+			case "dangling destination child":
+				source = symlinkPath(t, root, filepath.Join(destination, "missing"))
 			case "recovery":
 				target = recovery
 			case "filesystem root":
 				target = string(filepath.Separator)
 			}
-			source := target
-			if test != "destination missing child" {
+			if source == "" {
 				source = symlinkPath(t, root, target)
 			}
 
@@ -297,6 +299,36 @@ func TestInitializeAcceptsNonoverlappingResolvedPaths(t *testing.T) {
 	contents, err := os.ReadFile(filepath.Join(destination, "value"))
 	if err != nil || string(contents) != "copied" {
 		t.Fatalf("unexpected copied contents %q: %v", contents, err)
+	}
+}
+
+func TestInitializeRecoversBeforeAcceptingDanglingSourceSymlink(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	destination := filepath.Join(root, "destination")
+	recovery := filepath.Join(root, "recovery")
+	mustMkdir(t, destination, 0o700)
+	mustMkdir(t, recovery, 0o700)
+	metadata, err := captureRootMetadata(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := filepath.Join(recovery, journalPrefix+testTransactionID)
+	if err := writeJournal(journal, testTransactionID, nil, metadata); err != nil {
+		t.Fatal(err)
+	}
+	stage := filepath.Join(destination, stagePrefix+testTransactionID)
+	mustMkdir(t, stage, 0o700)
+	source := symlinkPath(t, root, filepath.Join(root, "missing-source"))
+
+	err = initialize(source, destination, testTransactionID, recovery)
+	if !errors.Is(err, errSourceMissing) {
+		t.Fatalf("expected missing source after recovery, got %v", err)
+	}
+	for _, path := range []string{stage, journal} {
+		if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("interrupted transaction artefact remains at %s: %v", path, statErr)
+		}
 	}
 }
 
