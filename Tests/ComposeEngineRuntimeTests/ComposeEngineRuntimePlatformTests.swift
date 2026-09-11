@@ -22,6 +22,48 @@ import Testing
 
 struct ComposeEngineRuntimePlatformTests {
     @Test
+    func `platform aware image metadata uses the selected variant`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
+        try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
+        let recorder = RequestRecorder()
+        let server = fixture.server(ImageVolumeResponder(
+            recorder: recorder,
+            mountpoint: volume.path
+        ))
+        try await server.start()
+        let provider = EngineRuntimeProvider(socketPath: fixture.socketPath)
+
+        let healthCheck = try await provider.imageHealthCheck(
+            "example/image:latest",
+            platform: "linux/arm64"
+        )
+        let volumeTargets = try await provider.imageDeclaredVolumeTargets(
+            "example/image:latest",
+            platform: "linux/arm64"
+        )
+        let metadata = try await provider.imageMetadataIfAvailable(
+            "example/image:latest",
+            platform: "linux/arm64"
+        )
+
+        #expect(healthCheck?.test == ["CMD", "true"])
+        #expect(volumeTargets == ["/state"])
+        #expect(metadata?.environment == ["PLATFORM=arm64"])
+        let requests = await recorder.requests
+        #expect(requests.filter {
+            Self.requestsPlatform(
+                $0.target,
+                operatingSystem: "linux",
+                architecture: "arm64",
+                variant: nil
+            )
+        }.count == 3)
+        try await server.shutdown()
+    }
+
+    @Test
     func `image volume initialization rejects a mismatched local platform`() async throws {
         let fixture = try EngineFixture()
         defer { fixture.cleanup() }
@@ -120,5 +162,38 @@ struct ComposeEngineRuntimePlatformTests {
             && decoded.contains(#""os":"\#(operatingSystem)""#)
             && decoded.contains(#""architecture":"\#(architecture)""#)
             && variant.map { decoded.contains(#""variant":"\#($0)""#) } ?? true
+    }
+}
+
+extension ComposeEngineRuntimeTests {
+    @Test
+    func `stock launch never rewrites process mount arguments`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let runner = RecordingRunner()
+        let server = fixture.server(EngineFixtureResponder())
+        try await server.start()
+        let provider = EngineRuntimeProvider(
+            socketPath: fixture.socketPath,
+            runner: runner,
+            containerBinary: "/usr/local/bin/container",
+            environmentLauncher: "/usr/bin/env"
+        )
+
+        let status = try await provider.launchContainer(.init(
+            command: .run,
+            arguments: [
+                "--name", "command-arguments", "alpine", "tool", "--volume",
+                "project_data:/application-data",
+            ],
+            logging: .init(driver: nil, options: [:])
+        ))
+
+        #expect(status == 0)
+        #expect(runner.commands.first?.arguments == [
+            "/usr/local/bin/container", "run", "--name", "command-arguments",
+            "alpine", "tool", "--volume", "project_data:/application-data",
+        ])
+        try await server.shutdown()
     }
 }

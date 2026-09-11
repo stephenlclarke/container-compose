@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -55,7 +56,18 @@ func TestInitializeCopiesMetadataLinksAndFiles(t *testing.T) {
 	if err := os.Symlink("value.txt", filepath.Join(source, "symlink")); err != nil {
 		t.Fatal(err)
 	}
+	wantedTimestamp := time.Unix(1_700_000_000, 123_000_000)
+	wantedLinkTimestamp := unix.NsecToTimeval(wantedTimestamp.UnixNano())
+	if err := unix.Lutimes(
+		filepath.Join(source, "symlink"),
+		[]unix.Timeval{wantedLinkTimestamp, wantedLinkTimestamp},
+	); err != nil {
+		t.Fatal(err)
+	}
 	if err := syscall.Mkfifo(filepath.Join(source, "events"), 0o620); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(source, wantedTimestamp, wantedTimestamp); err != nil {
 		t.Fatal(err)
 	}
 
@@ -92,9 +104,48 @@ func TestInitializeCopiesMetadataLinksAndFiles(t *testing.T) {
 	if !bytes.Equal(copiedRootXattr, xattrValue) {
 		t.Fatalf("unexpected root extended attribute %q", copiedRootXattr)
 	}
+	destinationInfo, err := os.Stat(destination)
+	if err != nil || !destinationInfo.ModTime().Equal(wantedTimestamp) {
+		t.Fatalf("unexpected destination timestamp %v: %v", destinationInfo.ModTime(), err)
+	}
+	copiedLinkInfo, err := os.Lstat(filepath.Join(destination, "symlink"))
+	if err != nil || !copiedLinkInfo.ModTime().Equal(wantedTimestamp) {
+		t.Fatalf("unexpected symbolic link timestamp %v: %v", copiedLinkInfo.ModTime(), err)
+	}
 	pipe, err := os.Lstat(filepath.Join(destination, "events"))
 	if err != nil || pipe.Mode()&os.ModeNamedPipe == 0 {
 		t.Fatalf("named pipe was not preserved: %v", err)
+	}
+}
+
+func TestCopyExtendedAttributesReplacesInheritedAttributes(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	destination := filepath.Join(root, "destination")
+	mustWrite(t, source, "source", 0o600)
+	mustWrite(t, destination, "destination", 0o600)
+	desiredName := "io.github.stephenlclarke.container-compose.desired"
+	inheritedName := "io.github.stephenlclarke.container-compose.inherited"
+	if err := unix.Setxattr(source, desiredName, []byte("desired"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Setxattr(destination, inheritedName, []byte("inherited"), 0); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyExtendedAttributes(source, destination); err != nil {
+		t.Fatal(err)
+	}
+	attributes, err := readExtendedAttributes(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(attributes[desiredName], []byte("desired")) {
+		t.Fatalf("desired attribute was not copied: %v", attributes)
+	}
+	if _, exists := attributes[inheritedName]; exists {
+		t.Fatalf("inherited attribute survived replacement: %v", attributes)
 	}
 }
 

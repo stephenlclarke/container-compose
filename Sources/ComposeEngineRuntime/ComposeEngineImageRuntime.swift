@@ -77,13 +77,30 @@ extension EngineRuntimeProvider: ComposeRuntimeImageManaging {
         return image.repoDigests.first ?? image.id
     }
 
-    public func imageHealthCheck(_ reference: String, platform _: String?) async throws -> ComposeImageHealthCheck? {
-        try await inspectImage(reference).healthCheck
+    public func imageHealthCheck(_ reference: String, platform: String?) async throws -> ComposeImageHealthCheck? {
+        try await inspectImage(reference, platform: platform).healthCheck
     }
 
     public func imageMetadata(_ reference: String) async throws -> ComposeImageMetadata {
         let image = try await inspectImage(reference)
-        return ComposeImageMetadata(reference: reference) {
+        return Self.metadata(reference: reference, image: image)
+    }
+
+    public func imageMetadataIfAvailable(_ reference: String, platform: String?) async throws -> ComposeImageMetadata? {
+        do {
+            let image = try await inspectImage(reference, platform: platform)
+            return Self.metadata(reference: reference, image: image)
+        } catch ContainerUnixHTTPClientError.server(status: 404, message: _) {
+            return nil
+        }
+    }
+
+    public func imageDeclaredVolumeTargets(_ reference: String, platform: String?) async throws -> [String] {
+        try await inspectImage(reference, platform: platform).config.volumes.keys.sorted()
+    }
+
+    private static func metadata(reference: String, image: EngineImageInspect) -> ComposeImageMetadata {
+        ComposeImageMetadata(reference: reference) {
             $0.displayReference = image.repoTags.first ?? reference
             $0.user = image.config.user.nilIfEmpty
             $0.environment = image.config.environment
@@ -96,11 +113,6 @@ extension EngineRuntimeProvider: ComposeRuntimeImageManaging {
             $0.healthCheck = image.healthCheck
             $0.declaredVolumeTargets = image.config.volumes.keys.sorted()
         }
-    }
-
-    public func imageMetadataIfAvailable(_ reference: String, platform _: String?) async throws -> ComposeImageMetadata? {
-        guard try await imageExists(reference) else { return nil }
-        return try await imageMetadata(reference)
     }
 
     public func bridgeTransformers() async throws -> [ComposeBridgeTransformer] {

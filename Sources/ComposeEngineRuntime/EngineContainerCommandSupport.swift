@@ -45,27 +45,52 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
                 index += 2
                 continue
             }
-            guard result[index] == "--mount", result.indices.contains(index + 1) else {
-                index += 1
-                continue
-            }
-            let fields = result[index + 1].split(separator: ",", omittingEmptySubsequences: false)
-            let type = fields.first { $0.hasPrefix("type=") }?.dropFirst("type=".count)
-            let source = fields.first { $0.hasPrefix("source=") }?.dropFirst("source=".count)
-            guard type == "volume", let source, !source.isEmpty else {
+            if result[index] == "--mount", result.indices.contains(index + 1) {
+                let fields = result[index + 1].split(separator: ",", omittingEmptySubsequences: false)
+                let type = fields.first { $0.hasPrefix("type=") }?.dropFirst("type=".count)
+                let source = fields.first { $0.hasPrefix("source=") }?.dropFirst("source=".count)
+                if type == "volume", let source, !source.isEmpty,
+                   let replacement = try await managedStructuredVolume(
+                       fields: fields,
+                       source: String(source)
+                   )
+                {
+                    result[index + 1] = replacement
+                }
                 index += 2
                 continue
             }
-            if let replacement = try await managedStructuredVolume(
-                fields: fields,
-                source: String(source)
-            ) {
-                result[index + 1] = replacement
+            let argument = result[index]
+            if Self.containerLaunchValueOptions.contains(argument) {
+                index += result.indices.contains(index + 1) ? 2 : 1
+                continue
             }
-            index += 2
+            if argument.hasPrefix("-") {
+                index += 1
+                continue
+            }
+            // The first non-option operand is the image. Everything after it
+            // belongs to the container process and must remain byte-for-byte
+            // unchanged, even when it resembles a Container CLI mount option.
+            break
         }
         return result
     }
+
+    private static let containerLaunchValueOptions: Set<String> = [
+        "--add-host", "--annotation", "--blkio", "--cap-add", "--cap-drop",
+        "--cgroup-parent", "--cgroupns", "--cpu-period", "--cpu-quota",
+        "--cpu-shares", "--cpus", "--cpuset-cpus", "--device",
+        "--device-cgroup-rule", "--dns", "--dns-option", "--dns-search",
+        "--domainname", "--engine-api-socket", "--entrypoint", "--env",
+        "--env-file", "--expose", "--gpus", "--group-add", "--hostname",
+        "--init-image", "--ipc", "--isolation", "--label", "--log-driver",
+        "--memory", "--memory-reservation", "--memory-swap", "--name",
+        "--network", "--oom-score-adj", "--pid", "--pids-limit", "--platform",
+        "--publish", "--runtime", "--security-opt", "--shm-size", "--stop-signal",
+        "--stop-timeout", "--sysctl", "--tmpfs", "--ulimit", "--user",
+        "--userns", "--uts", "--workdir",
+    ]
 
     private func managedShortVolume(_ value: String) async throws -> String? {
         let fields = value.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)

@@ -110,7 +110,12 @@ func initialize(source, destination, transaction string) error {
 	if err := os.Mkdir(stage, 0o700); err != nil {
 		return fmt.Errorf("create initialization stage: %w", err)
 	}
-	defer os.RemoveAll(stage)
+	stagePresent := true
+	defer func() {
+		if stagePresent {
+			_ = os.RemoveAll(stage)
+		}
+	}()
 	hardlinks := make(map[fileIdentity]string)
 	entries, err := os.ReadDir(source)
 	if err != nil {
@@ -165,8 +170,24 @@ func initialize(source, destination, transaction string) error {
 		rollback()
 		return err
 	}
+	if err := os.RemoveAll(stage); err != nil {
+		return fmt.Errorf("remove initialization stage: %w", err)
+	}
+	stagePresent = false
+	if err := syncDirectory(destination); err != nil {
+		return err
+	}
 	if err := os.Remove(journal); err != nil {
 		return fmt.Errorf("complete initialization transaction: %w", err)
+	}
+	if err := syncDirectory(destination); err != nil {
+		return err
+	}
+	// Journal and stage cleanup mutate the volume root. Restore the source root
+	// metadata only after those private transaction entries are gone.
+	if err := applyRootMetadata(destination, sourceMetadata); err != nil {
+		rollback()
+		return fmt.Errorf("restore destination metadata: %w", err)
 	}
 	return syncDirectory(destination)
 }
@@ -500,6 +521,10 @@ func applyMetadata(source, path string, info os.FileInfo, followLink bool) error
 		!metadataAlreadyMatches(path, stat.Uid, stat.Gid, false) {
 		return err
 	}
+	timestamp := unix.NsecToTimeval(info.ModTime().UnixNano())
+	if err := unix.Lutimes(path, []unix.Timeval{timestamp, timestamp}); err != nil {
+		return fmt.Errorf("set symbolic link timestamps for %s: %w", path, err)
+	}
 	return nil
 }
 
@@ -509,7 +534,7 @@ func copyExtendedAttributes(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	return setExtendedAttributes(destination, attributes)
+	return replaceExtendedAttributes(destination, attributes)
 }
 
 func readExtendedAttributes(path string) (map[string][]byte, error) {
