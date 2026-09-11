@@ -427,11 +427,11 @@ their live engines. The release helper no longer accepts
 
 There are two package lanes, with no manual asset copying:
 
-- Every successful runtime-affecting CI run that originates from a push to `main` refreshes the explicit `current` tag and a newly published mutable GitHub prerelease named **Current build**, plus the opt-in `container-current` / `container-compose-current` Homebrew pair. Documentation, workflow-control, and other changes classified outside runtime validation do not rebuild or republish the unchanged product. A commit superseded before promotion is skipped so the subsequent successful runtime run publishes the newest eligible `main` head.
+- Every successful runtime-affecting CI run that originates from a push to `main` publishes one immutable, content-addressed `current-<full-sha>` GitHub prerelease named **Current build**, then atomically updates the opt-in `container-current` / `container-compose-current` Homebrew pair to select it. Documentation, workflow-control, and other changes classified outside runtime validation do not rebuild or republish the unchanged product. A commit superseded before promotion is skipped so the subsequent successful runtime run publishes the newest eligible `main` head.
 - A semantic release is an immutable `x.y.z` tag and becomes Homebrew's default `container` / `container-compose` pair.
 
-`current` is deliberately an unsigned, movable pointer; signing it would make
-its verification describe a prior commit as soon as it advances. Stable semantic
+Each generated `current-<full-sha>` tag is an unsigned lightweight identity
+whose name and target must agree and which is never retargeted. Stable semantic
 tags are SSH-signed and GitHub-verified before their release gate starts.
 
 Current is the normal delivery lane. Create a stable release after the current
@@ -439,19 +439,24 @@ build has soaked for seven days for a milestone, as a documented `--+`
 maintenance promotion, or for a documented security incident. A maintenance
 promotion is manual, must record its operational reason, and is limited to a
 patch bump; it is suitable for an explicit baseline promotion or a release
-mechanism fix. The soak starts when the commit-identified current plugin asset
-(`container-compose-plugin-current-<12-character-sha>-arm64.tar.gz`) is
-published, not when the long-lived Current prerelease was first created. The
-release helper enforces these rules.
+mechanism fix. The soak starts when the successful exact-head package run named
+by both installed Current formula versions completes, after the
+commit-identified release is public and the matching Homebrew pair has been
+selected. An old upload timestamp from a recovered private draft cannot satisfy
+the soak, and a later no-op workflow cannot reset it. The release helper parses
+the single active URL, SHA-256, and version declarations from each formula;
+matching text in comments, caveats, or duplicate declarations is not authority.
+The Current early-recovery check uses the same parsing rules before it can skip
+a transaction. A malformed, duplicate, or stale active declaration resumes the
+bounded publication transaction instead of hiding behind expected comment text.
+The release helper enforces these rules.
 
 Current publication is recoverable across GitHub and Homebrew: it stages
-immutable commit-identified archives on the existing Current prerelease, updates
-the matching Homebrew formula pair, then moves the mutable `current` tag and
-recreates the release object from those staged assets. Recreating the object
-makes GitHub's published time represent this Current build rather than the
-first build that used the `current` tag. If that final replacement is
-interrupted, rerunning the same publication recreates the release from the same
-candidate assets. The Current Homebrew pair uses the monotonically increasing
+the complete commit-identified closure on a draft `current-<full-sha>` release,
+verifies every uploaded digest, and publishes that release exactly once before
+updating the matching Homebrew formula pair. A retry reconciles an incomplete
+draft or verifies the already-published immutable closure; it never deletes,
+clobbers, or retargets published state. The Current Homebrew pair uses the monotonically increasing
 package-workflow run number before the source SHA in its shared formula
 version. Both `container-current` and `container-compose-current` receive that
 same version, so `brew upgrade container-current container-compose-current`
@@ -468,7 +473,7 @@ is no release-producing commit or the soak is incomplete, so an unready week is
 not a failed release. Manual dispatch can use the same automatic decision or an
 explicit patch, minor, or major override.
 
-The scheduled stable-release workflow and the Current package workflow run only from `main` on the dedicated `container-compose-release` Apple-silicon self-hosted runner. It creates clean, disposable stack checkouts, reconstructs the read-only Apple remotes and Stephen-owned push remotes, and invokes the existing helper unchanged. That preserves the required local runtime and Docker Compose parity gate, signed semantic tag, source-promotion pull request, hosted stable gate, immutable package assets, and paired Homebrew update. The separate Current Demo workflow consumes the already-published exact-SHA signed packages on the same hardware-virtualization-capable runner, uses a stable internal-volume runtime path, and applies a process-group deadline. Its mutable visual asset is recoverable and deliberately outside the package, attestation, release, and Homebrew critical path. GitHub-hosted macOS workers cannot provide the nested virtualization needed to record Container guest startup, so they must never publish that recording.
+The scheduled stable-release workflow and the Current package workflow run only from `main` on the dedicated `container-compose-release` Apple-silicon self-hosted runner. It creates clean, disposable stack checkouts, reconstructs the read-only Apple remotes and Stephen-owned push remotes, and invokes the existing helper unchanged. That preserves the required local runtime and Docker Compose parity gate, signed semantic tag, source-promotion pull request, hosted stable gate, immutable package assets, and paired Homebrew update. The separate Current Demo workflow consumes the already-published exact-SHA signed packages on the same hardware-virtualization-capable runner, uses a stable internal-volume runtime path, and applies a process-group deadline. Its exact-commit visual output is retained as a bounded workflow artifact and remains deliberately outside the package, attestation, release, and Homebrew critical path. It never modifies an immutable release. GitHub-hosted macOS workers cannot provide the nested virtualization needed to record Container guest startup, so they must never publish that recording.
 
 Bootstrap that runner once on the release Mac after its normal build prerequisites and GitHub CLI login are in place:
 
@@ -486,21 +491,20 @@ From clean `~/github/container-compose`, `~/github/container-builder-shim`,
 make release-plan
 make release-version
 make release-plan VERSION_SELECTOR=--+ # reviewed maintenance plan
-make release-status VERSION=0.14.3
-make release-recovery-plan VERSION=0.14.3
+make release-status VERSION=0.15.0
+make release-recovery-plan VERSION=0.15.0
 ```
 
 ### Promote The Current Build
 
-Do not copy, rename, or edit the mutable GitHub **Current build** prerelease.
+Do not copy, rename, or edit a published GitHub **Current build** prerelease.
 It is an installable view of green `main`, not a stable release candidate asset.
 Promotion always rebuilds the exact tagged source into immutable stable assets,
 which is what keeps the semantic version, runtime pin, checksums, Homebrew
-formulae, and release notes deterministic. Current finalization preserves the
-existing GitHub release object, uploads the complete replacement closure, then
-edits its metadata after the matching Homebrew formulae update. A failed refresh
-therefore leaves the prior Current release available; freshness is carried by
-explicit build metadata rather than destructive recreation for `published_at`.
+formulae, and release notes deterministic. Current finalization only verifies
+the already-published exact-SHA closure after the matching Homebrew formulae
+update. A failed publication leaves the prior formula-selected Current release
+available and the candidate draft or immutable release recoverable by identity.
 
 `make release-version` reports the latest reachable semantic tag, selected
 bump, and next version. `make release-plan` includes that decision. After the
@@ -528,8 +532,9 @@ the decision. Explicit selectors remain available for reviewed maintenance
 promotions, security releases, and exact recovery retries; they are not a way
 to bypass release evidence.
 
-Before source promotion, the helper requires the mutable `current` tag to point
-at the validated `main` head. Milestones also require that Current build's
+Before source promotion, the helper requires the nearest content-addressed
+Current release tag to identify the validated `main` head (or the published
+parent of an exact retained release candidate). Milestones also require that Current build's
 seven-day soak. An exceptional milestone promotion may bypass only that timer
 with a non-empty `CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON` recording the
 explicit maintainer authorization and rationale; it still requires the exact
@@ -573,18 +578,18 @@ If a hosted gate fails before the semantic GitHub release is created, correct th
 
 Stable gate, package, and documentation concurrency groups retain a full pending queue rather than replacing an earlier pending release. Candidate-bound gate receipts verify the immutable Homebrew snapshot recorded by the gate; later tap movement is handled only by the serial, conflict-checked formula publication transaction and does not invalidate compiled release evidence.
 
-After the tag is published, the one mutable `current` prerelease continues to
-follow later green `main` commits. Homebrew users without `-current` always use
-the newly promoted stable formula pair; opted-in users continue to use the
-current pair.
+After the stable tag is published, later green `main` commits receive new
+content-addressed Current prereleases. Homebrew users without `-current` always
+use the newly promoted stable formula pair; opted-in users continue to use the
+Current pair selected atomically by its two formulae.
 
-Each package note begins with a quality snapshot for its exact commit. Stable releases contain the eleven SonarQube quality metrics shown in the README plus CodeQL analysis, result, and rule counts. Mutable Current builds contain the eleven exact-commit SonarQube metrics and do not query or display release-only CodeQL evidence. The controller emits the applicable metrics as individual static Shields-compatible badges and uploads the same set as one self-contained SVG evidence asset.
+Each package note begins with a quality snapshot for its exact commit. Stable releases contain the eleven SonarQube quality metrics shown in the README plus CodeQL analysis, result, and rule counts. Current builds contain the eleven exact-commit SonarQube metrics and do not query or display release-only CodeQL evidence. The controller emits the applicable metrics as individual static Shields-compatible badges and uploads the same set as one self-contained SVG evidence asset.
 
 Every publication uses a unique static delivery key and Shields' maximum supported five-day cache lifetime, so a successfully verified static badge is not needlessly re-fetched through GitHub's image proxy while the release remains current. The controller asks GitHub to render the exact release Markdown, fetches every resulting GitHub-proxied image, and parses every payload as SVG before publication can continue. A badge-host, GitHub image-proxy, SonarCloud, or GitHub Actions authority-query failure blocks either lane rather than producing an unverified or broken note; a CodeQL failure additionally blocks stable publication. Both publish-context resolution and quality-snapshot capture retry transient GitHub `429` and `5xx` responses twelve times; exhaustion fails the package workflow visibly instead of reporting a successful skip and leaving Current stale. The workflow-run gate also retries the short GitHub jobs-API window in which a completed CI run can still expose a null aggregate `Validate` conclusion, and it publishes only after every relevant conclusion is populated and the normal success-or-intentional-skip policy passes.
 
 A Current package accepts only an exact-main successful CI run with a passed SonarQube scan and retained per-metric history, whether that CI was triggered by a push or by an explicit full-validation dispatch. It waits within the configured quality-evidence window for the exact analysis and all required metrics to finish indexing. A docs-only run simply leaves the existing Current release in place.
 
-SonarCloud can discard an older analysis and its metric history after a later `main` scan, even while GitHub retains the immutable semantic tag, the exact SonarCloud check run, and the exact CI job. Stable publication alone therefore has a retention-aware path: when the exact metric history is absent, it requires both a successful `SonarCloud Code Analysis` check attached to the promoted commit and a successful `SonarQube scan` step in a successful exact-commit `main` CI run. It uses that evidence immediately only when SonarCloud already exposes a different analysis completed after the exact scan; otherwise it honors the configured polling window so normal analysis and measure-history indexing can produce the full snapshot before classifying the history as expired. The same wait applies when the analysis record is visible but some required metrics are not yet indexed. The resulting fallback snapshot labels the SonarQube quality gate as passed and the historical metrics as expired, links both retained authorities, keeps the exact CodeQL counts, and states that no later metrics were substituted. A missing, failed, mismatched, or unreadable authority still blocks publication. This path is not available to mutable Current builds and never converts a transient metric API error into retention evidence. The SVG stays a downloadable evidence artifact and is not embedded inline, because GitHub release pages serve release assets as attachment data rather than reliable inline SVG images. Current-build snapshots refresh whenever the mutable `current` pointer moves; stable snapshots are immutable historical evidence.
+SonarCloud can discard an older analysis and its metric history after a later `main` scan, even while GitHub retains the immutable semantic tag, the exact SonarCloud check run, and the exact CI job. Stable publication alone therefore has a retention-aware path: when the exact metric history is absent, it requires both a successful `SonarCloud Code Analysis` check attached to the promoted commit and a successful `SonarQube scan` step in a successful exact-commit `main` CI run. It uses that evidence immediately only when SonarCloud already exposes a different analysis completed after the exact scan; otherwise it honors the configured polling window so normal analysis and measure-history indexing can produce the full snapshot before classifying the history as expired. The same wait applies when the analysis record is visible but some required metrics are not yet indexed. The resulting fallback snapshot labels the SonarQube quality gate as passed and the historical metrics as expired, links both retained authorities, keeps the exact CodeQL counts, and states that no later metrics were substituted. A missing, failed, mismatched, or unreadable authority still blocks publication. This path is not available to Current builds and never converts a transient metric API error into retention evidence. The SVG stays a downloadable evidence artifact and is not embedded inline, because GitHub release pages serve release assets as attachment data rather than reliable inline SVG images. Each Current-build snapshot belongs to its immutable `current-<sha>` prerelease; stable snapshots are immutable historical evidence.
 
 ## Docker Compose Parity
 

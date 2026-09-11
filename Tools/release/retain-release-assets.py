@@ -87,7 +87,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--delete-superseded-current-releases",
         action="store_true",
-        help="delete obsolete mutable current release objects while preserving their tags",
+        help="delete obsolete mutable legacy prereleases; immutable releases are retained",
     )
     parser.add_argument(
         "--current-asset",
@@ -95,7 +95,7 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help=(
             "asset name that belongs to the finalized current build; may be repeated. "
-            "All other current-release assets are retired after promotion."
+            "Unexpected assets fail validation because immutable releases cannot be repaired."
         ),
     )
     return parser.parse_args()
@@ -115,12 +115,12 @@ def published_releases(releases: Iterable[dict]) -> list[dict]:
 
 
 def current_release_candidates(releases: Iterable[dict]) -> list[dict]:
-    """Return published prereleases that implement the mutable current lane."""
+    """Return published prereleases that implement the immutable Current lane."""
     return [
         release
         for release in published_releases(releases)
         if release.get("prerelease")
-        and release.get("tag_name") in {"current"}
+        and re.fullmatch(r"current-[0-9a-f]{40}", str(release.get("tag_name") or ""))
     ]
 
 
@@ -128,8 +128,15 @@ def obsolete_current_release(release: dict) -> bool:
     """Return whether a prerelease is an old generated current-build release."""
     tag = str(release.get("tag_name") or "")
     return bool(release.get("prerelease")) and (
-        tag.startswith("current-") or tag.startswith("homebrew-main-")
+        tag == "current" or tag.startswith("current-") or tag.startswith("homebrew-main-")
     )
+
+
+def deletable_legacy_current_release(release: dict) -> bool:
+    """Return legacy mutable prereleases that may be removed as whole objects."""
+
+    tag = str(release.get("tag_name") or "")
+    return bool(release.get("prerelease")) and tag.startswith("homebrew-main-")
 
 
 def latest_stable_release_id(repo: str, releases: Iterable[dict]) -> int | None:
@@ -153,7 +160,7 @@ def latest_stable_release_id(repo: str, releases: Iterable[dict]) -> int | None:
 def retained_release_ids(
     releases: Iterable[dict], *, latest_stable_id: int | None
 ) -> set[int]:
-    """Return GitHub latest stable and the sole mutable current prerelease ids."""
+    """Return GitHub latest stable and the newest immutable Current prerelease ids."""
 
     published = published_releases(releases)
     keep: set[int] = set()
@@ -173,8 +180,10 @@ def retained_release_ids(
         current_candidates = [
             release
             for release in published
-            if release.get("prerelease")
+            if release.get("prerelease") and release.get("tag_name") == "current"
         ]
+    if not current_candidates:
+        current_candidates = [release for release in published if release.get("prerelease")]
     if current_candidates:
         keep.add(max(current_candidates, key=lambda release: release["published_at"])["id"])
     return keep
@@ -285,7 +294,7 @@ def historical_assets_to_retire(release: dict) -> list[dict]:
 
 
 def stale_current_assets(release: dict, retained_names: set[str]) -> list[dict]:
-    """Return superseded assets from the sole mutable current release."""
+    """Return unexpected assets from an exact immutable Current release."""
 
     return [
         asset
@@ -339,6 +348,8 @@ def main() -> None:
     for release in published_releases(releases):
         if release["id"] not in retained:
             continue
+        if release.get("immutable"):
+            continue
         current_body = release.get("body") or ""
         body = replace_retention_note(
             remove_legacy_pin_highlights(current_body),
@@ -360,20 +371,30 @@ def main() -> None:
     retained_current_assets = set(args.current_asset)
     if retained_current_assets:
         for release in published_releases(releases):
-            if release["id"] not in retained or release.get("tag_name") != "current":
+            if release["id"] not in retained or not re.fullmatch(
+                r"current-[0-9a-f]{40}", str(release.get("tag_name") or "")
+            ):
                 continue
             stale_assets = stale_current_assets(release, retained_current_assets)
             if not stale_assets:
                 continue
-            print(
-                "retiring superseded current assets: "
+            raise ValueError(
+                "immutable Current release contains unexpected assets: "
                 + ", ".join(str(asset.get("name")) for asset in stale_assets)
             )
-            if args.apply:
-                delete_named_assets(args.repo, stale_assets)
 
     for release in stale:
-        if args.delete_superseded_current_releases and obsolete_current_release(release):
+        if release.get("tag_name") == "current":
+            print("preserving deprecated legacy Current release without mutation")
+            continue
+        if release.get("immutable"):
+            print(f"preserving immutable historical release: {release['tag_name']}")
+            continue
+        if (
+            args.delete_superseded_current_releases
+            and deletable_legacy_current_release(release)
+            and not release.get("immutable")
+        ):
             print(f"removing superseded current release object: {release['tag_name']}")
             if args.apply:
                 delete_release(args.repo, release)
@@ -395,7 +416,14 @@ def main() -> None:
             continue
         print(f"retiring {release['tag_name']}: {asset_count} asset(s)")
         if args.apply:
-            if asset_count:
+            content_addressed_current = re.fullmatch(
+                r"current-[0-9a-f]{40}", str(release.get("tag_name") or "")
+            )
+            if (
+                asset_count
+                and not release.get("immutable")
+                and content_addressed_current is None
+            ):
                 delete_named_assets(args.repo, retired_assets)
             if body != current_body:
                 update_release_notes(args.repo, release, body)

@@ -748,7 +748,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         ):
             checkpoint.pop(field)
         WORKSPACE.atomic_json(release_root / WORKSPACE.WORKSPACE_MARKER, checkpoint)
-        refresh = WORKSPACE.refresh_mutable_current_tag
+        refresh = WORKSPACE.refresh_current_release_tags
 
         def add_operator_tag(root: Path) -> None:
             refresh(root)
@@ -756,7 +756,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
 
         with mock.patch.object(
             WORKSPACE,
-            "refresh_mutable_current_tag",
+            "refresh_current_release_tags",
             side_effect=add_operator_tag,
         ):
             resumed = WORKSPACE.materialize(
@@ -2039,7 +2039,7 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         self.assertEqual(retired_marker["state"], "retired")
         self.assertNotIn("replacement", retired_marker)
 
-    def test_resume_refreshes_the_mutable_current_tag(self) -> None:
+    def test_resume_fetches_a_new_content_addressed_current_tag(self) -> None:
         release_root = WORKSPACE.materialize(
             self.build_root, "-+-", self.remote_root
         )
@@ -2048,11 +2048,11 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         self.git("add", "README.md", cwd=source)
         self.git("commit", "-m", "promote current", cwd=source)
         promoted = self.git("rev-parse", "HEAD", cwd=source).strip()
+        current_tag = f"current-{promoted}"
         self.git(
             "push",
-            "--force",
             str(self.remote_root / "container-compose.git"),
-            "HEAD:refs/tags/current",
+            f"HEAD:refs/tags/{current_tag}",
             cwd=source,
         )
 
@@ -2062,14 +2062,14 @@ class ReleaseWorkspaceTests(unittest.TestCase):
         self.assertEqual(
             self.git(
                 "rev-parse",
-                "refs/tags/current",
+                f"refs/tags/{current_tag}",
                 cwd=resumed / "container-compose",
             ).strip(),
             promoted,
         )
 
-    def test_resume_rejects_a_missing_remote_current_tag(self) -> None:
-        WORKSPACE.materialize(self.build_root, "-+-", self.remote_root)
+    def test_resume_does_not_require_the_legacy_current_tag(self) -> None:
+        release_root = WORKSPACE.materialize(self.build_root, "-+-", self.remote_root)
         source = self.root / "sources" / "container-compose"
         self.git(
             "push",
@@ -2078,10 +2078,9 @@ class ReleaseWorkspaceTests(unittest.TestCase):
             cwd=source,
         )
 
-        with self.assertRaisesRegex(
-            WORKSPACE.WorkspaceError, "current tag is missing"
-        ):
-            WORKSPACE.materialize(self.build_root, "-+-", self.remote_root)
+        resumed = WORKSPACE.materialize(self.build_root, "-+-", self.remote_root)
+
+        self.assertEqual(resumed, release_root)
 
     def test_missing_baseline_object_is_fetched_into_retained_workspace(self) -> None:
         release_root = WORKSPACE.materialize(

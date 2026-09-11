@@ -31,9 +31,8 @@ permissions:
 
 concurrency:
   group: container-compose-current-demo
-  # A replacement is a delete-upload transaction against one immutable
-  # release ID. Let the running transaction reach its recovery path; a queued
-  # newer run will supersede the finished recording after freshness checks.
+  # Let one self-hosted recording finish before a newer exact-Current request
+  # starts so the runner never performs duplicate nested-virtualization work.
   cancel-in-progress: false
 
 jobs:
@@ -45,6 +44,7 @@ jobs:
     outputs:
       publish: ${{ steps.resolve.outputs.publish }}
       sha: ${{ steps.resolve.outputs.sha }}
+      tag: ${{ steps.resolve.outputs.tag }}
     steps:
       - name: Resolve exact Current release
         id: resolve
@@ -70,20 +70,21 @@ jobs:
             exit 1
           fi
 
+          current_tag="current-${source_sha}"
           current_tag_sha="$(
-            git ls-remote --tags "${remote}" refs/tags/current 'refs/tags/current^{}' \
-              | awk '$2 == "refs/tags/current^{}" { print $1; found = 1 } END { if (!found) print "" }' \
+            git ls-remote --tags "${remote}" "refs/tags/${current_tag}" "refs/tags/${current_tag}^{}" \
+              | awk -v peeled="refs/tags/${current_tag}^{}" '$2 == peeled { print $1; found = 1 } END { if (!found) print "" }' \
               | tail -n 1
           )"
           if [[ -z "${current_tag_sha}" ]]; then
             current_tag_sha="$(
-              git ls-remote --tags --refs "${remote}" refs/tags/current \
+              git ls-remote --tags --refs "${remote}" "refs/tags/${current_tag}" \
                 | awk '{ print $1 }' \
                 | tail -n 1
             )"
           fi
           release_target="$(
-            gh release view current --repo "${GITHUB_REPOSITORY}" \
+            gh release view "${current_tag}" --repo "${GITHUB_REPOSITORY}" \
               --json targetCommitish --jq .targetCommitish
           )"
 
@@ -100,6 +101,7 @@ jobs:
           {
             printf 'publish=%s\n' "${publish}"
             printf 'sha=%s\n' "${source_sha}"
+            printf 'tag=%s\n' "${current_tag}"
           } >> "${GITHUB_OUTPUT}"
 
   record:
@@ -113,7 +115,7 @@ jobs:
     timeout-minutes: 50
     permissions:
       attestations: read
-      contents: write
+      contents: read
     steps:
       - name: Checkout exact Current source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -148,6 +150,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PUBLISH_SHA: ${{ needs.resolve-current.outputs.sha }}
+          CURRENT_RELEASE_TAG: ${{ needs.resolve-current.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -158,7 +161,7 @@ jobs:
           download_root="${RUNNER_TEMP}/container-compose-current-demo-downloads"
           rm -rf -- "${download_root}"
           mkdir -p "${download_root}"
-          gh release download current \
+          gh release download "${CURRENT_RELEASE_TAG}" \
             --repo "${GITHUB_REPOSITORY}" \
             --dir "${download_root}" \
             --pattern "${plugin_asset}" \
@@ -328,235 +331,13 @@ jobs:
           test -s "${demo_output}"
           printf 'DEMO_OUTPUT=%s\n' "${demo_output}" >> "${GITHUB_ENV}"
 
-      - name: Verify source and release are still current
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PUBLISH_SHA: ${{ needs.resolve-current.outputs.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          remote="https://github.com/${GITHUB_REPOSITORY}.git"
-          main_sha="$(git ls-remote --heads "${remote}" refs/heads/main | awk '{ print $1 }' | tail -n 1)"
-          current_tag_sha="$(
-            git ls-remote --tags "${remote}" refs/tags/current 'refs/tags/current^{}' \
-              | awk '$2 == "refs/tags/current^{}" { print $1; found = 1 } END { if (!found) print "" }' \
-              | tail -n 1
-          )"
-          if [[ -z "${current_tag_sha}" ]]; then
-            current_tag_sha="$(git ls-remote --tags --refs "${remote}" refs/tags/current | awk '{ print $1 }' | tail -n 1)"
-          fi
-          release_target="$(
-            gh release view current --repo "${GITHUB_REPOSITORY}" \
-              --json targetCommitish --jq .targetCommitish
-          )"
-          if ! [[ "${PUBLISH_SHA}" == "${main_sha}" &&
-                  "${PUBLISH_SHA}" == "${current_tag_sha}" &&
-                  "${PUBLISH_SHA}" == "${release_target}" ]]; then
-            printf 'Current moved while the demo was recording; leaving its existing asset unchanged.\n'
-            printf 'PUBLISH_DEMO=false\n' >> "${GITHUB_ENV}"
-            exit 0
-          fi
-          printf 'PUBLISH_DEMO=true\n' >> "${GITHUB_ENV}"
-
-      - name: Publish exact Current demo
-        if: env.PUBLISH_DEMO == 'true'
-        env:
-          DEMO_ASSET: container-compose-demo-current.gif
-          GH_TOKEN: ${{ github.token }}
-          PUBLISH_SHA: ${{ needs.resolve-current.outputs.sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          CURRENT_RELEASE_ID=""
-
-          current_release_matches() {
-            local remote="https://github.com/${GITHUB_REPOSITORY}.git"
-            local main_sha
-            local current_tag_sha
-            local release_fields
-            local release_id
-            local release_target
-            local release_upload_url
-            local checkout_sha
-            local tracked_status
-            local expected_upload_url
-            checkout_sha="$(git rev-parse HEAD)" || return 1
-            tracked_status="$(git status --porcelain --untracked-files=no)" || return 1
-            main_sha="$(
-              git ls-remote --heads "${remote}" refs/heads/main \
-                | awk '{ print $1 }' \
-                | tail -n 1
-            )" || return 1
-            current_tag_sha="$(
-              git ls-remote --tags "${remote}" refs/tags/current 'refs/tags/current^{}' \
-                | awk '$2 == "refs/tags/current^{}" { print $1; found = 1 } END { if (!found) print "" }' \
-                | tail -n 1
-            )" || return 1
-            if [[ -z "${current_tag_sha}" ]]; then
-              current_tag_sha="$(
-                git ls-remote --tags --refs "${remote}" refs/tags/current \
-                  | awk '{ print $1 }' \
-                  | tail -n 1
-              )" || return 1
-            fi
-            release_fields="$(
-              gh release view current --repo "${GITHUB_REPOSITORY}" \
-                --json databaseId,targetCommitish,uploadUrl \
-                --jq '[.targetCommitish, (.databaseId | tostring), .uploadUrl] | @tsv'
-            )" || return 1
-            IFS=$'\t' read -r release_target release_id release_upload_url \
-              <<< "${release_fields}"
-            expected_upload_url="https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets"
-            if [[ ! "${release_id}" =~ ^[0-9]+$ ||
-                  "${release_upload_url}" != "${expected_upload_url}"'{?name,label}' ]]; then
-              return 1
-            fi
-            [[ "${PUBLISH_SHA}" == "${main_sha}" &&
-               "${PUBLISH_SHA}" == "${current_tag_sha}" &&
-               "${PUBLISH_SHA}" == "${release_target}" &&
-               "${PUBLISH_SHA}" == "${checkout_sha}" &&
-               -z "${tracked_status}" ]] || return 1
-            CURRENT_RELEASE_ID="${release_id}"
-          }
-
-          release_asset_id() {
-            local release_id="$1"
-            gh api --paginate \
-              "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
-              --jq ".[] | select(.name == \"${DEMO_ASSET}\") | .id" \
-              | tail -n 1
-          }
-
-          download_release_asset() {
-            local asset_id="$1"
-            local output="$2"
-            gh api -H 'Accept: application/octet-stream' \
-              "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" > "${output}"
-          }
-
-          upload_release_asset() {
-            local release_id="$1"
-            local input="$2"
-            gh api --method POST \
-              -H 'Content-Type: image/gif' \
-              --input "${input}" \
-              "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?name=${DEMO_ASSET}" \
-              --silent
-          }
-
-          replace_release_asset() {
-            local release_id="$1"
-            local input="$2"
-            local existing_asset_id
-            existing_asset_id="$(release_asset_id "${release_id}")" || return 1
-            if [[ -n "${existing_asset_id}" ]]; then
-              gh api --method DELETE \
-                "repos/${GITHUB_REPOSITORY}/releases/assets/${existing_asset_id}" \
-                --silent || return 1
-            fi
-            upload_release_asset "${release_id}" "${input}"
-          }
-
-          if ! current_release_matches; then
-            printf 'Current moved before demo publication; leaving its existing asset unchanged.\n'
-            exit 0
-          fi
-          publication_release_id="${CURRENT_RELEASE_ID}"
-
-          prior_demo_dir="${RUNNER_TEMP}/container-compose-prior-current-demo"
-          recovery_demo_dir="${RUNNER_TEMP}/container-compose-recovery-current-demo"
-          rm -rf -- "${prior_demo_dir}" "${recovery_demo_dir}"
-          mkdir -p "${prior_demo_dir}" "${recovery_demo_dir}"
-          prior_asset_id="$(release_asset_id "${publication_release_id}")"
-          prior_demo="${prior_demo_dir}/${DEMO_ASSET}"
-          if [[ -n "${prior_asset_id}" ]]; then
-            download_release_asset "${prior_asset_id}" "${prior_demo}"
-            test -s "${prior_demo}"
-          fi
-
-          if ! current_release_matches ||
-             [[ "${CURRENT_RELEASE_ID}" != "${publication_release_id}" ]]; then
-            printf 'Current moved immediately before demo upload; leaving its existing asset unchanged.\n'
-            exit 0
-          fi
-
-          set +e
-          replace_release_asset "${publication_release_id}" "${DEMO_OUTPUT}"
-          upload_status=$?
-          set -e
-          if ((upload_status == 0)); then
-            if ! current_release_matches ||
-               [[ "${CURRENT_RELEASE_ID}" != "${publication_release_id}" ]]; then
-              printf 'Current moved after demo upload; refusing to accept a stale publication.\n' >&2
-              exit 75
-            fi
-            published_asset_id="$(release_asset_id "${publication_release_id}")"
-            published_demo="${recovery_demo_dir}/${DEMO_ASSET}"
-            if [[ -n "${published_asset_id}" ]] &&
-              download_release_asset "${published_asset_id}" "${published_demo}"; then
-              published_sha256="$(shasum -a 256 \
-                "${published_demo}" | awk '{ print $1 }')"
-              candidate_sha256="$(shasum -a 256 "${DEMO_OUTPUT}" | awk '{ print $1 }')"
-              if [[ "${published_sha256}" == "${candidate_sha256}" ]]; then
-                printf 'Current demo output verified against release %s.\n' \
-                  "${publication_release_id}"
-                exit 0
-              fi
-            fi
-            printf 'Current demo upload returned success without the exact published output.\n' >&2
-            upload_status=1
-          fi
-
-          if [[ ! -s "${prior_demo}" ]]; then
-            printf 'Current demo upload failed and no prior asset is available to restore.\n' >&2
-            exit "${upload_status}"
-          fi
-
-          if ! current_release_matches ||
-             [[ "${CURRENT_RELEASE_ID}" != "${publication_release_id}" ]]; then
-            printf 'Current moved after the failed demo upload; refusing to modify the newer release.\n' >&2
-            exit "${upload_status}"
-          fi
-
-          published_asset_id="$(release_asset_id "${publication_release_id}")"
-          if [[ -n "${published_asset_id}" ]]; then
-            published_demo="${recovery_demo_dir}/${DEMO_ASSET}"
-            if download_release_asset "${published_asset_id}" "${published_demo}"; then
-              published_sha256="$(shasum -a 256 \
-                "${published_demo}" | awk '{ print $1 }')"
-              candidate_sha256="$(shasum -a 256 "${DEMO_OUTPUT}" | awk '{ print $1 }')"
-              prior_sha256="$(shasum -a 256 "${prior_demo}" | awk '{ print $1 }')"
-              if [[ "${published_sha256}" == "${candidate_sha256}" ]]; then
-                printf 'Current demo upload completed despite the client failure.\n'
-                exit 0
-              fi
-              if [[ "${published_sha256}" == "${prior_sha256}" ]]; then
-                printf 'Current demo upload failed; the prior asset remains intact.\n' >&2
-                exit "${upload_status}"
-              fi
-            fi
-          fi
-
-          restored=false
-          for attempt in 1 2 3; do
-            if ! current_release_matches ||
-               [[ "${CURRENT_RELEASE_ID}" != "${publication_release_id}" ]]; then
-              printf 'Current moved during demo recovery; refusing to modify the newer release.\n' >&2
-              exit "${upload_status}"
-            fi
-            if replace_release_asset "${publication_release_id}" "${prior_demo}"; then
-              restored=true
-              break
-            fi
-            sleep "$((attempt * 5))"
-          done
-          if [[ "${restored}" != true ]]; then
-            printf 'Current demo upload failed and the prior asset could not be restored.\n' >&2
-            exit 1
-          fi
-          printf 'Current demo upload failed; restored the prior asset.\n' >&2
-          exit "${upload_status}"
+      - name: Retain exact Current demo workflow artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: current-demo-${{ needs.resolve-current.outputs.sha }}
+          path: ${{ env.DEMO_OUTPUT }}
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Save bounded demo diagnostics
         if: failure()

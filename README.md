@@ -36,17 +36,16 @@ falls back to Docker, Docker Compose, or Colima. The enhanced release profile
 remains the default for the independently installed Compose plugin. See the
 [installation guide](docs/guides/INSTALL.md#build-the-stock-apple-engine-adapter).
 
-## 0.14.2 Current candidate
+## Current candidate
 
-[`0.14.1`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.1)
-is the current stable macOS arm64 release. The rolling
-[`current`](https://github.com/stephenlclarke/container-compose/releases/tag/current)
-prerelease carries the reviewed 0.14.2 candidate with its matched Container
-stack. It is not an immutable 0.14.2 release until the hosted Stable Release
-Gate, including the supported Docker Compose parity suite, succeeds and
-publishes that version.
+The [latest stable release](https://github.com/stephenlclarke/container-compose/releases/latest)
+is the default macOS arm64 lane. The [Current release feed](https://github.com/stephenlclarke/container-compose/releases)
+contains immutable `current-<full-sha>` prereleases; the two Current Homebrew
+formulae atomically select the newest validated matched Container stack. A
+Current build becomes a semantic release only after the hosted Stable Release
+Gate, including the supported Docker Compose parity suite, succeeds.
 
-The 0.14.2 maintenance candidate retains stopped containers and their log
+The active maintenance candidate retains stopped containers and their log
 histories after foreground `up --abort-on-container-exit`,
 `--abort-on-container-failure`, and `--exit-code-from` completion. Its matched
 runtime also recovers interrupted prepared cleanup, preserves short-lived VM
@@ -125,8 +124,8 @@ The supported release line includes:
 - versioned runtime-capability negotiation plus stricter staging, containment,
   redaction, cancellation, and bounded-resource controls.
 
-The candidate notes and exact dependency revisions are on the
-[Current build page](https://github.com/stephenlclarke/container-compose/releases/tag/current).
+Candidate notes and exact dependency revisions are on the selected
+[`current-<full-sha>` release](https://github.com/stephenlclarke/container-compose/releases).
 [STATUS.md](docs/project/STATUS.md) describes the functionality and explicit limitations
 in the stable baseline and current candidate. Planned compatibility work is kept separately in
 [BACKLOG.md](docs/project/BACKLOG.md) and its linked GitHub issues.
@@ -169,7 +168,7 @@ supported commands include a `Limitations` line that names the remaining gap.
 Use `--ansi never` for plain output. Unsupported runtime behavior fails before
 side effects with an explicit `unsupported compose feature` message.
 
-For the 0.14.2 candidate, the generated help classifies 40 commands as green and six as
+For the current candidate, the generated help classifies 40 commands as green and six as
 orange (`attach`, `events`, `exec`, `logs`, `run`, and `up`); no command is
 red. It classifies 262 documented long options as green and only
 `exec --privileged` as orange; no documented long option is red. Orange command
@@ -194,7 +193,7 @@ become implicit exceptions.
 >
 > The complete maintained 62-target Docker Compose comparison suite passed in one uninterrupted 1,152.03-second run against Docker Compose 5.3.1 and Docker Engine 29.2.1 on a Mac17,9 running macOS 26.5.2. Its three-sample warm-image bridge comparator measured `up` at 0.153s for Docker Compose and 1.228s for container-compose (8.01×), while `down` measured 10.178s and 5.916s respectively (0.58×). Named-network service discovery, aliases, one-off aliases, recreate behavior, and source-scoped links all passed their live Docker oracles. Exact revisions, timing tables, fingerprints, and interpretation are retained in the [macOS Compose parity and performance review](docs/reviews/MACOS-COMPOSE-PARITY-AND-PERFORMANCE-REVIEW-2026-07-30.md).
 >
-> This retained run predates the current 0.14.2 candidate and is not a claim that the project goal is complete. Its lifecycle matrix covers warm-image 1/10/50-service detached startup and teardown, but its 31 July one-repetition debug diagnostic was slower than Docker at 10 and 50 services and is not release-grade evidence. That run did not include the later logging performance lanes; cold-resource collection, `develop.watch` sync, and build-context transfer remain open, and every partial surface in the current ledger remains open.
+> This retained run predates the current candidate and is not a claim that the project goal is complete. Its lifecycle matrix covers warm-image 1/10/50-service detached startup and teardown, but its 31 July one-repetition debug diagnostic was slower than Docker at 10 and 50 services and is not release-grade evidence. That run did not include the later logging performance lanes; cold-resource collection, `develop.watch` sync, and build-context transfer remain open, and every partial surface in the current ledger remains open.
 
 <!-- Separate GitHub callouts. -->
 
@@ -211,9 +210,9 @@ Use `container system version` to see the running `container` runtime source, br
 
 ## See It Work
 
-![Terminal recording: starting, inspecting, reusing, and tearing down the monitoring stack](https://github.com/stephenlclarke/container-compose/releases/download/current/container-compose-demo-current.gif)
+![Representative terminal recording: starting, inspecting, reusing, and tearing down the monitoring stack](https://github.com/stephenlclarke/container-compose/releases/download/current/container-compose-demo-current.gif)
 
-The recording is a complete matched-runtime execution of the portable nginx and Alertmanager service slice in the real [`examples/monitoring-stack/docker-compose.yaml`](examples/monitoring-stack/docker-compose.yaml). It visibly types `container system start`, confirms the running service, starts that two-service slice, shows `stats --no-stream` and `ps`, queries nginx `/healthz` and Alertmanager readiness from their running services, writes and reads data in the named `nginx_cache` volume across a retained-volume shutdown, and finally removes the project with `down --volumes --remove-orphans`. The focused slice keeps the recorded startup deterministic while the full macOS-safe monitoring stack remains covered by the Docker Compose v2 parity suite. Each displayed result is the live output of the command that was just typed; the tape has no transcript replay or marker helper. A separate recoverable Current Demo workflow records the session on the hardware-virtualization-capable runner after the signed Current packages and Homebrew formulae are available. Recording failure cannot block package, attestation, release, or tap publication, and an exact-SHA freshness check prevents a delayed recording from replacing a newer Current asset.
+The archived representative recording is a complete matched-runtime execution of the portable nginx and Alertmanager service slice in the real [`examples/monitoring-stack/docker-compose.yaml`](examples/monitoring-stack/docker-compose.yaml). It visibly types `container system start`, confirms the running service, starts that two-service slice, shows `stats --no-stream` and `ps`, queries nginx `/healthz` and Alertmanager readiness from their running services, writes and reads data in the named `nginx_cache` volume across a retained-volume shutdown, and finally removes the project with `down --volumes --remove-orphans`. The focused slice keeps the recorded startup deterministic while the full macOS-safe monitoring stack remains covered by the Docker Compose v2 parity suite. Each displayed result is the live output of the command that was just typed; the tape has no transcript replay or marker helper. A separate Current Demo workflow records exact-SHA sessions on the hardware-virtualization-capable runner after the signed Current packages and Homebrew formulae are available, retaining each result as a bounded workflow artifact. Recording failure cannot block package, attestation, release, or tap publication, and the workflow never mutates an immutable release.
 
 ## Install And Project Map
 
@@ -251,7 +250,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 - [DESIGN.md](docs/project/DESIGN.md): understand the Swift/Go boundary and runtime adapter ownership.
 - [STATUS.md](docs/project/STATUS.md): understand the functionality and explicit limitations in the current stable release and candidate.
 - [BACKLOG.md](docs/project/BACKLOG.md): understand the remaining parity contracts and follow their live GitHub issues.
-- [Runtime capability contract](docs/architecture/runtime-capabilities.md): see the versioned matched-runtime requirements negotiated by 0.14.2 before side effects.
+- [Runtime capability contract](docs/architecture/runtime-capabilities.md): see the matched-runtime requirements negotiated before side effects.
 - [Docker logging-driver design](docs/architecture/docker-logging-driver-semantics-design.md): review the released logging architecture, retained evidence, and remaining provider and certification gaps.
 - [Container-family parity architecture](docs/architecture/coherent-container-family-parity-design.md): understand the integrated authority, runtime topology, dependency order, and devcontainer/shared Engine design.
 - [Container-family parity development cycle](docs/architecture/container-family-development-cycle.md): deliver vertical slices with local-first validation, review-to-clean convergence, MBP runners, clean GitHub state, upstream monitoring, and comparable-or-better performance.

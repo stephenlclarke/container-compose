@@ -11,19 +11,18 @@ time: both runtime formulae provide the `container` executable.
 | --- | --- | --- |
 | `container-compose` | stable release build | Default install. It depends on the matched `stephenlclarke/container` runtime. |
 | `container` | runtime build | Installed automatically as the runtime dependency for the plugin formula. |
-| `container-compose-current` | one mutable `current` prerelease | Opt in when you want the latest green-`main` app. It depends on `container-current`. |
+| `container-compose-current` | exact-SHA Current prerelease | Opt in when you want the latest green-`main` app. It depends on `container-current`. |
 | `container-current` | current runtime build | Installed automatically with the current plugin formula. |
 
 The formulae install prebuilt GitHub release assets. They do not build Swift or Go source on the user's machine and do not require Go or Xcode for normal installation. Maintainer-only release and branch rules live in [BUILD.md](BUILD.md).
 
-This guide describes the [`0.14.1` stable lane](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.1) and the rolling `current` lane, which carries the reviewed 0.14.2 candidate until it passes the stable gate and is published. A later immutable semantic release supersedes 0.14.1 automatically in the stable formulae; `container compose version` and `container system version` report the exact installed pair.
+This guide describes the [latest stable lane](https://github.com/stephenlclarke/container-compose/releases/latest) and the rolling Current lane, whose paired formulae select one immutable `current-<full-sha>` prerelease. A later immutable semantic release updates the stable formulae automatically; `container compose version` and `container system version` report the exact installed pair.
 
 Homebrew without a `-current` formula always uses the latest immutable semantic
-release. The opt-in lane follows the single mutable GitHub prerelease named
-**Current build** (tag `current`), which advances only after green `main` CI.
-The release page retains downloadable assets only for the newest stable release
-and that one current prerelease; older release notes contain source-build
-instructions instead.
+release. The opt-in lane advances only after green `main` CI by atomically
+selecting a new immutable **Current build** tagged `current-<full-sha>`.
+Content-addressed Current releases remain historical identities; the formulae
+identify which exact release is active.
 
 ## Requirements
 
@@ -115,9 +114,9 @@ If the machine has a mixed Homebrew/Apple install, use the [reset flow](#trouble
 ## Install The Current Matched Stack
 
 Use this lane when you want the latest installable `main` build rather than the
-latest semantic stable release. It follows the one mutable **Current build**
-prerelease (tag `current`), generated only after green `main` CI, and is always
-paired with the exact runtime package in its Compose stack manifest. It
+latest semantic stable release. It follows the formula-selected immutable
+**Current build** prerelease (`current-<full-sha>`), generated only after green
+`main` CI, and is always paired with the exact runtime package in its Compose stack manifest. It
 deliberately does not modify the stable formulae.
 
 Switch from stable (or reset a mixed installation) first:
@@ -289,7 +288,7 @@ brew postinstall stephenlclarke/tap/container
 brew services restart stephenlclarke/tap/container
 ```
 
-To opt in to the one mutable **Current build** prerelease instead, replace the
+To opt in to the formula-selected **Current build** prerelease instead, replace the
 last three commands with:
 
 ```sh

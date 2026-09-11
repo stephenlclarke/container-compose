@@ -287,10 +287,9 @@ def release_range(
     if head_commit is None:
         raise ValueError(f"could not resolve release head: {head_ref}")
 
-    # `current` is a mutable prerelease pointer, not a release baseline. Every
-    # Current build must describe the complete delta from the latest stable
-    # release, even after the pointer was advanced by an earlier build.
-    if release_tag != "current":
+    # Content-addressed Current prereleases are not stable release baselines.
+    # Every Current build describes the complete delta from the latest stable.
+    if not release_tag.startswith("current-"):
         tagged_commit = commit_for_ref(repo, f"refs/tags/{release_tag}")
         if tagged_commit is not None:
             if tagged_commit != head_commit:
@@ -828,7 +827,7 @@ def render_release_notes(
     ])
     if not stable_release:
         lines.append(
-            f"- Mutable `current` pointer targets main commit `{selected_range.head_commit}`."
+            f"- Immutable `{release_tag}` prerelease identifies main commit `{selected_range.head_commit}`."
         )
     lines.append("")
 
@@ -922,7 +921,7 @@ def render_release_notes(
         lines.extend(
             [
                 "- The current build atomically updates `stephenlclarke/tap/container-compose-current` and `stephenlclarke/tap/container-current`.",
-                "- Both formulae download the exact matched assets from this one mutable prerelease.",
+                "- Both formulae download the exact matched assets from this content-addressed immutable prerelease.",
                 "- It never changes the stable formula pair.",
             ]
         )
@@ -944,8 +943,8 @@ def render_release_notes(
     else:
         lines.extend(
             [
-                "- The single `Current build` prerelease and its `current` tag move together only after green `main` CI.",
-                "- They do not move semantic source tags or the stable formula pair.",
+                "- Green `main` CI publishes one immutable `current-<sha>` prerelease before atomically updating the Current formula pair.",
+                "- Publication never retargets an existing tag or changes the stable formula pair.",
             ]
         )
 
@@ -955,8 +954,8 @@ def render_release_notes(
             "## Asset Retention",
             "",
             "- Stable release objects, notes, and source tags are retained as history.",
-            "- Only the newest published stable release and the one `current` prerelease retain downloadable assets and tap-backed installation.",
-            "- Superseded generated current-release objects are deleted, while their source tags remain available for reference.",
+            "- Only the newest published stable release and newest `current-<sha>` prerelease are tap-backed installations.",
+            "- Superseded immutable Current releases and source tags remain content-addressed history; mutable legacy prereleases may be retired.",
             "- Superseded stable releases lose binary assets and gain exact source-build instructions on this page.",
             "",
             "## Validation",

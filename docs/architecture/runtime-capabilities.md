@@ -70,14 +70,11 @@ logging create request, authority-owned protected options, native and remote
 provider lifecycle, canonical reads, dual cache, and exact-process foreground
 attachment in the
 [Docker logging-driver design](docker-logging-driver-semantics-design.md).
-It is present in the coordinated 0.14.2 candidate manifest on the
-[`current` prerelease](https://github.com/stephenlclarke/container-compose/releases/tag/current).
-The candidate manifest uses Container
-`a252482bbacbd15742845764893585131e2c4825`, Engine API
-`386a40c726ecd25d67a3e5933582aebbfbe4fa2f`, Containerization
-`b404e03bb914904107a6a9305ba1f0e44c79a59c`, and SwiftNIO SSL
-`3e13ce5f6dd5b7e89fff9ab55ab7caed39fe7285`. This graph must pass the hosted
-Stable Release Gate before it can be published as 0.14.2. Compose preflight still negotiates the identifier before
+It is present in the coordinated candidate manifest on the formula-selected
+[`current-<full-sha>` prerelease](https://github.com/stephenlclarke/container-compose/releases).
+That release records the exact Container, Engine API, Containerization, and
+SwiftNIO SSL revisions for its tested graph. The graph must pass the hosted
+Stable Release Gate before semantic publication. Compose preflight still negotiates the identifier before
 using advanced logging; advertising the requirement does not make every remote
 provider universally available or close the remaining external-client,
 failure, migration, security, and comparable-performance evidence.
@@ -146,6 +143,6 @@ recovers after restart without provider lifecycle effects. Later signed heads
 complete reference-aware quiescence, durable configuration/history migration,
 terminal proof before alias cutover, final N reclamation, and distributable
 plugin certification. Release trust and coordinated dependency publication
-originally shipped in 0.11.0 and remain part of the 0.14.2 candidate; complete paired Docker
+originally shipped in 0.11.0 and remain part of the current candidate; complete paired Docker
 provider certification and programme-level failure, migration, security, and
 performance evidence remain.

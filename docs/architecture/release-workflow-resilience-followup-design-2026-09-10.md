@@ -2,13 +2,13 @@
 
 Date: 2026-09-10. Status: implemented on `release-workflow-resilience`; quiet-machine performance measurements remain deliberately deferred.
 
-Reviewed checkout: `/Volumes/SSD/github/container-compose-release-0.14.3`, branch `release-workflow-resilience`, HEAD `acb46f59ac958136f4dae391e7fade5ff72129a7`. Review covers the changes in `8861c73b` and `acb46f59`, their callers, build/cleanup paths, release publication, DocC, checkpointing, and recovery inspection. Product version remains **0.14.3**.
+Reviewed checkout: `/Volumes/SSD/github/container-compose-release-0.14.3`, branch `release-workflow-resilience`, HEAD `acb46f59ac958136f4dae391e7fade5ff72129a7`. Review covers the changes in `8861c73b` and `acb46f59`, their callers, build/cleanup paths, release publication, DocC, checkpointing, and recovery inspection. The product version at that reviewed head was **0.14.3**; the implemented integration and release target is exactly **0.15.0**.
 
 ## Decision
 
 Do not yet treat the previous resilience implementation as fully recoverable, cleanup-safe, or sufficient to eliminate redundant work. The content-addressed store, atomic records, exact-byte checks, shared formula validator, and non-deleting Current finalization are useful foundations. Several guarantees, however, stop at a helper API rather than holding across the complete workflow.
 
-This review identifies twelve findings: eight P1 correctness/recovery issues and four P2 recovery/efficiency issues. Eight isolated probe scenarios produced direct evidence; other findings are traced through callers and consumers. No native build, runtime/parity test, benchmark, production dispatch, release mutation, tap update, or Pages deployment was performed.
+This review identifies twenty-two findings: sixteen P1 correctness/recovery issues and six P2 recovery/efficiency issues. Eight isolated probe scenarios produced direct evidence; other findings are traced through callers and consumers. No native build, runtime/parity test, benchmark, production dispatch, release mutation, tap update, or Pages deployment was performed during the design review.
 
 The previous document's implementation-status assertions about symlink-safe cleanup, complete checkout relocation, dispatch reconciliation, independent DocC retention, and universal storage separation were stronger than the implementation supported. This review supersedes those assertions, not the historical record of what was changed.
 
@@ -27,6 +27,64 @@ the active Pages deployment to a successful exact-version Documentation run;
 superseded versions are classified explicitly. Normal validation fingerprints
 no longer execute Docker applications; Docker remains confined to explicit
 oracle lanes.
+
+The production rollout exposed R13: GitHub immutable releases make the former
+singleton `current` tag and delete/upload replacement transaction impossible.
+Current now uses one lightweight `current-<full-sha>` tag and one immutable
+prerelease per exact source commit. Publication creates a draft, reconciles and
+verifies the complete digest closure, publishes once, atomically updates the
+Homebrew pair, and then verifies without editing the release. Published retries
+are read-only. The demo is a bounded exact-commit workflow artifact and never a
+late mutation of release assets. Retention preserves immutable historical
+Current releases and treats the old singleton release as deprecated history.
+
+R14 and R15 close the remaining immutable-retry and promotion-authority gaps.
+Published retries reconstruct deterministic expected notes by substituting only
+server-authenticated published archive digests, reject every other metadata
+change, restore all authenticated published assets as a staged local set, and
+then perform full verification without mutating the release. Stable promotion
+uses one shared verifier for both scheduled and controller paths; it requires a
+published immutable exact-tag release with the complete digest closure, the
+matching Homebrew URL and digest pair, and a successful exact-head package run.
+
+R16 closes partial-draft recovery without weakening published immutability. A
+conflicting private draft is re-read immediately before mutation and replaced
+only when it is still a draft for the exact tag and target. The release object
+is deleted without deleting or retargeting its source tag, one complete fresh
+asset set is uploaded and verified, and the operation is bounded to a single
+replacement. Any race to published state stops without deletion.
+
+R17 prevents private-draft age from being credited as public soak time. The
+shared promotion verifier now requires strict GitHub publication and successful
+exact-head package-run timestamps, binds both installed Current formula versions
+to one exact run number, and rejects a completion before publication. Because
+that selected workflow completes only after release publication and Homebrew
+pair selection, neither a recovered old draft nor a later no-op run can distort
+stable-promotion eligibility.
+
+R18 and R19 close rollout and immutable stable-finalization gaps. The initial
+Current fail-fast preflight has one explicit branch-lane migration allowance for
+a coherent legacy `current` formula pair; exact-SHA validation remains mandatory
+for the resulting publication authority. Draft finalization now always sends an
+explicit prerelease boolean, so a stale stable draft cannot become an immutable
+prerelease before the verifier detects the mismatch.
+
+R20 binds Current's early skip to the same package-run identity encoded by both
+installed formula versions. An older successful exact-head no-op run can no
+longer mask failure of the selected publication run; malformed or mismatched
+formula run identities force recovery rather than false completion.
+
+R21 makes the installed Homebrew declarations, rather than arbitrary formula
+text, the promotion authority. The shared verifier requires exactly one active
+top-level URL, SHA-256, and version declaration in each Current formula and
+compares their parsed values with the immutable release. Expected values in
+comments, caveats, or duplicate declarations cannot authorize stable promotion.
+
+R22 applies the same declaration authority to Current's early recovery skip.
+The resolver parses exactly one active top-level URL, SHA-256, and version from
+each formula, compares the URL and digest with the exact immutable release, and
+binds both formula versions to the same successful package run. Stale active
+declarations cannot be hidden by expected values in comments or caveats.
 
 The 0.15.0 integration extends the retained Compose product closure with both
 Docker-free Linux volume-initializer executables. Their build outputs,
@@ -84,6 +142,16 @@ P1 means fix before relying on the claimed recovery/cleanup guarantee. P2 means 
 | R10 | P2 | Broad/repeated fingerprints invalidate unrelated work and probe Docker | Make and validation fingerprint paths traced |
 | R11 | P2 | Single mutable pin slots and separate producer builds limit reuse | Receipt identity, pin paths, and build graph traced |
 | R12 | P2 | Recovery plans omit important remote state and have unbounded reads | Incomplete/malformed remote fixtures plus code trace |
+| R13 | P1 | A singleton mutable Current release cannot operate when repository releases are immutable | Production HTTP 422 on asset deletion; mixed legacy closure retained as evidence |
+| R14 | P1 | Published immutable retries compare fresh signed bytes and hash-bearing notes before recovery | Exact retry path trace; secure timestamps and notarization make rebuilt archives non-authoritative |
+| R15 | P1 | Stable promotion accepts an incomplete, draft, mutable, or untapped Current shape | Scheduled and controller readiness paths traced |
+| R16 | P1 | Partial private drafts retain timestamp-signed bytes that conflict with a fresh retry | Draft reconciliation path and signing inputs traced |
+| R17 | P2 | Private-draft asset age can be mistaken for public Current soak time after recovery | Exact-head review of shared promotion verifier and interrupted-draft timeline |
+| R18 | P1 | Exact-SHA-only preflight prevents the first automatic migration from the coherent legacy Current formula pair | Production tap state and fail-fast job ordering traced |
+| R19 | P1 | Stable draft publication can preserve stale prerelease metadata into an immutable release | Draft edit flags and post-publication verification ordering traced |
+| R20 | P1 | Any older successful exact-head package run can mask failure of the run selected by the Current formula pair | Early-skip and stable-readiness authority paths compared |
+| R21 | P1 | Formula comments or caveats can impersonate the URL and digest used as stable-promotion authority | Exact-head review of the shared readiness verifier and adversarial formula fixtures |
+| R22 | P2 | Current's early recovery skip searches raw formula text instead of parsing active URL and digest declarations | Exact-head review of the publish-context resolver and adversarial formula fixtures |
 
 ### R01: cleanup safety does not survive path replacement
 
@@ -374,6 +442,8 @@ Tests must assert work counts and terminal state, not merely exit success or the
 | Response lost after accepted dispatch | Reconcile same operation/run; zero blind second POSTs |
 | Controller dies after gate, signing, or upload | Resume from authenticated retained closure; zero repeated valid builds/tests/signing |
 | Matching partial draft | Upload only missing exact members; published stable bytes never replaced |
+| Current publication with repository immutability enabled | Publish one complete `current-<full-sha>` draft exactly once; formulae select that tag; retries never edit, delete, clobber, or retarget published state |
+| Current formula contains stale active declarations plus expected values in comments | Early skip rejects the formula pair and resumes bounded recovery; comments and caveats never establish authority |
 | Hosted gate or site artifact expires | Use valid retained authority/site; otherwise explicit missing-node plan or authority blocker |
 | One of four DocC sites fails | Retain three successes; retry only the failed site; deploy without regenerating valid sites |
 | Self-consistent site from wrong source/base path | Reject despite valid file hashes |

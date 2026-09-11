@@ -22,6 +22,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -52,9 +53,21 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
             module.retained_release_ids(releases, latest_stable_id=2), {2, 4}
         )
 
-    def test_current_pointer_beats_newer_noncurrent_prerelease(self) -> None:
+    def test_newest_content_addressed_current_beats_other_prereleases(self) -> None:
         module = load_module()
+        old_sha = "a" * 40
+        new_sha = "b" * 40
         releases = [
+            {
+                "id": 0,
+                "tag_name": "current",
+                "published_at": "2026-06-30T00:00:00Z",
+                "prerelease": True,
+                "draft": False,
+                "immutable": True,
+                "body": "legacy body",
+                "assets": [{"id": 1, "name": "legacy.tar.gz"}],
+            },
             {
                 "id": 1,
                 "tag_name": "0.6.69",
@@ -62,6 +75,35 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
                 "prerelease": False,
                 "draft": False,
             },
+            {
+                "id": 2,
+                "tag_name": f"current-{old_sha}",
+                "published_at": "2026-07-02T00:00:00Z",
+                "prerelease": True,
+                "draft": False,
+            },
+            {
+                "id": 3,
+                "tag_name": "0.6.70-rc.1",
+                "published_at": "2026-07-03T00:00:00Z",
+                "prerelease": True,
+                "draft": False,
+            },
+            {
+                "id": 4,
+                "tag_name": f"current-{new_sha}",
+                "published_at": "2026-07-04T00:00:00Z",
+                "prerelease": True,
+                "draft": False,
+            },
+        ]
+        self.assertEqual(
+            module.retained_release_ids(releases, latest_stable_id=1), {1, 4}
+        )
+
+    def test_legacy_current_beats_newer_noncurrent_prerelease_during_migration(self) -> None:
+        module = load_module()
+        releases = [
             {
                 "id": 2,
                 "tag_name": "current",
@@ -78,7 +120,76 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
             },
         ]
         self.assertEqual(
-            module.retained_release_ids(releases, latest_stable_id=1), {1, 2}
+            module.retained_release_ids(releases, latest_stable_id=None), {2}
+        )
+
+    def test_immutable_historical_current_release_is_never_deleted(self) -> None:
+        module = load_module()
+        old_sha = "a" * 40
+        new_sha = "b" * 40
+        releases = [
+            {
+                "id": 0,
+                "tag_name": "current",
+                "published_at": "2026-06-30T00:00:00Z",
+                "prerelease": True,
+                "draft": False,
+                "immutable": True,
+                "body": "legacy body",
+                "assets": [{"id": 1, "name": "legacy.tar.gz"}],
+            },
+            {
+                "id": 1,
+                "tag_name": f"current-{old_sha}",
+                "published_at": "2026-07-01T00:00:00Z",
+                "prerelease": True,
+                "draft": False,
+                "immutable": False,
+                "body": "",
+                "assets": [{"id": 11, "name": "old.tar.gz"}],
+            },
+            {
+                "id": 2,
+                "tag_name": f"current-{new_sha}",
+                "published_at": "2026-07-02T00:00:00Z",
+                "prerelease": True,
+                "draft": False,
+                "immutable": True,
+                "body": "",
+                "assets": [{"id": 22, "name": "new.tar.gz"}],
+            },
+        ]
+        arguments = SimpleNamespace(
+            repo="owner/repository",
+            current_asset=[],
+            delete_superseded_current_releases=True,
+            apply=True,
+            bootstrap_command="brew install go",
+            build_command="make package",
+            source_guidance="BUILD.md",
+            install_command=None,
+            current_install_command="brew install current",
+            stable_install_command="brew install stable",
+        )
+        with (
+            mock.patch.object(module, "parse_args", return_value=arguments),
+            mock.patch.object(module, "list_releases", return_value=releases),
+            mock.patch.object(module, "latest_stable_release_id", return_value=None),
+            mock.patch.object(module, "delete_release") as delete_release,
+            mock.patch.object(module, "delete_named_assets") as delete_assets,
+            mock.patch.object(module, "update_release_notes") as update_notes,
+        ):
+            module.main()
+
+        delete_release.assert_not_called()
+        delete_assets.assert_not_called()
+        self.assertNotIn(
+            0,
+            [call.args[1]["id"] for call in update_notes.call_args_list],
+        )
+        self.assertNotIn(
+            2,
+            [call.args[1]["id"] for call in update_notes.call_args_list],
         )
 
     def test_github_latest_beats_a_newer_published_maintenance_backfill(self) -> None:
@@ -120,6 +231,17 @@ class ReleaseAssetRetentionTests(unittest.TestCase):
 
     def test_only_generated_current_releases_are_removed(self) -> None:
         module = load_module()
+        self.assertTrue(module.obsolete_current_release({"prerelease": True, "tag_name": "current"}))
+        self.assertFalse(
+            module.deletable_legacy_current_release(
+                {"prerelease": True, "tag_name": f"current-{'a' * 40}"}
+            )
+        )
+        self.assertTrue(
+            module.deletable_legacy_current_release(
+                {"prerelease": True, "tag_name": "homebrew-main-old"}
+            )
+        )
         self.assertTrue(module.obsolete_current_release({"prerelease": True, "tag_name": "current-12-abc"}))
         self.assertTrue(
             module.obsolete_current_release(

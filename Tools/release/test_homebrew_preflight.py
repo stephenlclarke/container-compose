@@ -63,6 +63,7 @@ class HomebrewPreflightTests(unittest.TestCase):
             check=True,
         )
         current_version = "current.42.0123456789ab"
+        current_tag = f"current-{'0123456789ab' * 3}0123"
         fixtures = {
             "container": formula(
                 "Container", "0.14.0", "container-release-arm64.tar.gz"
@@ -74,13 +75,13 @@ class HomebrewPreflightTests(unittest.TestCase):
             ),
             "container-current": formula(
                 "ContainerCurrent",
-                "current",
+                current_tag,
                 "container-current-0123456789ab-arm64.tar.gz",
                 current_version,
             ),
             "container-compose-current": formula(
                 "ContainerComposeCurrent",
-                "current",
+                current_tag,
                 "container-compose-plugin-current-0123456789ab-arm64.tar.gz",
                 current_version,
             ),
@@ -104,6 +105,10 @@ class HomebrewPreflightTests(unittest.TestCase):
             formulae["container-current"].version,
             formulae["container-compose-current"].version,
         )
+        self.assertRegex(
+            formulae["container-current"].release_tag,
+            r"^current-[0-9a-f]{40}$",
+        )
 
     def test_rejects_mismatched_stable_formulae(self) -> None:
         path = self.tap / "Formula" / "container-compose.rb"
@@ -116,7 +121,7 @@ class HomebrewPreflightTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        with self.assertRaisesRegex(ValueError, "do not use the same release tag"):
+        with self.assertRaises(ValueError):
             PREFLIGHT.validate_tap(self.tap, require_clean=False)
 
     def test_rejects_dirty_tap_before_release(self) -> None:
@@ -124,6 +129,48 @@ class HomebrewPreflightTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "uncommitted changes"):
             PREFLIGHT.validate_tap(self.tap, require_clean=True)
+
+    def test_rejects_current_formulae_with_different_exact_identities(self) -> None:
+        path = self.tap / "Formula" / "container-compose-current.rb"
+        path.write_text(
+            formula(
+                "ContainerComposeCurrent",
+                f"current-{'f' * 40}",
+                "container-compose-plugin-current-ffffffffffff-arm64.tar.gz",
+                "current.42.ffffffffffff",
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ValueError, "do not use the same version"):
+            PREFLIGHT.validate_tap(self.tap, require_clean=False)
+
+    def test_allows_only_a_matched_legacy_current_pair_when_explicit(self) -> None:
+        for name in ("container-current", "container-compose-current"):
+            path = self.tap / "Formula" / f"{name}.rb"
+            path.write_text(
+                path.read_text(encoding="utf-8").replace(
+                    f"current-{'0123456789ab' * 3}0123", "current"
+                ),
+                encoding="utf-8",
+            )
+        with self.assertRaisesRegex(ValueError, "exact-SHA"):
+            PREFLIGHT.validate_tap(self.tap, require_clean=False)
+        PREFLIGHT.validate_tap(
+            self.tap, require_clean=False, allow_legacy_current_pair=True
+        )
+
+        compose = self.tap / "Formula" / "container-compose-current.rb"
+        compose.write_text(
+            compose.read_text(encoding="utf-8").replace(
+                "/releases/download/current/", f"/releases/download/current-{'f' * 40}/"
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaises(ValueError):
+            PREFLIGHT.validate_tap(
+                self.tap, require_clean=False, allow_legacy_current_pair=True
+            )
 
     def test_rejects_stable_formula_with_explicit_version(self) -> None:
         path = self.tap / "Formula" / "container.rb"
