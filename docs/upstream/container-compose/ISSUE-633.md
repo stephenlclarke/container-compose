@@ -17,6 +17,9 @@ The failure was reproduced against unmodified `apple/container` 1.4.1 through th
 - Preserve a volume that already contains user data.
 - Build and cache a project-owned helper layer through the stock Apple builder. Use an immutable repository digest when one exists; otherwise snapshot the local image behind a unique tag and verify its image identity before building.
 - Copy the requested image subtree inside a temporary Engine container so file ownership and modes remain those of the image.
+- Install and select native static helpers for both `linux/arm64` and `linux/amd64`, including when Homebrew exposes `compose` through a symlinked prefix.
+- Preserve extended attributes, including Linux file-capability metadata, together with ownership, modes, timestamps, links, and named pipes.
+- Synchronize copied file data, directories, the destination root, and journal removal in publication order before reporting success.
 - Seed only the contents of the selected image directory into an empty volume.
 - Treat a missing image path as Docker's empty-volume case.
 - Remove the temporary container on success, failure, or a concurrent initialization race.
@@ -28,7 +31,7 @@ The failure was reproduced against unmodified `apple/container` 1.4.1 through th
 
 ## Acceptance evidence
 
-- Deterministic Unix-socket component tests cover the Docker-free build context, digest-and-helper-derived cache identity, verified local-image snapshots, copy-up, crash recovery, transaction hardening, user-data preservation, managed-volume service launch, native exec, ownership-preserving request projection, concurrent serialization, request routing, and helper cleanup.
+- Deterministic Unix-socket component tests cover the Docker-free build context, platform/name/bytes-derived helper identity, Homebrew symlink resolution, verified local-image snapshots, copy-up, extended attributes, crash recovery, durable publication, transaction hardening, user-data preservation, managed-volume service launch, native exec, ownership-preserving request projection, concurrent serialization, request routing, and helper cleanup.
 - A repeatable real-runtime harness proves the complete path with stock Apple Container, the stock Devcontainer Engine, and stock Compose while no Docker or Colima process participates.
 - Stock-profile compilation uses exact `apple/container` 1.4.1 and `apple/containerization` 0.45.0 dependencies.
 - The downstream `devcontainer` Compose parity fixtures pass against both stock Apple Container and the enhanced Container provider without invoking Docker or Colima.

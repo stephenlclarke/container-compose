@@ -24,6 +24,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 const testTransactionID = "01234567-89ab-cdef-0123-456789abcdef"
@@ -36,6 +38,11 @@ func TestInitializeCopiesMetadataLinksAndFiles(t *testing.T) {
 	mustMkdir(t, source, 0o750)
 	mustMkdir(t, destination, 0o700)
 	mustWrite(t, filepath.Join(source, "value.txt"), "volume-data\n", 0o640)
+	xattrName := "io.github.stephenlclarke.container-compose.test"
+	xattrValue := []byte("preserved")
+	if err := unix.Setxattr(filepath.Join(source, "value.txt"), xattrName, xattrValue, 0); err != nil {
+		t.Fatal(err)
+	}
 	mustMkdir(t, filepath.Join(source, "nested"), 0o755)
 	mustWrite(t, filepath.Join(source, "nested", "child"), "child\n", 0o600)
 	if err := os.Link(filepath.Join(source, "value.txt"), filepath.Join(source, "hardlink")); err != nil {
@@ -66,6 +73,13 @@ func TestInitializeCopiesMetadataLinksAndFiles(t *testing.T) {
 	}
 	if first.Mode().Perm() != 0o640 {
 		t.Fatalf("unexpected mode %o", first.Mode().Perm())
+	}
+	copiedXattr := make([]byte, len(xattrValue))
+	if _, err := unix.Getxattr(filepath.Join(destination, "value.txt"), xattrName, copiedXattr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(copiedXattr, xattrValue) {
+		t.Fatalf("unexpected extended attribute %q", copiedXattr)
 	}
 	pipe, err := os.Lstat(filepath.Join(destination, "events"))
 	if err != nil || pipe.Mode()&os.ModeNamedPipe == 0 {
@@ -477,11 +491,25 @@ func TestFilesystemFailuresRemainExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := applyMetadata(missing, info, true); err == nil {
+	if err := applyMetadata(occupied, missing, info, true); err == nil {
 		t.Fatal("expected missing metadata destination failure")
 	}
-	if err := applyMetadata(occupied, fileInfoWithoutSystemMetadata{FileInfo: info}, true); err == nil {
+	if err := applyMetadata(
+		occupied, occupied, fileInfoWithoutSystemMetadata{FileInfo: info}, true,
+	); err == nil {
 		t.Fatal("expected unavailable metadata failure")
+	}
+	if err := copyExtendedAttributes(missing, occupied); err == nil {
+		t.Fatal("expected missing extended-attribute source failure")
+	}
+	if err := unix.Setxattr(occupied, "io.github.stephenlclarke.container-compose.test", []byte("value"), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyExtendedAttributes(occupied, missing); err == nil {
+		t.Fatal("expected missing extended-attribute destination failure")
+	}
+	if err := syncPublishedPath(missing); err == nil {
+		t.Fatal("expected missing published path failure")
 	}
 }
 

@@ -85,7 +85,8 @@ GO_COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
 PLUGIN_ICON ?= docs/images/container-compose-icon-octopus.png
-VOLUME_INITIALIZER := Tools/compose-normalizer/compose-volume-initializer-linux-arm64
+VOLUME_INITIALIZER_ARM64 := Tools/compose-normalizer/compose-volume-initializer-linux-arm64
+VOLUME_INITIALIZER_AMD64 := Tools/compose-normalizer/compose-volume-initializer-linux-amd64
 CONVENTIONAL_VERSION_TOOL := $(abspath Tools/release/conventional-version.py)
 DOCS_OUTPUT_DIR ?= _site
 DOCS_SERVER_DIR ?= _serve
@@ -922,6 +923,7 @@ go-test:
 go-build:
 	cd Tools/compose-normalizer && $(GO_RELEASE_ENV) $(GO) build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o compose-normalizer .
 	cd Tools/compose-normalizer && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o compose-volume-initializer-linux-arm64 ./cmd/volume-initializer
+	cd Tools/compose-normalizer && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o compose-volume-initializer-linux-amd64 ./cmd/volume-initializer
 	$(MAKE) go-release-check
 
 go-release-check:
@@ -929,13 +931,22 @@ go-release-check:
 		printf 'Tools/compose-normalizer/compose-normalizer is missing; run make go-build first\n' >&2; \
 		exit 1; \
 	}
-	@test -x "$(VOLUME_INITIALIZER)" || { \
-		printf 'Docker-free volume initializer is missing; run make go-build first\n' >&2; \
+	@test -x "$(VOLUME_INITIALIZER_ARM64)" || { \
+		printf 'Docker-free ARM64 volume initializer is missing; run make go-build first\n' >&2; \
 		exit 1; \
 	}
-	@file "$(VOLUME_INITIALIZER)" | grep -E 'ELF 64-bit.*ARM aarch64.*statically linked' >/dev/null || { \
-		printf 'Docker-free volume initializer must be a static Linux arm64 executable\n' >&2; \
-		file "$(VOLUME_INITIALIZER)" >&2; \
+	@test -x "$(VOLUME_INITIALIZER_AMD64)" || { \
+		printf 'Docker-free AMD64 volume initializer is missing; run make go-build first\n' >&2; \
+		exit 1; \
+	}
+	@file "$(VOLUME_INITIALIZER_ARM64)" | grep -E 'ELF 64-bit.*ARM aarch64.*statically linked' >/dev/null || { \
+		printf 'Docker-free ARM64 volume initializer must be a static Linux executable\n' >&2; \
+		file "$(VOLUME_INITIALIZER_ARM64)" >&2; \
+		exit 1; \
+	}
+	@file "$(VOLUME_INITIALIZER_AMD64)" | grep -E 'ELF 64-bit.*x86-64.*statically linked' >/dev/null || { \
+		printf 'Docker-free AMD64 volume initializer must be a static Linux executable\n' >&2; \
+		file "$(VOLUME_INITIALIZER_AMD64)" >&2; \
 		exit 1; \
 	}
 	@case " $(GO_RELEASE_BUILD_FLAGS) " in \
@@ -2369,7 +2380,8 @@ package-built:
 	cp ".build/$(PACKAGE_BUILD_CONFIGURATION)/compose" "$(DIST_DIR)/compose/bin/compose"
 	cp config.toml "$(DIST_DIR)/compose/config.toml"
 	cp Tools/compose-normalizer/compose-normalizer "$(DIST_DIR)/compose/resources/compose-normalizer"
-	cp "$(VOLUME_INITIALIZER)" "$(DIST_DIR)/compose/resources/volume-initializer/compose-volume-initializer-linux-arm64"
+	cp "$(VOLUME_INITIALIZER_ARM64)" "$(DIST_DIR)/compose/resources/volume-initializer/compose-volume-initializer-linux-arm64"
+	cp "$(VOLUME_INITIALIZER_AMD64)" "$(DIST_DIR)/compose/resources/volume-initializer/compose-volume-initializer-linux-amd64"
 	cp "$(PLUGIN_ICON)" "$(DIST_DIR)/compose/resources/container-compose-icon.png"
 	$(CODESIGN) $(CODESIGN_OPTS) \
 		--identifier io.github.stephenlclarke.container-compose \
@@ -2397,6 +2409,7 @@ package-built:
 	tar -czf "$(PLUGIN_ARCHIVE)" -C "$(DIST_DIR)" compose
 	tar -tzf "$(PLUGIN_ARCHIVE)" | grep -Fx 'compose/resources/container-compose-icon.png' >/dev/null
 	tar -tzf "$(PLUGIN_ARCHIVE)" | grep -Fx 'compose/resources/volume-initializer/compose-volume-initializer-linux-arm64' >/dev/null
+	tar -tzf "$(PLUGIN_ARCHIVE)" | grep -Fx 'compose/resources/volume-initializer/compose-volume-initializer-linux-amd64' >/dev/null
 	$(PYTHON) Tools/release/write-sha256-sidecar.py "$(PLUGIN_ARCHIVE)"
 
 coverage-tools-syntax:
@@ -2540,5 +2553,6 @@ pre-commit:
 clean: local-swift-stack-clean
 	$(SWIFT) package clean
 	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" "$(DOCS_OUTPUT_DIR)" "$(DOCS_SERVER_DIR)" "$(DOCS_SCRATCH_PATH)" .scannerwork coverage*.lcov coverage.out coverage.report coverage*.xml
-	rm -f *.profraw Tools/compose-normalizer/coverage.out Tools/compose-normalizer/compose-normalizer "$(VOLUME_INITIALIZER)"
+	rm -f *.profraw Tools/compose-normalizer/coverage.out Tools/compose-normalizer/compose-normalizer \
+		"$(VOLUME_INITIALIZER_ARM64)" "$(VOLUME_INITIALIZER_AMD64)"
 	find Tools -type d -name __pycache__ -prune -exec rm -rf {} +

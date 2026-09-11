@@ -38,7 +38,7 @@ public enum ComposeEngineRuntime {
     ) -> ComposeOrchestratorDependencies {
         let provider = EngineRuntimeProvider(
             socketPath: environment[socketEnvironmentVariable] ?? defaultSocketPath(),
-            volumeInitializerPath: volumeInitializerPath(environment: environment),
+            volumeInitializerPath: environment[volumeInitializerEnvironmentVariable],
             runner: runner,
             containerBinary: options.containerBinary,
             environmentLauncher: options.environmentLauncher,
@@ -65,29 +65,12 @@ public enum ComposeEngineRuntime {
             .path
     }
 
-    static func volumeInitializerPath(
-        environment: [String: String] = ProcessInfo.processInfo.environment
-    ) -> String {
-        if let explicit = environment[volumeInitializerEnvironmentVariable],
-           !explicit.isEmpty
-        {
-            return explicit
-        }
-        let executable = URL(fileURLWithPath: CommandLine.arguments[0])
-            .standardizedFileURL
-        return executable.deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("resources")
-            .appendingPathComponent("volume-initializer")
-            .appendingPathComponent("compose-volume-initializer-linux-arm64")
-            .path
-    }
 }
 
 public final class EngineRuntimeProvider: @unchecked Sendable {
     private let client: Result<ContainerUnixHTTPClient, any Error>
     private static let volumeInitializations = EngineVolumeInitializationCoordinator()
-    private let volumeInitializerPath: String
+    private let volumeInitializerPathOverride: String?
     let runner: CommandRunning
     let containerBinary: String
     let environmentLauncher: String
@@ -100,8 +83,7 @@ public final class EngineRuntimeProvider: @unchecked Sendable {
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher
     ) {
         client = Result { try ContainerUnixHTTPClient(socketPath: socketPath) }
-        self.volumeInitializerPath =
-            volumeInitializerPath ?? ComposeEngineRuntime.volumeInitializerPath()
+        volumeInitializerPathOverride = volumeInitializerPath
         self.runner = runner
         self.containerBinary = containerBinary
         self.environmentLauncher = environmentLauncher
@@ -322,6 +304,7 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         guard try pendingTransaction != nil || volumeIsEmpty(destination) else {
             return
         }
+        let volumeInitializerPath = try volumeInitializerPath(for: request.platform)
         guard FileManager.default.isExecutableFile(atPath: volumeInitializerPath) else {
             throw ComposeError.invalidProject(
                 "Docker-free image-volume initializer is not executable at \(volumeInitializerPath)"
@@ -392,8 +375,11 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
                 "image reference for Docker-free volume initialization contains whitespace"
             )
         }
+        let helperURL = URL(
+            fileURLWithPath: try volumeInitializerPath(for: platform)
+        )
         let helper = try Data(
-            contentsOf: URL(fileURLWithPath: volumeInitializerPath),
+            contentsOf: helperURL,
             options: [.mappedIfSafe]
         )
         let buildLock = try await EngineVolumeInitializationFileLock.acquire(
@@ -402,15 +388,11 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         defer { withExtendedLifetime(buildLock) {} }
         for _ in 0 ..< 3 {
             let image = try await inspectImage(sourceImage)
-            let build = EngineVolumeInitializerImageBuild(
-                tag: EngineVolumeInitializerBuildContext.cacheTag(
-                    sourceDigest: image.repoDigests.first ?? image.id,
-                    platform: platform,
-                    helper: helper,
-                    helperPath: helperPath
-                ),
+            let build = EngineVolumeInitializerImageBuild.make(
+                sourceDigest: image.repoDigests.first ?? image.id,
                 platform: platform,
                 helper: helper,
+                helperName: helperURL.lastPathComponent,
                 helperPath: helperPath
             )
             guard try await !imageExists(build.tag) else {
@@ -436,6 +418,13 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             status: 1,
             stderr: "image reference changed repeatedly while creating an immutable build alias"
         )
+    }
+
+    private func volumeInitializerPath(for platform: String?) throws -> String {
+        if let volumeInitializerPathOverride, !volumeInitializerPathOverride.isEmpty {
+            return volumeInitializerPathOverride
+        }
+        return try ComposeEngineRuntime.volumeInitializerPath(platform: platform)
     }
 
     private static func volumeInitializerBuildLockPath(_ volumeMountpoint: URL) -> String {
@@ -478,6 +467,7 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         let context = try await EngineVolumeInitializerBuildContext.make(
             sourceImage: sourceImage,
             helper: build.helper,
+            helperName: build.helperName,
             helperPath: build.helperPath
         )
         try await request(
@@ -557,13 +547,6 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         return try FileManager.default.contentsOfDirectory(atPath: recovery.path).isEmpty
     }
 
-}
-
-private struct EngineVolumeInitializerImageBuild {
-    let tag: String
-    let platform: String?
-    let helper: Data
-    let helperPath: String
 }
 
 private struct AnyEncodable: Encodable {

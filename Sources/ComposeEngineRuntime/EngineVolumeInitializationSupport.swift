@@ -18,6 +18,72 @@ import ComposeCore
 import Darwin
 import Foundation
 
+extension ComposeEngineRuntime {
+    static func volumeInitializerPath(
+        platform: String? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws -> String {
+        if let explicit = environment[volumeInitializerEnvironmentVariable], !explicit.isEmpty {
+            return explicit
+        }
+        return try bundledVolumeInitializerPath(
+            executable: URL(fileURLWithPath: CommandLine.arguments[0]),
+            platform: platform
+        )
+    }
+
+    static func bundledVolumeInitializerPath(
+        executable: URL,
+        platform: String?
+    ) throws -> String {
+        let executable = executable.resolvingSymlinksInPath().standardizedFileURL
+        let architecture: String
+        switch platform {
+        case nil, "", "linux/arm64": architecture = "arm64"
+        case "linux/amd64": architecture = "amd64"
+        default:
+            throw ComposeError.unsupported(
+                "stock Apple image-volume copy-up does not support platform \(platform ?? "")"
+            )
+        }
+        return executable.deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("resources/volume-initializer")
+            .appendingPathComponent("compose-volume-initializer-linux-\(architecture)")
+            .path
+    }
+}
+
+struct EngineVolumeInitializerImageBuild {
+    let tag: String
+    let platform: String?
+    let helper: Data
+    let helperName: String
+    let helperPath: String
+
+    static func make(
+        sourceDigest: String,
+        platform: String?,
+        helper: Data,
+        helperName: String,
+        helperPath: String
+    ) -> EngineVolumeInitializerImageBuild {
+        EngineVolumeInitializerImageBuild(
+            tag: EngineVolumeInitializerBuildContext.cacheTag(
+                sourceDigest: sourceDigest,
+                platform: platform,
+                helper: helper,
+                helperName: helperName,
+                helperPath: helperPath
+            ),
+            platform: platform,
+            helper: helper,
+            helperName: helperName,
+            helperPath: helperPath
+        )
+    }
+}
+
 enum EngineVolumeInitializerBuildContext {
     static let stagePrefix = ".compose-volume-init-stage-"
 
@@ -30,9 +96,9 @@ enum EngineVolumeInitializerBuildContext {
     static func make(
         sourceImage: String,
         helper: Data,
+        helperName: String = "compose-volume-initializer-linux-arm64",
         helperPath: String
     ) async throws -> Data {
-        let helperName = "compose-volume-initializer-linux-arm64"
         let dockerfile = Data("""
         FROM \(sourceImage)
         COPY --chmod=0755 \(helperName) \(helperPath)
@@ -115,12 +181,14 @@ enum EngineVolumeInitializerBuildContext {
         sourceDigest: String,
         platform: String?,
         helper: Data,
+        helperName: String = "compose-volume-initializer-linux-arm64",
         helperPath: String
     ) -> String {
         let platformIdentity = platform ?? "<default>"
         let digest = fnv1aHex([
             Data(sourceDigest.utf8), Data([0]),
             Data(platformIdentity.utf8), Data([0]),
+            Data(helperName.utf8), Data([0]),
             Data(helperPath.utf8), Data([0]),
             helper,
         ])

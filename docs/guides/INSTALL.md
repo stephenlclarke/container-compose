@@ -88,6 +88,9 @@ sudo install -d -m 0755 /usr/local/resources/volume-initializer
 sudo install -m 0755 \
   Tools/compose-normalizer/compose-volume-initializer-linux-arm64 \
   /usr/local/resources/volume-initializer/compose-volume-initializer-linux-arm64
+sudo install -m 0755 \
+  Tools/compose-normalizer/compose-volume-initializer-linux-amd64 \
+  /usr/local/resources/volume-initializer/compose-volume-initializer-linux-amd64
 /usr/local/bin/container system start
 brew services start stephenlclarke/tap/devcontainer
 CONTAINER_COMPOSE_RUNTIME_PROFILE=stock container-compose version

@@ -25,6 +25,8 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -150,10 +152,18 @@ func initialize(source, destination, transaction string) error {
 		rollback()
 		return fmt.Errorf("apply destination metadata: %w", err)
 	}
+	if err := syncPublishedEntries(destination, entries); err != nil {
+		rollback()
+		return err
+	}
+	if err := syncDirectory(destination); err != nil {
+		rollback()
+		return err
+	}
 	if err := os.Remove(journal); err != nil {
 		return fmt.Errorf("complete initialization transaction: %w", err)
 	}
-	return nil
+	return syncDirectory(destination)
 }
 
 type transactionJournal struct {
@@ -357,7 +367,7 @@ func copyEntry(source, destination string, hardlinks map[fileIdentity]string) er
 		if err := os.Symlink(target, destination); err != nil {
 			return fmt.Errorf("create link %s: %w", destination, err)
 		}
-		return applyMetadata(destination, info, false)
+		return applyMetadata(source, destination, info, false)
 	}
 	if identity, linked := regularFileIdentity(info); linked {
 		if first, exists := hardlinks[identity]; exists {
@@ -386,17 +396,17 @@ func copyEntry(source, destination string, hardlinks map[fileIdentity]string) er
 				return err
 			}
 		}
-		return applyMetadata(destination, info, true)
+		return applyMetadata(source, destination, info, true)
 	case info.Mode().IsRegular():
 		if err := copyRegularFile(source, destination, info.Mode().Perm()); err != nil {
 			return err
 		}
-		return applyMetadata(destination, info, true)
+		return applyMetadata(source, destination, info, true)
 	case info.Mode()&os.ModeNamedPipe != 0:
 		if err := syscall.Mkfifo(destination, uint32(info.Mode().Perm())); err != nil {
 			return fmt.Errorf("create named pipe %s: %w", destination, err)
 		}
-		return applyMetadata(destination, info, true)
+		return applyMetadata(source, destination, info, true)
 	default:
 		return fmt.Errorf("unsupported image-volume entry type %s", source)
 	}
@@ -424,8 +434,8 @@ func copyRegularFile(source, destination string, mode os.FileMode) error {
 	return nil
 }
 
-// applyMetadata preserves ownership, permissions, and modification time.
-func applyMetadata(path string, info os.FileInfo, followLink bool) error {
+// applyMetadata preserves ownership, permissions, timestamps, and supported xattrs.
+func applyMetadata(source, path string, info os.FileInfo, followLink bool) error {
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return errors.New("file metadata is unavailable")
@@ -440,11 +450,90 @@ func applyMetadata(path string, info os.FileInfo, followLink bool) error {
 			!modeAlreadyMatches(path, mode) {
 			return err
 		}
-		return os.Chtimes(path, info.ModTime(), info.ModTime())
+		if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil {
+			return err
+		}
+		return copyExtendedAttributes(source, path)
 	}
 	if err := os.Lchown(path, int(stat.Uid), int(stat.Gid)); err != nil &&
 		!metadataAlreadyMatches(path, stat.Uid, stat.Gid, false) {
 		return err
+	}
+	return nil
+}
+
+// copyExtendedAttributes retains Linux capabilities and other image metadata.
+func copyExtendedAttributes(source, destination string) error {
+	size, err := unix.Listxattr(source, nil)
+	if errors.Is(err, syscall.ENOTSUP) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("list extended attributes for %s: %w", source, err)
+	}
+	if size == 0 {
+		return nil
+	}
+	names := make([]byte, size)
+	size, err = unix.Listxattr(source, names)
+	if err != nil {
+		return fmt.Errorf("read extended attribute names for %s: %w", source, err)
+	}
+	for _, name := range strings.Split(string(names[:size]), "\x00") {
+		if name == "" {
+			continue
+		}
+		valueSize, err := unix.Getxattr(source, name, nil)
+		if err != nil {
+			return fmt.Errorf("size extended attribute %s for %s: %w", name, source, err)
+		}
+		value := make([]byte, valueSize)
+		valueSize, err = unix.Getxattr(source, name, value)
+		if err != nil {
+			return fmt.Errorf("read extended attribute %s for %s: %w", name, source, err)
+		}
+		if err := unix.Setxattr(destination, name, value[:valueSize], 0); err != nil {
+			return fmt.Errorf("write extended attribute %s for %s: %w", name, destination, err)
+		}
+	}
+	return nil
+}
+
+// syncPublishedEntries makes copied bytes and directory entries durable.
+func syncPublishedEntries(destination string, entries []os.DirEntry) error {
+	for _, entry := range entries {
+		if err := syncPublishedPath(filepath.Join(destination, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func syncPublishedPath(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("inspect published entry %s: %w", path, err)
+	}
+	if info.IsDir() {
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return fmt.Errorf("read published directory %s: %w", path, err)
+		}
+		if err := syncPublishedEntries(path, entries); err != nil {
+			return err
+		}
+		return syncDirectory(path)
+	}
+	if !info.Mode().IsRegular() {
+		return nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open published file %s: %w", path, err)
+	}
+	defer file.Close()
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("sync published file %s: %w", path, err)
 	}
 	return nil
 }

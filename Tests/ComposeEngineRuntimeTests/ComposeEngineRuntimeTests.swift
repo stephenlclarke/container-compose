@@ -27,6 +27,53 @@ import Testing
 // swiftlint:disable:next type_body_length
 struct ComposeEngineRuntimeTests {
     @Test
+    func `bundled volume initializer resolves Homebrew links and platform`() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("compose-engine-homebrew-\(UUID().uuidString)")
+        let executable = root.appendingPathComponent(
+            "Cellar/container-compose/current/libexec/container-plugins/compose/bin/compose"
+        )
+        let link = root.appendingPathComponent("bin/container-compose")
+        try FileManager.default.createDirectory(
+            at: executable.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: link.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data().write(to: executable)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: executable)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let resources = executable.deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("resources/volume-initializer")
+        #expect(
+            try ComposeEngineRuntime.bundledVolumeInitializerPath(
+                executable: link,
+                platform: "linux/arm64"
+            ) == resources.appendingPathComponent(
+                "compose-volume-initializer-linux-arm64"
+            ).path
+        )
+        #expect(
+            try ComposeEngineRuntime.bundledVolumeInitializerPath(
+                executable: link,
+                platform: "linux/amd64"
+            ) == resources.appendingPathComponent(
+                "compose-volume-initializer-linux-amd64"
+            ).path
+        )
+        #expect(throws: ComposeError.self) {
+            _ = try ComposeEngineRuntime.bundledVolumeInitializerPath(
+                executable: link,
+                platform: "linux/riscv64"
+            )
+        }
+    }
+
+    @Test
     func `volume initializer build context is deterministic portable ustar`() async throws {
         let helper = Data([0, 1, 127, 128, 255])
         let first = try await EngineVolumeInitializerBuildContext.make(
@@ -44,6 +91,12 @@ struct ComposeEngineRuntimeTests {
             helper: helper,
             helperPath: "/usr/local/libexec/compose-volume-initializer"
         )
+        let amd = try await EngineVolumeInitializerBuildContext.make(
+            sourceImage: "example/image:latest",
+            helper: helper,
+            helperName: "compose-volume-initializer-linux-amd64",
+            helperPath: "/.compose-volume-initializer"
+        )
 
         #expect(first == second)
         #expect(first.count.isMultiple(of: 512))
@@ -55,6 +108,8 @@ struct ComposeEngineRuntimeTests {
         #expect(first.tarContents(at: helperOffset) == helper)
         #expect(first.suffix(1024).allSatisfy { $0 == 0 })
         #expect(first.containsText("FROM example/image:latest"))
+        let amdHelperOffset = try #require(amd.nextTarEntryOffset(after: 0))
+        #expect(amd.tarEntryName(at: amdHelperOffset) == "compose-volume-initializer-linux-amd64")
         #expect(isolated.containsText("ENTRYPOINT [\"/usr/local/libexec/compose-volume-initializer\"]"))
         #expect(first != isolated)
     }
@@ -92,11 +147,19 @@ struct ComposeEngineRuntimeTests {
             helper: helper,
             helperPath: "/usr/local/libexec/compose-volume-initializer"
         )
+        let changedName = EngineVolumeInitializerBuildContext.cacheTag(
+            sourceDigest: "example/image@sha256:digest",
+            platform: "linux/arm64",
+            helper: helper,
+            helperName: "compose-volume-initializer-linux-amd64",
+            helperPath: "/.compose-volume-initializer"
+        )
 
         #expect(arm != amd)
         #expect(arm != selectedDefault)
         #expect(arm != changedHelper)
         #expect(arm != changedPath)
+        #expect(arm != changedName)
     }
 
     @Test
