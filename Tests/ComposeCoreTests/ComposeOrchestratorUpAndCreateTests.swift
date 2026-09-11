@@ -16,6 +16,7 @@
 
 import ComposeContainerRuntime
 @testable import ComposeCore
+import ComposeRuntimeSPI
 import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
@@ -7590,6 +7591,44 @@ extension ComposeOrchestratorTests {
             $0.containsSequence(["--network", "demo_backend,alias=api,alias=api.internal"])
         })
         #expect(await resourceManager.requests.map(\.name) == ["demo_backend", "demo_cache"])
+    }
+
+    @Test("up maps aliases without overclaiming network-scoped options")
+    func upMapsAliasesWithoutOverclaimingNetworkScopedOptions() async throws {
+        let runner = RecordingRunner(responses: [.success])
+        let resourceManager = RecordingContainerResourceManager()
+        let project = composeProject(
+            name: "demo",
+            services: [
+                "api": composeService(name: "api", image: "example/api") {
+                    $0.networks = ["backend"]
+                    $0.networkAliases = ["backend": ["api", "api.internal"]]
+                    $0.networkOptions = [
+                        "backend": ComposeNetworkOptions(interfaceName: "eth0")
+                    ]
+                }
+            ]
+        ) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+        }
+        let options = ComposeExecutionOptions {
+            $0.runtimeCapabilities = ComposeRuntimeCapabilities(
+                identifiers: [ComposeRuntimeCapabilities.networkAliasesV1Identifier]
+            )
+        }
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: options,
+            resourceManager: resourceManager
+        )
+            .up(project: project, options: ComposeUpOptions())
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.containsSequence([
+            "--network", "demo_backend,alias=api,alias=api.internal"
+        ]))
+        #expect(!command.joined(separator: " ").contains("interface="))
     }
 
     @Test("up rejects invalid network aliases before creating resources")

@@ -82,7 +82,15 @@ Unix socket. Container creation remains on the stock Apple CLI.
 cp Package.stock.resolved Package.resolved
 CONTAINER_COMPOSE_BUILD_PROFILE=stock \
   swift build --disable-automatic-resolution -c release --product compose
-install -m 0755 .build/release/compose /usr/local/bin/container-compose
+make go-build
+sudo install -m 0755 .build/release/compose /usr/local/bin/container-compose
+sudo install -d -m 0755 /usr/local/resources/volume-initializer
+sudo install -m 0755 \
+  Tools/compose-normalizer/compose-volume-initializer-linux-arm64 \
+  /usr/local/resources/volume-initializer/compose-volume-initializer-linux-arm64
+sudo install -m 0755 \
+  Tools/compose-normalizer/compose-volume-initializer-linux-amd64 \
+  /usr/local/resources/volume-initializer/compose-volume-initializer-linux-amd64
 /usr/local/bin/container system start
 brew services start stephenlclarke/tap/devcontainer
 CONTAINER_COMPOSE_RUNTIME_PROFILE=stock container-compose version
@@ -92,6 +100,15 @@ The runtime profile is compiled into the executable; the final environment
 assignment is optional and shown only to make the selection explicit. Override
 `CONTAINER_COMPOSE_ENGINE_SOCKET` when the Dev Containers engine uses a
 non-default socket. Docker, Docker Compose, and Colima are not consulted.
+
+The `devcontainer-compose` dispatcher also supplies
+`CONTAINER_COMPOSE_RUNTIME_CAPABILITIES` when its Docker-free compatibility
+adapter implements a narrow runtime contract that stock Apple Container does
+not advertise itself. This is an adapter-to-Compose handshake, not a
+normal user setting; running the stock Compose binary directly leaves the
+overlay empty and retains stock behavior.
+
+The stock package also includes an Apache-2.0, static Linux arm64 volume initializer. When Docker-compatible named-volume copy-up is required, Compose asks the local Apple-backed Engine to use Apple Container's bundled builder to add the helper as a cached layer on the source image. Compose then overrides the temporary derived container's user and entrypoint and mounts the target volume. This uses Dockerfile syntax as an Apple build input but does not invoke or require Docker. The helper does not depend on a shell or utilities in the source image. Host-side file locks serialize cache construction and initialization across Compose processes, while a private host transaction and guest-side journal make staged publication recoverable after interruption. Locally built images without a registry digest are snapshotted behind a verified temporary tag before the helper layer is built.
 
 If the machine has a mixed Homebrew/Apple install, use the [reset flow](#troubleshooting) instead of the normal install path.
 

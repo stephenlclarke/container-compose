@@ -125,6 +125,7 @@ done
 printf 'build:%s\n' "$(basename "${output}")" >> "${STACK_TEST_LOG}"
 mkdir -p "$(dirname "${output}")"
 printf 'artifact:container-builder-shim\n' > "${output}"
+chmod 0755 "${output}"
 """,
             encoding="utf-8",
         )
@@ -359,6 +360,8 @@ exec "$@"
                     "build:container-engine": 1,
                     "build:container-builder-shim": 1,
                     "build:compose-normalizer": 1,
+                    "build:compose-volume-initializer-linux-amd64": 1,
+                    "build:compose-volume-initializer-linux-arm64": 1,
                     "build:container": 2,
                     "build:compose": 1,
                 }
@@ -401,6 +404,8 @@ exec "$@"
                 "compose/resources/build-info.json",
                 "compose/resources/compose-normalizer",
                 "compose/resources/container-compose-icon.png",
+                "compose/resources/volume-initializer/compose-volume-initializer-linux-amd64",
+                "compose/resources/volume-initializer/compose-volume-initializer-linux-arm64",
             ],
         )
         materialized = self.root / "restored-compose"
@@ -420,6 +425,32 @@ exec "$@"
         self.assertTrue((materialized / "compose/bin/compose").is_file())
         self.assertTrue(
             (materialized / "compose/resources/compose-normalizer").is_file()
+        )
+        self.assertTrue(
+            (
+                materialized
+                / "compose/resources/volume-initializer/compose-volume-initializer-linux-arm64"
+            ).is_file()
+        )
+        self.assertTrue(
+            os.access(
+                materialized
+                / "compose/resources/volume-initializer/compose-volume-initializer-linux-arm64",
+                os.X_OK,
+            )
+        )
+        self.assertTrue(
+            (
+                materialized
+                / "compose/resources/volume-initializer/compose-volume-initializer-linux-amd64"
+            ).is_file()
+        )
+        self.assertTrue(
+            os.access(
+                materialized
+                / "compose/resources/volume-initializer/compose-volume-initializer-linux-amd64",
+                os.X_OK,
+            )
         )
         timing_logs = sorted((self.retained / "timings").glob("*.jsonl"))
         self.assertEqual(len(timing_logs), 2)
@@ -449,6 +480,33 @@ exec "$@"
             check=False,
         )
         self.assertEqual(verified_after_scratch_cleanup.returncode, 0)
+
+    def test_release_checkpoint_and_package_require_retained_initializers(
+        self,
+    ) -> None:
+        makefile = MAKEFILE.read_text(encoding="utf-8")
+        arm64 = "compose-volume-initializer-linux-arm64"
+        amd64 = "compose-volume-initializer-linux-amd64"
+
+        self.assertIn(
+            '--required-output "$(abspath $(VOLUME_INITIALIZER_ARM64))"', makefile
+        )
+        self.assertIn(
+            'VOLUME_INITIALIZER_ARM64="$(abspath $(DIST_DIR))/'
+            f'compose/resources/volume-initializer/{arm64}"',
+            makefile,
+        )
+        self.assertIn(
+            'VOLUME_INITIALIZER_AMD64="$(abspath $(DIST_DIR))/'
+            f'compose/resources/volume-initializer/{amd64}"',
+            makefile,
+        )
+        self.assertIn(
+            f"grep -Fx 'compose/resources/volume-initializer/{arm64}'", makefile
+        )
+        self.assertIn(
+            f"grep -Fx 'compose/resources/volume-initializer/{amd64}'", makefile
+        )
 
     def test_compose_build_uses_identity_preserving_manifest_overrides(self) -> None:
         makefile = MAKEFILE.read_text(encoding="utf-8")

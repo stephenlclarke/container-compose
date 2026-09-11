@@ -80,6 +80,8 @@ enum ContainerPackageCompatibility {
     static let containerExecutableEnvironmentKey = "CONTAINER_COMPOSE_CONTAINER"
     static let envExecutableEnvironmentKey = "CONTAINER_COMPOSE_ENV_EXECUTABLE"
     static let runtimeProfileEnvironmentKey = "CONTAINER_COMPOSE_RUNTIME_PROFILE"
+    static let runtimeCapabilityOverlayEnvironmentKey =
+        "CONTAINER_COMPOSE_RUNTIME_CAPABILITIES"
 
     static var compiledRuntimeProfile: RuntimeProfile {
         #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
@@ -103,6 +105,16 @@ enum ContainerPackageCompatibility {
     static var installGuideURL: String {
         ProcessInfo.processInfo.environment[installGuideURLEnvironmentKey]
             ?? defaultInstallGuideURLComponents.joined(separator: "/")
+    }
+
+    static func runtimeCapabilityOverlay(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> [String] {
+        let values = environment[runtimeCapabilityOverlayEnvironmentKey]?
+            .split(separator: ",", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty } ?? []
+        return Array(Set(values)).sorted()
     }
 
     private static var envExecutablePath: String {
@@ -177,6 +189,7 @@ extension ContainerPackageCompatibility {
         runtimeProfile requestedRuntimeProfile: RuntimeProfile? = nil,
         expectedContainerRef: String? = nil,
         expectedContainerizationRef: String? = nil,
+        stockRuntimeCapabilities: [String] = [],
         onCompatibleRuntime: @escaping @Sendable (ComposeRuntimeCapabilities) -> Void = { _ in },
         run: ([String]) async throws -> Data = runContainerCommand,
     ) async throws -> String? {
@@ -213,7 +226,7 @@ extension ContainerPackageCompatibility {
                 )
             }
             let runtimeCapabilities = runtimeProfile == .stock
-                ? []
+                ? stockRuntimeCapabilities
                 : components
                 .first(where: { $0.appName == "container" })?
                 .runtimeCapabilities ?? []

@@ -28,6 +28,15 @@ superseded versions are classified explicitly. Normal validation fingerprints
 no longer execute Docker applications; Docker remains confined to explicit
 oracle lanes.
 
+The 0.15.0 integration extends the retained Compose product closure with both
+Docker-free Linux volume-initializer executables. Their build outputs,
+content-addressed objects, receipt members, checkpoint requirements,
+materialization paths, executable modes, package verification, and archive
+members are one contract. An interrupted SwiftPM editable session that cannot
+be resolved during `unedit` is atomically quarantined beside its external build
+workspace, preserving its evidence while restoring a clean canonical scratch
+path and the original dependency lock.
+
 For local/self-hosted work, build workspaces, compiler temporary directories,
 downloads, and runner work are required to resolve beneath `/Volumes/SSD`.
 Retained products, manifests, journals, locks, authority and publication inputs

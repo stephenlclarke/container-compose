@@ -267,10 +267,12 @@ extension ComposeOrchestrator {
     func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) throws -> String {
         var argument = networkRuntimeName(project: project, composeName: network)
         var options: [String] = []
-        if self.options.runtimeCapabilities.supportsNetworkScopedAliasesV1 {
+        if self.options.runtimeCapabilities.supportsNetworkAliasesV1 {
             for alias in try networkAliasValues(service: service, network: network) {
                 options.append("alias=\(alias)")
             }
+        }
+        if self.options.runtimeCapabilities.supportsNetworkScopedAliasesV1 {
             for mapping in try networkScopedLinkAliasValues(project: project, service: service, network: network) {
                 options.append("dns-alias=\(mapping)")
             }

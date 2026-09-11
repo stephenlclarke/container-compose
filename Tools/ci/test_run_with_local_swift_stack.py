@@ -366,7 +366,7 @@ class LocalSwiftStackTests(unittest.TestCase):
             self.assertFalse((recovery / "Package.resolved.backup").exists())
             self.assertFalse((recovery / "journal.json").exists())
 
-    def test_recover_retains_evidence_when_unedit_fails(self) -> None:
+    def test_recover_quarantines_workspace_when_unedit_cannot_resolve(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             lockfile = root / "Package.resolved"
@@ -404,12 +404,29 @@ class LocalSwiftStackTests(unittest.TestCase):
             )
 
             with mock.patch.object(STACK, "unedit_dependencies", return_value=1):
-                with self.assertRaisesRegex(SystemExit, "recovery state retained"):
-                    STACK.recover(root, lockfile, "/usr/bin/false", {})
+                STACK.recover(root, lockfile, "/usr/bin/false", {})
 
-            self.assertEqual(lockfile.read_bytes(), b"locally edited\n")
-            self.assertTrue(backup.exists())
-            self.assertTrue(journal.exists())
+            self.assertEqual(lockfile.read_bytes(), original)
+            self.assertFalse((root / ".build").exists())
+            quarantines = list(
+                root.glob(".build.local-swift-stack-quarantine-*")
+            )
+            self.assertEqual(len(quarantines), 1)
+            self.assertTrue(
+                (quarantines[0] / "local-swift-stack/journal.json").is_file()
+            )
+
+    def test_quarantine_rejects_an_indirect_build_root(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            outside = root / "outside"
+            outside.mkdir()
+            (root / ".build").symlink_to(outside, target_is_directory=True)
+
+            with self.assertRaisesRegex(SystemExit, "recovery state retained"):
+                STACK.quarantine_workspace(root, b"lock")
+
+            self.assertTrue((root / ".build").is_symlink())
 
 
 if __name__ == "__main__":

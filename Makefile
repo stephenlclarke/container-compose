@@ -85,6 +85,8 @@ GO_COVERAGE_MIN ?= 85
 DIST_DIR ?= dist
 PLUGIN_ARCHIVE ?= container-compose-plugin-release-arm64.tar.gz
 PLUGIN_ICON ?= docs/images/container-compose-icon-octopus.png
+VOLUME_INITIALIZER_ARM64 := Tools/compose-normalizer/compose-volume-initializer-linux-arm64
+VOLUME_INITIALIZER_AMD64 := Tools/compose-normalizer/compose-volume-initializer-linux-amd64
 CONVENTIONAL_VERSION_TOOL := $(abspath Tools/release/conventional-version.py)
 DOCS_OUTPUT_DIR ?= _site
 DOCS_SERVER_DIR ?= _serve
@@ -390,7 +392,7 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 SWIFT_TEST_FLAGS ?=
 SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -F -Xswiftc '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' -Xlinker -rpath -Xlinker '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' $(if $(strip $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)),-Xlinker -rpath -Xlinker '$(SWIFT_TEST_RUNTIME_LIBRARY_PATH)'))
 
-.PHONY: all local-build workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-test-direct swift-runtime-test-build swift-runtime-test swift-coverage swift-coverage-check go-test go-coverage-check go-build go-release-check cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan release-version package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit swift-style-tools swift-style-paths swift-style-check swift-style-format local-swift-stack-clean
+.PHONY: all local-build workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-test-direct swift-runtime-test-build swift-runtime-test swift-coverage swift-coverage-check go-test go-coverage-check go-build go-release-check stock-engine-image-volume-smoke cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan release-version package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit swift-style-tools swift-style-paths swift-style-check swift-style-format local-swift-stack-clean
 
 .PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint actions-lint
 .PHONY: worktree-audit worktree-audit-strict
@@ -752,6 +754,16 @@ stack-compose-build: stack-container-build stack-restore-compose-pin
 		GOWORK=off $(GO_RELEASE_ENV) "$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
 			--timing-log "$(STACK_TIMING_LOG)" --timing-label compose-normalizer-build -- \
 			"$(STACK_GO)" build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o "$$product/compose-normalizer" .; \
+		GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
+			"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label compose-volume-initializer-arm64-build -- \
+			"$(STACK_GO)" build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" \
+			-o "$$product/compose-volume-initializer-linux-arm64" ./cmd/volume-initializer; \
+		GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+			"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_STAGE_TIMEOUT_SECONDS)" \
+			--timing-log "$(STACK_TIMING_LOG)" --timing-label compose-volume-initializer-amd64-build -- \
+			"$(STACK_GO)" build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" \
+			-o "$$product/compose-volume-initializer-linux-amd64" ./cmd/volume-initializer; \
 		cd "$(CURDIR)"; \
 		"$(PYTHON)" Tools/release/write-build-info.py \
 			--output "$$product/build-info.json" --version "$(COMPOSE_VERSION)" \
@@ -765,6 +777,8 @@ stack-compose-build: stack-container-build stack-restore-compose-pin
 			--runtime-profile "$(CONTAINER_COMPOSE_BUILD_PROFILE)"; \
 		compose_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$bin_path/compose" --root "$(STACK_ARTIFACT_ROOT)" --name compose)"; \
 		normalizer_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$product/compose-normalizer" --root "$(STACK_ARTIFACT_ROOT)" --name compose-normalizer)"; \
+		initializer_arm64_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$product/compose-volume-initializer-linux-arm64" --root "$(STACK_ARTIFACT_ROOT)" --name compose-volume-initializer-linux-arm64)"; \
+		initializer_amd64_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$product/compose-volume-initializer-linux-amd64" --root "$(STACK_ARTIFACT_ROOT)" --name compose-volume-initializer-linux-amd64)"; \
 		config_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$(abspath config.toml)" --root "$(STACK_ARTIFACT_ROOT)" --name config.toml)"; \
 		icon_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$(abspath $(PLUGIN_ICON))" --root "$(STACK_ARTIFACT_ROOT)" --name container-compose-icon.png)"; \
 		metadata_artifact="$$($(PYTHON) "$(STACK_ARTIFACT_TOOL)" --source "$$product/build-info.json" --root "$(STACK_ARTIFACT_ROOT)" --name build-info.json)"; \
@@ -777,11 +791,13 @@ stack-compose-build: stack-container-build stack-restore-compose-pin
 			--artifact-map "compose/config.toml=$$config_artifact" \
 			--artifact-map "compose/resources/build-info.json=$$metadata_artifact" \
 			--artifact-map "compose/resources/compose-normalizer=$$normalizer_artifact" \
+			--artifact-map "compose/resources/volume-initializer/compose-volume-initializer-linux-arm64=$$initializer_arm64_artifact" \
+			--artifact-map "compose/resources/volume-initializer/compose-volume-initializer-linux-amd64=$$initializer_amd64_artifact" \
 			--artifact-map "compose/resources/container-compose-icon.png=$$icon_artifact" \
 			--expected-commit "$$source_commit" --expected-tree "$$source_tree" \
 			--build-contract "$(STACK_COMPOSE_CONTRACT)" \
 			--duration-seconds "$$((SECONDS - started))" \
-			--command-label 'swift build --product compose + go build compose-normalizer' >/dev/null; \
+			--command-label 'swift build compose + go build normalizer and volume initializers' >/dev/null; \
 	fi
 # END RECOVERABLE STACK TARGETS
 
@@ -811,7 +827,7 @@ print-release-gate-fingerprint: release-gate-environment-fingerprint-check
 
 release-gate:
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory container-stack-release-validation
-	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" --required-output "$(abspath .build/debug/compose)" --required-output "$(abspath Tools/compose-normalizer/compose-normalizer)" -- $(MAKE) --no-print-directory ci
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" --required-output "$(abspath .build/debug/compose)" --required-output "$(abspath Tools/compose-normalizer/compose-normalizer)" --required-output "$(abspath $(VOLUME_INITIALIZER_ARM64))" --required-output "$(abspath $(VOLUME_INITIALIZER_AMD64))" -- $(MAKE) --no-print-directory ci
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage swift-runtime --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory swift-runtime-test
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-parity --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory docker-compose-parity
 
@@ -1013,6 +1029,8 @@ go-test:
 
 go-build:
 	cd Tools/compose-normalizer && $(GO_RELEASE_ENV) $(GO) build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o compose-normalizer .
+	cd Tools/compose-normalizer && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o compose-volume-initializer-linux-arm64 ./cmd/volume-initializer
+	cd Tools/compose-normalizer && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(GO_RELEASE_BUILD_FLAGS) -ldflags "$(GO_RELEASE_LDFLAGS)" -o compose-volume-initializer-linux-amd64 ./cmd/volume-initializer
 	$(MAKE) go-release-check
 
 GO_RELEASE_BINARY ?= Tools/compose-normalizer/compose-normalizer
@@ -1022,6 +1040,24 @@ go-release-check:
 		printf '%s is missing; run make go-build first\n' "$(GO_RELEASE_BINARY)" >&2; \
 		exit 1; \
 	}
+	@test -x "$(VOLUME_INITIALIZER_ARM64)" || { \
+		printf 'Docker-free ARM64 volume initializer is missing; run make go-build first\n' >&2; \
+		exit 1; \
+	}
+	@test -x "$(VOLUME_INITIALIZER_AMD64)" || { \
+		printf 'Docker-free AMD64 volume initializer is missing; run make go-build first\n' >&2; \
+		exit 1; \
+	}
+	@file "$(VOLUME_INITIALIZER_ARM64)" | grep -E 'ELF 64-bit.*ARM aarch64.*statically linked' >/dev/null || { \
+		printf 'Docker-free ARM64 volume initializer must be a static Linux executable\n' >&2; \
+		file "$(VOLUME_INITIALIZER_ARM64)" >&2; \
+		exit 1; \
+	}
+	@file "$(VOLUME_INITIALIZER_AMD64)" | grep -E 'ELF 64-bit.*x86-64.*statically linked' >/dev/null || { \
+		printf 'Docker-free AMD64 volume initializer must be a static Linux executable\n' >&2; \
+		file "$(VOLUME_INITIALIZER_AMD64)" >&2; \
+		exit 1; \
+	}
 	@case " $(GO_RELEASE_BUILD_FLAGS) " in \
 		*" -trimpath "*) ;; \
 		*) \
@@ -1029,6 +1065,7 @@ go-release-check:
 			exit 1; \
 			;; \
 	esac
+
 	@case " $(GO_RELEASE_LDFLAGS) " in \
 		*" -s "*) ;; \
 		*) \
@@ -1057,6 +1094,12 @@ go-release-check:
 		printf 'compose-normalizer contains DWARF debug sections; Homebrew packages require stripped release Go binaries\n' >&2; \
 		exit 1; \
 	fi
+
+stock-engine-image-volume-smoke: export CONTAINER_COMPOSE_BUILD_PROFILE=stock
+stock-engine-image-volume-smoke: build go-build
+	DEVCONTAINER_ENGINE_BIN="$(DEVCONTAINER_ENGINE_BIN)" \
+		COMPOSE_BIN="$(abspath .build/debug/compose)" \
+		Tools/parity/stock-engine-image-volume-smoke.sh
 
 codeql-local:
 	/usr/bin/python3 -I Tools/ci/codeql-local.py \
@@ -2451,13 +2494,17 @@ ifneq ($(strip $(PACKAGE_RETAINED_RECEIPT)),)
 	$(PYTHON) "$(STACK_PIN_TOOL)" materialize \
 		--receipt "$(PACKAGE_RETAINED_RECEIPT)" --output "$(abspath $(DIST_DIR))"
 	$(MAKE) go-release-check \
-		GO_RELEASE_BINARY="$(abspath $(DIST_DIR))/compose/resources/compose-normalizer"
+		GO_RELEASE_BINARY="$(abspath $(DIST_DIR))/compose/resources/compose-normalizer" \
+		VOLUME_INITIALIZER_ARM64="$(abspath $(DIST_DIR))/compose/resources/volume-initializer/compose-volume-initializer-linux-arm64" \
+		VOLUME_INITIALIZER_AMD64="$(abspath $(DIST_DIR))/compose/resources/volume-initializer/compose-volume-initializer-linux-amd64"
 else
 	$(MAKE) go-release-check
-	mkdir -p "$(DIST_DIR)/compose/bin" "$(DIST_DIR)/compose/resources"
+	mkdir -p "$(DIST_DIR)/compose/bin" "$(DIST_DIR)/compose/resources/volume-initializer"
 	cp ".build/$(PACKAGE_BUILD_CONFIGURATION)/compose" "$(DIST_DIR)/compose/bin/compose"
 	cp config.toml "$(DIST_DIR)/compose/config.toml"
 	cp Tools/compose-normalizer/compose-normalizer "$(DIST_DIR)/compose/resources/compose-normalizer"
+	cp "$(VOLUME_INITIALIZER_ARM64)" "$(DIST_DIR)/compose/resources/volume-initializer/compose-volume-initializer-linux-arm64"
+	cp "$(VOLUME_INITIALIZER_AMD64)" "$(DIST_DIR)/compose/resources/volume-initializer/compose-volume-initializer-linux-amd64"
 	cp "$(PLUGIN_ICON)" "$(DIST_DIR)/compose/resources/container-compose-icon.png"
 	$(PYTHON) Tools/release/write-build-info.py \
 		--output "$(DIST_DIR)/compose/resources/build-info.json" \
@@ -2485,6 +2532,8 @@ endif
 		"$(DIST_DIR)/compose/resources/compose-normalizer"
 	tar -czf "$(PLUGIN_ARCHIVE)" -C "$(DIST_DIR)" compose
 	tar -tzf "$(PLUGIN_ARCHIVE)" | grep -Fx 'compose/resources/container-compose-icon.png' >/dev/null
+	tar -tzf "$(PLUGIN_ARCHIVE)" | grep -Fx 'compose/resources/volume-initializer/compose-volume-initializer-linux-arm64' >/dev/null
+	tar -tzf "$(PLUGIN_ARCHIVE)" | grep -Fx 'compose/resources/volume-initializer/compose-volume-initializer-linux-amd64' >/dev/null
 	$(PYTHON) Tools/release/write-sha256-sidecar.py "$(PLUGIN_ARCHIVE)"
 
 coverage-tools-syntax:
@@ -2632,5 +2681,6 @@ pre-commit:
 clean: local-swift-stack-clean
 	$(SWIFT) package clean
 	rm -rf "$(DIST_DIR)" "$(PLUGIN_ARCHIVE)" "$(DOCS_OUTPUT_DIR)" "$(DOCS_SERVER_DIR)" "$(DOCS_SCRATCH_PATH)" .scannerwork coverage*.lcov coverage.out coverage.report coverage*.xml
-	rm -f *.profraw Tools/compose-normalizer/coverage.out Tools/compose-normalizer/compose-normalizer
+	rm -f *.profraw Tools/compose-normalizer/coverage.out Tools/compose-normalizer/compose-normalizer \
+		"$(VOLUME_INITIALIZER_ARM64)" "$(VOLUME_INITIALIZER_AMD64)"
 	find Tools -type d -name __pycache__ -prune -exec rm -rf {} +
