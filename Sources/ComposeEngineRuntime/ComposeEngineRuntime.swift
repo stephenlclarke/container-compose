@@ -386,7 +386,7 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         )
         defer { withExtendedLifetime(buildLock) {} }
         for _ in 0 ..< 3 {
-            let image = try await inspectImage(sourceImage)
+            let image = try await inspectImage(sourceImage, platform: platform)
             let build = try Self.volumeInitializerBuild(
                 image: image,
                 platform: platform,
@@ -407,7 +407,8 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             if try await buildFromVerifiedLocalImage(
                 sourceReference: sourceImage,
                 sourceID: image.id,
-                build: build
+                build: build,
+                platform: platform
             ) {
                 return build
             }
@@ -460,13 +461,14 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
     private func buildFromVerifiedLocalImage(
         sourceReference: String,
         sourceID: String,
-        build: EngineVolumeInitializerImageBuild
+        build: EngineVolumeInitializerImageBuild,
+        platform: String?
     ) async throws -> Bool {
         let aliasTag = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
         let alias = "devcontainer-volume-source:\(aliasTag)"
         try await tagImage(source: sourceReference, repository: "devcontainer-volume-source", tag: aliasTag)
         do {
-            let aliased = try await inspectImage(alias)
+            let aliased = try await inspectImage(alias, platform: platform)
             guard aliased.id == sourceID else {
                 try await deleteImageReference(alias)
                 return false
@@ -894,9 +896,13 @@ struct EngineImageInspect: Decodable {
     let id: String
     let repoTags: [String]
     let repoDigests: [String]
+    let architecture: String
+    let operatingSystem: String
     let config: EngineImageConfig
     enum CodingKeys: String, CodingKey {
+        case architecture = "Architecture"
         case id = "Id"
+        case operatingSystem = "Os"
         case repoTags = "RepoTags"
         case repoDigests = "RepoDigests"
         case config = "Config"

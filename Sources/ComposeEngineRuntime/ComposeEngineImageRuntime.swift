@@ -125,4 +125,34 @@ extension EngineRuntimeProvider: ComposeRuntimeImageManaging {
     func inspectImage(_ reference: String) async throws -> EngineImageInspect {
         try await request(.get, "/v1.53/images/\(escaped(reference))/json")
     }
+
+    func inspectImage(
+        _ reference: String,
+        platform: String?
+    ) async throws -> EngineImageInspect {
+        let platformQuery = platform.map { "?platform=\(query($0))" } ?? ""
+        let image: EngineImageInspect = try await request(
+            .get,
+            "/v1.53/images/\(escaped(reference))/json\(platformQuery)"
+        )
+        guard let platform, !platform.isEmpty else {
+            return image
+        }
+        let components = platform.split(
+            separator: "/",
+            maxSplits: 2,
+            omittingEmptySubsequences: false
+        )
+        guard components.count >= 2,
+              components[0] == image.operatingSystem,
+              components[1] == image.architecture
+        else {
+            throw ComposeError.commandFailed(
+                command: "Engine image inspect --platform \(platform)",
+                status: 1,
+                stderr: "resolved \(image.operatingSystem)/\(image.architecture) instead"
+            )
+        }
+        return image
+    }
 }

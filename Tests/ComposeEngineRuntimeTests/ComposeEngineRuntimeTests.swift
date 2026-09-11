@@ -585,6 +585,14 @@ struct ComposeEngineRuntimeTests {
             #expect(requests.filter { $0.target.contains("/wait?") }.count == 1)
             #expect(requests.filter { $0.method == .delete }.count == 1)
             #expect(requests.contains { $0.target.contains("platform=linux/arm64") })
+            #expect(
+                requests.contains {
+                    $0.method == .get
+                        && $0.target.contains("/images/example")
+                        && $0.target.contains("/json?")
+                        && $0.target.contains("platform=linux/arm64")
+                }
+            )
             let create = try #require(requests.first { $0.target.contains("/containers/create?") })
             #expect(create.body.containsText(#""Source":"project_state""#))
             #expect(create.body.containsText(#""Target":"/.compose-image-volume-target""#))
@@ -777,7 +785,7 @@ struct ComposeEngineRuntimeTests {
     }
 }
 
-private struct EngineFixture {
+struct EngineFixture {
     let root: URL
     let socketPath: String
     let volumeInitializerPath: String
@@ -819,7 +827,7 @@ private struct EngineFixture {
     }
 }
 
-private actor RequestRecorder {
+actor RequestRecorder {
     private(set) var requests: [DockerHTTPRequest] = []
     func append(_ request: DockerHTTPRequest) {
         requests.append(request)
@@ -886,7 +894,7 @@ private struct EngineFixtureResponder: DockerHTTPResponder {
     // swiftlint:enable line_length
 }
 
-private struct ImageVolumeResponder: DockerHTTPResponder {
+struct ImageVolumeResponder: DockerHTTPResponder {
     let recorder: RequestRecorder
     let mountpoint: String
     var hasRepositoryDigest = true
