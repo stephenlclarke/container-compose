@@ -703,7 +703,12 @@ def plan_recovery(
     postconditions: dict[str, Any],
 ) -> dict[str, Any]:
     """Return a pure, single-next-step recovery plan from typed observations."""
-    missing_release_assets = sorted(set(missing) & set(EXPECTED_RELEASE_ASSETS))
+    expected_release_assets = (
+        EXPECTED_DRAFT_ASSETS
+        if remote.get("state") == "draft"
+        else EXPECTED_RELEASE_ASSETS
+    )
+    missing_release_assets = sorted(set(missing) & set(expected_release_assets))
     missing_documentation = sorted(
         set(missing) & set(EXPECTED_DOCUMENTATION_ASSETS)
     )

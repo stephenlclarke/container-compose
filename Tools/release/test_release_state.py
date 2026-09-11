@@ -168,7 +168,10 @@ class ReleaseStateTests(unittest.TestCase):
         action = MODULE.plan_recovery(
             [],
             [],
-            [],
+            [
+                "container-vminit-arm64.oci.tar",
+                "container-vminit-arm64.oci.tar.sha256",
+            ],
             remote,
             {"formulae": {"state": "deferred"}, "pages": {"state": "deferred"}},
         )

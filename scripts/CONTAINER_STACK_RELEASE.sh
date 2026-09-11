@@ -6134,7 +6134,15 @@ documentation_dispatch_mode_for_run() {
     --root "${RELEASE_RETAINED_ROOT}" --workflow docs.yml \
     --version "${version}" --control-sha "${control_sha}" \
     --run-id "${run_id}")"
+  if jq -e 'length == 0' <<<"${record}" >/dev/null; then
+    printf 'docs-regenerate-%s\n' "${run_id}"
+    return 0
+  fi
   mode="$(jq -r '.mode // empty' <<<"${record}")"
+  if [[ -z "${mode}" ]]; then
+    printf 'docs-regenerate-%s\n' "${run_id}"
+    return 0
+  fi
   if [[ "${mode}" != docs && ! "${mode}" =~ ^docs-regenerate-[1-9][0-9]*$ ]]; then
     printf 'documentation run %s has no safe retained dispatch mode\n' \
       "${run_id}" >&2
