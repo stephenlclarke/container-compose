@@ -94,15 +94,43 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
         guard URL(fileURLWithPath: volume.mountpoint).lastPathComponent == "_data" else {
             return nil
         }
-        return fields.map { field in
+        let bindSource = try managedVolumeBindSource(
+            fields: fields,
+            mountpoint: volume.mountpoint
+        )
+        return fields.compactMap { field in
             if field == "type=volume" {
                 return "type=bind"
             }
             if field.hasPrefix("source=") {
-                return "source=\(volume.mountpoint)"
+                return "source=\(bindSource)"
+            }
+            if field.hasPrefix("volume-subpath=") {
+                return nil
             }
             return String(field)
         }.joined(separator: ",")
+    }
+
+    private func managedVolumeBindSource(
+        fields: [Substring],
+        mountpoint: String
+    ) throws -> String {
+        guard let field = fields.first(where: { $0.hasPrefix("volume-subpath=") }) else {
+            return mountpoint
+        }
+        let subpath = String(field.dropFirst("volume-subpath=".count))
+        guard !subpath.isEmpty, !subpath.hasPrefix("/") else {
+            throw ComposeError.invalidProject("volume subpath must be a non-empty relative path")
+        }
+        let root = URL(fileURLWithPath: mountpoint, isDirectory: true)
+            .resolvingSymlinksInPath().standardizedFileURL
+        let candidate = root.appendingPathComponent(subpath)
+            .resolvingSymlinksInPath().standardizedFileURL
+        guard candidate.path == root.path || candidate.path.hasPrefix(root.path + "/") else {
+            throw ComposeError.invalidProject("volume subpath escapes its managed volume")
+        }
+        return candidate.path
     }
 }
 

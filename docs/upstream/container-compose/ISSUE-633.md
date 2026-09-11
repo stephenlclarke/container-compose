@@ -12,6 +12,7 @@ The failure was reproduced against unmodified `apple/container` 1.4.1 through th
 
 - Resolve the named local volume through the current-user Engine socket.
 - Mount the Engine-owned managed-volume directory into the service rather than creating a disconnected native volume with the same name.
+- Preserve a requested `volume.subpath` by binding the resolved descendant and removing volume-only options from the rewritten bind mount.
 - Execute service commands through Apple Container's native CLI after resolving the Engine identity.
 - Preserve a volume that already contains user data.
 - Build and cache a project-owned helper layer through the stock Apple builder. Use an immutable repository digest when one exists; otherwise snapshot the local image behind a unique tag and verify its image identity before building.
@@ -21,6 +22,8 @@ The failure was reproduced against unmodified `apple/container` 1.4.1 through th
 - Remove the temporary container on success, failure, or a concurrent initialization race.
 - Serialize initializers for the same volume and helper-image builds across processes so concurrent services preserve first-mount-wins semantics without racing a shared tag.
 - Recover an interrupted multi-entry publication only when a private host transaction identifies the exact guest journal; never infer internal state from user-controlled filename prefixes.
+- Recover that authenticated transaction before inspecting the current image path, so a changed or missing source cannot turn partial publication into accepted user data.
+- Choose both the helper executable and target-volume mount paths outside the image subtree being copied.
 - Keep the implementation independent of Stephen's enhanced Container and Containerization forks.
 
 ## Acceptance evidence

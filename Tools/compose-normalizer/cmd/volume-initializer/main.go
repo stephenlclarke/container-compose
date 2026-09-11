@@ -72,16 +72,6 @@ func initialize(source, destination, transaction string) error {
 	if !validTransactionID(transaction) {
 		return errors.New("transaction must be a lowercase UUID")
 	}
-	sourceInfo, err := os.Stat(source)
-	if errors.Is(err, os.ErrNotExist) {
-		return errSourceMissing
-	}
-	if err != nil {
-		return fmt.Errorf("inspect source: %w", err)
-	}
-	if !sourceInfo.IsDir() {
-		return errors.New("image volume source is not a directory")
-	}
 	if info, statErr := os.Stat(destination); statErr != nil || !info.IsDir() {
 		if statErr != nil {
 			return fmt.Errorf("inspect destination: %w", statErr)
@@ -91,6 +81,16 @@ func initialize(source, destination, transaction string) error {
 
 	if err := recoverTransaction(destination, transaction); err != nil {
 		return err
+	}
+	sourceInfo, err := os.Stat(source)
+	if errors.Is(err, os.ErrNotExist) {
+		return errSourceMissing
+	}
+	if err != nil {
+		return fmt.Errorf("inspect source: %w", err)
+	}
+	if !sourceInfo.IsDir() {
+		return errors.New("image volume source is not a directory")
 	}
 	if err := removeEmptyExt4Scaffolding(destination); err != nil {
 		return err

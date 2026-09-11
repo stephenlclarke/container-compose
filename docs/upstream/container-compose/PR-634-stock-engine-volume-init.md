@@ -22,18 +22,20 @@ The Docker-free stock profile could already create and manage ordinary Compose r
   - installs `EngineRuntimeProvider` as the image-volume initializer;
   - resolves the authoritative volume over `CONTAINER_COMPOSE_ENGINE_SOCKET`;
   - rewrites stock service launches to bind the Engine-owned managed-volume data directory instead of creating a duplicate Apple ext4 volume with the same name;
+  - resolves `volume.subpath` beneath that managed directory and removes the volume-only option when projecting the mount as a bind;
   - resolves Engine container identities before using Apple Container's native `container exec`, preserving attached terminal I/O, detached execution, and process status without Docker software;
   - serializes initialization by volume name with a host file lock shared by Compose processes;
   - hashes the source image identity and static initializer to identify a reusable local helper image;
   - uses the immutable repository digest when available and otherwise snapshots a local image behind a unique tag whose image ID is verified before use;
   - serializes cache construction across processes and submits the minimal build context to the local Engine, whose stock Apple provider invokes Apple Container's bundled builder;
   - creates a narrowly labelled temporary derived container with the target volume mounted;
-  - selects an internal mount path that cannot obscure the requested image subtree;
+  - selects internal helper executable and volume-mount paths that cannot overlap or obscure the requested image subtree;
   - overrides the source image's user and entrypoint, so scratch and distroless source images need no shell or utilities;
   - copies the selected image directory inside the Linux guest through the project-owned static helper, preserving files, directories, ownership, modes, timestamps, symlinks, hard links, and named pipes;
   - stages the complete tree and writes an fsync-backed guest journal before publishing any entry;
   - records the exact transaction in a private, current-user host sidecar outside the mounted data directory, allowing a later invocation to authenticate and recover only its own interrupted publication;
   - never treats a user-controlled stage-shaped name as internal state without the matching host transaction and validated journal;
+  - performs authenticated recovery before checking the current source path, so a changed image cannot preserve partial publication;
   - rolls back every published entry if publication fails in-process;
   - applies the source directory's numeric owner and mode to the volume root;
   - copies only while the mounted volume remains empty; and

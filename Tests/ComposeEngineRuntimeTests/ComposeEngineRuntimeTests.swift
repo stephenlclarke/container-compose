@@ -32,10 +32,17 @@ struct ComposeEngineRuntimeTests {
         let first = try await EngineVolumeInitializerBuildContext.make(
             sourceImage: "example/image:latest",
             helper: helper,
+            helperPath: "/.compose-volume-initializer"
         )
         let second = try await EngineVolumeInitializerBuildContext.make(
             sourceImage: "example/image:latest",
             helper: helper,
+            helperPath: "/.compose-volume-initializer"
+        )
+        let isolated = try await EngineVolumeInitializerBuildContext.make(
+            sourceImage: "example/image:latest",
+            helper: helper,
+            helperPath: "/usr/local/libexec/compose-volume-initializer"
         )
 
         #expect(first == second)
@@ -48,6 +55,8 @@ struct ComposeEngineRuntimeTests {
         #expect(first.tarContents(at: helperOffset) == helper)
         #expect(first.suffix(1024).allSatisfy { $0 == 0 })
         #expect(first.containsText("FROM example/image:latest"))
+        #expect(isolated.containsText("ENTRYPOINT [\"/usr/local/libexec/compose-volume-initializer\"]"))
+        #expect(first != isolated)
     }
 
     @Test
@@ -56,27 +65,38 @@ struct ComposeEngineRuntimeTests {
         let arm = EngineVolumeInitializerBuildContext.cacheTag(
             sourceDigest: "example/image@sha256:digest",
             platform: "linux/arm64",
-            helper: helper
+            helper: helper,
+            helperPath: "/.compose-volume-initializer"
         )
         let amd = EngineVolumeInitializerBuildContext.cacheTag(
             sourceDigest: "example/image@sha256:digest",
             platform: "linux/amd64",
-            helper: helper
+            helper: helper,
+            helperPath: "/.compose-volume-initializer"
         )
         let selectedDefault = EngineVolumeInitializerBuildContext.cacheTag(
             sourceDigest: "example/image@sha256:digest",
             platform: nil,
-            helper: helper
+            helper: helper,
+            helperPath: "/.compose-volume-initializer"
         )
         let changedHelper = EngineVolumeInitializerBuildContext.cacheTag(
             sourceDigest: "example/image@sha256:digest",
             platform: "linux/arm64",
-            helper: Data([0, 1, 3])
+            helper: Data([0, 1, 3]),
+            helperPath: "/.compose-volume-initializer"
+        )
+        let changedPath = EngineVolumeInitializerBuildContext.cacheTag(
+            sourceDigest: "example/image@sha256:digest",
+            platform: "linux/arm64",
+            helper: helper,
+            helperPath: "/usr/local/libexec/compose-volume-initializer"
         )
 
         #expect(arm != amd)
         #expect(arm != selectedDefault)
         #expect(arm != changedHelper)
+        #expect(arm != changedPath)
     }
 
     @Test
@@ -116,6 +136,15 @@ struct ComposeEngineRuntimeTests {
         #expect(throws: ComposeError.self) {
             _ = try EngineRuntimeProvider.helperMountPath(imageSubpath: "/")
         }
+        #expect(
+            try EngineRuntimeProvider.helperExecutablePath(imageSubpath: "/workspace")
+                == "/.compose-volume-initializer"
+        )
+        #expect(
+            try EngineRuntimeProvider.helperExecutablePath(
+                imageSubpath: "/.compose-volume-initializer/data"
+            ) == "/usr/local/libexec/compose-volume-initializer"
+        )
     }
 
     @Test
@@ -300,6 +329,55 @@ struct ComposeEngineRuntimeTests {
                 "/volumes/project_data/_data:/data", "alpine", "true",
             ])
             #expect(commands[2].io == .inherited)
+        } catch {
+            try? await server.shutdown()
+            throw error
+        }
+        try await server.shutdown()
+    }
+
+    @Test
+    func `stock launch preserves a managed volume subpath`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let runner = RecordingRunner()
+        let server = fixture.server(EngineFixtureResponder())
+        try await server.start()
+        do {
+            let provider = EngineRuntimeProvider(
+                socketPath: fixture.socketPath,
+                runner: runner,
+                containerBinary: "/usr/local/bin/container",
+                environmentLauncher: "/usr/bin/env"
+            )
+            let status = try await provider.launchContainer(.init(
+                command: .create,
+                arguments: [
+                    "--mount",
+                    "type=volume,source=project_data,destination=/data,volume-subpath=logs/app,readonly",
+                    "alpine",
+                ],
+                logging: .init(driver: nil, options: [:])
+            ))
+
+            #expect(status == 0)
+            #expect(runner.commands.first?.arguments == [
+                "/usr/local/bin/container", "create", "--mount",
+                "type=bind,source=/volumes/project_data/_data/logs/app,destination=/data,readonly",
+                "alpine",
+            ])
+            await #expect(throws: ComposeError.self) {
+                _ = try await provider.launchContainer(.init(
+                    command: .create,
+                    arguments: [
+                        "--mount",
+                        "type=volume,source=project_data,destination=/data,volume-subpath=../outside",
+                        "alpine",
+                    ],
+                    logging: .init(driver: nil, options: [:])
+                ))
+            }
+            #expect(runner.commands.count == 1)
         } catch {
             try? await server.shutdown()
             throw error

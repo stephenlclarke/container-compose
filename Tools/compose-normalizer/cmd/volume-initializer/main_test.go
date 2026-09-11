@@ -347,6 +347,33 @@ func TestInitializeRecoversInterruptedPublication(t *testing.T) {
 	}
 }
 
+func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	destination := filepath.Join(root, "destination")
+	mustMkdir(t, destination, 0o755)
+	mustWrite(t, filepath.Join(destination, "partial"), "published", 0o644)
+	stage := filepath.Join(destination, stagePrefix+testTransactionID)
+	mustMkdir(t, stage, 0o700)
+	journal := filepath.Join(destination, journalPrefix+testTransactionID)
+	mustWrite(
+		t,
+		journal,
+		`{"version":1,"transaction":"01234567-89ab-cdef-0123-456789abcdef","entries":["partial"]}`,
+		0o600,
+	)
+
+	err := initialize(filepath.Join(root, "missing"), destination, testTransactionID)
+	if !errors.Is(err, errSourceMissing) {
+		t.Fatalf("expected missing source after recovery, got %v", err)
+	}
+	for _, path := range []string{filepath.Join(destination, "partial"), stage, journal} {
+		if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("interrupted transaction artefact remains at %s: %v", path, statErr)
+		}
+	}
+}
+
 func TestTransactionRecoveryRejectsUntrustedJournals(t *testing.T) {
 	t.Parallel()
 	for name, payload := range map[string]string{

@@ -27,13 +27,17 @@ enum EngineVolumeInitializerBuildContext {
         let contents: Data
     }
 
-    static func make(sourceImage: String, helper: Data) async throws -> Data {
+    static func make(
+        sourceImage: String,
+        helper: Data,
+        helperPath: String
+    ) async throws -> Data {
         let helperName = "compose-volume-initializer-linux-arm64"
         let dockerfile = Data("""
         FROM \(sourceImage)
-        COPY --chmod=0755 \(helperName) /.compose-volume-initializer
+        COPY --chmod=0755 \(helperName) \(helperPath)
         USER 0:0
-        ENTRYPOINT [\"/.compose-volume-initializer\"]
+        ENTRYPOINT [\"\(helperPath)\"]
         """.utf8)
         return ustar([
             Entry(name: "Dockerfile", mode: 0o644, contents: dockerfile),
@@ -110,15 +114,58 @@ enum EngineVolumeInitializerBuildContext {
     static func cacheTag(
         sourceDigest: String,
         platform: String?,
-        helper: Data
+        helper: Data,
+        helperPath: String
     ) -> String {
         let platformIdentity = platform ?? "<default>"
         let digest = fnv1aHex([
             Data(sourceDigest.utf8), Data([0]),
             Data(platformIdentity.utf8), Data([0]),
+            Data(helperPath.utf8), Data([0]),
             helper,
         ])
         return "devcontainer-volume-initializer:\(digest)"
+    }
+}
+
+extension EngineRuntimeProvider {
+    static func helperMountPath(imageSubpath: String) throws -> String {
+        let source = URL(fileURLWithPath: imageSubpath).standardizedFileURL.path
+        guard source != "/" else {
+            throw ComposeError.unsupported(
+                "stock Apple image-volume copy-up cannot safely use the image root as a volume target"
+            )
+        }
+        let candidates = [
+            "/.compose-image-volume-target",
+            "/mnt/.compose-image-volume-target",
+            "/var/tmp/.compose-image-volume-target",
+        ]
+        guard let candidate = candidates.first(where: { !pathsOverlap($0, source) }) else {
+            throw ComposeError.unsupported(
+                "stock Apple image-volume copy-up could not allocate an isolated helper mount path"
+            )
+        }
+        return candidate
+    }
+
+    static func helperExecutablePath(imageSubpath: String) throws -> String {
+        let source = URL(fileURLWithPath: imageSubpath).standardizedFileURL.path
+        let candidates = [
+            "/.compose-volume-initializer",
+            "/usr/local/libexec/compose-volume-initializer",
+            "/var/tmp/.compose-volume-initializer",
+        ]
+        guard let candidate = candidates.first(where: { !pathsOverlap($0, source) }) else {
+            throw ComposeError.unsupported(
+                "stock Apple image-volume copy-up could not allocate an isolated helper executable path"
+            )
+        }
+        return candidate
+    }
+
+    private static func pathsOverlap(_ lhs: String, _ rhs: String) -> Bool {
+        lhs == rhs || lhs.hasPrefix(rhs + "/") || rhs.hasPrefix(lhs + "/")
     }
 }
 

@@ -328,10 +328,12 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             )
         }
 
+        let helperPath = try Self.helperExecutablePath(imageSubpath: request.imageSubpath)
         let helperImage = try await volumeInitializerImage(
             sourceImage: request.image,
             platform: request.platform,
-            volumeMountpoint: destination
+            volumeMountpoint: destination,
+            helperPath: helperPath
         )
         let transaction = try pendingTransaction
             ?? EngineVolumeInitializationTransaction.create(
@@ -340,6 +342,7 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         let helper = try await createVolumeInitializationHelper(
             request,
             image: helperImage,
+            helperPath: helperPath,
             transaction: transaction
         )
         try await runVolumeInitializationHelper(helper.id)
@@ -349,10 +352,10 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
     private func createVolumeInitializationHelper(
         _ request: ComposeImageVolumeInitializationRequest,
         image: String,
+        helperPath: String,
         transaction: EngineVolumeInitializationTransaction
     ) async throws -> EngineContainerCreateResponse {
         let helperName = "compose-volume-init-\(UUID().uuidString.lowercased())"
-        let helperPath = "/.compose-volume-initializer"
         let helperMountPath = try Self.helperMountPath(imageSubpath: request.imageSubpath)
         return try await self.request(
             .post,
@@ -378,34 +381,11 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         )
     }
 
-    static func helperMountPath(imageSubpath: String) throws -> String {
-        let source = URL(fileURLWithPath: imageSubpath).standardizedFileURL.path
-        guard source != "/" else {
-            throw ComposeError.unsupported(
-                "stock Apple image-volume copy-up cannot safely use the image root as a volume target"
-            )
-        }
-        let candidates = [
-            "/.compose-image-volume-target",
-            "/mnt/.compose-image-volume-target",
-            "/var/tmp/.compose-image-volume-target",
-        ]
-        guard let candidate = candidates.first(where: { !pathsOverlap($0, source) }) else {
-            throw ComposeError.unsupported(
-                "stock Apple image-volume copy-up could not allocate an isolated helper mount path"
-            )
-        }
-        return candidate
-    }
-
-    private static func pathsOverlap(_ lhs: String, _ rhs: String) -> Bool {
-        lhs == rhs || lhs.hasPrefix(rhs + "/") || rhs.hasPrefix(lhs + "/")
-    }
-
     private func volumeInitializerImage(
         sourceImage: String,
         platform: String?,
-        volumeMountpoint: URL
+        volumeMountpoint: URL,
+        helperPath: String
     ) async throws -> String {
         guard !sourceImage.contains(where: \.isWhitespace) else {
             throw ComposeError.invalidProject(
@@ -417,39 +397,38 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             options: [.mappedIfSafe]
         )
         let buildLock = try await EngineVolumeInitializationFileLock.acquire(
-            path: volumeMountpoint.deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent(".compose-volume-initializer-image.lock")
-                .path
+            path: Self.volumeInitializerBuildLockPath(volumeMountpoint)
         )
         defer { withExtendedLifetime(buildLock) {} }
         for _ in 0 ..< 3 {
             let image = try await inspectImage(sourceImage)
-            let tag = EngineVolumeInitializerBuildContext.cacheTag(
-                sourceDigest: image.repoDigests.first ?? image.id,
+            let build = EngineVolumeInitializerImageBuild(
+                tag: EngineVolumeInitializerBuildContext.cacheTag(
+                    sourceDigest: image.repoDigests.first ?? image.id,
+                    platform: platform,
+                    helper: helper,
+                    helperPath: helperPath
+                ),
                 platform: platform,
-                helper: helper
+                helper: helper,
+                helperPath: helperPath
             )
-            guard try await !imageExists(tag) else {
-                return tag
+            guard try await !imageExists(build.tag) else {
+                return build.tag
             }
             if let digest = image.repoDigests.first {
                 try await buildVolumeInitializerImage(
                     sourceImage: digest,
-                    tag: tag,
-                    platform: platform,
-                    helper: helper
+                    build: build
                 )
-                return tag
+                return build.tag
             }
             if try await buildFromVerifiedLocalImage(
                 sourceReference: sourceImage,
                 sourceID: image.id,
-                tag: tag,
-                platform: platform,
-                helper: helper
+                build: build
             ) {
-                return tag
+                return build.tag
             }
         }
         throw ComposeError.commandFailed(
@@ -459,12 +438,17 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         )
     }
 
+    private static func volumeInitializerBuildLockPath(_ volumeMountpoint: URL) -> String {
+        volumeMountpoint.deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(".compose-volume-initializer-image.lock")
+            .path
+    }
+
     private func buildFromVerifiedLocalImage(
         sourceReference: String,
         sourceID: String,
-        tag: String,
-        platform: String?,
-        helper: Data
+        build: EngineVolumeInitializerImageBuild
     ) async throws -> Bool {
         let aliasTag = UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "")
         let alias = "devcontainer-volume-source:\(aliasTag)"
@@ -477,9 +461,7 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             }
             try await buildVolumeInitializerImage(
                 sourceImage: alias,
-                tag: tag,
-                platform: platform,
-                helper: helper
+                build: build
             )
             try await deleteImageReference(alias)
             return true
@@ -491,22 +473,21 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
 
     private func buildVolumeInitializerImage(
         sourceImage: String,
-        tag: String,
-        platform: String?,
-        helper: Data
+        build: EngineVolumeInitializerImageBuild
     ) async throws {
         let context = try await EngineVolumeInitializerBuildContext.make(
             sourceImage: sourceImage,
-            helper: helper
+            helper: build.helper,
+            helperPath: build.helperPath
         )
         try await request(
             .post,
             target(
                 "/v1.53/build",
                 queryFields: [
-                    ("t", tag),
+                    ("t", build.tag),
                     ("dockerfile", "Dockerfile"),
-                    ("platform", platform),
+                    ("platform", build.platform),
                 ]
             ),
             rawBody: context,
@@ -576,6 +557,13 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         return try FileManager.default.contentsOfDirectory(atPath: recovery.path).isEmpty
     }
 
+}
+
+private struct EngineVolumeInitializerImageBuild {
+    let tag: String
+    let platform: String?
+    let helper: Data
+    let helperPath: String
 }
 
 private struct AnyEncodable: Encodable {
