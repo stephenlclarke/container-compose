@@ -175,6 +175,34 @@ class ReleaseStateTests(unittest.TestCase):
         self.assertEqual(action["name"], "resume-stable-draft")
         self.assertIn("publish", action["summary"])
 
+    def test_stale_prerelease_draft_is_planned_as_resumable(self) -> None:
+        completed = self.completed(
+            {
+                "assets": [],
+                "draft": True,
+                "id": 123,
+                "prerelease": True,
+            }
+        )
+        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+            remote = MODULE.remote_release("owner/repo", "1.2.3", False)
+
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
+        }
+        remote = MODULE.reconcile_remote_digests(remote, {"assets": assets})
+        action = MODULE.plan_recovery(
+            [],
+            [],
+            [],
+            remote,
+            {"formulae": {"state": "deferred"}, "pages": {"state": "deferred"}},
+        )
+
+        self.assertEqual(remote["state"], "draft")
+        self.assertEqual(action["name"], "resume-stable-draft")
+
     def test_draft_with_unexpected_asset_is_a_conflict(self) -> None:
         assets = {
             asset: {"sha256": "a" * 64}

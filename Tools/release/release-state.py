@@ -226,7 +226,7 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
     )
     if release.get("draft") is False and release.get("prerelease") is False:
         release_state = "published"
-    elif release.get("draft") is True and release.get("prerelease") is False:
+    elif release.get("draft") is True:
         release_state = "draft"
     else:
         release_state = "invalid"
