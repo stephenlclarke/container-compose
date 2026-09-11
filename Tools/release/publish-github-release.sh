@@ -216,6 +216,7 @@ create_stable_draft() {
 
 reconcile_stable_draft() {
   local temporary remote_names expected_names asset name downloaded count
+  local missing_assets=()
   if [[ "$("${GIT}" rev-list -n 1 "refs/tags/${RELEASE_TAG}")" != "${PUBLISH_SHA}" ]]; then
     printf 'stable draft tag no longer resolves to the requested candidate: %s\n' \
       "${RELEASE_TAG}" >&2
@@ -261,9 +262,12 @@ reconcile_stable_draft() {
         return 1
       fi
     else
-      "${GH}" release upload "${RELEASE_TAG}" "${asset}" \
-        --repo "${RELEASE_REPOSITORY}"
+      missing_assets+=("${asset}")
     fi
+  done
+  for asset in "${missing_assets[@]}"; do
+    "${GH}" release upload "${RELEASE_TAG}" "${asset}" \
+      --repo "${RELEASE_REPOSITORY}"
   done
   "${GH}" release edit "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
     --title "${RELEASE_TITLE}" --notes-file "${RELEASE_NOTES_FILE}" \

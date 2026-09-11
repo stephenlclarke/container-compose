@@ -196,6 +196,18 @@ if [[ -e "${stable_draft_mismatch_calls}" ]] && \
   exit 1
 fi
 
+stable_draft_late_mismatch_calls="${temporary_directory}/stable-draft-late-mismatch.calls"
+if run_publisher tag draft "${stable_draft_late_mismatch_calls}" "" publish \
+  "$(basename "${checksum}")" 'conflicting bytes'; then
+  printf 'stable draft recovery accepted a later mismatched asset\n' >&2
+  exit 1
+fi
+if [[ -e "${stable_draft_late_mismatch_calls}" ]] && \
+  grep -Eq 'release (upload|edit|create|delete)' "${stable_draft_late_mismatch_calls}"; then
+  printf 'stable draft recovery mutated before validating every existing asset\n' >&2
+  exit 1
+fi
+
 stable_unavailable_calls="${temporary_directory}/stable-unavailable.calls"
 if run_publisher tag unavailable "${stable_unavailable_calls}"; then
   printf 'stable publication unexpectedly ignored a release lookup failure\n' >&2
