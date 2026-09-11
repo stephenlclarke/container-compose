@@ -380,6 +380,13 @@ func completePublishingTransaction(
 	entries []transactionJournalEntry,
 	finalRoot transactionRootMetadata,
 ) error {
+	if err := verifyDestinationContents(
+		destination,
+		entries,
+		filepath.Base(stage),
+	); err != nil {
+		return err
+	}
 	if err := verifyStageContents(stage, entries); err != nil {
 		return err
 	}
@@ -400,6 +407,9 @@ func completePublishingTransaction(
 	if err := removeEmptyStage(stage); err != nil {
 		return err
 	}
+	if err := verifyDestinationContents(destination, entries, ""); err != nil {
+		return err
+	}
 	for _, entry := range entries {
 		if err := syncPublishedPath(filepath.Join(destination, entry.Name)); err != nil {
 			return err
@@ -412,6 +422,30 @@ func completePublishingTransaction(
 		return err
 	}
 	return completeJournal(journal)
+}
+
+func verifyDestinationContents(
+	destination string,
+	entries []transactionJournalEntry,
+	allowedStage string,
+) error {
+	expected := make(map[string]struct{}, len(entries)+1)
+	for _, entry := range entries {
+		expected[entry.Name] = struct{}{}
+	}
+	if allowedStage != "" {
+		expected[allowedStage] = struct{}{}
+	}
+	actual, err := os.ReadDir(destination)
+	if err != nil {
+		return fmt.Errorf("inspect initialization destination: %w", err)
+	}
+	for _, item := range actual {
+		if _, ok := expected[item.Name()]; !ok {
+			return errors.New("initialization destination contains an unjournaled entry")
+		}
+	}
+	return nil
 }
 
 func publishOrVerifyEntry(

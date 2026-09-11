@@ -142,6 +142,40 @@ func TestPublishingCompletionPreservesConcurrentChanges(t *testing.T) {
 	}
 }
 
+func TestPublishingCompletionPreservesUnjournaledDestinationData(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	destination := filepath.Join(root, "destination")
+	stage := filepath.Join(destination, stagePrefix+testTransactionID)
+	published := filepath.Join(destination, "payload")
+	mustMkdir(t, destination, 0o755)
+	mustMkdir(t, stage, 0o700)
+	mustWrite(t, published, "initializer", 0o600)
+	entry := mustJournalEntry(t, published, "payload")
+	concurrent := filepath.Join(destination, "concurrent-user-data")
+	mustWrite(t, concurrent, "keep", 0o600)
+	journal := filepath.Join(root, journalPrefix+testTransactionID)
+	mustWrite(t, journal, "journal", 0o600)
+	metadata, err := captureRootMetadata(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := completePublishingTransaction(
+		destination, stage, journal,
+		[]transactionJournalEntry{entry}, metadata,
+	); err == nil {
+		t.Fatal("expected unjournaled destination data to fail closed")
+	}
+	value, err := os.ReadFile(concurrent)
+	if err != nil || string(value) != "keep" {
+		t.Fatalf("completion changed unjournaled user data: %q, %v", value, err)
+	}
+	if _, err := os.Lstat(journal); err != nil {
+		t.Fatalf("failed completion removed its journal: %v", err)
+	}
+}
+
 func TestPublishingTreeIdentitySurvivesAtomicRename(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
