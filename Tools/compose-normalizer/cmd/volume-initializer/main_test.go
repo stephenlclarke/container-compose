@@ -365,15 +365,30 @@ func TestInitializeDoesNotTraverseNonDirectorySymlinkTarget(t *testing.T) {
 	mustMkdir(t, recovery, 0o700)
 	mustWrite(t, filepath.Join(root, "regular-file"), "not a directory", 0o640)
 	mustWrite(t, filepath.Join(realSource, "must-not-copy"), "unrelated", 0o640)
+	metadata, err := captureRootMetadata(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := filepath.Join(recovery, journalPrefix+testTransactionID)
+	if err := writeJournal(journal, testTransactionID, nil, metadata); err != nil {
+		t.Fatal(err)
+	}
+	stage := filepath.Join(destination, stagePrefix+testTransactionID)
+	mustMkdir(t, stage, 0o700)
 	source := symlinkPath(t, root, "regular-file/../real-source")
 
-	err := initialize(source, destination, testTransactionID, recovery)
+	err = initialize(source, destination, testTransactionID, recovery)
 	if !errors.Is(err, syscall.ENOTDIR) {
 		t.Fatalf("expected non-directory traversal error, got %v", err)
 	}
 	entries, readErr := os.ReadDir(destination)
 	if readErr != nil || len(entries) != 0 {
 		t.Fatalf("non-directory traversal copied an unrelated directory: %v, %v", entries, readErr)
+	}
+	for _, path := range []string{stage, journal} {
+		if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+			t.Fatalf("interrupted transaction artefact remains at %s: %v", path, statErr)
+		}
 	}
 }
 
