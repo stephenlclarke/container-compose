@@ -84,7 +84,7 @@ func initialize(source, destination, transaction string) error {
 		return errors.New("image volume destination is not a directory")
 	}
 
-	if err := recoverTransaction(source, destination, transaction); err != nil {
+	if err := recoverTransaction(destination, transaction); err != nil {
 		return err
 	}
 	sourceInfo, err := os.Stat(source)
@@ -186,6 +186,12 @@ type transactionJournal struct {
 	Root        transactionRootMetadata `json:"root"`
 }
 
+type transactionFinalizationMarker struct {
+	Version     int                     `json:"version"`
+	Transaction string                  `json:"transaction"`
+	Root        transactionRootMetadata `json:"root"`
+}
+
 type transactionRootMetadata struct {
 	UID                  uint32            `json:"uid"`
 	GID                  uint32            `json:"gid"`
@@ -242,7 +248,7 @@ func writeJournal(path, transaction string, entries []os.DirEntry) error {
 // recoverTransaction removes only artefacts named by the host-authenticated
 // transaction identity. Stage-shaped user entries from any other identity are
 // never considered internal state.
-func recoverTransaction(source, destination, transaction string) error {
+func recoverTransaction(destination, transaction string) error {
 	stage := filepath.Join(destination, stagePrefix+transaction)
 	journal := filepath.Join(destination, journalPrefix+transaction)
 	temporary := journal + ".tmp"
@@ -271,16 +277,9 @@ func recoverTransaction(source, destination, transaction string) error {
 		}
 		return finalizeRootMetadata(destination, journal, transaction, record.Root)
 	case errors.Is(err, os.ErrNotExist):
-		value, markerErr := readRecoveryMarker(destination, transaction)
+		metadata, markerErr := readRecoveryMarker(destination, transaction)
 		switch {
 		case markerErr == nil:
-			if value != transaction {
-				return errors.New("initialization recovery marker identity does not match")
-			}
-			metadata, metadataErr := captureRootMetadata(source)
-			if metadataErr != nil {
-				return fmt.Errorf("recover finalized destination metadata: %w", metadataErr)
-			}
 			return finalizeRootMetadata(destination, journal, transaction, metadata)
 		case missingExtendedAttribute(markerErr), errors.Is(markerErr, syscall.ENOTSUP):
 			// Publication cannot start until the complete journal is durable.
@@ -312,7 +311,13 @@ func finalizeRootMetadata(
 	metadata transactionRootMetadata,
 ) error {
 	name := recoveryXattr + transaction
-	if err := unix.Setxattr(destination, name, []byte(transaction), 0); err != nil {
+	payload, err := json.Marshal(transactionFinalizationMarker{
+		Version: 1, Transaction: transaction, Root: metadata,
+	})
+	if err != nil {
+		return fmt.Errorf("encode initialization recovery marker: %w", err)
+	}
+	if err := unix.Setxattr(destination, name, payload, 0); err != nil {
 		return fmt.Errorf("write initialization recovery marker: %w", err)
 	}
 	if err := syncDirectory(destination); err != nil {
@@ -321,7 +326,7 @@ func finalizeRootMetadata(
 	if err := os.Remove(journal); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("complete initialization transaction: %w", err)
 	}
-	if err := applyRootMetadataPreserving(destination, metadata, name, []byte(transaction)); err != nil {
+	if err := applyRootMetadataPreserving(destination, metadata, name, payload); err != nil {
 		return fmt.Errorf("restore destination metadata: %w", err)
 	}
 	if err := syncDirectory(destination); err != nil {
@@ -345,18 +350,31 @@ func missingExtendedAttribute(err error) bool {
 		(runtime.GOOS == "darwin" && errors.Is(err, syscall.Errno(93)))
 }
 
-func readRecoveryMarker(destination, transaction string) (string, error) {
+func readRecoveryMarker(
+	destination, transaction string,
+) (transactionRootMetadata, error) {
 	name := recoveryXattr + transaction
 	size, err := unix.Getxattr(destination, name, nil)
 	if err != nil {
-		return "", err
+		return transactionRootMetadata{}, err
 	}
 	value := make([]byte, size)
 	size, err = unix.Getxattr(destination, name, value)
 	if err != nil {
-		return "", err
+		return transactionRootMetadata{}, err
 	}
-	return string(value[:size]), nil
+	var marker transactionFinalizationMarker
+	if err := json.Unmarshal(value[:size], &marker); err != nil {
+		return transactionRootMetadata{}, fmt.Errorf(
+			"decode initialization recovery marker: %w", err,
+		)
+	}
+	if marker.Version != 1 || marker.Transaction != transaction {
+		return transactionRootMetadata{}, errors.New(
+			"initialization recovery marker identity does not match",
+		)
+	}
+	return marker.Root, nil
 }
 
 func captureRootMetadata(path string) (transactionRootMetadata, error) {

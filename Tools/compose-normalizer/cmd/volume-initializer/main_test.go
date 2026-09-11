@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -491,11 +492,21 @@ func TestInitializeRecoversFinalMetadataFromDurableMarker(t *testing.T) {
 	if err := unix.Setxattr(source, marker, []byte("source-value"), 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := unix.Setxattr(destination, marker, []byte(testTransactionID), 0); err != nil {
+	desiredMetadata, err := captureRootMetadata(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(transactionFinalizationMarker{
+		Version: 1, Transaction: testTransactionID, Root: desiredMetadata,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Setxattr(destination, marker, payload, 0); err != nil {
 		t.Fatal(err)
 	}
 
-	err := initialize(source, destination, testTransactionID)
+	err = initialize(source, destination, testTransactionID)
 	if !errors.Is(err, errDestinationNotEmpty) {
 		t.Fatalf("expected completed publication result, got %v", err)
 	}
@@ -527,11 +538,34 @@ func TestTransactionRecoveryRejectsUntrustedJournals(t *testing.T) {
 			destination := t.TempDir()
 			journal := filepath.Join(destination, journalPrefix+testTransactionID)
 			mustWrite(t, journal, payload, 0o600)
-			if err := recoverTransaction(destination, destination, testTransactionID); err == nil {
+			if err := recoverTransaction(destination, testTransactionID); err == nil {
 				t.Fatal("expected untrusted journal failure")
 			}
 			if _, err := os.Stat(journal); err != nil {
 				t.Fatalf("untrusted journal was changed: %v", err)
+			}
+		})
+	}
+}
+
+func TestTransactionRecoveryRejectsUntrustedFinalizationMarkers(t *testing.T) {
+	t.Parallel()
+	for name, payload := range map[string]string{
+		"malformed":      `{`,
+		"wrong identity": `{"version":1,"transaction":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","root":{}}`,
+		"wrong version":  `{"version":2,"transaction":"01234567-89ab-cdef-0123-456789abcdef","root":{}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			destination := t.TempDir()
+			marker := recoveryXattr + testTransactionID
+			if err := unix.Setxattr(destination, marker, []byte(payload), 0); err != nil {
+				t.Fatal(err)
+			}
+			if err := recoverTransaction(destination, testTransactionID); err == nil {
+				t.Fatal("expected untrusted finalization marker failure")
+			}
+			if _, err := unix.Getxattr(destination, marker, nil); err != nil {
+				t.Fatalf("untrusted finalization marker was changed: %v", err)
 			}
 		})
 	}
@@ -602,7 +636,7 @@ func TestFilesystemFailuresRemainExplicit(t *testing.T) {
 	if _, err := destinationIsEmpty(occupied); err == nil {
 		t.Fatal("expected destination read failure")
 	}
-	if err := recoverTransaction(occupied, occupied, testTransactionID); err == nil {
+	if err := recoverTransaction(occupied, testTransactionID); err == nil {
 		t.Fatal("expected transaction recovery failure")
 	}
 	if err := copyEntry(missing, filepath.Join(root, "copy"), nil); err == nil {
