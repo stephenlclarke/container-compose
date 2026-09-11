@@ -7110,8 +7110,9 @@ stable_documentation_source_ref() {
       fi
       ;;
     k8s)
-      jq -er '.sites.k8s.ref' \
-        "$(repo_path "${COMPOSE_REPO}")/Tools/release/documentation-refs.json"
+      git -C "$(repo_path "${COMPOSE_REPO}")" show \
+        "refs/tags/${version}:Tools/release/documentation-refs.json" \
+        | jq -er '.sites.k8s.ref'
       ;;
     *) return 2 ;;
   esac

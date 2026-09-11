@@ -45,7 +45,7 @@ FORMULA = importlib.util.module_from_spec(FORMULA_SPEC)
 FORMULA_SPEC.loader.exec_module(FORMULA)
 SEMVER = re.compile(r"[0-9]+[.][0-9]+[.][0-9]+")
 REQUEST_ID = re.compile(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}")
-EXPECTED_ASSETS = (
+EXPECTED_RELEASE_ASSETS = (
     "container-compose-plugin-release-arm64.tar.gz",
     "container-compose-plugin-release-arm64.tar.gz.sha256",
     "container-release-arm64.tar.gz",
@@ -56,11 +56,14 @@ EXPECTED_ASSETS = (
     "stable-release-authority.tar.gz.sha256",
     "release-highlights.json",
     "quality-snapshot.svg",
+)
+EXPECTED_DOCUMENTATION_ASSETS = (
     "compose.tgz",
     "container.tgz",
     "containerization.tgz",
     "k8s.tgz",
 )
+EXPECTED_RETAINED_ASSETS = EXPECTED_RELEASE_ASSETS + EXPECTED_DOCUMENTATION_ASSETS
 UNREAD_MANIFEST = object()
 
 
@@ -116,8 +119,8 @@ def retained_assets(
     if manifest is UNREAD_MANIFEST:
         manifest = load_retained_manifest(root, version)
     if not isinstance(manifest, dict):
-        return present, list(EXPECTED_ASSETS)
-    for name in EXPECTED_ASSETS:
+        return present, list(EXPECTED_RETAINED_ASSETS)
+    for name in EXPECTED_RETAINED_ASSETS:
         try:
             record = manifest["assets"].get(name)
             if not isinstance(record, dict) or not isinstance(record.get("path"), str):
@@ -227,7 +230,7 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
         if release.get("draft") is False and release.get("prerelease") is False
         else "invalid",
     }
-    result["missing_assets"] = sorted(set(EXPECTED_ASSETS) - set(names))
+    result["missing_assets"] = sorted(set(EXPECTED_RELEASE_ASSETS) - set(names))
     return result
 
 
@@ -247,7 +250,7 @@ def reconcile_remote_digests(
         return result
     conflicts: dict[str, dict[str, str]] = {}
     unavailable: list[str] = []
-    for name in EXPECTED_ASSETS:
+    for name in EXPECTED_RELEASE_ASSETS:
         record = manifest["assets"].get(name)
         if not isinstance(record, dict) or not isinstance(record.get("sha256"), str):
             continue
@@ -858,7 +861,8 @@ def render_text(state: dict[str, Any], planning: bool) -> str:
     lines = [f"Release {state['version']}: read-only {'plan' if planning else 'status'}"]
     lines.append(f"Remote release: {remote['state']}")
     lines.append(
-        f"Retained artifacts: {len(retained['verified'])}/{len(EXPECTED_ASSETS)} verified"
+        "Retained artifacts: "
+        f"{len(retained['verified'])}/{len(EXPECTED_RETAINED_ASSETS)} verified"
     )
     if retained["missing"]:
         lines.append("Missing locally: " + ", ".join(retained["missing"]))

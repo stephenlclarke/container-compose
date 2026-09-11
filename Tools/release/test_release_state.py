@@ -107,7 +107,8 @@ class ReleaseStateTests(unittest.TestCase):
 
             self.assertEqual(state["retained"]["verified"], [])
             self.assertEqual(
-                len(state["retained"]["missing"]), len(MODULE.EXPECTED_ASSETS)
+                len(state["retained"]["missing"]),
+                len(MODULE.EXPECTED_RETAINED_ASSETS),
             )
             self.assertIn("blocked", state["next_action"])
 
@@ -154,7 +155,7 @@ class ReleaseStateTests(unittest.TestCase):
             mock.patch.object(
                 MODULE,
                 "retained_assets",
-                return_value=(list(MODULE.EXPECTED_ASSETS), []),
+                return_value=(list(MODULE.EXPECTED_RETAINED_ASSETS), []),
             ),
             mock.patch.object(MODULE, "dispatch_records", return_value=[]),
             mock.patch.object(
@@ -163,7 +164,7 @@ class ReleaseStateTests(unittest.TestCase):
                 return_value={
                     "assets": [],
                     "asset_digests": {},
-                    "missing_assets": list(MODULE.EXPECTED_ASSETS),
+                    "missing_assets": list(MODULE.EXPECTED_RELEASE_ASSETS),
                     "state": "published",
                 },
             ),
@@ -303,10 +304,10 @@ class ReleaseStateTests(unittest.TestCase):
         self.assertIn("URL", observed["formulae"]["reason"])
 
     def test_remote_digest_conflict_is_not_reported_as_published(self) -> None:
-        name = MODULE.EXPECTED_ASSETS[0]
+        name = MODULE.EXPECTED_RELEASE_ASSETS[0]
         assets = {
             asset: {"sha256": "a" * 64}
-            for asset in MODULE.EXPECTED_ASSETS
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
         }
         remote = {
             "asset_digests": {name: "sha256:" + "b" * 64},
@@ -324,7 +325,7 @@ class ReleaseStateTests(unittest.TestCase):
     def test_missing_remote_digests_fail_closed_for_complete_inventory(self) -> None:
         assets = {
             asset: {"sha256": "a" * 64}
-            for asset in MODULE.EXPECTED_ASSETS
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
         }
 
         observed = MODULE.reconcile_remote_digests(
@@ -334,8 +335,39 @@ class ReleaseStateTests(unittest.TestCase):
 
         self.assertEqual(observed["state"], "unavailable")
         self.assertEqual(
-            observed["unverified_digests"], list(MODULE.EXPECTED_ASSETS)
+            observed["unverified_digests"], list(MODULE.EXPECTED_RELEASE_ASSETS)
         )
+
+    def test_remote_release_inventory_excludes_locally_retained_docs(self) -> None:
+        assets = [
+            {"digest": f"sha256:{'a' * 64}", "name": name}
+            for name in MODULE.EXPECTED_RELEASE_ASSETS
+        ]
+        completed = self.completed(
+            {
+                "assets": assets,
+                "draft": False,
+                "id": 123,
+                "prerelease": False,
+            }
+        )
+
+        with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+            remote = MODULE.remote_release("owner/repo", "1.2.3", False)
+
+        self.assertEqual(remote["state"], "published")
+        self.assertEqual(remote["missing_assets"], [])
+        self.assertTrue(
+            set(MODULE.EXPECTED_DOCUMENTATION_ASSETS).isdisjoint(remote["assets"])
+        )
+        action = MODULE.plan_recovery(
+            [],
+            [],
+            [],
+            remote,
+            {"formulae": {"state": "verified"}, "pages": {"state": "verified"}},
+        )
+        self.assertEqual(action["name"], "complete")
 
     def test_pure_plan_declares_authority_and_invalidated_descendants(self) -> None:
         action = MODULE.plan_recovery(

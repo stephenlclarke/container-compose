@@ -2593,6 +2593,38 @@ github_cli() {{
                 },
             )
 
+    def test_stable_k8s_documentation_ref_comes_from_the_release_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            compose = root / "container-compose"
+            manifest = compose / "Tools/release/documentation-refs.json"
+            manifest.parent.mkdir(parents=True)
+            tagged_ref = "a" * 40
+            current_ref = "b" * 40
+            manifest.write_text(
+                json.dumps({"sites": {"k8s": {"ref": tagged_ref}}}),
+                encoding="utf-8",
+            )
+            self.git(compose, "init", "--quiet")
+            self.git(compose, "config", "user.email", "test@example.com")
+            self.git(compose, "config", "user.name", "Container Test")
+            self.git(compose, "add", ".")
+            self.git(compose, "commit", "--quiet", "-m", "tagged refs")
+            self.git(compose, "tag", "1.2.3")
+            manifest.write_text(
+                json.dumps({"sites": {"k8s": {"ref": current_ref}}}),
+                encoding="utf-8",
+            )
+            self.git(compose, "add", ".")
+            self.git(compose, "commit", "--quiet", "-m", "new refs")
+
+            resolved = self.run_release_function(
+                root, "stable_documentation_source_ref 1.2.3 k8s"
+            )
+
+            self.assertEqual(resolved.returncode, 0, resolved.stderr)
+            self.assertEqual(resolved.stdout.strip(), tagged_ref)
+
     def test_current_formulae_use_the_matched_runtime_in_the_single_prerelease(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('runtime_asset="container-current-${PUBLISH_SHA:0:12}-arm64.tar.gz"', workflow)
@@ -7926,6 +7958,7 @@ esac
                     "export CONTAINER_STACK_RELEASE_LIBRARY=1",
                     f"source {shlex.quote(str(SCRIPT))}",
                     f"ROOT={shlex.quote(str(root))}",
+                    f"RELEASE_BUILD_ROOT={shlex.quote(str(root / 'transient'))}",
                     "EXECUTE=1",
                     f"export PATH={shlex.quote(str(bin_directory))}:$PATH",
                     f"export BUILD_READY={shlex.quote(str(ready))}",
