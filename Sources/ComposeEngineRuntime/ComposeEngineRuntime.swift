@@ -60,6 +60,7 @@ public enum ComposeEngineRuntime {
 
 public final class EngineRuntimeProvider: @unchecked Sendable {
     private let client: Result<ContainerUnixHTTPClient, any Error>
+    private let volumeInitializations = EngineVolumeInitializationCoordinator()
 
     public init(socketPath: String) {
         client = Result { try ContainerUnixHTTPClient(socketPath: socketPath) }
@@ -106,27 +107,6 @@ public final class EngineRuntimeProvider: @unchecked Sendable {
             DockerHTTPRequest(method: method, target: target, headers: headers, body: payload),
             maximumBodyBytes: maximumBodyBytes,
         )
-    }
-
-    private func rawRequest(
-        _ method: DockerHTTPMethod,
-        _ target: String,
-        body: (any Encodable)? = nil,
-        maximumBodyBytes: Int = 16 * 1024 * 1024,
-    ) async throws -> Data {
-        let payload: Data
-        let headers: DockerHTTPHeaders
-        if let body {
-            payload = try JSONEncoder.engine.encode(AnyEncodable(body))
-            headers = try DockerHTTPHeaders(uniqueFields: ["Content-Type": "application/json"])
-        } else {
-            payload = Data()
-            headers = DockerHTTPHeaders()
-        }
-        return try await client.get().send(
-            DockerHTTPRequest(method: method, target: target, headers: headers, body: payload),
-            maximumBodyBytes: maximumBodyBytes,
-        ).body
     }
 
     private func escaped(_ component: String) -> String {
@@ -275,6 +255,17 @@ extension EngineRuntimeProvider: ComposeRuntimeResourceManaging {
 
 extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
     public func initializeImageVolume(_ request: ComposeImageVolumeInitializationRequest) async throws {
+        await volumeInitializations.acquire(request.volumeName)
+        do {
+            try await initializeSerializedImageVolume(request)
+            await volumeInitializations.release(request.volumeName)
+        } catch {
+            await volumeInitializations.release(request.volumeName)
+            throw error
+        }
+    }
+
+    private func initializeSerializedImageVolume(_ request: ComposeImageVolumeInitializationRequest) async throws {
         let volume: EngineVolume = try await self.request(
             .get,
             "/v1.53/volumes/\(escaped(request.volumeName))",
@@ -294,43 +285,37 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             body: EngineContainerCreateRequest(
                 image: request.image,
                 labels: ["com.apple.container.compose.internal": "image-volume-init"],
+                command: EngineContainerCreateRequest.volumeCopyCommand(
+                    source: request.imageSubpath,
+                    destination: "/.compose-image-volume"
+                ),
+                hostConfig: .init(mounts: [
+                    .init(
+                        type: "volume",
+                        source: request.volumeName,
+                        target: "/.compose-image-volume"
+                    )
+                ]),
             ),
         )
-        try await seedVolume(request, destination: destination, helperID: helper.id)
+        try await runVolumeInitializationHelper(helper.id)
     }
 
-    private func seedVolume(
-        _ request: ComposeImageVolumeInitializationRequest,
-        destination: URL,
-        helperID: String,
-    ) async throws {
+    private func runVolumeInitializationHelper(_ helperID: String) async throws {
         do {
-            let archive: Data
-            do {
-                archive = try await rawRequest(
-                    .get,
-                    "/v1.53/containers/\(escaped(helperID))/archive?path=\(query(request.imageSubpath))",
-                    maximumBodyBytes: 1024 * 1024 * 1024,
-                )
-            } catch ContainerUnixHTTPClientError.server(status: 404, message: _) {
-                try await removeInitializationHelper(helperID)
-                return
-            }
-            guard try volumeIsEmpty(destination) else {
-                try await removeInitializationHelper(helperID)
-                return
-            }
-            let extraction = try await ProcessRunner().run(
-                "/usr/bin/tar",
-                ["--no-same-owner", "-xf", "-", "--strip-components", "1", "-C", destination.path],
-                environment: ["COPYFILE_DISABLE": "1", "PATH": "/usr/bin:/bin"],
-                input: archive,
+            try await request(
+                .post,
+                "/v1.53/containers/\(escaped(helperID))/start"
             )
-            guard extraction.succeeded else {
+            let wait: EngineWaitResponse = try await request(
+                .post,
+                "/v1.53/containers/\(escaped(helperID))/wait?condition=not-running"
+            )
+            guard wait.statusCode == 0 || wait.statusCode == 44 || wait.statusCode == 45 else {
                 throw ComposeError.commandFailed(
-                    command: "/usr/bin/tar -xf - --strip-components 1 -C <engine-volume>",
-                    status: extraction.status,
-                    stderr: extraction.stderr,
+                    command: "Engine image-volume initialization helper",
+                    status: wait.statusCode,
+                    stderr: "runtime-side image volume copy failed",
                 )
             }
             try await removeInitializationHelper(helperID)
@@ -352,6 +337,30 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             throw ComposeError.invalidProject("runtime volume mountpoint is not a directory")
         }
         return try FileManager.default.contentsOfDirectory(atPath: destination.path).isEmpty
+    }
+}
+
+private actor EngineVolumeInitializationCoordinator {
+    private var held: Set<String> = []
+    private var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
+
+    func acquire(_ volumeName: String) async {
+        guard !held.insert(volumeName).inserted else {
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters[volumeName, default: []].append(continuation)
+        }
+    }
+
+    func release(_ volumeName: String) {
+        guard var queued = waiters[volumeName], !queued.isEmpty else {
+            held.remove(volumeName)
+            return
+        }
+        let continuation = queued.removeFirst()
+        waiters[volumeName] = queued.isEmpty ? nil : queued
+        continuation.resume()
     }
 }
 
@@ -736,10 +745,45 @@ private struct EngineVolume: Decodable {
 private struct EngineContainerCreateRequest: Encodable {
     let image: String
     let labels: [String: String]
-    let command = ["/bin/sh", "-c", "while :; do sleep 3600; done"]
+    let command: [String]
+    let hostConfig: EngineContainerHostConfig
 
     enum CodingKeys: String, CodingKey {
-        case image = "Image", labels = "Labels", command = "Cmd"
+        case image = "Image", labels = "Labels", command = "Cmd", hostConfig = "HostConfig"
+    }
+
+    static func volumeCopyCommand(source: String, destination: String) -> [String] {
+        [
+            "/bin/sh", "-ec",
+            """
+            source=$1
+            destination=$2
+            [ -e "$source" ] || exit 44
+            for entry in "$destination"/.[!.]* "$destination"/..?* "$destination"/*; do
+              if [ -e "$entry" ] || [ -L "$entry" ]; then exit 45; fi
+            done
+            owner=$(stat -c '%u:%g' "$source")
+            mode=$(stat -c '%a' "$source")
+            chown "$owner" "$destination"
+            chmod "$mode" "$destination"
+            cp -a "$source"/. "$destination"/
+            """,
+            "compose-volume-init", source, destination,
+        ]
+    }
+}
+
+private struct EngineContainerHostConfig: Encodable {
+    let mounts: [EngineContainerMount]
+    enum CodingKeys: String, CodingKey { case mounts = "Mounts" }
+}
+
+private struct EngineContainerMount: Encodable {
+    let type: String
+    let source: String
+    let target: String
+    enum CodingKeys: String, CodingKey {
+        case type = "Type", source = "Source", target = "Target"
     }
 }
 

@@ -139,22 +139,13 @@ struct ComposeEngineRuntimeTests {
     func `image volume initialization seeds only an empty Engine volume`() async throws {
         let fixture = try EngineFixture()
         defer { fixture.cleanup() }
-        let source = fixture.root.appendingPathComponent("source/state", isDirectory: true)
         let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
-        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
-        try Data("from-image\n".utf8).write(to: source.appendingPathComponent("message.txt"))
-        let archive = try await ProcessRunner().run(
-            "/usr/bin/tar",
-            ["-cf", "-", "-C", source.deletingLastPathComponent().path, "state"],
-        )
-        #expect(archive.succeeded)
 
         let recorder = RequestRecorder()
         let server = fixture.server(ImageVolumeResponder(
             recorder: recorder,
             mountpoint: volume.path,
-            archive: archive.stdoutData,
         ))
         try await server.start()
         do {
@@ -175,9 +166,49 @@ struct ComposeEngineRuntimeTests {
 
             let requests = await recorder.requests
             #expect(requests.filter { $0.target.contains("/containers/create?") }.count == 1)
-            #expect(requests.filter { $0.target.contains("/archive?") }.count == 1)
+            #expect(requests.filter { $0.target.contains("/start") }.count == 1)
+            #expect(requests.filter { $0.target.contains("/wait?") }.count == 1)
             #expect(requests.filter { $0.method == .delete }.count == 1)
             #expect(requests.contains { $0.target.contains("platform=linux/arm64") })
+            let create = try #require(requests.first { $0.target.contains("/containers/create?") })
+            #expect(create.body.containsText(#""Source":"project_state""#))
+            #expect(create.body.containsText(#""Target":"/.compose-image-volume""#))
+            #expect(create.body.containsText("chown"))
+            #expect(create.body.containsText("chmod"))
+        } catch {
+            try? await server.shutdown()
+            throw error
+        }
+        try await server.shutdown()
+    }
+
+    @Test
+    func `image volume initialization serializes concurrent users of one volume`() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
+        try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
+        let recorder = RequestRecorder()
+        let server = fixture.server(ImageVolumeResponder(
+            recorder: recorder,
+            mountpoint: volume.path,
+        ))
+        try await server.start()
+        do {
+            let provider = EngineRuntimeProvider(socketPath: fixture.socketPath)
+            let request = ComposeImageVolumeInitializationRequest(
+                image: "example/image:latest",
+                platform: nil,
+                imageSubpath: "/state",
+                volumeName: "project_state",
+            )
+            async let first: Void = provider.initializeImageVolume(request)
+            async let second: Void = provider.initializeImageVolume(request)
+            _ = try await (first, second)
+
+            let requests = await recorder.requests
+            #expect(requests.filter { $0.target.contains("/containers/create?") }.count == 1)
+            #expect(requests.filter { $0.target.contains("/wait?") }.count == 1)
         } catch {
             try? await server.shutdown()
             throw error
@@ -281,7 +312,6 @@ private struct EngineFixtureResponder: DockerHTTPResponder {
 private struct ImageVolumeResponder: DockerHTTPResponder {
     let recorder: RequestRecorder
     let mountpoint: String
-    let archive: Data
 
     func respond(to request: DockerHTTPRequest) async -> DockerHTTPResponse {
         await recorder.append(request)
@@ -303,12 +333,11 @@ private struct ImageVolumeResponder: DockerHTTPResponder {
             )
         case let (.post, target) where target.contains("/containers/create?"):
             return .fixture(#"{"Id":"helper-id","Warnings":[]}"#, status: 201)
-        case let (.get, target) where target.contains("/archive?"):
-            return DockerHTTPResponse(
-                status: 200,
-                headers: ["Content-Type": "application/x-tar"],
-                body: .bytes(archive),
+        case let (.post, target) where target.contains("/wait?"):
+            try? Data("from-image\n".utf8).write(
+                to: URL(fileURLWithPath: mountpoint).appendingPathComponent("message.txt")
             )
+            return .fixture(#"{"StatusCode":0}"#)
         default:
             return .empty(status: 204)
         }

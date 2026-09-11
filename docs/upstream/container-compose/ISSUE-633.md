@@ -12,14 +12,15 @@ The failure was reproduced against unmodified `apple/container` 1.4.1 through th
 
 - Resolve the named local volume through the current-user Engine socket.
 - Preserve a volume that already contains user data.
-- Read the requested image subtree through a temporary Engine container and the Engine archive endpoint.
+- Copy the requested image subtree inside a temporary Engine container so file ownership and modes remain those of the image.
 - Seed only the contents of the selected image directory into an empty volume.
 - Treat a missing image path as Docker's empty-volume case.
 - Remove the temporary container on success, failure, or a concurrent initialization race.
+- Serialize initializers for the same volume so concurrent services preserve first-mount-wins semantics.
 - Keep the implementation independent of Stephen's enhanced Container and Containerization forks.
 
 ## Acceptance evidence
 
-- Deterministic Unix-socket component tests cover copy-up, preservation, request routing, and helper cleanup.
+- Deterministic Unix-socket component tests cover copy-up, ownership-preserving request projection, concurrent serialization, preservation, request routing, and helper cleanup.
 - Stock-profile compilation uses exact `apple/container` 1.4.1 and `apple/containerization` 0.45.0 dependencies.
 - The downstream `devcontainer` Compose parity fixtures pass against both stock Apple Container and the enhanced Container provider without invoking Docker or Colima.
