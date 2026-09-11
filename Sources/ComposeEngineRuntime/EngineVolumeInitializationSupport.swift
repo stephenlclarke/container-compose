@@ -220,9 +220,9 @@ extension EngineRuntimeProvider {
     static func helperExecutablePath(imageSubpath: String) throws -> String {
         let source = URL(fileURLWithPath: imageSubpath).standardizedFileURL.path
         let candidates = [
-            "/.compose-volume-initializer",
-            "/usr/local/libexec/compose-volume-initializer",
-            "/var/tmp/.compose-volume-initializer",
+            "/.compose-volume-initializer/bin/compose-volume-initializer",
+            "/usr/local/libexec/.compose-volume-initializer/bin/compose-volume-initializer",
+            "/var/tmp/.compose-volume-initializer/bin/compose-volume-initializer",
         ]
         guard let candidate = candidates.first(where: { !pathsOverlap($0, source) }) else {
             throw ComposeError.unsupported(

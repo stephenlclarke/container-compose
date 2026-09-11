@@ -32,13 +32,13 @@ The Docker-free stock profile could already create and manage ordinary Compose r
   - uses the immutable repository digest when available and otherwise snapshots a local image behind a unique tag whose image ID is verified before use;
   - serializes cache construction across processes and submits the minimal build context to the local Engine, whose stock Apple provider invokes Apple Container's bundled builder;
   - creates a narrowly labelled temporary derived container with the target volume mounted;
-  - selects internal helper executable and volume-mount paths that cannot overlap or obscure the requested image subtree;
+  - selects exact internal helper executable and volume-mount paths that cannot overlap or obscure the requested image subtree, including when a source image already contains one of the parent directories;
   - overrides the source image's user and entrypoint, so scratch and distroless source images need no shell or utilities;
   - copies the selected image directory inside the Linux guest through the project-owned static helper, preserving files, directories, ownership, modes, timestamps, extended attributes such as `security.capability`, symlinks, hard links, and named pipes;
   - stages the complete tree and writes an fsync-backed guest journal before publishing any entry;
   - records the exact transaction in a private, current-user host sidecar outside the mounted data directory, allowing a later invocation to authenticate and recover only its own interrupted publication;
   - never treats a user-controlled stage-shaped name as internal state without the matching host transaction and validated journal;
-  - performs authenticated recovery before checking the current source path, so a changed image cannot preserve partial publication;
+  - performs authenticated recovery before checking the current source path, restores the original mount-root owner, group, and mode from the versioned journal, and synchronizes rollback deletions before the volume can be accepted as empty;
   - synchronizes staged and published regular files and directories, synchronizes the destination root before journal removal, and synchronizes it again after removal;
   - rolls back every published entry if publication fails in-process;
   - applies the source directory's numeric owner and mode to the volume root;
@@ -48,7 +48,7 @@ The Docker-free stock profile could already create and manage ordinary Compose r
   - proves build-context projection, digest and verified-local-image sources, first-use copy-up, managed-volume launch projection, native exec projection, ownership/mode request projection, cross-provider serialization, existing-data preservation, transaction hardening, platform-specific helper selection through a Homebrew-style symlink, cache separation, lock-file hardening, non-overlapping helper mounts, and helper cleanup over a real local Unix-socket test server.
 - `Tools/compose-normalizer/cmd/volume-initializer`
   - supplies and tests Apache-2.0 static Linux arm64 and amd64 helpers without depending on the source image's user, entrypoint, shell, libc, or command-line tools;
-  - validates a caller-provided UUID transaction, persists a versioned entry journal before publication, and recovers only that exact transaction after interruption;
+  - validates a caller-provided UUID transaction, persists a versioned entry-and-root-metadata journal before publication, and recovers only that exact transaction after interruption;
   - preserves portable extended attributes and orders data/directory synchronization before the recovery journal is removed.
 
 ## Validation

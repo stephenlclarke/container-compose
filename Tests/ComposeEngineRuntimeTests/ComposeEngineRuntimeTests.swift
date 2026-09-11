@@ -201,12 +201,12 @@ struct ComposeEngineRuntimeTests {
         }
         #expect(
             try EngineRuntimeProvider.helperExecutablePath(imageSubpath: "/workspace")
-                == "/.compose-volume-initializer"
+                == "/.compose-volume-initializer/bin/compose-volume-initializer"
         )
         #expect(
             try EngineRuntimeProvider.helperExecutablePath(
-                imageSubpath: "/.compose-volume-initializer/data"
-            ) == "/usr/local/libexec/compose-volume-initializer"
+                imageSubpath: "/.compose-volume-initializer/bin/compose-volume-initializer"
+            ) == "/usr/local/libexec/.compose-volume-initializer/bin/compose-volume-initializer"
         )
     }
 
@@ -566,7 +566,11 @@ struct ComposeEngineRuntimeTests {
             #expect(create.body.containsText(#""Source":"project_state""#))
             #expect(create.body.containsText(#""Target":"/.compose-image-volume-target""#))
             #expect(create.body.containsText(#""User":"0""#))
-            #expect(create.body.containsText(#""Entrypoint":["/.compose-volume-initializer"]"#))
+            #expect(
+                create.body.containsText(
+                    #""Entrypoint":["/.compose-volume-initializer/bin/compose-volume-initializer"]"#
+                )
+            )
             #expect(create.body.containsText(#""Image":"devcontainer-volume-initializer:"#))
             #expect(create.body.containsText(#""Cmd":["/state","/.compose-image-volume-target",""#))
             #expect(create.body.containsText(pending.identifier))
@@ -576,7 +580,11 @@ struct ComposeEngineRuntimeTests {
             #expect(build.target.contains("platform=linux/arm64"))
             #expect(build.body.containsText("FROM example/image@sha256:digest"))
             #expect(!build.body.containsText("FROM example/image:latest"))
-            #expect(build.body.containsText(#"ENTRYPOINT ["/.compose-volume-initializer"]"#))
+            #expect(
+                build.body.containsText(
+                    #"ENTRYPOINT ["/.compose-volume-initializer/bin/compose-volume-initializer"]"#
+                )
+            )
         } catch {
             try? await server.shutdown()
             throw error

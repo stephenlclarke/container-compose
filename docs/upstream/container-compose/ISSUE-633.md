@@ -26,12 +26,13 @@ The failure was reproduced against unmodified `apple/container` 1.4.1 through th
 - Serialize initializers for the same volume and helper-image builds across processes so concurrent services preserve first-mount-wins semantics without racing a shared tag.
 - Recover an interrupted multi-entry publication only when a private host transaction identifies the exact guest journal; never infer internal state from user-controlled filename prefixes.
 - Recover that authenticated transaction before inspecting the current image path, so a changed or missing source cannot turn partial publication into accepted user data.
-- Choose both the helper executable and target-volume mount paths outside the image subtree being copied.
+- Restore the original mount-root owner, group, and mode during authenticated recovery, then synchronize rollback deletions before accepting the volume as empty.
+- Choose an exact helper executable path and target-volume mount path outside the image subtree being copied, so an existing image directory cannot collide with the helper installation.
 - Keep the implementation independent of Stephen's enhanced Container and Containerization forks.
 
 ## Acceptance evidence
 
-- Deterministic Unix-socket component tests cover the Docker-free build context, platform/name/bytes-derived helper identity, Homebrew symlink resolution, verified local-image snapshots, copy-up, extended attributes, crash recovery, durable publication, transaction hardening, user-data preservation, managed-volume service launch, native exec, ownership-preserving request projection, concurrent serialization, request routing, and helper cleanup.
+- Deterministic Unix-socket component tests cover the Docker-free build context, platform/name/bytes-derived helper identity, Homebrew symlink resolution, verified local-image snapshots, copy-up, extended attributes, crash recovery including mount-root metadata restoration, durable rollback publication, transaction hardening, user-data preservation, managed-volume service launch, native exec, ownership-preserving request projection, concurrent serialization, request routing, collision-resistant helper placement, and helper cleanup.
 - A repeatable real-runtime harness proves the complete path with stock Apple Container, the stock Devcontainer Engine, and stock Compose while no Docker or Colima process participates.
 - Stock-profile compilation uses exact `apple/container` 1.4.1 and `apple/containerization` 0.45.0 dependencies.
 - The downstream `devcontainer` Compose parity fixtures pass against both stock Apple Container and the enhanced Container provider without invoking Docker or Colima.

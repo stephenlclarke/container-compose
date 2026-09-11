@@ -365,19 +365,23 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	destination := filepath.Join(root, "destination")
-	mustMkdir(t, destination, 0o755)
+	mustMkdir(t, destination, 0o750)
 	mustWrite(t, filepath.Join(destination, "partial"), "published", 0o644)
+	entries, err := os.ReadDir(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal := filepath.Join(destination, journalPrefix+testTransactionID)
+	if err := writeJournal(journal, testTransactionID, entries); err != nil {
+		t.Fatal(err)
+	}
 	stage := filepath.Join(destination, stagePrefix+testTransactionID)
 	mustMkdir(t, stage, 0o700)
-	journal := filepath.Join(destination, journalPrefix+testTransactionID)
-	mustWrite(
-		t,
-		journal,
-		`{"version":1,"transaction":"01234567-89ab-cdef-0123-456789abcdef","entries":["partial"]}`,
-		0o600,
-	)
+	if err := os.Chmod(destination, 0o700); err != nil {
+		t.Fatal(err)
+	}
 
-	err := initialize(filepath.Join(root, "missing"), destination, testTransactionID)
+	err = initialize(filepath.Join(root, "missing"), destination, testTransactionID)
 	if !errors.Is(err, errSourceMissing) {
 		t.Fatalf("expected missing source after recovery, got %v", err)
 	}
@@ -386,15 +390,22 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 			t.Fatalf("interrupted transaction artefact remains at %s: %v", path, statErr)
 		}
 	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o750 {
+		t.Fatalf("volume root mode was not restored: %o", info.Mode().Perm())
+	}
 }
 
 func TestTransactionRecoveryRejectsUntrustedJournals(t *testing.T) {
 	t.Parallel()
 	for name, payload := range map[string]string{
 		"malformed":      `{`,
-		"wrong identity": `{"version":1,"transaction":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","entries":[]}`,
-		"wrong version":  `{"version":2,"transaction":"01234567-89ab-cdef-0123-456789abcdef","entries":[]}`,
-		"unsafe entry":   `{"version":1,"transaction":"01234567-89ab-cdef-0123-456789abcdef","entries":["../escape"]}`,
+		"wrong identity": `{"version":2,"transaction":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","entries":[]}`,
+		"wrong version":  `{"version":1,"transaction":"01234567-89ab-cdef-0123-456789abcdef","entries":[]}`,
+		"unsafe entry":   `{"version":2,"transaction":"01234567-89ab-cdef-0123-456789abcdef","entries":["../escape"]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			destination := t.TempDir()

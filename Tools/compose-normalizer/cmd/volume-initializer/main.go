@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -167,9 +168,17 @@ func initialize(source, destination, transaction string) error {
 }
 
 type transactionJournal struct {
-	Version     int      `json:"version"`
-	Transaction string   `json:"transaction"`
-	Entries     []string `json:"entries"`
+	Version     int                     `json:"version"`
+	Transaction string                  `json:"transaction"`
+	Entries     []string                `json:"entries"`
+	Root        transactionRootMetadata `json:"root"`
+}
+
+type transactionRootMetadata struct {
+	UID                  uint32 `json:"uid"`
+	GID                  uint32 `json:"gid"`
+	Mode                 uint32 `json:"mode"`
+	ModificationUnixNano int64  `json:"modificationUnixNano"`
 }
 
 // writeJournal durably records every name that publication may move before
@@ -179,8 +188,12 @@ func writeJournal(path, transaction string, entries []os.DirEntry) error {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
+	root, err := captureRootMetadata(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
 	payload, err := json.Marshal(transactionJournal{
-		Version: 1, Transaction: transaction, Entries: names,
+		Version: 2, Transaction: transaction, Entries: names, Root: root,
 	})
 	if err != nil {
 		return fmt.Errorf("encode initialization journal: %w", err)
@@ -227,7 +240,7 @@ func recoverTransaction(destination, transaction string) error {
 		if decodeErr := json.Unmarshal(payload, &record); decodeErr != nil {
 			return fmt.Errorf("decode initialization journal: %w", decodeErr)
 		}
-		if record.Version != 1 || record.Transaction != transaction {
+		if record.Version != 2 || record.Transaction != transaction {
 			return errors.New("initialization journal identity does not match")
 		}
 		for _, name := range record.Entries {
@@ -238,15 +251,57 @@ func recoverTransaction(destination, transaction string) error {
 				return fmt.Errorf("roll back published entry: %w", err)
 			}
 		}
+		if err := applyRootMetadata(destination, record.Root); err != nil {
+			return fmt.Errorf("restore volume root metadata: %w", err)
+		}
 	case errors.Is(err, os.ErrNotExist):
 		// Publication cannot start until the complete journal is durable.
 	default:
 		return fmt.Errorf("read initialization journal: %w", err)
 	}
-	for _, path := range []string{stage, journal, temporary} {
+	for _, path := range []string{stage, temporary} {
 		if err := os.RemoveAll(path); err != nil {
 			return fmt.Errorf("remove stale initialization transaction: %w", err)
 		}
+	}
+	if err := syncDirectory(destination); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(journal); err != nil {
+		return fmt.Errorf("remove stale initialization journal: %w", err)
+	}
+	return syncDirectory(destination)
+}
+
+func captureRootMetadata(path string) (transactionRootMetadata, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return transactionRootMetadata{}, fmt.Errorf("inspect volume root metadata: %w", err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return transactionRootMetadata{}, errors.New("volume root metadata is unavailable")
+	}
+	return transactionRootMetadata{
+		UID:                  stat.Uid,
+		GID:                  stat.Gid,
+		Mode:                 uint32(preservedMode(info.Mode())),
+		ModificationUnixNano: info.ModTime().UnixNano(),
+	}, nil
+}
+
+func applyRootMetadata(path string, metadata transactionRootMetadata) error {
+	if err := os.Chown(path, int(metadata.UID), int(metadata.GID)); err != nil &&
+		!metadataAlreadyMatches(path, metadata.UID, metadata.GID, true) {
+		return err
+	}
+	mode := os.FileMode(metadata.Mode)
+	if err := os.Chmod(path, mode); err != nil && !modeAlreadyMatches(path, mode) {
+		return err
+	}
+	timestamp := time.Unix(0, metadata.ModificationUnixNano)
+	if err := os.Chtimes(path, timestamp, timestamp); err != nil && !errors.Is(err, syscall.EPERM) {
+		return err
 	}
 	return nil
 }
@@ -322,20 +377,12 @@ func applyMountRootMetadata(path string, info os.FileInfo) error {
 	if !ok {
 		return errors.New("file metadata is unavailable")
 	}
-	if err := os.Chown(path, int(stat.Uid), int(stat.Gid)); err != nil &&
-		!metadataAlreadyMatches(path, stat.Uid, stat.Gid, true) {
-		return err
-	}
-	mode := preservedMode(info.Mode())
-	if err := os.Chmod(path, mode); err != nil &&
-		!modeAlreadyMatches(path, mode) {
-		return err
-	}
-	if err := os.Chtimes(path, info.ModTime(), info.ModTime()); err != nil &&
-		!errors.Is(err, syscall.EPERM) {
-		return err
-	}
-	return nil
+	return applyRootMetadata(path, transactionRootMetadata{
+		UID:                  stat.Uid,
+		GID:                  stat.Gid,
+		Mode:                 uint32(preservedMode(info.Mode())),
+		ModificationUnixNano: info.ModTime().UnixNano(),
+	})
 }
 
 // destinationIsEmpty treats every entry as user data after exact transaction
