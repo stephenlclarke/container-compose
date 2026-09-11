@@ -174,7 +174,7 @@ fi
 
 stable_draft_unexpected_calls="${temporary_directory}/stable-draft-unexpected.calls"
 if run_publisher tag draft "${stable_draft_unexpected_calls}" "" publish \
-  $'foreign.tar.gz\n'; then
+  $'container-vminit-arm64.oci.tar\ncontainer-vminit-arm64.oci.tar.sha256\n'; then
   printf 'stable draft recovery accepted an unexpected asset\n' >&2
   exit 1
 fi

@@ -220,6 +220,29 @@ class ReleaseStateTests(unittest.TestCase):
         self.assertEqual(observed["state"], "conflicting")
         self.assertEqual(observed["unexpected_assets"], ["foreign.tar.gz"])
 
+    def test_draft_rejects_postpublication_init_asset_pair(self) -> None:
+        names = [
+            "container-vminit-arm64.oci.tar",
+            "container-vminit-arm64.oci.tar.sha256",
+        ]
+        assets = {
+            asset: {"sha256": "a" * 64}
+            for asset in MODULE.EXPECTED_RETAINED_ASSETS
+        }
+        remote = {
+            "asset_digests": {
+                name: "sha256:" + str(assets[name]["sha256"]) for name in names
+            },
+            "assets": names,
+            "missing_assets": list(MODULE.EXPECTED_DRAFT_ASSETS),
+            "state": "draft",
+        }
+
+        observed = MODULE.reconcile_remote_digests(remote, {"assets": assets})
+
+        self.assertEqual(observed["state"], "conflicting")
+        self.assertEqual(observed["unexpected_assets"], sorted(names))
+
     def test_draft_with_mismatched_asset_digest_is_a_conflict(self) -> None:
         name = MODULE.EXPECTED_RELEASE_ASSETS[0]
         assets = {

@@ -45,18 +45,20 @@ FORMULA = importlib.util.module_from_spec(FORMULA_SPEC)
 FORMULA_SPEC.loader.exec_module(FORMULA)
 SEMVER = re.compile(r"[0-9]+[.][0-9]+[.][0-9]+")
 REQUEST_ID = re.compile(r"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}")
-EXPECTED_RELEASE_ASSETS = (
+EXPECTED_DRAFT_ASSETS = (
     "container-compose-plugin-release-arm64.tar.gz",
     "container-compose-plugin-release-arm64.tar.gz.sha256",
     "container-release-arm64.tar.gz",
     "container-release-arm64.tar.gz.sha256",
-    "container-vminit-arm64.oci.tar",
-    "container-vminit-arm64.oci.tar.sha256",
     "stable-release-authority.tar.gz",
     "stable-release-authority.tar.gz.sha256",
     "release-highlights.json",
     "quality-snapshot.svg",
 )
+EXPECTED_RELEASE_ASSETS = EXPECTED_DRAFT_ASSETS[:4] + (
+    "container-vminit-arm64.oci.tar",
+    "container-vminit-arm64.oci.tar.sha256",
+) + EXPECTED_DRAFT_ASSETS[4:]
 EXPECTED_DOCUMENTATION_ASSETS = (
     "compose.tgz",
     "container.tgz",
@@ -244,7 +246,10 @@ def remote_release(repo: str, version: str, offline: bool) -> dict[str, Any]:
         "prerelease": release.get("prerelease"),
         "state": release_state,
     }
-    result["missing_assets"] = sorted(set(EXPECTED_RELEASE_ASSETS) - set(names))
+    expected = (
+        EXPECTED_DRAFT_ASSETS if release_state == "draft" else EXPECTED_RELEASE_ASSETS
+    )
+    result["missing_assets"] = sorted(set(expected) - set(names))
     return result
 
 
@@ -265,7 +270,12 @@ def reconcile_remote_digests(
         )
         return result
     duplicates = sorted({name for name in names if names.count(name) > 1})
-    unexpected = sorted(set(names) - set(EXPECTED_RELEASE_ASSETS))
+    expected = (
+        EXPECTED_DRAFT_ASSETS
+        if remote.get("state") == "draft"
+        else EXPECTED_RELEASE_ASSETS
+    )
+    unexpected = sorted(set(names) - set(expected))
     result["duplicate_assets"] = duplicates
     result["unexpected_assets"] = unexpected
     if duplicates or unexpected:
