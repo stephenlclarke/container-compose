@@ -251,6 +251,9 @@ func resolveSourcePath(path string) (resolved string, missing bool, err error) {
 			return "", false, lstatErr
 		}
 		if info.Mode()&os.ModeSymlink == 0 {
+			if !info.IsDir() && len(components) > 0 {
+				return "", false, syscall.ENOTDIR
+			}
 			current = candidate
 			continue
 		}
