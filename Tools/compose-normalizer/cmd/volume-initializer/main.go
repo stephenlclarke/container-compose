@@ -77,6 +77,17 @@ func initialize(source, destination, transaction, recovery string) error {
 	if !validTransactionID(transaction) {
 		return errors.New("transaction must be a lowercase UUID")
 	}
+	resolvedSource, resolvedDestination, resolvedRecovery, err := resolveInitializationPaths(
+		source,
+		destination,
+		recovery,
+	)
+	if err != nil {
+		return err
+	}
+	source = resolvedSource
+	destination = resolvedDestination
+	recovery = resolvedRecovery
 	if info, statErr := os.Stat(destination); statErr != nil || !info.IsDir() {
 		if statErr != nil {
 			return fmt.Errorf("inspect destination: %w", statErr)
@@ -172,6 +183,50 @@ func initialize(source, destination, transaction, recovery string) error {
 		publishingEntries,
 		sourceMetadata,
 	)
+}
+
+// resolveInitializationPaths rejects paths whose guest-side symlink resolution
+// makes a source or helper mount overlap. It runs before transaction recovery so
+// an invalid image path cannot mutate either mounted volume.
+func resolveInitializationPaths(source, destination, recovery string) (string, string, string, error) {
+	resolvedSource, err := filepath.EvalSymlinks(source)
+	if errors.Is(err, os.ErrNotExist) {
+		// A missing source cannot overlap a mounted helper path. Preserve the
+		// existing contract that completes an interrupted transaction before
+		// reporting the missing image path.
+		resolvedSource = filepath.Clean(source)
+		err = nil
+	}
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolve source: %w", err)
+	}
+	resolvedDestination, err := filepath.EvalSymlinks(destination)
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolve destination: %w", err)
+	}
+	resolvedRecovery, err := filepath.EvalSymlinks(recovery)
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolve recovery directory: %w", err)
+	}
+	if pathsOverlap(resolvedSource, resolvedDestination) ||
+		pathsOverlap(resolvedSource, resolvedRecovery) ||
+		pathsOverlap(resolvedDestination, resolvedRecovery) {
+		return "", "", "", errors.New("image volume helper paths overlap after symlink resolution")
+	}
+	return resolvedSource, resolvedDestination, resolvedRecovery, nil
+}
+
+func pathsOverlap(first, second string) bool {
+	return pathContains(first, second) || pathContains(second, first)
+}
+
+func pathContains(parent, child string) bool {
+	relative, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	return relative == "." ||
+		(relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)))
 }
 
 type transactionJournal struct {

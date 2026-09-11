@@ -22,6 +22,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -226,6 +227,80 @@ func TestInitializeRejectsMissingSourceWithoutMutatingDestination(t *testing.T) 
 	if _, err := os.Stat(stale); err != nil {
 		t.Fatalf("source validation should not mutate destination: %v", err)
 	}
+}
+
+func TestInitializeRejectsSymlinkResolvedMountOverlapBeforeRecovery(t *testing.T) {
+	t.Parallel()
+	for _, test := range []string{"destination", "recovery", "filesystem root"} {
+		t.Run(test, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			destination := filepath.Join(root, "destination")
+			recovery := filepath.Join(root, "recovery")
+			mustMkdir(t, destination, 0o700)
+			mustMkdir(t, recovery, 0o700)
+			staleTemporary := filepath.Join(recovery, journalPrefix+testTransactionID+".tmp")
+			mustWrite(t, staleTemporary, "preserve", 0o600)
+			target := destination
+			switch test {
+			case "recovery":
+				target = recovery
+			case "filesystem root":
+				target = string(filepath.Separator)
+			}
+			source := symlinkPath(t, root, target)
+
+			err := initialize(source, destination, testTransactionID, recovery)
+			if err == nil || !strings.Contains(err.Error(), "paths overlap after symlink resolution") {
+				t.Fatalf("expected resolved overlap error, got %v", err)
+			}
+			contents, readErr := os.ReadFile(staleTemporary)
+			if readErr != nil || string(contents) != "preserve" {
+				t.Fatalf("path validation mutated recovery state: %q, %v", contents, readErr)
+			}
+			entries, readErr := os.ReadDir(destination)
+			if readErr != nil || len(entries) != 0 {
+				t.Fatalf("path validation mutated destination: %v, %v", entries, readErr)
+			}
+		})
+	}
+}
+
+func TestInitializeAcceptsNonoverlappingResolvedPaths(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	destination := filepath.Join(root, "destination")
+	recovery := filepath.Join(root, "recovery")
+	mustMkdir(t, source, 0o750)
+	mustMkdir(t, destination, 0o700)
+	mustMkdir(t, recovery, 0o700)
+	mustWrite(t, filepath.Join(source, "value"), "copied", 0o640)
+	sourceLink := symlinkPathWithName(t, root, "source-link", source)
+	destinationLink := symlinkPathWithName(t, root, "destination-link", destination)
+	recoveryLink := symlinkPathWithName(t, root, "recovery-link", recovery)
+
+	if err := initialize(sourceLink, destinationLink, testTransactionID, recoveryLink); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(filepath.Join(destination, "value"))
+	if err != nil || string(contents) != "copied" {
+		t.Fatalf("unexpected copied contents %q: %v", contents, err)
+	}
+}
+
+func symlinkPath(t *testing.T, root, target string) string {
+	t.Helper()
+	return symlinkPathWithName(t, root, "source-link", target)
+}
+
+func symlinkPathWithName(t *testing.T, root, name, target string) string {
+	t.Helper()
+	path := filepath.Join(root, name)
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func TestInitializePreservesAFailedStagedCopy(t *testing.T) {
