@@ -14,12 +14,67 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 @testable import ComposeEngineRuntime
 import ComposeRuntimeSPI
+import Darwin
+import Foundation
 import Testing
 
 @Suite(.serialized)
 struct EngineContainerCommandSupportTests {
+    @Test
+    func `volume initializer allocates an isolated recovery mount`() throws {
+        #expect(
+            try EngineRuntimeProvider.helperRecoveryMountPath(
+                imageSubpath: "/workspace",
+                volumeMountPath: "/.compose-image-volume-target"
+            ) == "/.compose-image-volume-recovery"
+        )
+        #expect(
+            try EngineRuntimeProvider.helperRecoveryMountPath(
+                imageSubpath: "/.compose-image-volume-recovery/data",
+                volumeMountPath: "/.compose-image-volume-target"
+            ) == "/mnt/.compose-image-volume-recovery"
+        )
+    }
+
+    @Test
+    func `volume transaction owns a private persistent recovery directory`() throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
+        try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
+        let transaction = try EngineVolumeInitializationTransaction.create(
+            volumeMountpoint: volume
+        )
+        var status = stat()
+
+        #expect(
+            try EngineVolumeInitializationTransaction.load(volumeMountpoint: volume)
+                == transaction
+        )
+        #expect(Darwin.lstat(transaction.path, &status) == 0)
+        #expect(status.st_mode & (S_IRWXG | S_IRWXO) == 0)
+        #expect(Darwin.lstat(transaction.recoveryPath, &status) == 0)
+        #expect(status.st_mode & S_IFMT == S_IFDIR)
+        #expect(status.st_mode & (S_IRWXG | S_IRWXO) == 0)
+        let pending = URL(fileURLWithPath: transaction.recoveryPath)
+            .appendingPathComponent("journal")
+        try Data("pending".utf8).write(to: pending)
+        #expect(throws: ComposeError.self) {
+            try transaction.complete()
+        }
+        try FileManager.default.removeItem(at: pending)
+        try transaction.complete()
+        #expect(
+            try EngineVolumeInitializationTransaction.load(volumeMountpoint: volume) == nil
+        )
+        #expect(
+            try FileManager.default.contentsOfDirectory(atPath: transaction.recoveryPath).isEmpty
+        )
+    }
+
     @Test
     func `stock launch parses generated option arities through managed volumes`() async throws {
         let fixture = try EngineFixture()

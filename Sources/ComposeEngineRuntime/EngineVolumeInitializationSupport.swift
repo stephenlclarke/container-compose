@@ -235,6 +235,23 @@ extension EngineRuntimeProvider {
         return candidate
     }
 
+    static func helperRecoveryMountPath(
+        imageSubpath: String,
+        volumeMountPath: String
+    ) throws -> String {
+        let source = URL(fileURLWithPath: imageSubpath).standardizedFileURL.path
+        for candidate in [
+            "/.compose-image-volume-recovery",
+            "/mnt/.compose-image-volume-recovery",
+            "/run/.compose-image-volume-recovery",
+        ] where !pathsOverlap(candidate, source) && !pathsOverlap(candidate, volumeMountPath) {
+            return candidate
+        }
+        throw ComposeError.unsupported(
+            "stock Apple image-volume copy-up could not allocate an isolated recovery path"
+        )
+    }
+
     static func helperExecutablePath(
         sourceDigest: String,
         platform: String?,
@@ -266,20 +283,24 @@ extension EngineRuntimeProvider {
 
 struct EngineVolumeInitializationTransaction: Equatable {
     private static let fileName = ".compose-image-volume.transaction"
+    private static let recoveryDirectoryName = ".compose-image-volume.recovery"
 
     let identifier: String
     let path: String
+    let recoveryPath: String
 
     static func load(volumeMountpoint: URL) throws -> EngineVolumeInitializationTransaction? {
         let path = transactionPath(volumeMountpoint: volumeMountpoint)
         guard FileManager.default.fileExists(atPath: path) else {
             return nil
         }
-        return try validated(path: path)
+        return try validated(path: path, recoveryPath: recoveryPath(volumeMountpoint: volumeMountpoint))
     }
 
     static func create(volumeMountpoint: URL) throws -> EngineVolumeInitializationTransaction {
         let path = transactionPath(volumeMountpoint: volumeMountpoint)
+        let recoveryPath = recoveryPath(volumeMountpoint: volumeMountpoint)
+        try prepareRecoveryDirectory(recoveryPath)
         let identifier = UUID().uuidString.lowercased()
         let descriptor = Darwin.open(
             path,
@@ -310,14 +331,23 @@ struct EngineVolumeInitializationTransaction: Equatable {
             _ = Darwin.unlink(path)
             throw error
         }
-        return EngineVolumeInitializationTransaction(identifier: identifier, path: path)
+        return EngineVolumeInitializationTransaction(
+            identifier: identifier,
+            path: path,
+            recoveryPath: recoveryPath
+        )
     }
 
     func complete() throws {
-        let current = try Self.validated(path: path)
+        let current = try Self.validated(path: path, recoveryPath: recoveryPath)
         guard current.identifier == identifier else {
             throw ComposeError.invalidProject(
                 "image-volume transaction identity changed at \(path)"
+            )
+        }
+        guard try FileManager.default.contentsOfDirectory(atPath: recoveryPath).isEmpty else {
+            throw ComposeError.invalidProject(
+                "image-volume recovery directory is not empty at \(recoveryPath)"
             )
         }
         guard Darwin.unlink(path) == 0 else {
@@ -332,6 +362,27 @@ struct EngineVolumeInitializationTransaction: Equatable {
         volumeMountpoint.deletingLastPathComponent()
             .appendingPathComponent(fileName)
             .path
+    }
+
+    private static func recoveryPath(volumeMountpoint: URL) -> String {
+        volumeMountpoint.deletingLastPathComponent()
+            .appendingPathComponent(recoveryDirectoryName, isDirectory: true)
+            .path
+    }
+
+    private static func prepareRecoveryDirectory(_ path: String) throws {
+        if Darwin.mkdir(path, S_IRWXU) != 0, errno != EEXIST {
+            throw ComposeError.invalidProject(
+                "cannot create image-volume recovery directory at \(path): \(String(cString: strerror(errno)))"
+            )
+        }
+        try validateRecoveryDirectory(path)
+        guard try FileManager.default.contentsOfDirectory(atPath: path).isEmpty else {
+            throw ComposeError.invalidProject(
+                "image-volume recovery directory is not empty at \(path)"
+            )
+        }
+        try syncParentDirectory(of: path)
     }
 
     private static func syncParentDirectory(of path: String) throws {
@@ -350,7 +401,10 @@ struct EngineVolumeInitializationTransaction: Equatable {
         }
     }
 
-    private static func validated(path: String) throws -> EngineVolumeInitializationTransaction {
+    private static func validated(
+        path: String,
+        recoveryPath: String
+    ) throws -> EngineVolumeInitializationTransaction {
         var status = stat()
         guard Darwin.lstat(path, &status) == 0,
               status.st_mode & S_IFMT == S_IFREG,
@@ -373,7 +427,25 @@ struct EngineVolumeInitializationTransaction: Equatable {
                 "image-volume transaction has an invalid identity at \(path)"
             )
         }
-        return EngineVolumeInitializationTransaction(identifier: identifier, path: path)
+        try validateRecoveryDirectory(recoveryPath)
+        return EngineVolumeInitializationTransaction(
+            identifier: identifier,
+            path: path,
+            recoveryPath: recoveryPath
+        )
+    }
+
+    private static func validateRecoveryDirectory(_ path: String) throws {
+        var status = stat()
+        guard Darwin.lstat(path, &status) == 0,
+              status.st_mode & S_IFMT == S_IFDIR,
+              status.st_uid == geteuid(),
+              status.st_mode & (S_IRWXG | S_IRWXO) == 0
+        else {
+            throw ComposeError.invalidProject(
+                "image-volume recovery path is not a private current-user directory at \(path)"
+            )
+        }
     }
 
     private static func write(_ data: Data, descriptor: Int32, path: String) throws {

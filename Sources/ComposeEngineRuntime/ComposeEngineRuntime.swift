@@ -339,6 +339,10 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
     ) async throws -> EngineContainerCreateResponse {
         let helperName = "compose-volume-init-\(UUID().uuidString.lowercased())"
         let helperMountPath = try Self.helperMountPath(imageSubpath: request.imageSubpath)
+        let recoveryMountPath = try Self.helperRecoveryMountPath(
+            imageSubpath: request.imageSubpath,
+            volumeMountPath: helperMountPath
+        )
         return try await self.request(
             .post,
             target(
@@ -350,12 +354,23 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
                 labels: ["com.apple.container.compose.internal": "image-volume-init"],
                 user: "0",
                 entrypoint: [helperPath],
-                command: [request.imageSubpath, helperMountPath, transaction.identifier],
+                command: [
+                    request.imageSubpath,
+                    helperMountPath,
+                    transaction.identifier,
+                    recoveryMountPath,
+                ],
                 hostConfig: .init(mounts: [
                     .init(
                         type: "volume",
                         source: request.volumeName,
                         target: helperMountPath,
+                        readOnly: false
+                    ),
+                    .init(
+                        type: "bind",
+                        source: transaction.recoveryPath,
+                        target: recoveryMountPath,
                         readOnly: false
                     ),
                 ]),

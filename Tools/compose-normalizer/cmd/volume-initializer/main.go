@@ -23,7 +23,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -34,7 +33,6 @@ import (
 const (
 	stagePrefix   = ".compose-volume-init-stage-"
 	journalPrefix = ".compose-volume-init-journal-"
-	recoveryXattr = "user.io.github.stephenlclarke.container-compose.volume-init."
 )
 
 var (
@@ -50,11 +48,11 @@ func main() {
 // run validates the command contract and maps copy-up outcomes to stable
 // helper exit codes that the host provider can interpret.
 func run(arguments []string, stderr io.Writer) int {
-	if len(arguments) != 3 {
-		fmt.Fprintln(stderr, "usage: compose-volume-initializer SOURCE DESTINATION TRANSACTION")
+	if len(arguments) != 4 {
+		fmt.Fprintln(stderr, "usage: compose-volume-initializer SOURCE DESTINATION TRANSACTION RECOVERY")
 		return 2
 	}
-	if err := initialize(arguments[0], arguments[1], arguments[2]); err != nil {
+	if err := initialize(arguments[0], arguments[1], arguments[2], arguments[3]); err != nil {
 		fmt.Fprintln(stderr, err)
 		switch {
 		case errors.Is(err, errSourceMissing):
@@ -70,9 +68,9 @@ func run(arguments []string, stderr io.Writer) int {
 
 // initialize stages the complete tree and rolls back every published entry on
 // failure. The host provider holds the cross-process volume lock.
-func initialize(source, destination, transaction string) error {
-	if !filepath.IsAbs(source) || !filepath.IsAbs(destination) {
-		return errors.New("source and destination must be absolute paths")
+func initialize(source, destination, transaction, recovery string) error {
+	if !filepath.IsAbs(source) || !filepath.IsAbs(destination) || !filepath.IsAbs(recovery) {
+		return errors.New("source, destination, and recovery must be absolute paths")
 	}
 	if !validTransactionID(transaction) {
 		return errors.New("transaction must be a lowercase UUID")
@@ -83,8 +81,15 @@ func initialize(source, destination, transaction string) error {
 		}
 		return errors.New("image volume destination is not a directory")
 	}
+	if info, statErr := os.Stat(recovery); statErr != nil || !info.IsDir() {
+		if statErr != nil {
+			return fmt.Errorf("inspect recovery directory: %w", statErr)
+		}
+		return errors.New("image volume recovery path is not a directory")
+	}
 
-	if err := recoverTransaction(destination, transaction); err != nil {
+	journal := filepath.Join(recovery, journalPrefix+transaction)
+	if err := recoverTransaction(destination, transaction, journal); err != nil {
 		return err
 	}
 	sourceInfo, err := os.Stat(source)
@@ -108,6 +113,22 @@ func initialize(source, destination, transaction string) error {
 		return errDestinationNotEmpty
 	}
 
+	entries, err := os.ReadDir(source)
+	if err != nil {
+		return fmt.Errorf("read source: %w", err)
+	}
+	destinationMetadata, err := captureRootMetadata(destination)
+	if err != nil {
+		return fmt.Errorf("inspect destination attributes: %w", err)
+	}
+	sourceMetadata, err := captureRootMetadata(source)
+	if err != nil {
+		return fmt.Errorf("inspect source attributes: %w", err)
+	}
+	if err := writeJournal(journal, transaction, entries, destinationMetadata); err != nil {
+		return err
+	}
+
 	stage := filepath.Join(destination, stagePrefix+transaction)
 	if err := os.Mkdir(stage, 0o700); err != nil {
 		return fmt.Errorf("create initialization stage: %w", err)
@@ -119,10 +140,6 @@ func initialize(source, destination, transaction string) error {
 		}
 	}()
 	hardlinks := make(map[fileIdentity]string)
-	entries, err := os.ReadDir(source)
-	if err != nil {
-		return fmt.Errorf("read source: %w", err)
-	}
 	for _, entry := range entries {
 		if err := copyEntry(
 			filepath.Join(source, entry.Name()),
@@ -131,19 +148,6 @@ func initialize(source, destination, transaction string) error {
 		); err != nil {
 			return err
 		}
-	}
-	journal := filepath.Join(destination, journalPrefix+transaction)
-	if err := writeJournal(journal, transaction, entries); err != nil {
-		return err
-	}
-
-	destinationMetadata, err := captureRootMetadata(destination)
-	if err != nil {
-		return fmt.Errorf("inspect destination attributes: %w", err)
-	}
-	sourceMetadata, err := captureRootMetadata(source)
-	if err != nil {
-		return fmt.Errorf("inspect source attributes: %w", err)
 	}
 	moved := make([]string, 0, len(entries))
 	rollback := func() {
@@ -176,19 +180,22 @@ func initialize(source, destination, transaction string) error {
 		return fmt.Errorf("remove initialization stage: %w", err)
 	}
 	stagePresent = false
-	return finalizeRootMetadata(destination, journal, transaction, sourceMetadata)
+	if err := applyRootMetadata(destination, sourceMetadata); err != nil {
+		return fmt.Errorf("restore destination metadata: %w", err)
+	}
+	if err := syncDirectory(destination); err != nil {
+		return err
+	}
+	if err := os.Remove(journal); err != nil {
+		return fmt.Errorf("complete initialization transaction: %w", err)
+	}
+	return syncDirectory(recovery)
 }
 
 type transactionJournal struct {
 	Version     int                     `json:"version"`
 	Transaction string                  `json:"transaction"`
 	Entries     []string                `json:"entries"`
-	Root        transactionRootMetadata `json:"root"`
-}
-
-type transactionFinalizationMarker struct {
-	Version     int                     `json:"version"`
-	Transaction string                  `json:"transaction"`
 	Root        transactionRootMetadata `json:"root"`
 }
 
@@ -202,14 +209,14 @@ type transactionRootMetadata struct {
 
 // writeJournal durably records every name that publication may move before
 // the first rename can make source data visible in the volume.
-func writeJournal(path, transaction string, entries []os.DirEntry) error {
+func writeJournal(
+	path, transaction string,
+	entries []os.DirEntry,
+	root transactionRootMetadata,
+) error {
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		names = append(names, entry.Name())
-	}
-	root, err := captureRootMetadata(filepath.Dir(path))
-	if err != nil {
-		return err
 	}
 	payload, err := json.Marshal(transactionJournal{
 		Version: 2, Transaction: transaction, Entries: names, Root: root,
@@ -248,9 +255,8 @@ func writeJournal(path, transaction string, entries []os.DirEntry) error {
 // recoverTransaction removes only artefacts named by the host-authenticated
 // transaction identity. Stage-shaped user entries from any other identity are
 // never considered internal state.
-func recoverTransaction(destination, transaction string) error {
+func recoverTransaction(destination, transaction, journal string) error {
 	stage := filepath.Join(destination, stagePrefix+transaction)
-	journal := filepath.Join(destination, journalPrefix+transaction)
 	temporary := journal + ".tmp"
 	payload, err := os.ReadFile(journal)
 	switch {
@@ -270,111 +276,32 @@ func recoverTransaction(destination, transaction string) error {
 				return fmt.Errorf("roll back published entry: %w", err)
 			}
 		}
-		for _, path := range []string{stage, temporary} {
-			if err := os.RemoveAll(path); err != nil {
-				return fmt.Errorf("remove stale initialization transaction: %w", err)
-			}
+		if err := os.RemoveAll(stage); err != nil {
+			return fmt.Errorf("remove stale initialization transaction: %w", err)
 		}
-		return finalizeRootMetadata(destination, journal, transaction, record.Root)
+		if err := applyRootMetadata(destination, record.Root); err != nil {
+			return fmt.Errorf("restore volume root metadata: %w", err)
+		}
+		if err := syncDirectory(destination); err != nil {
+			return err
+		}
+		if err := os.Remove(journal); err != nil {
+			return fmt.Errorf("remove stale initialization journal: %w", err)
+		}
+		return syncDirectory(filepath.Dir(journal))
 	case errors.Is(err, os.ErrNotExist):
-		metadata, markerErr := readRecoveryMarker(destination, transaction)
-		switch {
-		case markerErr == nil:
-			return finalizeRootMetadata(destination, journal, transaction, metadata)
-		case missingExtendedAttribute(markerErr), errors.Is(markerErr, syscall.ENOTSUP):
-			// Publication cannot start until the complete journal is durable.
-		case markerErr != nil:
-			return markerErr
+		if _, stageErr := os.Lstat(stage); stageErr == nil {
+			return errors.New("initialization stage exists without its recovery journal")
+		} else if !errors.Is(stageErr, os.ErrNotExist) {
+			return fmt.Errorf("inspect initialization stage: %w", stageErr)
 		}
 	default:
 		return fmt.Errorf("read initialization journal: %w", err)
 	}
-	for _, path := range []string{stage, temporary} {
-		if err := os.RemoveAll(path); err != nil {
-			return fmt.Errorf("remove stale initialization transaction: %w", err)
-		}
+	if err := os.RemoveAll(temporary); err != nil {
+		return fmt.Errorf("remove stale initialization journal temporary: %w", err)
 	}
-	if err := syncDirectory(destination); err != nil {
-		return err
-	}
-	if err := os.RemoveAll(journal); err != nil {
-		return fmt.Errorf("remove stale initialization journal: %w", err)
-	}
-	return syncDirectory(destination)
-}
-
-// finalizeRootMetadata moves recovery state into an inode xattr before the
-// journal entry is removed. Removing that marker does not change the root
-// mtime, so recovery remains possible until the desired metadata is durable.
-func finalizeRootMetadata(
-	destination, journal, transaction string,
-	metadata transactionRootMetadata,
-) error {
-	name := recoveryXattr + transaction
-	payload, err := json.Marshal(transactionFinalizationMarker{
-		Version: 1, Transaction: transaction, Root: metadata,
-	})
-	if err != nil {
-		return fmt.Errorf("encode initialization recovery marker: %w", err)
-	}
-	if err := unix.Setxattr(destination, name, payload, 0); err != nil {
-		return fmt.Errorf("write initialization recovery marker: %w", err)
-	}
-	if err := syncDirectory(destination); err != nil {
-		return err
-	}
-	if err := os.Remove(journal); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("complete initialization transaction: %w", err)
-	}
-	if err := applyRootMetadataPreserving(destination, metadata, name, payload); err != nil {
-		return fmt.Errorf("restore destination metadata: %w", err)
-	}
-	if err := syncDirectory(destination); err != nil {
-		return err
-	}
-	if value, retained := metadata.ExtendedAttributes[name]; retained {
-		if err := unix.Setxattr(destination, name, value, 0); err != nil {
-			return fmt.Errorf("restore destination recovery attribute: %w", err)
-		}
-	} else if err := unix.Removexattr(destination, name); err != nil &&
-		!missingExtendedAttribute(err) {
-		return fmt.Errorf("remove initialization recovery marker: %w", err)
-	}
-	return syncDirectory(destination)
-}
-
-func missingExtendedAttribute(err error) bool {
-	// Darwin exposes ENOATTR (93), while Linux reports ENODATA. Referencing the
-	// Darwin-only symbol would prevent the helper's required Linux cross-build.
-	return errors.Is(err, syscall.ENODATA) ||
-		(runtime.GOOS == "darwin" && errors.Is(err, syscall.Errno(93)))
-}
-
-func readRecoveryMarker(
-	destination, transaction string,
-) (transactionRootMetadata, error) {
-	name := recoveryXattr + transaction
-	size, err := unix.Getxattr(destination, name, nil)
-	if err != nil {
-		return transactionRootMetadata{}, err
-	}
-	value := make([]byte, size)
-	size, err = unix.Getxattr(destination, name, value)
-	if err != nil {
-		return transactionRootMetadata{}, err
-	}
-	var marker transactionFinalizationMarker
-	if err := json.Unmarshal(value[:size], &marker); err != nil {
-		return transactionRootMetadata{}, fmt.Errorf(
-			"decode initialization recovery marker: %w", err,
-		)
-	}
-	if marker.Version != 1 || marker.Transaction != transaction {
-		return transactionRootMetadata{}, errors.New(
-			"initialization recovery marker identity does not match",
-		)
-	}
-	return marker.Root, nil
+	return syncDirectory(filepath.Dir(journal))
 }
 
 func captureRootMetadata(path string) (transactionRootMetadata, error) {
@@ -400,15 +327,6 @@ func captureRootMetadata(path string) (transactionRootMetadata, error) {
 }
 
 func applyRootMetadata(path string, metadata transactionRootMetadata) error {
-	return applyRootMetadataPreserving(path, metadata, "", nil)
-}
-
-func applyRootMetadataPreserving(
-	path string,
-	metadata transactionRootMetadata,
-	attribute string,
-	value []byte,
-) error {
 	if err := os.Chown(path, int(metadata.UID), int(metadata.GID)); err != nil &&
 		!metadataAlreadyMatches(path, metadata.UID, metadata.GID, true) {
 		return err
@@ -421,14 +339,7 @@ func applyRootMetadataPreserving(
 	if err := os.Chtimes(path, timestamp, timestamp); err != nil && !errors.Is(err, syscall.EPERM) {
 		return err
 	}
-	desired := make(map[string][]byte, len(metadata.ExtendedAttributes)+1)
-	for name, existing := range metadata.ExtendedAttributes {
-		desired[name] = existing
-	}
-	if attribute != "" {
-		desired[attribute] = value
-	}
-	return replaceExtendedAttributes(path, desired)
+	return replaceExtendedAttributes(path, metadata.ExtendedAttributes)
 }
 
 // syncDirectory makes the journal rename durable before publication begins.

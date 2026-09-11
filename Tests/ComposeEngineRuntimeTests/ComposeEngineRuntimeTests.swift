@@ -597,6 +597,8 @@ struct ComposeEngineRuntimeTests {
             let create = try #require(requests.first { $0.target.contains("/containers/create?") })
             #expect(create.body.containsText(#""Source":"project_state""#))
             #expect(create.body.containsText(#""Target":"/.compose-image-volume-target""#))
+            #expect(create.body.containsText(#""Source":"\#(pending.recoveryPath)""#))
+            #expect(create.body.containsText(#""Target":"/.compose-image-volume-recovery""#))
             #expect(create.body.containsText(#""User":"0""#))
             #expect(
                 create.body.containsText(
@@ -604,7 +606,11 @@ struct ComposeEngineRuntimeTests {
                 )
             )
             #expect(create.body.containsText(#""Image":"devcontainer-volume-initializer:"#))
-            #expect(create.body.containsText(#""Cmd":["/state","/.compose-image-volume-target",""#))
+            #expect(
+                create.body.containsText(
+                    #""Cmd":["/state","/.compose-image-volume-target","\#(pending.identifier)","/.compose-image-volume-recovery"]"#
+                )
+            )
             #expect(create.body.containsText(pending.identifier))
             #expect(!create.body.containsText("/bin/sh"))
             let build = try #require(requests.first { $0.target.contains("/build?") })
@@ -761,29 +767,6 @@ struct ComposeEngineRuntimeTests {
         try await server.shutdown()
     }
 
-    @Test
-    func `image volume transaction is private durable and removable`() throws {
-        let fixture = try EngineFixture()
-        defer { fixture.cleanup() }
-        let volume = fixture.root.appendingPathComponent("volume", isDirectory: true)
-        try FileManager.default.createDirectory(at: volume, withIntermediateDirectories: true)
-
-        let transaction = try EngineVolumeInitializationTransaction.create(
-            volumeMountpoint: volume
-        )
-        #expect(
-            try EngineVolumeInitializationTransaction.load(volumeMountpoint: volume)
-                == transaction
-        )
-        var status = stat()
-        #expect(Darwin.lstat(transaction.path, &status) == 0)
-        #expect(status.st_mode & (S_IRWXG | S_IRWXO) == 0)
-
-        try transaction.complete()
-        #expect(
-            try EngineVolumeInitializationTransaction.load(volumeMountpoint: volume) == nil
-        )
-    }
 }
 
 struct EngineFixture {
