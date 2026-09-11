@@ -68,8 +68,8 @@ func run(arguments []string, stderr io.Writer) int {
 	return 0
 }
 
-// initialize stages the complete tree and rolls back every published entry on
-// failure. The host provider holds the cross-process volume lock.
+// initialize stages the complete tree and completes authenticated publication
+// forward after interruption. The host provider holds the cross-process lock.
 func initialize(source, destination, transaction, recovery string) error {
 	if !filepath.IsAbs(source) || !filepath.IsAbs(destination) || !filepath.IsAbs(recovery) {
 		return errors.New("source, destination, and recovery must be absolute paths")
