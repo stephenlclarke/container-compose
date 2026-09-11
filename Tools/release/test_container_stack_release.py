@@ -93,6 +93,18 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("stable tag already exists locally", self.script)
         self.assertIn("stable tag already exists remotely", self.script)
 
+    def test_stable_publish_uses_the_retained_assets_manifest(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            'retained_complete_manifest="${retained_root}/release/releases/'
+            '${COMPOSE_VERSION}/assets.json"',
+            workflow,
+        )
+        self.assertNotIn(
+            'retained_complete_manifest="${retained_root}/release/manifests/',
+            workflow,
+        )
+
     def test_stable_tags_are_signed_and_verified_by_github(self) -> None:
         self.assertIn('tag -s "${version}" main', self.script)
         self.assertIn('verify_github_stable_tag_signature "${version}"', self.script)
@@ -7939,7 +7951,14 @@ esac
                     self.fail("runtime candidate package build did not start")
                 time.sleep(0.05)
 
-            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                # The process group can finish between the readiness/poll check
+                # and delivery. Preserve the cleanup assertions below and let
+                # the exit-status assertion distinguish expected termination
+                # from an unexpected early build failure.
+                pass
             stdout, stderr = process.communicate(timeout=10)
 
             self.assertEqual(process.returncode, 143, stdout + stderr)

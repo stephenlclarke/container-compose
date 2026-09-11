@@ -96,7 +96,10 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
             },
             {
                 "databaseId": 12,
-                "displayTitle": "Prebuilt Binaries · 0.13.0 · package",
+                "displayTitle": (
+                    "Prebuilt Binaries · 0.13.0 · package · "
+                    "01234567-89ab-cdef-0123-456789abcdef"
+                ),
                 "event": "workflow_dispatch",
                 "status": "completed",
                 "conclusion": "success",
@@ -134,6 +137,42 @@ class ResolvePublishedArtifactsTests(unittest.TestCase):
             ],
             [12, 10],
         )
+
+    def test_current_package_run_name_accepts_only_a_safe_request_suffix(self) -> None:
+        base = {
+            "databaseId": 12,
+            "event": "workflow_dispatch",
+            "status": "completed",
+            "conclusion": "success",
+            "createdAt": "2026-08-24T11:00:00Z",
+            "url": "https://github.com/stephenlclarke/container-compose/actions/runs/12",
+            "headBranch": "main",
+            "headSha": "c" * 40,
+        }
+        accepted = []
+        for suffix in (
+            "automatic",
+            "01234567-89ab-cdef-0123-456789abcdef",
+        ):
+            run = {
+                **base,
+                "displayTitle": f"Prebuilt Binaries · 0.13.0 · package · {suffix}",
+            }
+            accepted.extend(MODULE.packaging_run_candidates([run], "0.13.0"))
+        self.assertEqual([candidate["runId"] for candidate in accepted], [12, 12])
+
+        for title in (
+            "Prebuilt Binaries · 0.13.0 · package · arbitrary",
+            "Prebuilt Binaries · 0.13.0 · package · 01234567-89ab-cdef",
+            "Prebuilt Binaries · 0.13.1 · package · automatic",
+            "Prebuilt Binaries · 0.13.0 · tap-repair · automatic",
+        ):
+            with self.subTest(title=title), self.assertRaisesRegex(
+                MODULE.BenchmarkInputError, "no successful immutable package run"
+            ):
+                MODULE.packaging_run_candidates(
+                    [{**base, "displayTitle": title}], "0.13.0"
+                )
 
     def test_package_run_from_side_branch_is_rejected(self) -> None:
         run = {

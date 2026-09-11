@@ -72,7 +72,7 @@ fi
 release_state() {
   local output status
   set +e
-  output="$("${GH}" api --silent "repos/${RELEASE_REPOSITORY}/releases/tags/${RELEASE_TAG}" 2>&1)"
+  output="$("${GH}" api "repos/${RELEASE_REPOSITORY}/releases/tags/${RELEASE_TAG}" 2>&1)"
   status=$?
   set -e
 

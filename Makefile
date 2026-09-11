@@ -475,7 +475,7 @@ stack-status:
 		"container-engine-api|$(CONTAINER_ENGINE_API_STACK_REPO)|$(STACK_ENGINE_API_PIN)|$(STACK_SWIFT_CONTRACT)" \
 		"container|$(CONTAINER_STACK_REPO)|$(STACK_CONTAINER_PIN)|$(STACK_SWIFT_CONTRACT)" \
 		"container-builder-shim|$(CONTAINER_BUILDER_SHIM_STACK_REPO)|$(STACK_BUILDER_PIN)|$(STACK_GO_CONTRACT)" \
-		"container-compose|$(CURDIR)|$(STACK_COMPOSE_PIN)|$(STACK_SWIFT_CONTRACT)"; do \
+		"container-compose|$(CURDIR)|$(STACK_COMPOSE_PIN)|$(STACK_COMPOSE_CONTRACT)"; do \
 		IFS='|' read -r repository source receipt contract <<<"$$specification"; \
 		if "$(PYTHON)" "$(STACK_PIN_TOOL)" verify --quiet --receipt "$$receipt" \
 			--repository "$$repository" --repository-path "$$source" \

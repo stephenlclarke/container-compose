@@ -216,7 +216,9 @@ exec "$@"
             text=True,
         )
 
-    def run_full_build(self) -> subprocess.CompletedProcess[str]:
+    def run_full_build(
+        self, target: str = "stack-build"
+    ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment.update(
             {
@@ -229,7 +231,7 @@ exec "$@"
                 "/usr/bin/make",
                 "-f",
                 str(MAKEFILE),
-                "stack-build",
+                target,
                 f"STACK_RETAINED_ROOT={self.retained}",
                 f"STACK_TRANSIENT_ROOT={self.transient}",
                 "STACK_REQUIRE_SEPARATE_FILESYSTEMS=0",
@@ -244,7 +246,6 @@ exec "$@"
                 f"STACK_LOCK_TOOL={self.lock}",
                 f"STACK_SWIFT_CONTRACT={'a' * 64}",
                 f"STACK_GO_CONTRACT={'b' * 64}",
-                f"STACK_COMPOSE_CONTRACT={'c' * 64}",
                 "COMPOSE_GO_VERSION=fixture",
                 "CONTAINER_COMPOSE_SOURCE=fixture/container-compose",
                 "CONTAINER_COMPOSE_BRANCH=fixture",
@@ -352,6 +353,9 @@ exec "$@"
         resumed = self.run_full_build()
 
         self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        status = self.run_full_build("stack-status")
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertIn("container-compose            valid", status.stdout)
         self.assertEqual(
             Counter(self.logged_builds()),
             Counter(

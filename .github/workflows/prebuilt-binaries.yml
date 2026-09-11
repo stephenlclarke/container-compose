@@ -1887,7 +1887,7 @@ jobs:
               --asset "${{ steps.authority-bundle.outputs.local_asset }}" \
               --asset "${{ steps.authority-bundle.outputs.local_asset }}.sha256" \
               --asset "${highlights}" --asset "${quality_snapshot_svg}"
-            retained_complete_manifest="${retained_root}/release/manifests/${COMPOSE_VERSION}.json"
+            retained_complete_manifest="${retained_root}/release/releases/${COMPOSE_VERSION}/assets.json"
           fi
 
           release_mutable="false"

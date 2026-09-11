@@ -28,6 +28,10 @@ cat > "${temporary_directory}/bin/gh" <<'EOF'
 set -Eeuo pipefail
 
 if [[ "$1" == "api" ]]; then
+  if [[ " $* " == *" --silent "* ]]; then
+    printf 'release lookup must preserve the response body\n' >&2
+    exit 64
+  fi
   case "${MOCK_RELEASE_STATE}" in
     exists)
       exit 0
