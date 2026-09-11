@@ -311,12 +311,11 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             )
         }
 
-        let helperPath = try Self.helperExecutablePath(imageSubpath: request.imageSubpath)
         let helperImage = try await volumeInitializerImage(
             sourceImage: request.image,
             platform: request.platform,
             volumeMountpoint: destination,
-            helperPath: helperPath
+            imageSubpath: request.imageSubpath
         )
         let transaction = try pendingTransaction
             ?? EngineVolumeInitializationTransaction.create(
@@ -324,8 +323,8 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
             )
         let helper = try await createVolumeInitializationHelper(
             request,
-            image: helperImage,
-            helperPath: helperPath,
+            image: helperImage.tag,
+            helperPath: helperImage.helperPath,
             transaction: transaction
         )
         try await runVolumeInitializationHelper(helper.id)
@@ -368,8 +367,8 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         sourceImage: String,
         platform: String?,
         volumeMountpoint: URL,
-        helperPath: String
-    ) async throws -> String {
+        imageSubpath: String
+    ) async throws -> EngineVolumeInitializerImageBuild {
         guard !sourceImage.contains(where: \.isWhitespace) else {
             throw ComposeError.invalidProject(
                 "image reference for Docker-free volume initialization contains whitespace"
@@ -388,35 +387,59 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         defer { withExtendedLifetime(buildLock) {} }
         for _ in 0 ..< 3 {
             let image = try await inspectImage(sourceImage)
-            let build = EngineVolumeInitializerImageBuild.make(
-                sourceDigest: image.repoDigests.first ?? image.id,
+            let build = try Self.volumeInitializerBuild(
+                image: image,
                 platform: platform,
                 helper: helper,
                 helperName: helperURL.lastPathComponent,
-                helperPath: helperPath
+                imageSubpath: imageSubpath
             )
             guard try await !imageExists(build.tag) else {
-                return build.tag
+                return build
             }
             if let digest = image.repoDigests.first {
                 try await buildVolumeInitializerImage(
                     sourceImage: digest,
                     build: build
                 )
-                return build.tag
+                return build
             }
             if try await buildFromVerifiedLocalImage(
                 sourceReference: sourceImage,
                 sourceID: image.id,
                 build: build
             ) {
-                return build.tag
+                return build
             }
         }
         throw ComposeError.commandFailed(
             command: "Engine image-volume initializer source snapshot",
             status: 1,
             stderr: "image reference changed repeatedly while creating an immutable build alias"
+        )
+    }
+
+    private static func volumeInitializerBuild(
+        image: EngineImageInspect,
+        platform: String?,
+        helper: Data,
+        helperName: String,
+        imageSubpath: String
+    ) throws -> EngineVolumeInitializerImageBuild {
+        let sourceDigest = image.repoDigests.first ?? image.id
+        let helperPath = try helperExecutablePath(
+            sourceDigest: sourceDigest,
+            platform: platform,
+            helperName: helperName,
+            helper: helper,
+            imageSubpath: imageSubpath
+        )
+        return EngineVolumeInitializerImageBuild.make(
+            sourceDigest: sourceDigest,
+            platform: platform,
+            helper: helper,
+            helperName: helperName,
+            helperPath: helperPath
         )
     }
 

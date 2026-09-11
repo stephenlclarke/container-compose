@@ -52,7 +52,7 @@ struct ComposeEngineRuntimeTests {
         #expect(
             try ComposeEngineRuntime.bundledVolumeInitializerPath(
                 executable: link,
-                platform: "linux/arm64"
+                platform: "linux/arm64/v8"
             ) == resources.appendingPathComponent(
                 "compose-volume-initializer-linux-arm64"
             ).path
@@ -60,7 +60,7 @@ struct ComposeEngineRuntimeTests {
         #expect(
             try ComposeEngineRuntime.bundledVolumeInitializerPath(
                 executable: link,
-                platform: "linux/amd64"
+                platform: "linux/amd64/v3"
             ) == resources.appendingPathComponent(
                 "compose-volume-initializer-linux-amd64"
             ).path
@@ -199,15 +199,31 @@ struct ComposeEngineRuntimeTests {
         #expect(throws: ComposeError.self) {
             _ = try EngineRuntimeProvider.helperMountPath(imageSubpath: "/")
         }
-        #expect(
-            try EngineRuntimeProvider.helperExecutablePath(imageSubpath: "/workspace")
-                == "/.compose-volume-initializer/bin/compose-volume-initializer"
+        let first = try EngineRuntimeProvider.helperExecutablePath(
+            sourceDigest: "sha256:first",
+            platform: "linux/arm64/v8",
+            helperName: "compose-volume-initializer-linux-arm64",
+            helper: Data([1, 2, 3]),
+            imageSubpath: "/workspace"
         )
-        #expect(
-            try EngineRuntimeProvider.helperExecutablePath(
-                imageSubpath: "/.compose-volume-initializer/bin/compose-volume-initializer"
-            ) == "/usr/local/libexec/.compose-volume-initializer/bin/compose-volume-initializer"
+        let repeated = try EngineRuntimeProvider.helperExecutablePath(
+            sourceDigest: "sha256:first",
+            platform: "linux/arm64/v8",
+            helperName: "compose-volume-initializer-linux-arm64",
+            helper: Data([1, 2, 3]),
+            imageSubpath: "/workspace"
         )
+        let changed = try EngineRuntimeProvider.helperExecutablePath(
+            sourceDigest: "sha256:second",
+            platform: "linux/arm64/v8",
+            helperName: "compose-volume-initializer-linux-arm64",
+            helper: Data([1, 2, 3]),
+            imageSubpath: "/workspace"
+        )
+        #expect(first == repeated)
+        #expect(first != changed)
+        #expect(first.hasPrefix("/.compose-volume-initializer-"))
+        #expect(first.hasSuffix("/bin/compose-volume-initializer"))
     }
 
     @Test
@@ -547,6 +563,13 @@ struct ComposeEngineRuntimeTests {
                 imageSubpath: "/state",
                 volumeName: "project_state",
             )
+            let helperPath = try EngineRuntimeProvider.helperExecutablePath(
+                sourceDigest: "example/image@sha256:digest",
+                platform: request.platform,
+                helperName: URL(fileURLWithPath: fixture.volumeInitializerPath).lastPathComponent,
+                helper: Data(),
+                imageSubpath: request.imageSubpath
+            )
             try await provider.initializeImageVolume(request)
             let message = volume.appendingPathComponent("message.txt")
             #expect(try String(contentsOf: message, encoding: .utf8) == "from-image\n")
@@ -568,7 +591,7 @@ struct ComposeEngineRuntimeTests {
             #expect(create.body.containsText(#""User":"0""#))
             #expect(
                 create.body.containsText(
-                    #""Entrypoint":["/.compose-volume-initializer/bin/compose-volume-initializer"]"#
+                    #""Entrypoint":["\#(helperPath)"]"#
                 )
             )
             #expect(create.body.containsText(#""Image":"devcontainer-volume-initializer:"#))
@@ -582,7 +605,7 @@ struct ComposeEngineRuntimeTests {
             #expect(!build.body.containsText("FROM example/image:latest"))
             #expect(
                 build.body.containsText(
-                    #"ENTRYPOINT ["/.compose-volume-initializer/bin/compose-volume-initializer"]"#
+                    #"ENTRYPOINT ["\#(helperPath)"]"#
                 )
             )
         } catch {

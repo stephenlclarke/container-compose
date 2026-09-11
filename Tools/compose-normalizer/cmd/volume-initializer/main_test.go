@@ -43,6 +43,10 @@ func TestInitializeCopiesMetadataLinksAndFiles(t *testing.T) {
 	if err := unix.Setxattr(filepath.Join(source, "value.txt"), xattrName, xattrValue, 0); err != nil {
 		t.Fatal(err)
 	}
+	rootXattrName := xattrName + ".root"
+	if err := unix.Setxattr(source, rootXattrName, xattrValue, 0); err != nil {
+		t.Fatal(err)
+	}
 	mustMkdir(t, filepath.Join(source, "nested"), 0o755)
 	mustWrite(t, filepath.Join(source, "nested", "child"), "child\n", 0o600)
 	if err := os.Link(filepath.Join(source, "value.txt"), filepath.Join(source, "hardlink")); err != nil {
@@ -80,6 +84,13 @@ func TestInitializeCopiesMetadataLinksAndFiles(t *testing.T) {
 	}
 	if !bytes.Equal(copiedXattr, xattrValue) {
 		t.Fatalf("unexpected extended attribute %q", copiedXattr)
+	}
+	copiedRootXattr := make([]byte, len(xattrValue))
+	if _, err := unix.Getxattr(destination, rootXattrName, copiedRootXattr); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(copiedRootXattr, xattrValue) {
+		t.Fatalf("unexpected root extended attribute %q", copiedRootXattr)
 	}
 	pipe, err := os.Lstat(filepath.Join(destination, "events"))
 	if err != nil || pipe.Mode()&os.ModeNamedPipe == 0 {
@@ -366,6 +377,10 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 	root := t.TempDir()
 	destination := filepath.Join(root, "destination")
 	mustMkdir(t, destination, 0o750)
+	recoveryXattr := "io.github.stephenlclarke.container-compose.recovery"
+	if err := unix.Setxattr(destination, recoveryXattr, []byte("original"), 0); err != nil {
+		t.Fatal(err)
+	}
 	mustWrite(t, filepath.Join(destination, "partial"), "published", 0o644)
 	entries, err := os.ReadDir(destination)
 	if err != nil {
@@ -378,6 +393,9 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 	stage := filepath.Join(destination, stagePrefix+testTransactionID)
 	mustMkdir(t, stage, 0o700)
 	if err := os.Chmod(destination, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Setxattr(destination, recoveryXattr, []byte("published"), 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -396,6 +414,13 @@ func TestInitializeRecoversBeforeAcceptingMissingSource(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o750 {
 		t.Fatalf("volume root mode was not restored: %o", info.Mode().Perm())
+	}
+	value := make([]byte, len("original"))
+	if _, err := unix.Getxattr(destination, recoveryXattr, value); err != nil {
+		t.Fatal(err)
+	}
+	if string(value) != "original" {
+		t.Fatalf("volume root extended attribute was not restored: %q", value)
 	}
 }
 
@@ -647,13 +672,14 @@ func TestMetadataVerificationRequiresExactEffectiveValues(t *testing.T) {
 	if modeAlreadyMatches(filepath.Join(root, "missing"), 0o640) {
 		t.Fatal("missing path mode was accepted")
 	}
-	if err := applyMountRootMetadata(path, info); err != nil {
+	metadata, err := captureRootMetadata(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := applyMountRootMetadata(path, fileInfoWithoutSystemMetadata{FileInfo: info}); err == nil {
-		t.Fatal("mount metadata without POSIX IDs was accepted")
+	if err := applyRootMetadata(path, metadata); err != nil {
+		t.Fatal(err)
 	}
-	if err := applyMountRootMetadata(filepath.Join(root, "missing"), info); err == nil {
+	if err := applyRootMetadata(filepath.Join(root, "missing"), metadata); err == nil {
 		t.Fatal("missing mount root metadata was accepted")
 	}
 }

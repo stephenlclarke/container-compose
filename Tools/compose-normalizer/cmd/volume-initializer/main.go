@@ -130,16 +130,20 @@ func initialize(source, destination, transaction string) error {
 		return err
 	}
 
-	destinationInfo, err := os.Stat(destination)
+	destinationMetadata, err := captureRootMetadata(destination)
 	if err != nil {
 		return fmt.Errorf("inspect destination attributes: %w", err)
+	}
+	sourceMetadata, err := captureRootMetadata(source)
+	if err != nil {
+		return fmt.Errorf("inspect source attributes: %w", err)
 	}
 	moved := make([]string, 0, len(entries))
 	rollback := func() {
 		for index := len(moved) - 1; index >= 0; index-- {
 			_ = os.RemoveAll(filepath.Join(destination, moved[index]))
 		}
-		_ = applyMountRootMetadata(destination, destinationInfo)
+		_ = applyRootMetadata(destination, destinationMetadata)
 	}
 	for _, entry := range entries {
 		name := entry.Name()
@@ -149,7 +153,7 @@ func initialize(source, destination, transaction string) error {
 		}
 		moved = append(moved, name)
 	}
-	if err := applyMountRootMetadata(destination, sourceInfo); err != nil {
+	if err := applyRootMetadata(destination, sourceMetadata); err != nil {
 		rollback()
 		return fmt.Errorf("apply destination metadata: %w", err)
 	}
@@ -175,10 +179,11 @@ type transactionJournal struct {
 }
 
 type transactionRootMetadata struct {
-	UID                  uint32 `json:"uid"`
-	GID                  uint32 `json:"gid"`
-	Mode                 uint32 `json:"mode"`
-	ModificationUnixNano int64  `json:"modificationUnixNano"`
+	UID                  uint32            `json:"uid"`
+	GID                  uint32            `json:"gid"`
+	Mode                 uint32            `json:"mode"`
+	ModificationUnixNano int64             `json:"modificationUnixNano"`
+	ExtendedAttributes   map[string][]byte `json:"extendedAttributes,omitempty"`
 }
 
 // writeJournal durably records every name that publication may move before
@@ -282,11 +287,16 @@ func captureRootMetadata(path string) (transactionRootMetadata, error) {
 	if !ok {
 		return transactionRootMetadata{}, errors.New("volume root metadata is unavailable")
 	}
+	extendedAttributes, err := readExtendedAttributes(path)
+	if err != nil {
+		return transactionRootMetadata{}, err
+	}
 	return transactionRootMetadata{
 		UID:                  stat.Uid,
 		GID:                  stat.Gid,
 		Mode:                 uint32(preservedMode(info.Mode())),
 		ModificationUnixNano: info.ModTime().UnixNano(),
+		ExtendedAttributes:   extendedAttributes,
 	}, nil
 }
 
@@ -303,7 +313,7 @@ func applyRootMetadata(path string, metadata transactionRootMetadata) error {
 	if err := os.Chtimes(path, timestamp, timestamp); err != nil && !errors.Is(err, syscall.EPERM) {
 		return err
 	}
-	return nil
+	return replaceExtendedAttributes(path, metadata.ExtendedAttributes)
 }
 
 // syncDirectory makes the journal rename durable before publication begins.
@@ -367,22 +377,6 @@ func removeEmptyExt4Scaffolding(destination string) error {
 		return fmt.Errorf("remove empty ext4 recovery directory: %w", err)
 	}
 	return nil
-}
-
-// applyMountRootMetadata preserves every attribute that stock Apple VirtioFS
-// can represent. It accepts EPERM only for the mount root timestamp; all
-// ownership and permission updates still require an exact guest-side match.
-func applyMountRootMetadata(path string, info os.FileInfo) error {
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return errors.New("file metadata is unavailable")
-	}
-	return applyRootMetadata(path, transactionRootMetadata{
-		UID:                  stat.Uid,
-		GID:                  stat.Gid,
-		Mode:                 uint32(preservedMode(info.Mode())),
-		ModificationUnixNano: info.ModTime().UnixNano(),
-	})
 }
 
 // destinationIsEmpty treats every entry as user data after exact transaction
@@ -511,39 +505,72 @@ func applyMetadata(source, path string, info os.FileInfo, followLink bool) error
 
 // copyExtendedAttributes retains Linux capabilities and other image metadata.
 func copyExtendedAttributes(source, destination string) error {
-	size, err := unix.Listxattr(source, nil)
+	attributes, err := readExtendedAttributes(source)
+	if err != nil {
+		return err
+	}
+	return setExtendedAttributes(destination, attributes)
+}
+
+func readExtendedAttributes(path string) (map[string][]byte, error) {
+	size, err := unix.Listxattr(path, nil)
 	if errors.Is(err, syscall.ENOTSUP) {
-		return nil
+		return map[string][]byte{}, nil
 	}
 	if err != nil {
-		return fmt.Errorf("list extended attributes for %s: %w", source, err)
+		return nil, fmt.Errorf("list extended attributes for %s: %w", path, err)
 	}
 	if size == 0 {
-		return nil
+		return map[string][]byte{}, nil
 	}
 	names := make([]byte, size)
-	size, err = unix.Listxattr(source, names)
+	size, err = unix.Listxattr(path, names)
 	if err != nil {
-		return fmt.Errorf("read extended attribute names for %s: %w", source, err)
+		return nil, fmt.Errorf("read extended attribute names for %s: %w", path, err)
 	}
+	attributes := make(map[string][]byte)
 	for _, name := range strings.Split(string(names[:size]), "\x00") {
 		if name == "" {
 			continue
 		}
-		valueSize, err := unix.Getxattr(source, name, nil)
+		valueSize, err := unix.Getxattr(path, name, nil)
 		if err != nil {
-			return fmt.Errorf("size extended attribute %s for %s: %w", name, source, err)
+			return nil, fmt.Errorf("size extended attribute %s for %s: %w", name, path, err)
 		}
 		value := make([]byte, valueSize)
-		valueSize, err = unix.Getxattr(source, name, value)
+		valueSize, err = unix.Getxattr(path, name, value)
 		if err != nil {
-			return fmt.Errorf("read extended attribute %s for %s: %w", name, source, err)
+			return nil, fmt.Errorf("read extended attribute %s for %s: %w", name, path, err)
 		}
-		if err := unix.Setxattr(destination, name, value[:valueSize], 0); err != nil {
+		attributes[name] = value[:valueSize]
+	}
+	return attributes, nil
+}
+
+func setExtendedAttributes(destination string, attributes map[string][]byte) error {
+	for name, value := range attributes {
+		if err := unix.Setxattr(destination, name, value, 0); err != nil {
 			return fmt.Errorf("write extended attribute %s for %s: %w", name, destination, err)
 		}
 	}
 	return nil
+}
+
+func replaceExtendedAttributes(destination string, desired map[string][]byte) error {
+	current, err := readExtendedAttributes(destination)
+	if err != nil {
+		return err
+	}
+	for name := range current {
+		if _, retained := desired[name]; retained {
+			continue
+		}
+		if err := unix.Removexattr(destination, name); err != nil &&
+			!errors.Is(err, syscall.ENODATA) && !errors.Is(err, syscall.ENOTSUP) {
+			return fmt.Errorf("remove extended attribute %s for %s: %w", name, destination, err)
+		}
+	}
+	return setExtendedAttributes(destination, desired)
 }
 
 // syncPublishedEntries makes copied bytes and directory entries durable.

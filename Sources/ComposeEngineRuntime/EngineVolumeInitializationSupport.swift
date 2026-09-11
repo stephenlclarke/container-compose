@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import ComposeCore
+import CryptoKit
 import Darwin
 import Foundation
 
@@ -38,13 +39,20 @@ extension ComposeEngineRuntime {
     ) throws -> String {
         let executable = executable.resolvingSymlinksInPath().standardizedFileURL
         let architecture: String
-        switch platform {
-        case nil, "", "linux/arm64": architecture = "arm64"
-        case "linux/amd64": architecture = "amd64"
-        default:
-            throw ComposeError.unsupported(
-                "stock Apple image-volume copy-up does not support platform \(platform ?? "")"
-            )
+        if platform == nil || platform == "" {
+            architecture = "arm64"
+        } else {
+            let components = platform?.split(separator: "/", omittingEmptySubsequences: false) ?? []
+            guard (2 ... 3).contains(components.count),
+                  components[0] == "linux",
+                  components.count == 2 || !components[2].isEmpty,
+                  components[1] == "arm64" || components[1] == "amd64"
+            else {
+                throw ComposeError.unsupported(
+                    "stock Apple image-volume copy-up does not support platform \(platform ?? "")"
+                )
+            }
+            architecture = String(components[1])
         }
         return executable.deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -177,6 +185,16 @@ enum EngineVolumeInitializerBuildContext {
         return String(format: "%016llx", hash)
     }
 
+    static func sha256Hex(_ values: [Data]) -> String {
+        var data = Data()
+        for value in values {
+            var length = UInt64(value.count).bigEndian
+            withUnsafeBytes(of: &length) { data.append(contentsOf: $0) }
+            data.append(value)
+        }
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
     static func cacheTag(
         sourceDigest: String,
         platform: String?,
@@ -217,14 +235,23 @@ extension EngineRuntimeProvider {
         return candidate
     }
 
-    static func helperExecutablePath(imageSubpath: String) throws -> String {
+    static func helperExecutablePath(
+        sourceDigest: String,
+        platform: String?,
+        helperName: String,
+        helper: Data,
+        imageSubpath: String
+    ) throws -> String {
         let source = URL(fileURLWithPath: imageSubpath).standardizedFileURL.path
-        let candidates = [
-            "/.compose-volume-initializer/bin/compose-volume-initializer",
-            "/usr/local/libexec/.compose-volume-initializer/bin/compose-volume-initializer",
-            "/var/tmp/.compose-volume-initializer/bin/compose-volume-initializer",
-        ]
-        guard let candidate = candidates.first(where: { !pathsOverlap($0, source) }) else {
+        let identity = EngineVolumeInitializerBuildContext.sha256Hex([
+            Data(sourceDigest.utf8),
+            Data((platform ?? "<default>").utf8),
+            Data(helperName.utf8),
+            helper,
+            Data(source.utf8),
+        ])
+        let candidate = "/.compose-volume-initializer-\(identity)/bin/compose-volume-initializer"
+        guard !pathsOverlap(candidate, source) else {
             throw ComposeError.unsupported(
                 "stock Apple image-volume copy-up could not allocate an isolated helper executable path"
             )
