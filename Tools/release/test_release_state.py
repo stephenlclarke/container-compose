@@ -369,6 +369,54 @@ class ReleaseStateTests(unittest.TestCase):
         )
         self.assertEqual(action["name"], "complete")
 
+    def test_missing_retained_docs_route_to_documentation_recovery(self) -> None:
+        action = MODULE.plan_recovery(
+            [],
+            [],
+            ["k8s.tgz"],
+            {"missing_assets": [], "state": "published"},
+            {"formulae": {"state": "verified"}, "pages": {"state": "verified"}},
+        )
+
+        self.assertEqual(action["name"], "restore-documentation-artifacts")
+        self.assertNotIn("published release assets", action["summary"])
+        unpublished = MODULE.plan_recovery(
+            [],
+            [],
+            ["k8s.tgz"],
+            {"state": "absent"},
+            {"formulae": {"state": "deferred"}, "pages": {"state": "deferred"}},
+        )
+        self.assertEqual(unpublished["name"], "publish-retained-release")
+
+    def test_successful_linked_retry_supersedes_its_failed_lineage(self) -> None:
+        first = {
+            "request_id": "11111111-1111-1111-1111-111111111111",
+            "state": "failed",
+        }
+        second = {
+            "previous_request_id": first["request_id"],
+            "request_id": "22222222-2222-2222-2222-222222222222",
+            "state": "failed",
+        }
+        successful = {
+            "observed": {"conclusion": "success", "state": "completed"},
+            "previous_request_id": second["request_id"],
+            "request_id": "33333333-3333-3333-3333-333333333333",
+            "state": "dispatched",
+        }
+
+        unresolved = MODULE.unresolved_failed_dispatches([first, second, successful])
+        self.assertEqual(unresolved, [])
+        action = MODULE.plan_recovery(
+            [],
+            unresolved,
+            [],
+            {"missing_assets": [], "state": "published"},
+            {"formulae": {"state": "verified"}, "pages": {"state": "verified"}},
+        )
+        self.assertEqual(action["name"], "complete")
+
     def test_pure_plan_declares_authority_and_invalidated_descendants(self) -> None:
         action = MODULE.plan_recovery(
             [],

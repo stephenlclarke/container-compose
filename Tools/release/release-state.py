@@ -93,6 +93,10 @@ def dispatch_records(root: Path, version: str) -> list[dict[str, Any]]:
             or SEMVER.fullmatch(str(value.get("version", ""))) is None
             or re.fullmatch(r"[0-9a-f]{40}", str(value.get("control_sha", "")))
             is None
+            or (
+                "previous_request_id" in value
+                and REQUEST_ID.fullmatch(str(value["previous_request_id"])) is None
+            )
             or not isinstance(value.get("workflow"), str)
             or not value["workflow"]
             or value.get("state")
@@ -659,6 +663,10 @@ def plan_recovery(
     postconditions: dict[str, Any],
 ) -> dict[str, Any]:
     """Return a pure, single-next-step recovery plan from typed observations."""
+    missing_release_assets = sorted(set(missing) & set(EXPECTED_RELEASE_ASSETS))
+    missing_documentation = sorted(
+        set(missing) & set(EXPECTED_DOCUMENTATION_ASSETS)
+    )
     if any(record.get("state") == "dispatch-unknown" for record in waiting):
         return recovery_action(
             "reconcile-dispatch",
@@ -700,8 +708,10 @@ def plan_recovery(
             authority="release maintainer decision",
             invalidates=["formulae", "pages"],
         )
-    if not missing and remote.get("state") == "published" and remote.get(
-        "missing_assets"
+    if (
+        not missing_release_assets
+        and remote.get("state") == "published"
+        and remote.get("missing_assets")
     ):
         return recovery_action(
             "upload-missing-assets",
@@ -711,7 +721,7 @@ def plan_recovery(
             authority="retained publication authority",
             invalidates=["formulae", "pages"],
         )
-    if missing and remote.get("state") == "published":
+    if missing_release_assets and remote.get("state") == "published":
         return recovery_action(
             "import-published-assets",
             "import and verify exact published bytes; do not rebuild",
@@ -719,7 +729,7 @@ def plan_recovery(
             side_effects=["write verified objects to retained storage"],
             authority="published release identity and checksums",
         )
-    if missing and remote.get("state") == "absent":
+    if missing_release_assets and remote.get("state") == "absent":
         return recovery_action(
             "restore-retained-closure",
             "produce or restore the missing retained release closure before publication",
@@ -727,7 +737,7 @@ def plan_recovery(
             side_effects=["materialize only missing release nodes"],
             authority="release build authority",
         )
-    if missing:
+    if missing_release_assets:
         return recovery_action(
             "restore-exact-assets",
             "restore exact authenticated bytes or report the release blocked",
@@ -743,6 +753,14 @@ def plan_recovery(
             side_effects=["create or resume draft", "publish stable release"],
             authority="retained publication authority",
             invalidates=["formulae", "pages"],
+        )
+    if missing_documentation:
+        return recovery_action(
+            "restore-documentation-artifacts",
+            "recover the missing DocC archives from the exact documentation run",
+            prerequisites=["successful exact-input documentation run or regeneration"],
+            side_effects=["retain verified context-bound DocC archives"],
+            authority="stable documentation run identity",
         )
     if any(
         value.get("state") == "unavailable" for value in postconditions.values()
@@ -779,6 +797,56 @@ def plan_recovery(
     )
 
 
+def dispatch_succeeded(record: dict[str, Any]) -> bool:
+    """Return whether one acknowledged dispatch completed successfully."""
+    observed = record.get("observed")
+    return (
+        record.get("state") == "dispatched"
+        and isinstance(observed, dict)
+        and observed.get("state") == "completed"
+        and observed.get("conclusion") == "success"
+    )
+
+
+def unresolved_failed_dispatches(
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Exclude failed attempts superseded by a successful linked retry."""
+    records_by_id = {
+        record["request_id"]: record
+        for record in records
+        if isinstance(record.get("request_id"), str)
+    }
+    superseded: set[str] = set()
+    for record in records:
+        if not dispatch_succeeded(record):
+            continue
+        previous = record.get("previous_request_id")
+        while isinstance(previous, str) and previous not in superseded:
+            superseded.add(previous)
+            predecessor = records_by_id.get(previous)
+            previous = (
+                predecessor.get("previous_request_id")
+                if isinstance(predecessor, dict)
+                else None
+            )
+
+    return [
+        record
+        for record in records
+        if record.get("request_id") not in superseded
+        and (
+            record.get("state") == "failed"
+            or (
+                record.get("state") == "dispatched"
+                and isinstance(record.get("observed"), dict)
+                and record["observed"].get("state") == "completed"
+                and record["observed"].get("conclusion") != "success"
+            )
+        )
+    ]
+
+
 def inspect(
     root: Path, version: str, repo: str, offline: bool, deep: bool = False
 ) -> dict[str, Any]:
@@ -795,7 +863,8 @@ def inspect(
     )
     remote["evidence_source"] = "none" if offline else "github-api"
     remote["observed_at"] = observed_at
-    if remote.get("state") == "published" and not missing:
+    missing_release_assets = sorted(set(missing) & set(EXPECTED_RELEASE_ASSETS))
+    if remote.get("state") == "published" and not missing_release_assets:
         postconditions = remote_postconditions(
             repo, version, offline, formula_expectations(manifest, version, repo)
         )
@@ -821,17 +890,7 @@ def inspect(
             )
         )
     ]
-    failed = [
-        record
-        for record in records
-        if record.get("state") == "failed"
-        or (
-            record.get("state") == "dispatched"
-            and isinstance(record.get("observed"), dict)
-            and record["observed"].get("state") == "completed"
-            and record["observed"].get("conclusion") != "success"
-        )
-    ]
+    failed = unresolved_failed_dispatches(records)
     action = plan_recovery(waiting, failed, missing, remote, postconditions)
     return {
         "actions": [action],

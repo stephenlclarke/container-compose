@@ -75,6 +75,10 @@ def validate_record(value: object, request_id: str) -> dict[str, object]:
         raise JournalError("dispatch journal has an invalid release version")
     if not re.fullmatch(r"[0-9a-f]{40}", str(value.get("control_sha", ""))):
         raise JournalError("dispatch journal has an invalid control SHA")
+    if "previous_request_id" in value and REQUEST_PATTERN.fullmatch(
+        str(value["previous_request_id"])
+    ) is None:
+        raise JournalError("dispatch journal has an invalid previous request ID")
     workflow = value.get("workflow")
     if not isinstance(workflow, str) or not workflow or len(workflow) > 200:
         raise JournalError("dispatch journal has an invalid workflow")

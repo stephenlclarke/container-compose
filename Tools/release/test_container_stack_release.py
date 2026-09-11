@@ -9262,13 +9262,18 @@ if [[ "$1" != "release" || "$2" != "view" ]]; then
   exit 1
 fi
 
-if [[ "${GH_RELEASE_STATE}" == "published" ]]; then
-  printf '%s\\n' '{"id": 1}'
-  exit 0
-fi
-
-printf '%s\\n' 'release not found' >&2
-exit 1
+case "${GH_RELEASE_STATE}" in
+  published)
+    printf '%s\\t%s\\n' false false
+    ;;
+  draft)
+    printf '%s\\t%s\\n' true false
+    ;;
+  *)
+    printf '%s\\n' 'release not found' >&2
+    exit 1
+    ;;
+esac
 """,
                 encoding="utf-8",
             )
@@ -9295,6 +9300,13 @@ exit 1
             self.assertNotEqual(published.returncode, 0)
             self.assertIn("stable release 0.6.70 already exists and is immutable", published.stderr)
 
+            draft = self.run_release_function(
+                root,
+                "ensure_stable_release_is_unpublished 0.6.70",
+                shell_setup=shell_setup.replace("unpublished", "draft"),
+            )
+            self.assertEqual(draft.returncode, 0, draft.stderr)
+
     def test_stable_release_state_requires_a_published_nonprerelease(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -9312,6 +9324,9 @@ fi
 case "${GH_RELEASE_STATE}" in
   published)
     printf '%s\\t%s\\n' false false
+    ;;
+  draft)
+    printf '%s\\t%s\\n' true false
     ;;
   prerelease)
     printf '%s\\t%s\\n' false true
@@ -9349,6 +9364,13 @@ esac
             )
             self.assertNotEqual(missing.returncode, 0)
 
+            draft = self.run_release_function(
+                root,
+                "stable_release_is_published 0.6.70",
+                shell_setup=shell_setup.replace("published", "draft"),
+            )
+            self.assertEqual(draft.returncode, 1, draft.stderr)
+
             prerelease = self.run_release_function(
                 root,
                 "stable_release_is_published 0.6.70",
@@ -9356,6 +9378,29 @@ esac
             )
             self.assertNotEqual(prerelease.returncode, 0)
             self.assertIn("not published and immutable", prerelease.stderr)
+
+    def test_resume_routes_an_existing_draft_back_through_publication(self) -> None:
+        resumed = self.run_release_function(
+            Path("/tmp/unused-release-root"),
+            "resume_stable_release 0.6.70",
+            shell_setup="\n".join(
+                [
+                    "verify_github_stable_tag_signature() { :; }",
+                    "stable_release_is_published() { return 1; }",
+                    (
+                        "ensure_stable_release_is_unpublished() { "
+                        "printf 'draft %s\\n' \"$1\"; }"
+                    ),
+                    "ensure_stable_retry_source_authority() { :; }",
+                    "prepare_stable_init_image_authority() { :; }",
+                    "publish_stable_release() { printf 'resume %s\\n' \"$1\"; }",
+                ]
+            ),
+        )
+
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        self.assertIn("draft 0.6.70", resumed.stdout)
+        self.assertIn("resume 0.6.70", resumed.stdout)
 
     def test_resume_routes_published_tags_to_formula_only_recovery(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

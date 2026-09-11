@@ -4690,7 +4690,7 @@ ensure_published_stable_recovery_authority() {
 
 # Refuse to retry a semantic tag once GitHub has made it a published release.
 ensure_stable_release_is_unpublished() {
-  local version="$1" output status
+  local version="$1" output status is_draft is_prerelease
   if [[ "${EXECUTE}" != "1" ]]; then
     printf 'would verify that stable release %s is unpublished\n' "${version}"
     return 0
@@ -4699,7 +4699,12 @@ ensure_stable_release_is_unpublished() {
   need_command gh
   if output="$(github_cli release view "${version}" \
     --repo "$(github_repo "${COMPOSE_REPO}")" \
-    --json id 2>&1)"; then
+    --json isDraft,isPrerelease \
+    --jq '[.isDraft, .isPrerelease] | @tsv' 2>&1)"; then
+    IFS=$'\t' read -r is_draft is_prerelease <<<"${output}"
+    if [[ "${is_draft}" == "true" && "${is_prerelease}" == "false" ]]; then
+      return 0
+    fi
     printf 'stable release %s already exists and is immutable\n' "${version}" >&2
     exit 1
   else
@@ -4732,6 +4737,9 @@ stable_release_is_published() {
     IFS=$'\t' read -r is_draft is_prerelease <<<"${output}"
     if [[ "${is_draft}" == "false" && "${is_prerelease}" == "false" ]]; then
       return 0
+    fi
+    if [[ "${is_draft}" == "true" ]]; then
+      return 1
     fi
     printf 'stable release %s exists but is not published and immutable (draft=%s, prerelease=%s)\n' \
       "${version}" "${is_draft:-missing}" "${is_prerelease:-missing}" >&2
