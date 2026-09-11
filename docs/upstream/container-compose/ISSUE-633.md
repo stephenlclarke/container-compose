@@ -25,6 +25,8 @@ The failure was reproduced against unmodified `apple/container` 1.4.1 through th
 - Remove the temporary container on success, failure, or a concurrent initialization race.
 - Serialize initializers for the same volume and helper-image builds across processes so concurrent services preserve first-mount-wins semantics without racing a shared tag.
 - Recover an interrupted multi-entry publication only when a private host transaction identifies the exact guest journal; never infer internal state from user-controlled filename prefixes.
+- Keep the authenticated journal in a separate private host directory mounted only into the helper, rather than consuming the target volume root's constrained extended-attribute budget or exposing recovery state as volume data.
+- Classify a fresh ext4 volume without mutation, capture its untouched root metadata, and durably publish the recovery journal before removing Apple's empty `lost+found` scaffolding or creating any staging entry.
 - Recover that authenticated transaction before inspecting the current image path, so a changed or missing source cannot turn partial publication into accepted user data.
 - Restore the original mount-root owner, group, mode, and extended attributes during authenticated recovery, then synchronize rollback deletions before accepting the volume as empty.
 - Derive the exact helper executable path from the immutable source image, helper, platform, and copied subtree, and choose a target-volume mount path outside the image subtree. The content-addressed path cannot collide with a directory already present in the source image without breaking the source image's own digest.
@@ -32,7 +34,7 @@ The failure was reproduced against unmodified `apple/container` 1.4.1 through th
 
 ## Acceptance evidence
 
-- Deterministic Unix-socket component tests cover the Docker-free build context, OCI platform variants, platform/name/bytes-derived helper identity, Homebrew symlink resolution, verified local-image snapshots, copy-up, entry and root extended attributes, crash recovery including complete mount-root metadata restoration, durable rollback publication, transaction hardening, user-data preservation, managed-volume service launch, native exec, ownership-preserving request projection, concurrent serialization, request routing, content-addressed helper placement, and helper cleanup.
+- Deterministic Unix-socket component tests cover the Docker-free build context, OCI platform variants, platform/name/bytes-derived helper identity, Homebrew symlink resolution, verified local-image snapshots, copy-up, entry and root extended attributes, off-volume recovery state, pre-mutation ext4 metadata capture, crash recovery including complete mount-root metadata restoration, durable rollback publication, transaction hardening, user-data preservation, managed-volume service launch, native exec, ownership-preserving request projection, concurrent serialization, request routing, content-addressed helper placement, and helper cleanup.
 - A repeatable real-runtime harness proves the complete path with stock Apple Container, the stock Devcontainer Engine, and stock Compose while no Docker or Colima process participates.
 - Stock-profile compilation uses exact `apple/container` 1.4.1 and `apple/containerization` 0.45.0 dependencies.
 - The downstream `devcontainer` Compose parity fixtures pass against both stock Apple Container and the enhanced Container provider without invoking Docker or Colima.
