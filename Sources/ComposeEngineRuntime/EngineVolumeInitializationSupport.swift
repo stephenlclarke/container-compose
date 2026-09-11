@@ -161,16 +161,27 @@ enum EngineVolumeInitializerBuildContext {
         helperName: String = "compose-volume-initializer-linux-arm64",
         helperPath: String
     ) async throws -> Data {
-        let dockerfile = Data("""
-        FROM \(sourceImage)
-        COPY --chmod=0755 \(helperName) \(helperPath)
-        USER 0:0
-        ENTRYPOINT [\"\(helperPath)\"]
-        """.utf8)
+        let dockerfile = dockerfile(
+            sourceImage: sourceImage,
+            helperName: helperName,
+            helperPath: helperPath
+        )
         return ustar([
             Entry(name: "Dockerfile", mode: 0o644, contents: dockerfile),
             Entry(name: helperName, mode: 0o755, contents: helper),
         ])
+    }
+
+    private static func dockerfile(
+        sourceImage: String,
+        helperName: String,
+        helperPath: String
+    ) -> Data {
+        Data("""
+        FROM \(sourceImage)
+        COPY --chmod=0755 \(helperName) \(helperPath)
+        ENTRYPOINT [\"\(helperPath)\"]
+        """.utf8)
     }
 
     /// Apple's Engine build endpoint accepts a portable ustar context. Building
@@ -257,11 +268,14 @@ enum EngineVolumeInitializerBuildContext {
         helperPath: String
     ) -> String {
         let platformIdentity = platform ?? "<default>"
+        let recipe = dockerfile(
+            sourceImage: sourceDigest,
+            helperName: helperName,
+            helperPath: helperPath
+        )
         let digest = fnv1aHex([
-            Data(sourceDigest.utf8), Data([0]),
             Data(platformIdentity.utf8), Data([0]),
-            Data(helperName.utf8), Data([0]),
-            Data(helperPath.utf8), Data([0]),
+            recipe, Data([0]),
             helper,
         ])
         return "devcontainer-volume-initializer:\(digest)"

@@ -154,12 +154,26 @@ struct ComposeEngineRuntimeTests {
             helperName: "compose-volume-initializer-linux-amd64",
             helperPath: "/.compose-volume-initializer"
         )
-
         #expect(arm != amd)
         #expect(arm != selectedDefault)
         #expect(arm != changedHelper)
         #expect(arm != changedPath)
         #expect(arm != changedName)
+    }
+
+    @Test
+    func `volume initializer cache invalidates legacy recipe blind tags`() {
+        let helper = Data([0, 1, 2])
+        let current = EngineVolumeInitializerBuildContext.cacheTag(
+            sourceDigest: "example/image@sha256:digest",
+            platform: "linux/arm64",
+            helper: helper, helperPath: "/.compose-volume-initializer"
+        )
+        let legacyRecipe = Data(("example/image@sha256:digest\0linux/arm64\0" +
+                "compose-volume-initializer-linux-arm64\0/.compose-volume-initializer\0").utf8)
+        let legacyDigest = EngineVolumeInitializerBuildContext.fnv1aHex([legacyRecipe, helper])
+
+        #expect(current != "devcontainer-volume-initializer:\(legacyDigest)")
     }
 
     @Test
@@ -618,6 +632,7 @@ struct ComposeEngineRuntimeTests {
             #expect(build.target.contains("platform=linux/arm64"))
             #expect(build.body.containsText("FROM example/image@sha256:digest"))
             #expect(!build.body.containsText("FROM example/image:latest"))
+            #expect(!build.body.containsText("USER 0"))
             #expect(
                 build.body.containsText(
                     #"ENTRYPOINT ["\#(helperPath)"]"#
