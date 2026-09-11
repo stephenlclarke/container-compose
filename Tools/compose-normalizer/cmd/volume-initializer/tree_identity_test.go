@@ -93,3 +93,34 @@ func TestRollbackPublishingEntriesRemovesOnlyVerifiedTrees(t *testing.T) {
 		}
 	}
 }
+
+func TestQuarantinedPublishingEntryRestoresConcurrentChanges(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	destination := filepath.Join(root, "destination")
+	stage := filepath.Join(destination, stagePrefix+testTransactionID)
+	published := filepath.Join(destination, "payload")
+	staged := filepath.Join(stage, "payload")
+	mustMkdir(t, destination, 0o755)
+	mustMkdir(t, stage, 0o700)
+	mustMkdir(t, published, 0o700)
+	mustWrite(t, filepath.Join(published, "initializer"), "initializer", 0o600)
+	entry := mustJournalEntry(t, published, "payload")
+
+	if err := renameNoReplace(published, staged); err != nil {
+		t.Fatal(err)
+	}
+	concurrent := filepath.Join(staged, "concurrent-user-data")
+	mustWrite(t, concurrent, "keep", 0o600)
+
+	if err := removeQuarantinedPublishingEntry(staged, published, entry); err == nil {
+		t.Fatal("expected a concurrently changed quarantine to fail closed")
+	}
+	value, err := os.ReadFile(filepath.Join(published, "concurrent-user-data"))
+	if err != nil || string(value) != "keep" {
+		t.Fatalf("rollback did not restore concurrent user data: %q, %v", value, err)
+	}
+	if _, err := os.Lstat(staged); !os.IsNotExist(err) {
+		t.Fatalf("restored quarantine remains at %s: %v", staged, err)
+	}
+}

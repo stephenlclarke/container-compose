@@ -454,8 +454,44 @@ func rollbackPublishingEntry(
 	case !entry.matches(identity):
 		return errors.New("published initialization entry identity changed")
 	}
-	if err := os.RemoveAll(published); err != nil {
-		return fmt.Errorf("roll back published entry: %w", err)
+	if err := renameNoReplace(published, staged); err != nil {
+		return fmt.Errorf("quarantine published initialization entry: %w", err)
+	}
+	if err := syncDirectory(destination); err != nil {
+		return err
+	}
+	return removeQuarantinedPublishingEntry(staged, published, entry)
+}
+
+// removeQuarantinedPublishingEntry authenticates the entry again after its
+// atomic removal from the published namespace. If an independently mounted
+// container changed the entry during the verification-to-rename window, the
+// changed tree is restored rather than recursively removed.
+func removeQuarantinedPublishingEntry(
+	staged, published string,
+	entry transactionJournalEntry,
+) error {
+	identity, err := captureTreeIdentity(staged)
+	if err != nil {
+		return fmt.Errorf("inspect quarantined initialization entry: %w", err)
+	}
+	if !entry.matches(identity) {
+		if restoreErr := renameNoReplace(staged, published); restoreErr != nil {
+			return fmt.Errorf(
+				"quarantined initialization entry identity changed; restore failed: %w",
+				restoreErr,
+			)
+		}
+		if syncErr := syncDirectory(filepath.Dir(published)); syncErr != nil {
+			return fmt.Errorf(
+				"quarantined initialization entry identity changed; restore sync failed: %w",
+				syncErr,
+			)
+		}
+		return errors.New("quarantined initialization entry identity changed")
+	}
+	if err := os.RemoveAll(staged); err != nil {
+		return fmt.Errorf("remove quarantined initialization entry: %w", err)
 	}
 	return nil
 }
