@@ -8533,16 +8533,23 @@
     {
       "id": "container-compose-645",
       "owner": "stephenlclarke/container-compose",
-      "title": "Fix Bridge conversion on external output volumes",
+      "title": "fix(bridge): stage transformer output on internal volume",
       "state": "active-draft",
       "lastVerified": "2026-09-12",
-      "commits": [],
+      "commits": [
+        "12f72fedf468387f6c7e5f951b9223c29aa80446"
+      ],
       "documents": [
         {
           "kind": "issue",
           "path": "docs/upstream/container-compose/ISSUE-645.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-646.md"
         }
-      ]
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/646"
     },
     {
       "id": "process-list-compose-top-process-list",
