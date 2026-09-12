@@ -2347,7 +2347,10 @@ extension ComposeOrchestratorTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let output = directory.appendingPathComponent("out", isDirectory: true)
         let runner = BridgeInputInspectingRunner(
-            responses: [CommandResult(status: 1, stdout: "", stderr: "transform failed")],
+            responses: [
+                CommandResult(status: 0, stdout: "", stderr: ""),
+                CommandResult(status: 1, stdout: "", stderr: "transform failed"),
+            ],
             outputFiles: ["partial.yaml": "incomplete\n"],
         )
 
@@ -2359,11 +2362,15 @@ extension ComposeOrchestratorTests {
                 project: ComposeProject(name: "demo", services: [:]),
                 options: ComposeBridgeConvertOptions(
                     output: output.path,
-                    transformations: ["example/bridge-transformer:latest"]
+                    transformations: [
+                        "example/bridge-transformer:first",
+                        "example/bridge-transformer:second",
+                    ]
                 )
             )
         }
 
+        #expect(runner.commands.count == 2)
         let mountedOutput = try #require(runner.outputDirectories.last)
         #expect(!FileManager.default.fileExists(atPath: mountedOutput))
         #expect(try FileManager.default.contentsOfDirectory(atPath: output.path).isEmpty)
