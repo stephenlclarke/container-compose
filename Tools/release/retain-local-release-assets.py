@@ -138,7 +138,7 @@ def retain(root: Path, version: str, candidates: list[Path]) -> None:
                     f"retained stable asset changed while repairing {version}: {name}"
                 )
             record = {
-                "mode": stat.S_IMODE(retained.stat(follow_symlinks=False).st_mode),
+                "mode": stat.S_IMODE(retained.lstat().st_mode),
                 "path": str(retained),
                 "sha256": digest,
                 "size": retained.stat().st_size,
@@ -184,7 +184,7 @@ def retained_path(root: Path, version: str, name: str) -> Path:
         or not path.is_file()
         or sha256(path) != record.get("sha256")
         or path.stat().st_size != record.get("size")
-        or stat.S_IMODE(path.stat(follow_symlinks=False).st_mode) != record.get("mode")
+        or stat.S_IMODE(path.lstat().st_mode) != record.get("mode")
     ):
         raise RetentionError(f"retained stable asset is invalid: {version}/{name}")
     return path

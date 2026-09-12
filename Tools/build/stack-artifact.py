@@ -152,7 +152,7 @@ def promote(source: Path, root: Path, name: str) -> Path:
         if destination.exists():
             if destination.is_symlink() or digest_file(destination) != digest:
                 raise ArtifactError(f"retained artifact conflicts with {destination}")
-            if stat.S_IMODE(destination.stat(follow_symlinks=False).st_mode) != retained_mode:
+            if stat.S_IMODE(destination.lstat().st_mode) != retained_mode:
                 raise ArtifactError(f"retained artifact mode conflicts with {destination}")
         else:
             try:
@@ -165,7 +165,7 @@ def promote(source: Path, root: Path, name: str) -> Path:
                         f"retained artifact conflicts with {destination}"
                     )
                 if (
-                    stat.S_IMODE(destination.stat(follow_symlinks=False).st_mode)
+                    stat.S_IMODE(destination.lstat().st_mode)
                     != retained_mode
                 ):
                     raise ArtifactError(
