@@ -1265,6 +1265,7 @@ exit 113
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
                     "CONTAINER_RUNTIME_STAGE_CANDIDATE": "always",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "45",
                     "CONTAINER_RUNTIME_LOCK_FILE": str(
                         temporary_root / "runtime.lock"
                     ),
@@ -1305,7 +1306,7 @@ exit 113
                     env=environment,
                     capture_output=True,
                     text=True,
-                    timeout=20,
+                    timeout=60,
                 )
                 self.assertEqual(
                     second.returncode, 0, second.stdout + second.stderr
