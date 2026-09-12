@@ -67,7 +67,7 @@ def files(root: Path) -> list[dict[str, object]]:
         if path.is_dir():
             continue
         relative = path.relative_to(root).as_posix()
-        status = path.stat(follow_symlinks=False)
+        status = path.lstat()
         if not stat.S_ISREG(status.st_mode):
             raise ManifestError(f"DocC site contains a special file: {path}")
         entries.append(

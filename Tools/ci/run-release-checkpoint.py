@@ -161,7 +161,7 @@ def required_output_path(value: str) -> Path:
 def required_output_record(path: Path) -> dict[str, object]:
     if path.is_symlink():
         raise OSError(f"release checkpoint required output is indirect: {path}")
-    status = path.stat(follow_symlinks=False)
+    status = path.lstat()
     if not stat.S_ISREG(status.st_mode):
         raise OSError(f"release checkpoint required output is not regular: {path}")
     return {
