@@ -186,6 +186,13 @@ cannot silently consume internal retained storage. On the release Mac it points
 to `/Volumes/SSD/cf/github-actions/container-compose-release-runner-work`.
 Verify both the resolved path and filesystem device after runner maintenance;
 the workflows' retained roots must continue to resolve to the internal volume.
+After every Actions runner update, macOS may treat the new `Runner.Listener`
+binary as a new privacy client. Enable **Privacy & Security > Files & Folders >
+Removable Volumes** (or Full Disk Access) for the exact installed binary when
+prompted. Rerun `scripts/install-scheduled-release-runner.sh`; it now waits for
+the repository registration to become remotely online and fails with the exact
+binary path if launchd is running but access to the external work directory is
+blocked.
 
 Published and historical benchmark attempts follow the same lifetime split:
 downloads, reconstructed distributions, fixtures, worktrees and compiler

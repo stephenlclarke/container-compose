@@ -61,6 +61,8 @@ Requirements:
   - gh authenticated as the owner of the target repository
   - git configured with user.name, user.email, gpg.format=ssh, commit.gpgsign=true, and user.signingkey
   - swift, go, node, npm, python3, docker compose, jq, GNU tar, and shasum
+  - Removable Volumes access for the installed Runner.Listener when _work is
+    placed on /Volumes/SSD; macOS treats each updated runner binary separately
 
 Options:
   --repository OWNER/REPOSITORY  Target repository (default: ${DEFAULT_REPOSITORY})
@@ -241,6 +243,49 @@ runner_service() {
   )
 }
 
+# Require the exact repository runner registration to become remotely online.
+# launchctl can report a healthy wrapper while macOS privacy control blocks the
+# updated Runner.Listener at its external work directory, so service status is
+# not sufficient release-host evidence.
+wait_for_runner_online() {
+  local attempt=0
+  local attempts="${CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_ATTEMPTS:-30}"
+  local poll_seconds="${CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_POLL_SECONDS:-2}"
+  local runner_state=""
+
+  if ! [[ "${attempts}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'runner online attempts must be a positive integer: %s\n' "${attempts}" >&2
+    return 2
+  fi
+  if ! [[ "${poll_seconds}" =~ ^[0-9]+$ ]]; then
+    printf 'runner online poll seconds must be a non-negative integer: %s\n' \
+      "${poll_seconds}" >&2
+    return 2
+  fi
+
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    runner_state="$(gh api \
+      "repos/${REPOSITORY}/actions/runners?per_page=100" 2>/dev/null \
+      | jq -r --arg name "${RUNNER_NAME}" \
+        '[.runners[] | select(.name == $name)] | if length == 1 then .[0].status elif length == 0 then "missing" else "ambiguous" end' \
+        2>/dev/null || true)"
+    if [[ "${runner_state}" == "online" ]]; then
+      printf 'scheduled release runner %s is remotely online for %s\n' \
+        "${RUNNER_NAME}" "${REPOSITORY}"
+      return 0
+    fi
+    if ((attempt < attempts)); then
+      sleep "${poll_seconds}"
+    fi
+  done
+
+  printf 'scheduled release runner %s did not become remotely online for %s (state: %s)\n' \
+    "${RUNNER_NAME}" "${REPOSITORY}" "${runner_state:-query failed}" >&2
+  printf 'On macOS, enable Privacy & Security > Files & Folders > Removable Volumes (or Full Disk Access) for %s, then rerun this installer.\n' \
+    "${RUNNER_DIR}/bin/Runner.Listener" >&2
+  return 1
+}
+
 # Download and verify the exact upstream runner archive before touching a service.
 download_verified_runner() {
   local asset="$1" digest="$2" actual_digest release_tag
@@ -277,6 +322,7 @@ update_runner() {
   fi
   runner_service start
   runner_service status
+  wait_for_runner_online || return
   printf 'updated scheduled release runner from %s to %s\n' \
     "${installed_version}" "${updated_version}"
 }
@@ -296,6 +342,7 @@ install_runner() {
     if [[ "${installed_version}" == "${release_version}" ]]; then
       printf 'scheduled release runner is already current at %s\n' "${installed_version}"
       runner_service status
+      wait_for_runner_online || return
       return 0
     fi
     if ! download_verified_runner "${asset}" "${digest}"; then
@@ -332,8 +379,7 @@ install_runner() {
     ./svc.sh start
     ./svc.sh status
   )
-  printf 'scheduled stable-release runner %s is online for %s\n' \
-    "${RUNNER_NAME}" "${REPOSITORY}"
+  wait_for_runner_online || return
 }
 
 # Install the runner after validating its requested configuration.

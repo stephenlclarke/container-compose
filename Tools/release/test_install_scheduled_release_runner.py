@@ -74,6 +74,11 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
             "set -euo pipefail\n"
             "printf 'gh:%s\\n' \"$*\" >> \"${RUNNER_TEST_LOG}\"\n"
             "if [[ \"$1\" == api ]]; then\n"
+            "  if [[ \"${2:-}\" == */actions/runners\\?per_page=100 ]]; then\n"
+            "    printf '{\"runners\":[{\"name\":\"fixture-runner\",\"status\":\"%s\"}]}\\n' "
+            '"${RUNNER_TEST_STATE:-online}"\n'
+            "    exit 0\n"
+            "  fi\n"
             f"  printf '%s\\n' {shlex.quote(release_json)}\n"
             "  exit 0\n"
             "fi\n"
@@ -129,6 +134,8 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
             environment = os.environ.copy()
             environment["PATH"] = f"{bin_dir}:{environment['PATH']}"
             environment["RUNNER_TEST_LOG"] = str(log_path)
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_ATTEMPTS"] = "1"
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_POLL_SECONDS"] = "0"
             environment.pop("BASH_ENV", None)
             command = (
                 f"source {shlex.quote(str(library))}\n"
@@ -200,6 +207,48 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("updates an existing runner", result.stdout)
+        self.assertIn("Removable Volumes access", result.stdout)
+
+    def test_launchd_status_does_not_substitute_for_remote_runner_health(self) -> None:
+        """A running wrapper cannot mask an offline updated listener."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            runner_dir = temporary_root / "runner"
+            bin_dir = temporary_root / "bin"
+            log_path = temporary_root / "runner.log"
+            bin_dir.mkdir()
+            self.write_runner(runner_dir, LATEST_VERSION)
+            self.write_fake_tools(bin_dir)
+            library = temporary_root / "installer-library.sh"
+            source = INSTALLER.read_text(encoding="utf-8")
+            library.write_text(source.rsplit('\nmain "$@"', 1)[0] + "\n", encoding="utf-8")
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_dir}:{environment['PATH']}"
+            environment["RUNNER_TEST_LOG"] = str(log_path)
+            environment["RUNNER_TEST_STATE"] = "offline"
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_ATTEMPTS"] = "1"
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_POLL_SECONDS"] = "0"
+            environment.pop("BASH_ENV", None)
+            command = (
+                f"source {shlex.quote(str(library))}\n"
+                f"RUNNER_DIR={shlex.quote(str(runner_dir))}\n"
+                "RUNNER_NAME=fixture-runner\n"
+                "install_runner\n"
+            )
+
+            result = subprocess.run(
+                ["bash", "-c", command],
+                capture_output=True,
+                check=False,
+                cwd=temporary_root,
+                env=environment,
+                text=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("did not become remotely online", result.stderr)
+        self.assertIn("Removable Volumes", result.stderr)
+        self.assertIn("Runner.Listener", result.stderr)
 
 
 if __name__ == "__main__":
