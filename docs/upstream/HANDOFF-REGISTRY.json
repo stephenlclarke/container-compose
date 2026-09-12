@@ -8531,6 +8531,20 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/634"
     },
     {
+      "id": "container-compose-645",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Fix Bridge conversion on external output volumes",
+      "state": "active-draft",
+      "lastVerified": "2026-09-12",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-645.md"
+        }
+      ]
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",

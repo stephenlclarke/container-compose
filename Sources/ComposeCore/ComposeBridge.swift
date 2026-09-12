@@ -128,20 +128,40 @@ extension ComposeOrchestrator {
         let input = try createBridgeInputDirectory(composeYAML: composeYAML)
         defer { try? FileManager.default.removeItem(at: input) }
 
+        let stagedOutput: URL?
         if !convert.output.isEmpty {
             try await prepareBridgeOutputDirectory(output, assumeYes: convert.assumeYes)
+            // Virtualization.framework can block while opening a share on an
+            // external volume. Keep transformer mounts beside the already-safe
+            // input directory, then publish the completed tree to the user path.
+            stagedOutput = try ComposeTemporaryFiles.createDirectory(
+                in: input.deletingLastPathComponent(),
+                prefix: "container-compose-bridge-output-",
+            )
+        } else {
+            stagedOutput = nil
         }
+        defer {
+            if let stagedOutput {
+                try? FileManager.default.removeItem(at: stagedOutput)
+            }
+        }
+
+        let runtimeOutput = stagedOutput?.path ?? output
         for transformation in transformations {
             try await pullMissingImage(transformation, quiet: true)
             try await runContainer(
                 bridgeConvertRunArguments(
                     transformation: transformation,
                     input: input.path,
-                    output: output,
+                    output: runtimeOutput,
                     templates: templates,
                 ),
                 inheritedIO: true,
             )
+        }
+        if let stagedOutput {
+            try publishBridgeOutputDirectory(from: stagedOutput, to: output)
         }
     }
 

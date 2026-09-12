@@ -533,10 +533,16 @@ final class BridgeInputInspectingRunner: CommandRunning, @unchecked Sendable {
     private(set) var inputComposeFiles: [String] = []
     private(set) var inputDirectoryPermissions: [Int] = []
     private(set) var inputFilePermissions: [Int] = []
+    private(set) var outputDirectories: [String] = []
+    var outputFiles: [String: String]
     var responses: [CommandResult]
 
-    init(responses: [CommandResult] = []) {
+    init(
+        responses: [CommandResult] = [],
+        outputFiles: [String: String] = [:],
+    ) {
         self.responses = responses
+        self.outputFiles = outputFiles
     }
 
     func run(
@@ -563,6 +569,18 @@ final class BridgeInputInspectingRunner: CommandRunning, @unchecked Sendable {
                 inputFilePermissions.append((fileAttributes?[.posixPermissions] as? NSNumber)?.intValue ?? -1)
             }
         }
+        if let output = bridgeOutputDirectory(in: arguments) {
+            outputDirectories.append(output)
+            for (relativePath, contents) in outputFiles {
+                let file = URL(fileURLWithPath: output, isDirectory: true)
+                    .appendingPathComponent(relativePath)
+                try FileManager.default.createDirectory(
+                    at: file.deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                )
+                try contents.write(to: file, atomically: true, encoding: .utf8)
+            }
+        }
         if !responses.isEmpty {
             return responses.removeFirst()
         }
@@ -570,16 +588,25 @@ final class BridgeInputInspectingRunner: CommandRunning, @unchecked Sendable {
     }
 
     private func bridgeInputDirectory(in arguments: [String]) -> String? {
+        bridgeDirectory(in: arguments, destination: "/in")
+    }
+
+    private func bridgeOutputDirectory(in arguments: [String]) -> String? {
+        bridgeDirectory(in: arguments, destination: "/out")
+    }
+
+    private func bridgeDirectory(in arguments: [String], destination: String) -> String? {
         for index in arguments.indices where arguments[index] == "--volume" {
             let valueIndex = arguments.index(after: index)
             guard valueIndex < arguments.endIndex else {
                 continue
             }
             let volume = arguments[valueIndex]
-            guard volume.hasSuffix(":/in") else {
+            let suffix = ":\(destination)"
+            guard volume.hasSuffix(suffix) else {
                 continue
             }
-            return String(volume.dropLast(":/in".count))
+            return String(volume.dropLast(suffix.count))
         }
         return nil
     }

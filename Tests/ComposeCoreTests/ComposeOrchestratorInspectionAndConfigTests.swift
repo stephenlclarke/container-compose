@@ -2258,7 +2258,10 @@ extension ComposeOrchestratorTests {
         let output = directory.appendingPathComponent("out", isDirectory: true)
         let templates = directory.appendingPathComponent("templates", isDirectory: true)
         try FileManager.default.createDirectory(at: templates, withIntermediateDirectories: true)
-        let runner = BridgeInputInspectingRunner()
+        let runner = BridgeInputInspectingRunner(outputFiles: [
+            ".bridge-metadata": "complete\n",
+            "nested/deployment.yaml": "kind: Deployment\n",
+        ])
         let imageManager = RecordingContainerImageManager(imageMetadata: [
             "example/api:1": ComposeImageMetadata(reference: "example/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") {
                 $0.displayReference = "example/api:1"
@@ -2307,7 +2310,10 @@ extension ComposeOrchestratorTests {
         let command = try #require(runner.commands.last?.arguments)
         #expect(command.starts(with: ["container", "run", "--rm"]))
         #expect(command.contains("LICENSE_AGREEMENT=true"))
-        #expect(command.contains("\(output.path):/out"))
+        let mountedOutput = try #require(runner.outputDirectories.last)
+        #expect(command.contains("\(mountedOutput):/out"))
+        #expect(mountedOutput != output.path)
+        #expect(!FileManager.default.fileExists(atPath: mountedOutput))
         #expect(command.contains("\(templates.path):/templates"))
         #expect(command.last == "example/bridge-transformer:latest")
         #expect(runner.commands.last?.io == .inherited)
@@ -2321,6 +2327,46 @@ extension ComposeOrchestratorTests {
         #expect(runner.inputFilePermissions == [0o600])
         let outputAttributes = try FileManager.default.attributesOfItem(atPath: output.path)
         #expect((outputAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o744)
+        #expect(
+            try String(
+                contentsOf: output.appendingPathComponent("nested/deployment.yaml"),
+                encoding: .utf8,
+            ) == "kind: Deployment\n"
+        )
+        #expect(
+            try String(
+                contentsOf: output.appendingPathComponent(".bridge-metadata"),
+                encoding: .utf8,
+            ) == "complete\n"
+        )
+    }
+
+    @Test("bridge convert does not publish failed transformer output")
+    func bridgeConvertDoesNotPublishFailedTransformerOutput() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let output = directory.appendingPathComponent("out", isDirectory: true)
+        let runner = BridgeInputInspectingRunner(
+            responses: [CommandResult(status: 1, stdout: "", stderr: "transform failed")],
+            outputFiles: ["partial.yaml": "incomplete\n"],
+        )
+
+        await #expect(throws: ComposeError.self) {
+            try await ComposeOrchestrator(
+                runner: runner,
+                imageManager: RecordingContainerImageManager()
+            ).bridgeConvert(
+                project: ComposeProject(name: "demo", services: [:]),
+                options: ComposeBridgeConvertOptions(
+                    output: output.path,
+                    transformations: ["example/bridge-transformer:latest"]
+                )
+            )
+        }
+
+        let mountedOutput = try #require(runner.outputDirectories.last)
+        #expect(!FileManager.default.fileExists(atPath: mountedOutput))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: output.path).isEmpty)
     }
 
     @Test("bridge convert preserves binary config content")
@@ -2379,14 +2425,14 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
     }
 
-    @Test("bridge convert preserves commas in host bind paths")
+    @Test("bridge convert stages comma output paths and preserves comma template paths")
     func bridgeConvertPreservesCommasInHostBindPaths() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let output = directory.appendingPathComponent("output,two", isDirectory: true)
         let templates = directory.appendingPathComponent("templates,three", isDirectory: true)
         try FileManager.default.createDirectory(at: templates, withIntermediateDirectories: true)
-        let runner = BridgeInputInspectingRunner()
+        let runner = BridgeInputInspectingRunner(outputFiles: ["result.yaml": "generated\n"])
 
         try await ComposeOrchestrator(
             runner: runner,
@@ -2401,9 +2447,17 @@ extension ComposeOrchestratorTests {
         )
 
         let arguments = try #require(runner.commands.last?.arguments)
-        #expect(arguments.contains("\(output.path):/out"))
+        let mountedOutput = try #require(runner.outputDirectories.last)
+        #expect(arguments.contains("\(mountedOutput):/out"))
+        #expect(!arguments.contains("\(output.path):/out"))
         #expect(arguments.contains("\(templates.path):/templates"))
         #expect(!arguments.contains("--mount"))
+        #expect(
+            try String(
+                contentsOf: output.appendingPathComponent("result.yaml"),
+                encoding: .utf8,
+            ) == "generated\n"
+        )
     }
 
     @Test("bridge convert selects amd64 for legacy official transformer versions")
