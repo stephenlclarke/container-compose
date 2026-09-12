@@ -28,15 +28,21 @@ enum ComposeOptionalRuntimeCapability: String, Codable, Sendable {
 final class InstalledRuntimeCapabilities: @unchecked Sendable {
     private let lock = NSLock()
     private var capabilities = ComposeRuntimeCapabilities()
+    private var hasSelection = false
 
     func replace(with capabilities: ComposeRuntimeCapabilities) {
         lock.withLock {
             self.capabilities = capabilities
+            self.hasSelection = true
         }
     }
 
-    func snapshot() -> ComposeRuntimeCapabilities {
-        lock.withLock { capabilities }
+    /// Returns the negotiated selection, or a compile-time fallback when this
+    /// invocation intentionally did not contact the installed runtime.
+    func snapshot(
+        fallback: ComposeRuntimeCapabilities = ComposeRuntimeCapabilities(),
+    ) -> ComposeRuntimeCapabilities {
+        lock.withLock { hasSelection ? capabilities : fallback }
     }
 }
 
