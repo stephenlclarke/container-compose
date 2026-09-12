@@ -566,7 +566,7 @@ def verify_artifacts(receipt: dict[str, Any]) -> None:
             raise PinError(f"artifact {path} has an invalid size")
         try:
             actual = sha256_file(path)
-            actual_mode = stat.S_IMODE(path.stat(follow_symlinks=False).st_mode)
+            actual_mode = stat.S_IMODE(path.lstat().st_mode)
         except (OSError, PinError) as error:
             raise PinError(f"build artifact is unavailable: {path}: {error}") from error
         if actual != expected:
@@ -578,7 +578,7 @@ def verify_artifacts(receipt: dict[str, Any]) -> None:
                 f"build artifact mode changed: {path} "
                 f"(expected {expected_mode:#o}, got {actual_mode:#o})"
             )
-        if expected_size is not None and path.stat(follow_symlinks=False).st_size != expected_size:
+        if expected_size is not None and path.lstat().st_size != expected_size:
             raise PinError(f"build artifact size changed: {path}")
     if recorded_names != sorted(set(recorded_names)):
         raise PinError("build receipt artifact names are duplicated or not canonical")
@@ -780,13 +780,13 @@ def artifact_record(path: Path, logical_path: str | None = None) -> dict[str, st
     if path.is_symlink():
         raise PinError(f"artifact path must not be a symbolic link: {path}")
     resolved = path.resolve(strict=True)
-    mode = stat.S_IMODE(resolved.stat(follow_symlinks=False).st_mode)
+    mode = stat.S_IMODE(resolved.lstat().st_mode)
     return {
         "mode": mode,
         "name": validate_logical_path(logical_path or resolved.name),
         "path": str(resolved),
         "sha256": sha256_file(resolved),
-        "size": resolved.stat(follow_symlinks=False).st_size,
+        "size": resolved.lstat().st_size,
     }
 
 
