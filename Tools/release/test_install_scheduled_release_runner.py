@@ -22,6 +22,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -75,14 +76,22 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
             "printf 'gh:%s\\n' \"$*\" >> \"${RUNNER_TEST_LOG}\"\n"
             "if [[ \"$1\" == api ]]; then\n"
             "  if [[ \"${2:-}\" == */actions/runners\\?per_page=100 ]]; then\n"
+            "    if [[ -n \"${RUNNER_TEST_API_SLEEP_SECONDS:-}\" ]]; then\n"
+            "      sleep \"${RUNNER_TEST_API_SLEEP_SECONDS}\"\n"
+            "    fi\n"
             "    if [[ \"${RUNNER_TEST_PAGINATED:-0}\" == 1 ]]; then\n"
             "      printf '%s\\n' "
             "'{\"runners\":[{\"name\":\"other-runner\",\"status\":\"online\"}]}' "
             "'{\"runners\":[{\"name\":\"fixture-runner\",\"status\":\"online\"}]}'\n"
             "      exit 0\n"
             "    fi\n"
+            "    runner_state=\"${RUNNER_TEST_STATE:-online}\"\n"
+            "    if [[ \"${RUNNER_TEST_EXPECT_RESTART:-0}\" == 1 ]] && "
+            "! grep -q '^service:start$' \"${RUNNER_TEST_LOG}\"; then\n"
+            "      runner_state=offline\n"
+            "    fi\n"
             "    printf '{\"runners\":[{\"name\":\"fixture-runner\",\"status\":\"%s\"}]}\\n' "
-            '"${RUNNER_TEST_STATE:-online}"\n'
+            '"${runner_state}"\n'
             "    exit 0\n"
             "  fi\n"
             f"  printf '%s\\n' {shlex.quote(release_json)}\n"
@@ -143,6 +152,12 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
             environment["RUNNER_TEST_LOG"] = str(log_path)
             environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_ATTEMPTS"] = "1"
             environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_POLL_SECONDS"] = "0"
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_API_TIMEOUT_SECONDS"] = "1"
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_API_DEADLINE_TOOL"] = str(
+                ROOT / "Tools" / "ci" / "run-command-with-deadline.py"
+            )
+            if runner_version != LATEST_VERSION:
+                environment["RUNNER_TEST_EXPECT_RESTART"] = "1"
             if paginated_runner:
                 environment["RUNNER_TEST_PAGINATED"] = "1"
             environment.pop("BASH_ENV", None)
@@ -195,6 +210,28 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
         self.assertIn("remotely online", result.stdout)
         self.assertIn("--paginate", result.stdout)
 
+    def test_runner_update_proves_offline_before_accepting_online(self) -> None:
+        """A replacement listener must establish a fresh remote session."""
+        result = self.run_install("2.335.1")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        offline = result.stdout.index("remotely offline")
+        online = result.stdout.index("remotely online")
+        self.assertLess(offline, online)
+        logged = result.stdout.splitlines()
+        stop = logged.index("service:stop")
+        first_api = logged.index(
+            "gh:api repos/stephenlclarke/container-compose/actions/runners?per_page=100 --paginate"
+        )
+        start = logged.index("service:start")
+        second_api = logged.index(
+            "gh:api repos/stephenlclarke/container-compose/actions/runners?per_page=100 --paginate",
+            first_api + 1,
+        )
+        self.assertLess(stop, first_api)
+        self.assertLess(first_api, start)
+        self.assertLess(start, second_api)
+
     def test_digest_mismatch_keeps_the_existing_runner_in_service(self) -> None:
         """The service is untouched until the downloaded archive matches its digest."""
         result = self.run_install("2.335.1", advertised_digest="0" * 64)
@@ -245,6 +282,10 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
             environment["RUNNER_TEST_STATE"] = "offline"
             environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_ATTEMPTS"] = "1"
             environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_POLL_SECONDS"] = "0"
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_API_TIMEOUT_SECONDS"] = "1"
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_API_DEADLINE_TOOL"] = str(
+                ROOT / "Tools" / "ci" / "run-command-with-deadline.py"
+            )
             environment.pop("BASH_ENV", None)
             command = (
                 f"source {shlex.quote(str(library))}\n"
@@ -266,6 +307,55 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
         self.assertIn("did not become remotely online", result.stderr)
         self.assertIn("Removable Volumes", result.stderr)
         self.assertIn("Runner.Listener", result.stderr)
+
+    def test_runner_status_request_has_a_wall_clock_deadline(self) -> None:
+        """One stalled API request cannot make the installer wait forever."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            runner_dir = temporary_root / "runner"
+            bin_dir = temporary_root / "bin"
+            log_path = temporary_root / "runner.log"
+            bin_dir.mkdir()
+            self.write_runner(runner_dir, LATEST_VERSION)
+            self.write_fake_tools(bin_dir)
+            library = temporary_root / "installer-library.sh"
+            source = INSTALLER.read_text(encoding="utf-8")
+            library.write_text(
+                source.rsplit('\nmain "$@"', 1)[0] + "\n", encoding="utf-8"
+            )
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_dir}:{environment['PATH']}"
+            environment["RUNNER_TEST_LOG"] = str(log_path)
+            environment["RUNNER_TEST_API_SLEEP_SECONDS"] = "10"
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_ATTEMPTS"] = "1"
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_POLL_SECONDS"] = "0"
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_API_TIMEOUT_SECONDS"] = "1"
+            environment["CONTAINER_COMPOSE_RELEASE_RUNNER_API_DEADLINE_TOOL"] = str(
+                ROOT / "Tools" / "ci" / "run-command-with-deadline.py"
+            )
+            environment.pop("BASH_ENV", None)
+            command = (
+                f"source {shlex.quote(str(library))}\n"
+                f"RUNNER_DIR={shlex.quote(str(runner_dir))}\n"
+                "RUNNER_NAME=fixture-runner\n"
+                "install_runner\n"
+            )
+
+            started = time.monotonic()
+            result = subprocess.run(
+                ["bash", "-c", command],
+                capture_output=True,
+                check=False,
+                cwd=temporary_root,
+                env=environment,
+                text=True,
+                timeout=5,
+            )
+            elapsed = time.monotonic() - started
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertLess(elapsed, 4)
+        self.assertIn("query failed", result.stderr)
 
 
 if __name__ == "__main__":
