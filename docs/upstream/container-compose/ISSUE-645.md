@@ -32,8 +32,8 @@ The change affects only non-dry-run Bridge conversion with a non-empty output pa
 - [x] Failed transformations do not publish staged output.
 - [x] Temporary staging is removed after success and failure.
 - [x] Output confirmation, replacement, and permissions remain unchanged.
-- [x] Enhanced focused and component tests pass at the candidate commit.
-- [x] The stock runtime profile builds and tests pass at the candidate commit.
+- [x] Enhanced focused and component tests pass for the pull-request implementation.
+- [x] The stock runtime profile builds and tests pass for the pull-request implementation.
 - [x] The real external-volume Docker Compose Bridge parity case completes.
 - [ ] Exact-head review and applicable CI/quality gates pass.
 
