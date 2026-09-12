@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-09-10",
+  "reviewedAt": "2026-09-12",
   "repositories": {
     "container": {
-      "upstreamHead": "8ca5c80c380cdd925d87b497fb23eddb6b58843f",
-      "forkHead": "e653616e62ab7763c3a7d10e88c365d6dca7e0c4",
+      "upstreamHead": "55437109add247406b07644f9662f03ded52a5e7",
+      "forkHead": "780a86b995ac4cb0985db97f38875fdc6e33d16b",
       "slices": [
         {
           "id": "container-support-maintenance",
@@ -517,7 +517,19 @@
             "8dc1d66f4f5c4e02588f8233b32cbe6cb03dfec7",
             "60072d92ed96c1a7b88b5710cfda5bf072ee7606",
             "99924d767d10ad733ff89838564be0fd51e51ee2",
-            "e891c12796f101162ba95b76db3af7cf2cfd363d"
+            "e891c12796f101162ba95b76db3af7cf2cfd363d",
+            "424d11d80da62609a3591ca4d6653ccde384836c",
+            "f2986139a4cd5d2fcbbaa7bc516ed43673b5ceb2",
+            "1755997e3f02c40825231366cffba1a2aa360efb",
+            "5e8f6eb9e19c631947e1378f4ea72896b932dc82",
+            "ccf99d73b75626ed49a0d638c640bd3b9851e2de",
+            "84bb1cf1ab506ee68534e39ac12d8fbe50302415",
+            "cf908bb6548891fbc033dbe885fbe96e4be00059",
+            "b9123d8e5ab6275ffead6f5884dcae1bae408e19",
+            "a6daa392e83ad0f96a5b56980dee8daa851bef84",
+            "e3bd2efe20171ff7a27193d92b80550489a2c14c",
+            "69318c93dec01ba73402f1912ff82702cc06d4bf",
+            "9ed11e69dab7a27c68822e51444e922f4bdf78ef"
           ]
         },
         {
@@ -763,8 +775,8 @@
       ]
     },
     "containerization": {
-      "upstreamHead": "a7221ab17f3f2f84c5d0112e050cb467009ce3fa",
-      "forkHead": "bd8130fea851f6ee264f00fc684e2543a7d2faa3",
+      "upstreamHead": "b44e17e1a4c135bc0168e615bf6a8e3798d070c0",
+      "forkHead": "7e066a3101bc84fa0f7231daf6a03aa9ef62a567",
       "slices": [
         {
           "id": "containerization-support-maintenance",
@@ -947,7 +959,8 @@
             "5b07660964d4e713f17356d6e508b6c42a886e4e",
             "920183b992ea02fb8a096420f6bef7fc6098e750",
             "c54205ecd77ee443af9994f5edc5a1f5d3bd2e92",
-            "79d5eb1ec231dc571c9c05875940e72b942fb32e"
+            "79d5eb1ec231dc571c9c05875940e72b942fb32e",
+            "e22a06bad6e223533d48a3320ec26ea3dd6e45f3"
           ]
         },
         {
