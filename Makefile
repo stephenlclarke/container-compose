@@ -56,6 +56,12 @@ CODESIGN_OPTS ?= --force --sign - --timestamp=none
 # unattended and must not block behind a GUI approval dialog.
 CONTAINER_RUNTIME_CODESIGN_IDENTITY ?=
 PYTHON ?= python3
+# Tool tests intentionally create incomplete synthetic runtime and release
+# layouts. Keep those fixtures on the host's ordinary local temporary volume so
+# a release controller's retained/external-volume TMPDIR cannot make production
+# privacy-boundary detection reinterpret them as real packaged runtimes.
+override TOOL_TEST_TEMP_ROOT := $(shell if [[ -d /private/tmp && -w /private/tmp ]]; then printf '%s' /private/tmp; else printf '%s' /tmp; fi)
+override TOOL_TEST_TEMP_ENV := TMPDIR="$(TOOL_TEST_TEMP_ROOT)" TMP="$(TOOL_TEST_TEMP_ROOT)" TEMP="$(TOOL_TEST_TEMP_ROOT)"
 MARKDOWNLINT ?= markdownlint
 HAWKEYE ?= .local/bin/hawkeye
 CODEQL_CACHE_ROOT ?= .local/share/codeql
@@ -503,7 +509,7 @@ stack-status:
 	exit "$$exit_status"
 
 stack-self-test:
-	"$(PYTHON)" -m unittest discover Tools/build
+	$(TOOL_TEST_TEMP_ENV) "$(PYTHON)" -m unittest discover Tools/build
 
 stack-transient-clean-plan:
 	@if [[ -d "$(STACK_TRANSIENT_ROOT)" ]]; then \
@@ -2544,14 +2550,14 @@ actions-lint:
 		.github/workflows/*.yml
 
 coverage-python-tools-test: coverage-tools-syntax
-	$(PYTHON) -m unittest discover Tools/coverage
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover Tools/coverage
 
 release-tools-test: coverage-tools-syntax
-	$(PYTHON) -m unittest discover Tools/release
-	Tools/release/test_publish_github_release.sh
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover Tools/release
+	$(TOOL_TEST_TEMP_ENV) Tools/release/test_publish_github_release.sh
 
 ci-tools-test: coverage-tools-syntax
-	$(PYTHON) -m unittest discover Tools/ci
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover Tools/ci
 	$(MAKE) --no-print-directory stack-self-test
 
 coverage-tools-test: coverage-python-tools-test release-tools-test ci-tools-test
