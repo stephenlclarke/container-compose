@@ -75,6 +75,12 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
             "printf 'gh:%s\\n' \"$*\" >> \"${RUNNER_TEST_LOG}\"\n"
             "if [[ \"$1\" == api ]]; then\n"
             "  if [[ \"${2:-}\" == */actions/runners\\?per_page=100 ]]; then\n"
+            "    if [[ \"${RUNNER_TEST_PAGINATED:-0}\" == 1 ]]; then\n"
+            "      printf '%s\\n' "
+            "'{\"runners\":[{\"name\":\"other-runner\",\"status\":\"online\"}]}' "
+            "'{\"runners\":[{\"name\":\"fixture-runner\",\"status\":\"online\"}]}'\n"
+            "      exit 0\n"
+            "    fi\n"
             "    printf '{\"runners\":[{\"name\":\"fixture-runner\",\"status\":\"%s\"}]}\\n' "
             '"${RUNNER_TEST_STATE:-online}"\n'
             "    exit 0\n"
@@ -117,6 +123,7 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
         runner_version: str,
         advertised_digest: str = ARCHIVE_DIGEST,
         extracted_version: str = LATEST_VERSION,
+        paginated_runner: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         """Run the installer function with a configured fixture runner."""
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -136,6 +143,8 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
             environment["RUNNER_TEST_LOG"] = str(log_path)
             environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_ATTEMPTS"] = "1"
             environment["CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_POLL_SECONDS"] = "0"
+            if paginated_runner:
+                environment["RUNNER_TEST_PAGINATED"] = "1"
             environment.pop("BASH_ENV", None)
             command = (
                 f"source {shlex.quote(str(library))}\n"
@@ -177,6 +186,14 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
         self.assertNotIn("gh:release download", result.stdout)
         self.assertNotIn("service:stop", result.stdout)
         self.assertIn("service:status", result.stdout)
+
+    def test_runner_registration_is_found_on_a_later_api_page(self) -> None:
+        """The exact runner remains discoverable beyond the first API page."""
+        result = self.run_install(LATEST_VERSION, paginated_runner=True)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("remotely online", result.stdout)
+        self.assertIn("--paginate", result.stdout)
 
     def test_digest_mismatch_keeps_the_existing_runner_in_service(self) -> None:
         """The service is untouched until the downloaded archive matches its digest."""

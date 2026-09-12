@@ -265,9 +265,9 @@ wait_for_runner_online() {
 
   for ((attempt = 1; attempt <= attempts; attempt++)); do
     runner_state="$(gh api \
-      "repos/${REPOSITORY}/actions/runners?per_page=100" 2>/dev/null \
-      | jq -r --arg name "${RUNNER_NAME}" \
-        '[.runners[] | select(.name == $name)] | if length == 1 then .[0].status elif length == 0 then "missing" else "ambiguous" end' \
+      "repos/${REPOSITORY}/actions/runners?per_page=100" --paginate 2>/dev/null \
+      | jq -sr --arg name "${RUNNER_NAME}" \
+        '[.[].runners[] | select(.name == $name)] | if length == 1 then .[0].status elif length == 0 then "missing" else "ambiguous" end' \
         2>/dev/null || true)"
     if [[ "${runner_state}" == "online" ]]; then
       printf 'scheduled release runner %s is remotely online for %s\n' \
