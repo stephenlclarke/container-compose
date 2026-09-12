@@ -111,7 +111,9 @@ def validate_container_formula_source(repository: Path) -> None:
     raise ValueError(f"Container Homebrew formula source is missing: {repository}")
 
 
-def validate_tap(tap: Path, require_clean: bool) -> dict[str, Formula]:
+def validate_tap(
+    tap: Path, require_clean: bool, allow_legacy_current_pair: bool = False
+) -> dict[str, Formula]:
     if not (tap / ".git").exists():
         raise ValueError(f"Homebrew tap is not a Git checkout: {tap}")
     origin = run("git", "remote", "get-url", "origin", cwd=tap)
@@ -148,17 +150,38 @@ def validate_tap(tap: Path, require_clean: bool) -> dict[str, Formula]:
                     f"{name}: expected stable asset {expected_asset}, found {formula.asset}"
                 )
         else:
-            if formula.release_tag != "current":
-                raise ValueError(f"{name}: Current formula must use the current release tag")
-            if not formula.version or not re.fullmatch(
-                r"current[.][0-9]+[.][0-9a-f]{12}", formula.version
+            exact_tag = re.fullmatch(r"current-([0-9a-f]{40})", formula.release_tag)
+            if exact_tag is None and not (
+                allow_legacy_current_pair and formula.release_tag == "current"
             ):
+                raise ValueError(
+                    f"{name}: Current formula must use an exact-SHA release tag"
+                )
+            version_match = re.fullmatch(
+                r"current[.]([1-9][0-9]*)[.]([0-9a-f]{12})", formula.version or ""
+            )
+            if version_match is None:
                 raise ValueError(f"{name}: Current formula version is invalid: {formula.version}")
+            tag_short_sha = exact_tag.group(1)[:12] if exact_tag else version_match.group(2)
+            if version_match.group(2) != tag_short_sha:
+                raise ValueError(f"{name}: Current formula version does not match its release tag")
+            expected_current_asset = (
+                f"container-current-{tag_short_sha}-arm64.tar.gz"
+                if name == "container-current"
+                else f"container-compose-plugin-current-{tag_short_sha}-arm64.tar.gz"
+            )
+            if formula.asset != expected_current_asset:
+                raise ValueError(
+                    f"{name}: expected Current asset {expected_current_asset}, "
+                    f"found {formula.asset}"
+                )
 
     if formulae["container"].release_tag != formulae["container-compose"].release_tag:
         raise ValueError("stable Container and Compose formulae do not use the same release tag")
     if formulae["container-current"].version != formulae["container-compose-current"].version:
         raise ValueError("Current Container and Compose formulae do not use the same version")
+    if formulae["container-current"].release_tag != formulae["container-compose-current"].release_tag:
+        raise ValueError("Current Container and Compose formulae do not use the same release tag")
     return formulae
 
 
@@ -168,12 +191,17 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--compose-repository", type=Path, required=True)
     parser.add_argument("--container-repository", type=Path)
     parser.add_argument("--allow-dirty-tap", action="store_true")
+    parser.add_argument("--allow-legacy-current-pair", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     arguments = parse_arguments()
-    validate_tap(arguments.tap.resolve(), not arguments.allow_dirty_tap)
+    validate_tap(
+        arguments.tap.resolve(),
+        not arguments.allow_dirty_tap,
+        arguments.allow_legacy_current_pair,
+    )
     validate_template(
         arguments.compose_repository.resolve(), "Tools/release/container-compose.rb.in"
     )

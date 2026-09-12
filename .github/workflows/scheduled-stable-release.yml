@@ -35,6 +35,7 @@ on:
           - "+--"
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -120,12 +121,32 @@ jobs:
           }
 
           main_sha="$(git ls-remote --heads "${remote}" refs/heads/main | awk '{ print $1 }' | tail -n 1)"
-          current_sha="$(resolve_tag_sha current)"
-          current_release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/current")"
-          current_is_prerelease="$(jq -r '.prerelease' <<<"${current_release}")"
+          current_tag="current-${main_sha}"
+          current_sha="$(resolve_tag_sha "${current_tag}")"
+          current_release="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${current_tag}")"
+          current_runs="$(
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/prebuilt-binaries.yml/runs?head_sha=${main_sha}&status=success&per_page=100"
+          )"
+          container_formula="$(
+            gh api -H 'Accept: application/vnd.github.raw+json' \
+              'repos/stephenlclarke/homebrew-tap/contents/Formula/container-current.rb?ref=main'
+          )"
+          compose_formula="$(
+            gh api -H 'Accept: application/vnd.github.raw+json' \
+              'repos/stephenlclarke/homebrew-tap/contents/Formula/container-compose-current.rb?ref=main'
+          )"
           current_built_at="$(
-            jq -r '[.assets[] | select(.name | test("^container-compose-plugin-current-[0-9a-f]{12}-arm64[.]tar[.]gz$")) | .updated_at] | max // empty' \
-              <<<"${current_release}"
+            jq -n \
+              --argjson release "${current_release}" \
+              --argjson runs "${current_runs}" \
+              --arg container_formula "${container_formula}" \
+              --arg compose_formula "${compose_formula}" \
+              '{release: $release, runs: $runs, container_formula: $container_formula, compose_formula: $compose_formula}' \
+              | python3 Tools/release/verify-current-release-readiness.py \
+                  --repository "${GITHUB_REPOSITORY}" \
+                  --tag "${current_tag}" \
+                  --sha "${main_sha}"
           )"
           latest_stable_tag="$(
             git ls-remote --tags --refs "${remote}" \
@@ -142,8 +163,8 @@ jobs:
             printf 'could not resolve main or current tag SHA\n' >&2
             exit 1
           fi
-          if [[ "${current_is_prerelease}" != "true" || -z "${current_built_at}" ]]; then
-            printf 'current must be a prerelease with a published current package asset\n' >&2
+          if [[ -z "${current_built_at}" ]]; then
+            printf 'current must have a complete immutable release and package authority\n' >&2
             exit 1
           fi
 

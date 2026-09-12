@@ -49,10 +49,11 @@ class ReleaseNotesTests(unittest.TestCase):
             self.git(repo, "tag", "--no-sign", "0.6.0")
             self.commit(repo, "feat(mounts): support bind propagation")
             self.commit(repo, "docs: refresh compose guidance")
+            head = self.git(repo, "rev-parse", "HEAD")
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="current",
+                release_tag=f"current-{head}",
                 release_label="current build",
                 compose_version="0.6.1",
                 asset="container-compose-plugin-current-arm64.tar.gz",
@@ -66,9 +67,9 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("## Promotion", notes)
             self.assertIn("## Asset Retention", notes)
             self.assertIn("It never changes the stable formula pair.", notes)
-            self.assertIn("They do not move semantic source tags or the stable formula pair.", notes)
-            self.assertIn("Mutable `current` pointer targets main commit", notes)
-            self.assertIn("single `Current build` prerelease", notes)
+            self.assertIn("Publication never retargets an existing tag", notes)
+            self.assertIn(f"Immutable `current-{head}` prerelease", notes)
+            self.assertIn("one immutable `current-<sha>` prerelease", notes)
             self.assertIn("## Highlights", notes)
             self.assertIn("Support bind propagation.", notes)
             self.assertNotIn("feat(mounts): support bind propagation", notes)
@@ -82,12 +83,14 @@ class ReleaseNotesTests(unittest.TestCase):
             self.init_repo(repo)
             self.git(repo, "tag", "--no-sign", "0.6.0")
             self.commit(repo, "feat(runtime): add the first current change")
-            self.git(repo, "tag", "--no-sign", "current")
+            previous_head = self.git(repo, "rev-parse", "HEAD")
+            self.git(repo, "tag", "--no-sign", f"current-{previous_head}")
             self.commit(repo, "fix(runtime): add the next current change")
+            head = self.git(repo, "rev-parse", "HEAD")
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="current",
+                release_tag=f"current-{head}",
                 release_label="current build",
                 compose_version="0.6.1",
                 asset="container-compose-plugin-current-arm64.tar.gz",
@@ -98,7 +101,7 @@ class ReleaseNotesTests(unittest.TestCase):
             self.assertIn("Source history: `0.6.0..", notes)
             self.assertNotIn("feat(runtime): add the first current change", notes)
             self.assertNotIn("fix(runtime): add the next current change", notes)
-            self.assertNotIn("Source history: `current..", notes)
+            self.assertNotIn(f"Source history: `current-{previous_head}..", notes)
 
     def test_current_notes_record_the_matched_runtime_checksum(self) -> None:
         module = load_module()
@@ -109,7 +112,7 @@ class ReleaseNotesTests(unittest.TestCase):
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="current",
+                release_tag=f"current-{head}",
                 release_label="current build",
                 compose_version="0.6.1",
                 asset="container-compose-plugin-current-arm64.tar.gz",
@@ -119,7 +122,10 @@ class ReleaseNotesTests(unittest.TestCase):
                 head_ref="HEAD",
             )
 
-            self.assertIn(f"Mutable `current` pointer targets main commit `{head}`", notes)
+            self.assertIn(
+                f"Immutable `current-{head}` prerelease identifies main commit `{head}`",
+                notes,
+            )
             self.assertIn("`container-current-arm64.tar.gz` SHA-256:", notes)
             self.assertIn("`runtime-sha`.", notes)
             self.assertIn(
@@ -268,10 +274,11 @@ class ReleaseNotesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             repo = Path(directory)
             self.init_repo(repo)
+            head = self.git(repo, "rev-parse", "HEAD")
 
             notes = module.render_release_notes(
                 repo=repo,
-                release_tag="current",
+                release_tag=f"current-{head}",
                 release_label="current build",
                 compose_version="0.6.1",
                 asset="container-compose-plugin-current-arm64.tar.gz",

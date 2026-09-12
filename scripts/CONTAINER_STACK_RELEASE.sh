@@ -27,6 +27,7 @@ readonly RELEASE_COMMAND_DEADLINE_RUNNER="${SELF_DIRECTORY}/../Tools/ci/run-comm
 readonly RELEASE_HOST_STATE_TOOL="${SELF_DIRECTORY}/../Tools/release/release-host-state.py"
 readonly RELEASE_DISPATCH_JOURNAL_TOOL="${SELF_DIRECTORY}/../Tools/release/release-dispatch-journal.py"
 readonly RELEASE_ASSET_RETENTION_TOOL="${SELF_DIRECTORY}/../Tools/release/retain-local-release-assets.py"
+readonly CURRENT_RELEASE_READINESS_TOOL="${SELF_DIRECTORY}/../Tools/release/verify-current-release-readiness.py"
 readonly FORMULA_PAIR_VALIDATOR="${CONTAINER_STACK_FORMULA_PAIR_VALIDATOR:-${SELF_DIRECTORY}/../Tools/release/verify-homebrew-formula-pair.py}"
 readonly STABLE_AUTHORITY_BUNDLE_VERIFIER="${SELF_DIRECTORY}/../Tools/release/verify-stable-authority-bundle.py"
 readonly DOC_SITE_MANIFEST_TOOL="${SELF_DIRECTORY}/../Tools/ci/doc-site-manifest.py"
@@ -59,7 +60,7 @@ Modes:
       Deterministically promote the prepared stack and Homebrew tap to the next
       stable release. A stable release requires an explicit milestone,
       maintenance, or security intent. The version selector is resolved from the
-      latest local semantic container-compose tag, not from mutable
+      latest local semantic container-compose tag, not from transient
       working-tree state. The helper bumps container-compose on main when
       needed, commits that bump, promotes the stephenlclarke source main
       branches, creates and pushes the stable container-compose source tag,
@@ -582,6 +583,49 @@ ensure_release_intent() {
   fi
 }
 
+# Return the immutable Current tag for one exact source commit.
+current_release_tag_for_commit() {
+  local commit="$1"
+  if [[ ! "${commit}" =~ ^[0-9a-f]{40}$ ]]; then
+    printf 'invalid Current source commit: %s\n' "${commit:-missing}" >&2
+    return 2
+  fi
+  printf 'current-%s\n' "${commit}"
+}
+
+# Return the nearest content-addressed Current commit in the candidate graph.
+# A retained release candidate may merge a newer remote main as its second
+# parent, so first-parent traversal alone can miss the active published build.
+current_release_commit_for_main() {
+  local path="$1" main_commit="$2" tag commit resolved distance
+  local best_commit="" best_distance=""
+  while IFS= read -r tag; do
+    commit="${tag#current-}"
+    if [[ ! "${commit}" =~ ^[0-9a-f]{40}$ ]]; then
+      continue
+    fi
+    resolved="$(git -C "${path}" rev-parse --verify -q "refs/tags/${tag}^{commit}" || true)"
+    if [[ "${resolved}" != "${commit}" ]] || \
+      ! git -C "${path}" merge-base --is-ancestor "${commit}" "${main_commit}"; then
+      continue
+    fi
+    distance="$(git -C "${path}" rev-list --count "${commit}..${main_commit}")"
+    if [[ -z "${best_distance}" || "${distance}" -lt "${best_distance}" ]]; then
+      best_commit="${commit}"
+      best_distance="${distance}"
+    elif [[ "${distance}" == "${best_distance}" && "${commit}" != "${best_commit}" ]]; then
+      printf 'ambiguous nearest Current tags for %s: %s and %s\n' \
+        "${main_commit}" "${best_commit}" "${commit}" >&2
+      return 2
+    fi
+  done < <(git -C "${path}" tag --list 'current-*')
+  if [[ -n "${best_commit}" ]]; then
+    printf '%s\n' "${best_commit}"
+    return 0
+  fi
+  return 1
+}
+
 # Require Current to identify local main, or the published parent of the exact
 # helper-created candidate retained for this retry. The candidate itself is not
 # published until its release PR passes, so requiring Current to name it makes
@@ -590,7 +634,7 @@ ensure_current_release_source_identity() {
   local path main_commit current_commit
   path="$(repo_path "${COMPOSE_REPO}")"
   main_commit="$(git -C "${path}" rev-parse main)"
-  current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
+  current_commit="$(current_release_commit_for_main "${path}" "${main_commit}" || true)"
   if [[ "${current_commit}" == "${main_commit}" ]]; then
     return 0
   fi
@@ -607,12 +651,13 @@ ensure_current_release_source_identity() {
   exit 1
 }
 
-# Require the mutable Current build to identify the same source as local main.
+# Require the nearest immutable Current build to identify the same source as local main.
 # Milestone releases additionally require a seven-day soak unless an explicit,
 # documented milestone-only override is supplied. Maintenance and security
 # releases retain the source-identity check but may bypass that waiting period.
 ensure_current_build_release_readiness() {
-  local path current_is_prerelease current_built_at
+  local path repository current_commit current_tag current_release current_runs
+  local container_formula compose_formula current_built_at
   path="$(repo_path "${COMPOSE_REPO}")"
 
   if [[ "${EXECUTE}" != "1" ]]; then
@@ -622,15 +667,32 @@ ensure_current_build_release_readiness() {
 
   need_command gh
   ensure_current_release_source_identity
-
-  current_is_prerelease="$(github_cli api \
-    "repos/$(github_repo "${COMPOSE_REPO}")/releases/tags/current" \
-    --jq '.prerelease')"
-  current_built_at="$(github_cli api \
-    "repos/$(github_repo "${COMPOSE_REPO}")/releases/tags/current" \
-    --jq '[.assets[] | select(.name | test("^container-compose-plugin-current-[0-9a-f]{12}-arm64[.]tar[.]gz$")) | .updated_at] | max // empty')"
-  if [[ "${current_is_prerelease}" != "true" || -z "${current_built_at}" ]]; then
-    printf 'current GitHub prerelease or package asset is missing; wait for green main package publication\n' >&2
+  current_commit="$(current_release_commit_for_main "${path}" "$(git -C "${path}" rev-parse main)")"
+  current_tag="$(current_release_tag_for_commit "${current_commit}")"
+  repository="$(github_repo "${COMPOSE_REPO}")"
+  current_release="$(github_cli api \
+    "repos/${repository}/releases/tags/${current_tag}")"
+  current_runs="$(github_cli api \
+    "repos/${repository}/actions/workflows/prebuilt-binaries.yml/runs?head_sha=${current_commit}&status=success&per_page=100")"
+  container_formula="$(github_cli api \
+    -H 'Accept: application/vnd.github.raw+json' \
+    'repos/stephenlclarke/homebrew-tap/contents/Formula/container-current.rb?ref=main')"
+  compose_formula="$(github_cli api \
+    -H 'Accept: application/vnd.github.raw+json' \
+    'repos/stephenlclarke/homebrew-tap/contents/Formula/container-compose-current.rb?ref=main')"
+  current_built_at="$(jq -n \
+      --argjson release "${current_release}" \
+      --argjson runs "${current_runs}" \
+      --arg container_formula "${container_formula}" \
+      --arg compose_formula "${compose_formula}" \
+      '{release: $release, runs: $runs, container_formula: $container_formula, compose_formula: $compose_formula}' \
+      | python3 "${CURRENT_RELEASE_READINESS_TOOL}" \
+          --repository "${repository}" \
+          --tag "${current_tag}" \
+          --sha "${current_commit}"
+  )"
+  if [[ -z "${current_built_at}" ]]; then
+    printf 'current GitHub release authority is incomplete; wait for green main package publication\n' >&2
     exit 1
   fi
 
@@ -699,7 +761,7 @@ refresh_release_sibling_main() {
 require_current_stack_matches_sibling_mains() {
   local path current_commit component published_ref local_ref
   path="$(repo_path "${COMPOSE_REPO}")"
-  current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
+  current_commit="$(current_release_commit_for_main "${path}" "$(git -C "${path}" rev-parse main)")"
   for component in container-builder-shim containerization container; do
     if [[ "${EXECUTE}" == "1" ]]; then
       refresh_release_sibling_main "${component}"
@@ -723,7 +785,7 @@ require_current_stack_matches_sibling_mains() {
 
 # Remove only the marker-protected authority after stable publication succeeds.
 # A failed or interrupted release intentionally retains the content-addressed
-# input so an unpublished tag can resume even after mutable Current advances.
+# input so an unpublished tag can resume after a newer Current release appears.
 cleanup_current_init_image_authority() {
   local root="${CURRENT_INIT_IMAGE_AUTHORITY_ROOT:-}" parent expected_parent
   if [[ -z "${root}" || "${CURRENT_INIT_IMAGE_AUTHORITY_RELEASED}" != "1" ]]; then
@@ -754,7 +816,7 @@ cleanup_current_init_image_authority() {
 # normal path downloads a checksum-paired, attested asset whose name and
 # Current tag are bound to the validated source.
 prepare_stable_init_image_authority() {
-  local path repo current_commit remote_current_before remote_current_after
+  local path repo current_commit current_tag remote_current_before remote_current_after
   local source_ref="${1:-}" containerization_reference archive asset root
   local cache_root cache_asset cache_sidecar stage downloaded_asset digest
   path="$(repo_path "${COMPOSE_REPO}")"
@@ -824,9 +886,11 @@ PY
       github_cli attestation verify "${cache_root}/${cache_asset}" --repo "${repo}"
     else
       local staged_attempts staged_attempt_count staged_digest staged_name staged_extra staged_line_count
-      current_commit="$(git -C "${path}" rev-parse 'refs/tags/current^{}')"
+      current_commit="$(current_release_commit_for_main \
+        "${path}" "$(git -C "${path}" rev-parse main)")"
+      current_tag="$(current_release_tag_for_commit "${current_commit}")"
       remote_current_before="$(git -C "${path}" ls-remote --tags origin \
-        'refs/tags/current' 'refs/tags/current^{}' | awk '{print $1}' | tail -n 1)"
+        "refs/tags/${current_tag}" "refs/tags/${current_tag}^{}" | awk '{print $1}' | tail -n 1)"
       if [[ "${remote_current_before}" != "${current_commit}" ]]; then
         printf 'remote Current moved before VM-init authority download: local %s, remote %s\n' \
           "${current_commit}" "${remote_current_before:-missing}" >&2
@@ -870,7 +934,7 @@ PY
       else
         stage="$(mktemp -d \
           "${RELEASE_INIT_AUTHORITY_CACHE_ROOT}/.${containerization_reference}.XXXXXX")"
-        github_cli release download current \
+        github_cli release download "${current_tag}" \
           --repo "${repo}" \
           --dir "${stage}" \
           --pattern "${asset}" \
@@ -882,7 +946,7 @@ PY
       )
       github_cli attestation verify "${stage}/${asset}" --repo "${repo}"
       remote_current_after="$(git -C "${path}" ls-remote --tags origin \
-        'refs/tags/current' 'refs/tags/current^{}' | awk '{print $1}' | tail -n 1)"
+        "refs/tags/${current_tag}" "refs/tags/${current_tag}^{}" | awk '{print $1}' | tail -n 1)"
       if [[ "${remote_current_after}" != "${current_commit}" ]]; then
         printf 'remote Current moved during VM-init authority download: expected %s, got %s\n' \
           "${current_commit}" "${remote_current_after:-missing}" >&2
@@ -1252,7 +1316,7 @@ published_base_for_retained_candidate() {
   local path="$1" version="$2" remote_head="$3" commits="$4"
   local current_head commit subject main_parent
 
-  current_head="$(git -C "${path}" rev-parse --verify -q 'refs/tags/current^{}' || true)"
+  current_head="$(current_release_commit_for_main "${path}" "${remote_head}" || true)"
   if [[ ! "${current_head}" =~ ^[0-9a-f]{40}$ ]] ||
     ! git -C "${path}" merge-base --is-ancestor "${current_head}" "${remote_head}"; then
     printf '%s\n' "${remote_head}"
@@ -1327,7 +1391,7 @@ recover_unpublished_release_candidate() {
         printf 'promoted container-compose candidate is not the reviewed direct merge parent\n' >&2
         exit 1
       fi
-      current_head="$(git -C "${path}" rev-parse --verify -q 'refs/tags/current^{}' || true)"
+      current_head="$(current_release_commit_for_main "${path}" "${remote_head}" || true)"
       if [[ "${current_head}" != "${promotion_parent}" &&
         "${current_head}" != "${remote_head}" ]]; then
         printf 'current does not identify the exact pre-promotion container-compose main\n' >&2
@@ -1424,26 +1488,14 @@ stephen_https_url() {
   esac
 }
 
-# Refresh the one intentionally mutable release pointer without forcing semantic tags.
-refresh_mutable_current_tag() {
-  local repo="$1" path="$2" remote="$3" local_current remote_current
+# Fetch immutable content-addressed Current tags without allowing retargeting.
+refresh_current_release_tags() {
+  local repo="$1" path="$2" remote="$3"
   if [[ "${repo}" != "${COMPOSE_REPO}" ]]; then
     return 0
   fi
-
-  remote_current="$(git -C "${path}" ls-remote --tags --refs "${remote}" refs/tags/current 2>/dev/null || true)"
-  remote_current="$(awk '{ print $1 }' <<<"${remote_current}" | tail -n 1)"
-  if [[ -z "${remote_current}" ]]; then
-    return 0
-  fi
-
-  local_current="$(git -C "${path}" rev-parse --verify -q refs/tags/current 2>/dev/null || true)"
-  if [[ "${local_current}" == "${remote_current}" ]]; then
-    return 0
-  fi
-
-  printf 'refreshing mutable current tag for %s\n' "${repo}"
-  git -C "${path}" fetch "${remote}" '+refs/tags/current:refs/tags/current'
+  git -C "${path}" fetch --no-write-fetch-head "${remote}" \
+    'refs/tags/current-*:refs/tags/current-*'
 }
 
 fetch_release_remote() {
@@ -1478,7 +1530,7 @@ fetch_release_remote() {
     url="${fallback_url}"
   fi
 
-  refresh_mutable_current_tag "${repo}" "${path}" "${remote}"
+  refresh_current_release_tags "${repo}" "${path}" "${remote}"
   printf '+'
   printf ' %s' "${fetch_args[@]}"
   printf '\n'

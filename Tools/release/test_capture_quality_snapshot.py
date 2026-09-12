@@ -511,7 +511,11 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
         self.assertIn("--asset-url", workflow)
         self.assertIn("--badge-snapshot-id", workflow)
         self.assertIn("--verify-static-badges", workflow)
-        self.assertIn("${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}", workflow)
+        self.assertIn('--badge-snapshot-id "${PUBLISH_SHA}"', workflow)
+        self.assertNotIn(
+            '--badge-snapshot-id "${PUBLISH_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"',
+            workflow,
+        )
         self.assertIn(
             "python3 ../release-tools/Tools/release/capture-quality-snapshot.py",
             workflow,
@@ -741,8 +745,8 @@ class CaptureQualitySnapshotTests(unittest.TestCase):
             release_kind="current",
         )
 
-        self.assertIn("mutable Current build", snapshot)
-        self.assertIn("replaced when `current` moves", snapshot)
+        self.assertIn("immutable, exact-commit Current build", snapshot)
+        self.assertIn("never change", snapshot)
         self.assertIn("CodeQL is reserved for stable releases", snapshot)
         self.assertNotIn("retained as historical evidence", snapshot)
 

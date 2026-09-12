@@ -1885,7 +1885,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn("update-homebrew-container-formula.py", renderer)
         self.assertNotIn("${CONTAINER_SOURCE_DIR}/scripts/update-homebrew-formula.py", renderer)
         self.assertIn("compose/bin/compose", renderer)
-        self.assertIn('if [[ "${RELEASE_TAG}" != "current" ]]', renderer)
+        self.assertIn('if [[ "${RELEASE_PRERELEASE}" != "true" ]]', renderer)
+        self.assertIn("isImmutable", renderer)
         self.assertEqual(renderer.count('"${version_policy_args[@]}"'), 2)
 
     def test_stable_package_verifier_requires_homebrew_derived_version(self) -> None:
@@ -2699,11 +2700,11 @@ github_cli() {{
             self.assertEqual(resolved.returncode, 0, resolved.stderr)
             self.assertEqual(resolved.stdout.strip(), tagged_ref)
 
-    def test_current_formulae_use_the_matched_runtime_in_the_single_prerelease(self) -> None:
+    def test_current_formulae_use_the_matched_runtime_in_an_immutable_prerelease(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('runtime_asset="container-current-${PUBLISH_SHA:0:12}-arm64.tar.gz"', workflow)
         self.assertIn('runtime_repository="${GITHUB_REPOSITORY}"', workflow)
-        self.assertIn('release_tag="current"', workflow)
+        self.assertIn('release_tag="current-${PUBLISH_SHA}"', workflow)
         self.assertIn('release_title="Current build"', workflow)
         self.assertIn('asset="container-compose-plugin-current-${short_sha}-arm64.tar.gz"', workflow)
         self.assertIn('highlights_asset="release-highlights-current-${short_sha}.json"', workflow)
@@ -2726,6 +2727,24 @@ github_cli() {{
         self.assertIn('RELEASE_MUTABLE="${release_mutable}"', workflow)
         self.assertIn("--delete-superseded-current-releases", workflow)
         self.assertIn("release_notes_args=(", workflow)
+
+    def test_active_documentation_has_no_singleton_current_release_pointer(self) -> None:
+        active_documents = (
+            ROOT / "README.md",
+            ROOT / "docs" / "guides" / "INSTALL.md",
+            ROOT / "docs" / "guides" / "BUILD.md",
+            ROOT / "docs" / "architecture" / "runtime-capabilities.md",
+            ROOT / "docs" / "architecture" / "coherent-container-family-parity-design.md",
+            ROOT / "docs" / "project" / "BACKLOG.md",
+            ROOT / "docs" / "project" / "STATUS.md",
+        )
+        for document in active_documents:
+            contents = document.read_text(encoding="utf-8")
+            self.assertNotIn("releases/tag/current", contents, str(document))
+            self.assertNotIn("one mutable `current`", contents, str(document))
+            self.assertNotIn("tag `current`", contents, str(document))
+            self.assertNotIn("0.14.2 candidate", contents, str(document))
+            self.assertNotIn("0.14.2 Current", contents, str(document))
 
     def test_current_publishes_an_exact_attested_vm_init_authority(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -2767,7 +2786,7 @@ github_cli() {{
         )
         authority_end = self.script.index("# Retain a helper-created candidate")
         authority = self.script[authority_start:authority_end]
-        self.assertIn("github_cli release download current", authority)
+        self.assertIn('github_cli release download "${current_tag}"', authority)
         self.assertIn("github_cli attestation verify", authority)
         self.assertIn('shasum -a 256 -c "${asset}.sha256"', authority)
         self.assertIn('"${OCI_IMAGE_LAYOUT_VALIDATOR}" "${archive}"', authority)
@@ -2873,7 +2892,8 @@ github_cli() {{
             )
             self.git(compose, "add", str(manifest.relative_to(compose)))
             self.git(compose, "commit", "-m", "test: create Current stack")
-            self.git(compose, "tag", "current")
+            compose_head = self.git(compose, "rev-parse", "HEAD")
+            self.git(compose, "tag", f"current-{compose_head}")
 
             dry_run = self.run_release_function(
                 root,
@@ -2999,7 +3019,7 @@ github_cli() {{
                 ),
                 encoding="utf-8",
             )
-            self.run_command("git", "-C", str(compose), "init")
+            self.run_command("git", "-C", str(compose), "init", "-b", "main")
             self.run_command("git", "-C", str(compose), "add", ".")
             self.run_command(
                 "git",
@@ -3140,7 +3160,7 @@ github_cli() {{
                 ROOT / "Tools" / "release" / "write-sha256-sidecar.py",
                 manifest.parent / "write-sha256-sidecar.py",
             )
-            self.run_command("git", "-C", str(compose), "init")
+            self.run_command("git", "-C", str(compose), "init", "-b", "main")
             self.run_command("git", "-C", str(compose), "add", ".")
             self.run_command(
                 "git",
@@ -3155,7 +3175,7 @@ github_cli() {{
                 "current stack",
             )
             current = self.git(compose, "rev-parse", "HEAD")
-            self.git(compose, "tag", "current")
+            self.git(compose, "tag", f"current-{current}")
             self.git(compose, "remote", "add", "origin", str(compose))
 
             cache = root / "authority-cache"
@@ -3253,19 +3273,8 @@ github_cli() {{
         self.assertNotIn("Generate Current build VHS recording", release_critical)
         self.assertNotIn("Validate Current demo init-image authority", release_critical)
         self.assertNotIn("CURRENT_DEMO_INIT_IMAGE_ARCHIVE", release_critical)
-        self.assertIn(
-            'gh release view "${RELEASE_TAG}"', release_critical
-        )
-        self.assertIn(
-            '--pattern "container-compose-demo-current.gif"', release_critical
-        )
-        self.assertIn(
-            'printf \'%s\\n\' "${retained_demo}" >> "${extra_assets}"',
-            release_critical,
-        )
-        self.assertIn(
-            '--current-asset "container-compose-demo-current.gif"', package
-        )
+        self.assertNotIn('container-compose-demo-current.gif', release_critical)
+        self.assertNotIn('--current-asset "container-compose-demo-current.gif"', package)
 
         self.assertNotIn("workflow_run:", workflow)
         self.assertIn("workflow_dispatch:", workflow)
@@ -3318,74 +3327,22 @@ github_cli() {{
         self.assertIn("Tools/release/validate-oci-image-layout.py", workflow)
         self.assertIn("Tools/release/verify-developer-id-archive.sh", workflow)
         self.assertIn("shasum -a 256 -c", workflow)
-        self.assertIn("Verify source and release are still current", workflow)
-        self.assertLess(
-            workflow.index("Verify source and release are still current"),
-            workflow.index("Publish exact Current demo"),
-        )
-        self.assertNotIn('gh release upload current "${DEMO_OUTPUT}"', workflow)
+        self.assertIn('current_tag="current-${source_sha}"', workflow)
+        self.assertIn('gh release download "${CURRENT_RELEASE_TAG}"', workflow)
+        self.assertIn("Retain exact Current demo workflow artifact", workflow)
+        self.assertIn("retention-days: 90", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertNotIn("contents: write", workflow)
+        self.assertNotIn("Publish exact Current demo", workflow)
+        self.assertNotIn("release_asset_id()", workflow)
+        self.assertNotIn("upload_release_asset()", workflow)
+        self.assertNotIn("replace_release_asset()", workflow)
+        self.assertNotIn("gh release upload", workflow)
+        self.assertNotIn("--method DELETE", workflow)
         self.assertGreaterEqual(
             workflow.count("bash Tools/release/stop-current-demo-runtime.sh"), 2
         )
-        publish_step = workflow[
-            workflow.index("- name: Publish exact Current demo") : workflow.index(
-                "- name: Save bounded demo diagnostics"
-            )
-        ]
-        self.assertIn("DEMO_ASSET: container-compose-demo-current.gif", publish_step)
-        self.assertIn(
-            "PUBLISH_SHA: ${{ needs.resolve-current.outputs.sha }}", publish_step
-        )
-        self.assertIn("current_release_matches()", publish_step)
-        self.assertIn('checkout_sha="$(git rev-parse HEAD)"', publish_step)
-        self.assertIn(
-            'tracked_status="$(git status --porcelain --untracked-files=no)"',
-            publish_step,
-        )
-        self.assertGreaterEqual(
-            publish_step.count("if ! current_release_matches"), 4
-        )
-        self.assertIn("release_asset_id()", publish_step)
-        self.assertIn("download_release_asset()", publish_step)
-        self.assertIn("upload_release_asset()", publish_step)
-        self.assertIn("replace_release_asset()", publish_step)
-        self.assertIn(
-            "https://uploads.github.com/repos/${GITHUB_REPOSITORY}/releases/"
-            "${release_id}/assets?name=${DEMO_ASSET}",
-            publish_step,
-        )
-        self.assertIn(
-            'replace_release_asset "${publication_release_id}" "${DEMO_OUTPUT}"',
-            publish_step,
-        )
-        self.assertIn(
-            "Current demo output verified against release %s.",
-            publish_step,
-        )
-        self.assertIn(
-            "Current demo upload returned success without the exact published output.",
-            publish_step,
-        )
-        self.assertIn(
-            'replace_release_asset "${publication_release_id}" "${prior_demo}"',
-            publish_step,
-        )
-        self.assertIn(
-            '"${CURRENT_RELEASE_ID}" != "${publication_release_id}"',
-            publish_step,
-        )
-        self.assertIn(
-            'prior_demo_dir="${RUNNER_TEMP}/container-compose-prior-current-demo"',
-            publish_step,
-        )
-        self.assertIn(
-            "gh api -H 'Accept: application/octet-stream'",
-            publish_step,
-        )
-        self.assertIn("for attempt in 1 2 3; do", publish_step)
-        self.assertNotIn("gh release upload current", publish_step)
-        self.assertIn("restored the prior asset", publish_step)
-        self.assertGreaterEqual(workflow.count('--repo "${GITHUB_REPOSITORY}"'), 4)
+        self.assertGreaterEqual(workflow.count('--repo "${GITHUB_REPOSITORY}"'), 3)
         self.assertIn("if: failure()", workflow)
         self.assertIn("current-demo-diagnostics-", workflow)
 
@@ -3662,11 +3619,200 @@ github_cli() {{
                 msg=f"unexpected runtime classification for {payload}: {result.stderr}",
             )
 
-    def test_current_package_skips_only_when_the_pointer_already_matches_main(self) -> None:
+    def test_current_package_skips_only_when_exact_release_already_matches_main(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Skipping current package because current already points at", workflow)
-        self.assertIn("refs/tags/current^{}", workflow)
+        self.assertIn("Skipping current package because immutable release", workflow)
+        self.assertIn('current_tag="current-${WORKFLOW_RUN_HEAD_SHA}"', workflow)
+        self.assertIn('"refs/tags/${current_tag}^{}"', workflow)
         self.assertIn('current_tag_sha="$(', workflow)
+
+        self.assertIn('current_release_complete="false"', workflow)
+        self.assertIn(".immutable", workflow)
+        self.assertIn('expected_current_assets="$(', workflow)
+        self.assertIn('current_tap_complete="false"', workflow)
+        self.assertIn('current_success_authority="false"', workflow)
+        self.assertIn("application/vnd.github.raw+json", workflow)
+        self.assertIn('formula_digest="$(', workflow)
+        self.assertIn('formula_url="$(', workflow)
+        self.assertIn('formula_sha256="$(', workflow)
+        self.assertIn('expected_formula_url="https://github.com/', workflow)
+        self.assertIn('"${formula_url}" != "${expected_formula_url}"', workflow)
+        self.assertIn('"${formula_sha256}" != "${formula_digest#sha256:}"', workflow)
+        self.assertIn('current_formula_run_number="${BASH_REMATCH[1]}"', workflow)
+        self.assertIn('^current\\.([1-9][0-9]*)\\.${short_sha}$', workflow)
+        self.assertIn('"${current_formula_run_number}" != "${BASH_REMATCH[1]}"', workflow)
+        self.assertIn('--argjson run_number "${current_formula_run_number}"', workflow)
+        self.assertIn('.run_number == $run_number and', workflow)
+        self.assertIn(
+            "actions/workflows/prebuilt-binaries.yml/runs?head_sha=",
+            workflow,
+        )
+        self.assertIn(
+            '.head_sha == $sha and',
+            workflow,
+        )
+
+    def test_current_skip_authority_is_bound_to_the_formula_run(self) -> None:
+        workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        sha = "a" * 40
+        short = sha[:12]
+        script = r'''
+set -euo pipefail
+selected=""
+for body in "${FORMULA_ONE}" "${FORMULA_TWO}"; do
+  version="$(sed -nE 's/^  version "([^"]+)"[[:space:]]*$/\1/p' <<<"${body}")"
+  [[ "${version}" =~ ^current\.([1-9][0-9]*)\.${SHORT_SHA}$ ]] || exit 2
+  if [[ -z "${selected}" ]]; then
+    selected="${BASH_REMATCH[1]}"
+  else
+    [[ "${selected}" == "${BASH_REMATCH[1]}" ]] || exit 3
+  fi
+done
+jq -e --arg sha "${SHA}" --argjson run_number "${selected}" \
+  '[.workflow_runs[] | select(.run_number == $run_number and .head_sha == $sha and .status == "completed" and .conclusion == "success")] | length > 0' \
+  <<<"${RUNS}" >/dev/null
+'''
+
+        def authorized(one: str, two: str, runs: list[dict[str, object]]) -> bool:
+            environment = os.environ.copy()
+            environment.update(
+                FORMULA_ONE=one,
+                FORMULA_TWO=two,
+                SHORT_SHA=short,
+                SHA=sha,
+                RUNS=json.dumps({"workflow_runs": runs}),
+            )
+            return subprocess.run(
+                ["bash", "-c", script], env=environment, check=False
+            ).returncode == 0
+
+        formula_42 = f'  version "current.42.{short}"'
+        success_41 = {
+            "run_number": 41,
+            "head_sha": sha,
+            "status": "completed",
+            "conclusion": "success",
+        }
+        failed_42 = {
+            "run_number": 42,
+            "head_sha": sha,
+            "status": "completed",
+            "conclusion": "failure",
+        }
+        success_42 = {**failed_42, "conclusion": "success"}
+        self.assertFalse(authorized(formula_42, formula_42, [success_41, failed_42]))
+        self.assertTrue(authorized(formula_42, formula_42, [success_41, success_42]))
+        self.assertFalse(
+            authorized(formula_42, f'  version "current.43.{short}"', [success_42])
+        )
+        for malformed in (
+            "  version \"current.0.bad\"",
+            f"{formula_42}\n{formula_42}",
+        ):
+            self.assertFalse(authorized(formula_42, malformed, [success_42]))
+        self.assertIn(
+            '"${current_success_authority}" == "true" ]]; then',
+            workflow,
+        )
+        self.assertIn("no successful exact-commit package run proves", workflow)
+        self.assertIn("Resuming incomplete Current release transaction", workflow)
+        self.assertIn("Resuming Current transaction because the Homebrew pair", workflow)
+
+    def test_current_skip_parses_active_formula_authority(self) -> None:
+        sha = "b" * 40
+        short = sha[:12]
+        asset = f"container-current-{short}-arm64.tar.gz"
+        expected_url = (
+            "https://github.com/stephenlclarke/container-compose/releases/download/"
+            f"current-{sha}/{asset}"
+        )
+        digest = "c" * 64
+        script = r'''
+set -euo pipefail
+formula_url="$(
+  sed -nE 's/^  url "([^"]+)"[[:space:]]*$/\1/p' <<<"${FORMULA_BODY}"
+)"
+formula_sha256="$(
+  sed -nE 's/^  sha256 "([0-9a-f]{64})"[[:space:]]*$/\1/p' <<<"${FORMULA_BODY}"
+)"
+formula_version="$(
+  sed -nE 's/^  version "([^"]+)"[[:space:]]*$/\1/p' <<<"${FORMULA_BODY}"
+)"
+formula_digest="sha256:${DIGEST}"
+[[ "${formula_url}" == "${EXPECTED_URL}" ]] || exit 2
+[[ "${formula_sha256}" == "${formula_digest#sha256:}" ]] || exit 3
+[[ "${formula_version}" =~ ^current\.([1-9][0-9]*)\.${SHORT_SHA}$ ]] || exit 4
+'''
+
+        def complete(body: str) -> bool:
+            environment = os.environ.copy()
+            environment.update(
+                FORMULA_BODY=body,
+                EXPECTED_URL=expected_url,
+                DIGEST=digest,
+                SHORT_SHA=short,
+            )
+            return subprocess.run(
+                ["bash", "-c", script], env=environment, check=False
+            ).returncode == 0
+
+        valid = "\n".join(
+            (
+                "class ContainerCurrent < Formula",
+                f'  url "{expected_url}"',
+                f'  version "current.42.{short}"',
+                f'  sha256 "{digest}"',
+                "end",
+            )
+        )
+        self.assertTrue(complete(valid))
+        self.assertFalse(
+            complete(
+                valid.replace(
+                    f'  url "{expected_url}"',
+                    f'  url "https://example.invalid/{asset}"\n  # {expected_url}',
+                )
+            )
+        )
+        self.assertFalse(
+            complete(
+                valid.replace(
+                    f'  sha256 "{digest}"',
+                    f'  sha256 "{"d" * 64}"\n  # sha256 "{digest}"',
+                )
+            )
+        )
+        self.assertFalse(
+            complete(
+                valid.replace(
+                    f'  url "{expected_url}"',
+                    f'  url "{expected_url}"\n  url "{expected_url}"',
+                )
+            )
+        )
+
+    def test_retention_never_mutates_an_immutable_release(self) -> None:
+        retention = (ROOT / "Tools" / "release" / "retain-release-assets.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertEqual(retention.count('if release.get("immutable"):'), 2)
+        self.assertIn("preserving immutable historical release", retention)
+
+    def test_private_draft_recovery_preserves_the_immutable_source_tag(self) -> None:
+        publisher = (ROOT / "Tools" / "release" / "publish-github-release.sh").read_text(
+            encoding="utf-8"
+        )
+        replacement = publisher[
+            publisher.index("recreate_release_draft() {") : publisher.index(
+                "validate_release_draft_asset_names() {"
+            )
+        ]
+        self.assertIn('--json isDraft,tagName,targetCommitish', replacement)
+        self.assertIn('release delete "${RELEASE_TAG}"', replacement)
+        self.assertIn("create_release_draft", replacement)
+        self.assertNotIn("--cleanup-tag", replacement)
+        published = publisher[publisher.index('if [[ "${published_release_state}" == "exists" ]]') :]
+        self.assertNotIn("release delete", published)
 
     def test_current_package_yields_to_an_exact_stable_candidate(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
@@ -5631,10 +5777,11 @@ github_cli() {{
                 "# Print and optionally execute a command."
             )
         ]
-        self.assertIn('releases/tags/current', readiness)
-        self.assertIn(".prerelease", readiness)
-        self.assertIn("container-compose-plugin-current-[0-9a-f]{12}-arm64", readiness)
-        self.assertIn(".updated_at", readiness)
+        self.assertIn('releases/tags/${current_tag}', readiness)
+        self.assertIn("CURRENT_RELEASE_READINESS_TOOL", readiness)
+        self.assertIn("actions/workflows/prebuilt-binaries.yml/runs?head_sha=", readiness)
+        self.assertIn("container-compose-current.rb?ref=main", readiness)
+        self.assertIn("container-current.rb?ref=main", readiness)
         self.assertNotIn("publishedAt", readiness)
 
     def test_documented_milestone_override_bypasses_only_the_soak_timer(self) -> None:
@@ -5646,7 +5793,7 @@ github_cli() {{
         self.assertIn('"${RELEASE_INTENT}" == "milestone" && -z "${MILESTONE_SOAK_OVERRIDE_REASON}"', readiness)
         self.assertIn('milestone Current soak override accepted:', readiness)
         self.assertLess(readiness.index('current tag targets'), readiness.index('MILESTONE_SOAK_OVERRIDE_REASON'))
-        self.assertLess(readiness.index('current GitHub prerelease or package asset is missing'), readiness.index('MILESTONE_SOAK_OVERRIDE_REASON'))
+        self.assertLess(readiness.index('current GitHub release authority is incomplete'), readiness.index('MILESTONE_SOAK_OVERRIDE_REASON'))
         build_doc = (ROOT / "docs/guides/BUILD.md").read_text(encoding="utf-8")
         self.assertIn("CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON", build_doc)
         self.assertIn("Current source and package", build_doc)
@@ -5661,9 +5808,11 @@ github_cli() {{
         self.assertIn('  - "--+"', workflow)
         self.assertIn('  - "-+-"', workflow)
         self.assertIn('  - "+--"', workflow)
-        self.assertIn("container-compose-plugin-current-[0-9a-f]{12}-arm64", workflow)
-        self.assertIn(".updated_at", workflow)
-        self.assertIn("current_is_prerelease", workflow)
+        self.assertIn("verify-current-release-readiness.py", workflow)
+        self.assertIn("actions/workflows/prebuilt-binaries.yml/runs?head_sha=", workflow)
+        self.assertIn("container-compose-current.rb?ref=main", workflow)
+        self.assertIn("container-current.rb?ref=main", workflow)
+        self.assertIn("actions: read", workflow)
         self.assertNotIn("--current-published-at", workflow)
         self.assertIn("runs-on: [self-hosted, macOS, ARM64, container-compose-release]", workflow)
         self.assertTrue(os.access(RUNNER_INSTALLER, os.X_OK))
@@ -8116,31 +8265,36 @@ esac
 
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)
-        self.assertIn("+refs/tags/current:refs/tags/current", self.script)
+        self.assertIn("refs/tags/current-*:refs/tags/current-*", self.script)
+        self.assertNotIn("+refs/tags/current-*:refs/tags/current-*", self.script)
         self.assertIn("^refs/tags/homebrew-main", self.script)
         self.assertNotIn("fetch --prune --tags --force", self.script)
 
     def test_git_fixtures_never_launch_an_editor(self) -> None:
         self.assertEqual(self.non_interactive_environment()["GIT_EDITOR"], ":")
 
-    def test_release_fetch_refreshes_only_mutable_current_tag(self) -> None:
+    def test_release_fetch_adds_immutable_content_addressed_current_tags(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             remote, local = self.create_compose_checkout(root)
-            self.run_command("git", "-C", str(local), "tag", "--no-sign", "current")
-            self.run_command("git", "-C", str(local), "push", "origin", "refs/tags/current")
+            old_sha = self.git(local, "rev-parse", "HEAD")
+            old_tag = f"current-{old_sha}"
+            self.run_command("git", "-C", str(local), "tag", "--no-sign", old_tag)
+            self.run_command(
+                "git", "-C", str(local), "push", "origin", f"refs/tags/{old_tag}"
+            )
 
             updater = root / "updater"
             self.run_command("git", "clone", "--branch", "main", str(remote), str(updater))
             self.configure_repo(updater)
             self.commit_file(updater, "CURRENT.md", "current\n", "chore: advance current")
             self.run_command("git", "-C", str(updater), "push", "origin", "main")
-            # The developer's global tag.gpgSign setting makes an otherwise
-            # lightweight force-update prompt for an annotation. Current is a
-            # mutable pointer, never a signed release identity, so make the
-            # test's intent explicit and keep it non-interactive.
-            self.run_command("git", "-C", str(updater), "tag", "--no-sign", "-f", "current")
-            self.run_command("git", "-C", str(updater), "push", "origin", "+refs/tags/current")
+            new_sha = self.git(updater, "rev-parse", "HEAD")
+            new_tag = f"current-{new_sha}"
+            self.run_command("git", "-C", str(updater), "tag", "--no-sign", new_tag)
+            self.run_command(
+                "git", "-C", str(updater), "push", "origin", f"refs/tags/{new_tag}"
+            )
 
             result = self.run_release_function(
                 root / "github",
@@ -8149,12 +8303,8 @@ esac
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("refreshing mutable current tag", result.stdout)
-            local_current = self.git(local, "rev-parse", "refs/tags/current")
-            remote_current = self.run_command(
-                "git", "ls-remote", "--tags", "--refs", str(remote), "refs/tags/current"
-            ).stdout.split()[0]
-            self.assertEqual(local_current, remote_current)
+            self.assertEqual(self.git(local, "rev-parse", f"refs/tags/{old_tag}"), old_sha)
+            self.assertEqual(self.git(local, "rev-parse", f"refs/tags/{new_tag}"), new_sha)
 
     def test_release_fetch_excludes_mutable_homebrew_main_tag(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -8226,7 +8376,7 @@ esac
             _remote, local = self.create_compose_checkout(root)
             remote_head = self.git(local, "rev-parse", "origin/main")
             self.run_command(
-                "git", "-C", str(local), "tag", "--no-sign", "current", remote_head
+                "git", "-C", str(local), "tag", "--no-sign", f"current-{remote_head}", remote_head
             )
             self.enable_ssh_signing(root, local)
             self.commit_signed_files(
@@ -8405,7 +8555,7 @@ esac
             published_head = first_remote_head
             self.run_command("git", "-C", str(local), "fetch", "origin", "main")
             self.run_command(
-                "git", "-C", str(local), "tag", "--no-sign", "current", published_head
+                "git", "-C", str(local), "tag", "--no-sign", f"current-{published_head}", published_head
             )
             first = self.run_release_function(
                 root / "github", "recover_unpublished_release_candidate 0.6.71"
@@ -8460,7 +8610,10 @@ esac
 
             earlier_main = self.git(local, "rev-parse", f"{candidate_head}^")
             self.run_command(
-                "git", "-C", str(local), "tag", "--force", "current", earlier_main
+                "git", "-C", str(local), "tag", "-d", f"current-{published_head}"
+            )
+            self.run_command(
+                "git", "-C", str(local), "tag", "--no-sign", f"current-{earlier_main}", earlier_main
             )
             stale = self.run_release_function(
                 root / "github",
@@ -8749,10 +8902,13 @@ esac
             root = Path(directory)
             remote, local = self.create_compose_checkout(root)
             stale_current = self.git(local, "rev-parse", "main")
+            stale_current_tag = f"current-{stale_current}"
             self.run_command(
-                "git", "-C", str(local), "tag", "--no-sign", "current", stale_current
+                "git", "-C", str(local), "tag", "--no-sign", stale_current_tag, stale_current
             )
-            self.run_command("git", "-C", str(local), "push", "origin", "current")
+            self.run_command(
+                "git", "-C", str(local), "push", "origin", stale_current_tag
+            )
             self.enable_ssh_signing(root, local)
             self.commit_signed_files(
                 local,
@@ -8816,11 +8972,12 @@ esac
                 self.create_promotion_merge(root)
             )
             self.run_command("git", "-C", str(local), "fetch", "origin", "main")
+            promoted_tag = f"current-{promoted_head}"
             self.run_command(
-                "git", "-C", str(local), "tag", "--force", "current", promoted_head
+                "git", "-C", str(local), "tag", "--no-sign", promoted_tag, promoted_head
             )
             self.run_command(
-                "git", "-C", str(local), "push", "--force", "origin", "current"
+                "git", "-C", str(local), "push", "origin", promoted_tag
             )
 
             result = self.run_release_function(
@@ -8834,7 +8991,7 @@ esac
             self.assertNotIn("current tag targets published parent", result.stdout)
             self.assertEqual(self.git(local, "rev-parse", "main"), promoted_head)
             self.assertEqual(self.git(local, "rev-parse", "main^{tree}"), candidate_tree)
-            self.assertEqual(self.git(local, "rev-parse", "current"), promoted_head)
+            self.assertEqual(self.git(local, "rev-parse", promoted_tag), promoted_head)
             self.assertEqual(self.git(local, "status", "--short"), "")
             self.assertNotEqual(candidate_head, promoted_head)
 
@@ -8986,8 +9143,9 @@ esac
             _remote, local = self.create_compose_checkout(root)
             remote_head = self.git(local, "rev-parse", "origin/main")
             self.commit_file(local, "STALE", "stale\n", "chore: stale current")
+            stale_head = self.git(local, "rev-parse", "HEAD")
             self.run_command(
-                "git", "-C", str(local), "tag", "--no-sign", "current"
+                "git", "-C", str(local), "tag", "--no-sign", f"current-{stale_head}"
             )
             self.run_command("git", "-C", str(local), "reset", "--hard", remote_head)
             self.enable_ssh_signing(root, local)
@@ -10297,10 +10455,11 @@ exit 64
     ) -> tuple[Path, str, str, str]:
         remote, local = self.create_compose_checkout(root)
         published_head = self.git(local, "rev-parse", "main")
+        published_tag = f"current-{published_head}"
         self.run_command(
-            "git", "-C", str(local), "tag", "--no-sign", "current", published_head
+            "git", "-C", str(local), "tag", "--no-sign", published_tag, published_head
         )
-        self.run_command("git", "-C", str(local), "push", "origin", "current")
+        self.run_command("git", "-C", str(local), "push", "origin", published_tag)
         self.enable_ssh_signing(root, local)
         self.commit_signed_files(
             local,

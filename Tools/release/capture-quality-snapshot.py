@@ -113,7 +113,7 @@ def parse_args() -> argparse.Namespace:
         "--release-kind",
         choices=("current", "stable"),
         default="stable",
-        help="Whether this snapshot belongs to the mutable current build or an immutable stable release",
+        help="Whether this snapshot belongs to an immutable Current build or stable release",
     )
     parser.add_argument("--sonarqube-url", default=SONARQUBE_URL)
     parser.add_argument("--sonarqube-project", default=SONARQUBE_PROJECT)
@@ -979,7 +979,7 @@ def render_snapshot(
     if not asset_url:
         raise ValueError("quality snapshot asset URL must not be empty")
     if release_kind == "current":
-        retention = "These static badges describe this mutable Current build and are replaced when `current` moves."
+        retention = "These static badges describe this immutable, exact-commit Current build and never change."
     else:
         retention = "These static badges are retained as historical evidence; they do not update."
     if sonar_analysis is not None:

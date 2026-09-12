@@ -11,31 +11,17 @@ guidance remains in [INSTALL.md](../guides/INSTALL.md).
 
 ## Current Stable Release
 
-[`0.14.1`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.1)
-was published for macOS arm64 on 3 September 2026.
+[`0.14.3`](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.3)
+was published for macOS arm64 on 10 September 2026. The release notes and
+attached manifests record its exact matched Container, Containerization,
+builder-shim, builder-image, and SwiftNIO SSL authorities.
 
-The immutable release manifest selects:
-
-- Container `2647090a8af74cf18fae2472342cdb55bab60e45`.
-- Containerization `818f5917819a32dac1bc233605c253b4a105e0e0`.
-- Container builder shim `4aff0ea2e7ff293544a4efac28b508da53aac3d6`.
-- Builder image digest
-  `sha256:d81d12e1dca1133ede535483a809803e6b256555a73d17f207003279539454a4`.
-- SwiftNIO SSL `09c5c9adcdd2a459187e45fe0143eb01063f244a`.
-
-The hosted stable-release gate passed for that immutable package. Current and
-Homebrew release artifacts are Developer ID signed, checksummed, attested, and
-bound to the matched runtime stack.
-
-The 0.14.2 Current candidate selects Container
-`a252482bbacbd15742845764893585131e2c4825`, Containerization
-`b404e03bb914904107a6a9305ba1f0e44c79a59c`, Container builder shim
-`287f2ea3276eca73cd3781ff59b4c9c82d5f3d32`, builder image digest
-`sha256:7398845b67e6d5c5e610e9f1c6bf4ce84e4c7242a8f8002ff2e5e917437cfdf7`,
-and SwiftNIO SSL `3e13ce5f6dd5b7e89fff9ab55ab7caed39fe7285`.
-These candidate revisions do not
-describe immutable 0.14.2 artifacts until the stable release gate succeeds and
-publishes that version.
+Stable and Current Homebrew artifacts are Developer ID signed, checksummed,
+attested, and bound to their matched runtime stacks. Current candidates use an
+immutable content-addressed `current-<full-sha>` prerelease; the formula pair
+must select the same exact release before automation treats that transaction as
+complete. Candidate revisions do not describe stable artifacts until the
+stable release gate succeeds and publishes a semantic version.
 
 The candidate additionally carries reviewed runtime corrections for changing
 Kubernetes control-plane addresses, unreadable image entries and build
@@ -384,11 +370,11 @@ Normal repository validation uses `make ci`, targeted tests while iterating,
 the complete Docker Compose parity target when Compose or runtime behavior
 changes, and `make release-gate` before stable publication.
 
-The 0.14.2 candidate has passed the local matched-stack, Compose CI, live
-runtime, and complete Docker Compose parity checkpoints. Its exact-head hosted
-review and Stable Release Gate remain pending, so it is not yet an immutable
-release. CodeQL, stable packaging, and final documentation publication remain
-release-gate work rather than evidence already earned by this candidate.
+The current candidate must pass the local matched-stack, Compose CI, live
+runtime, complete Docker Compose parity, exact-head hosted review, and Stable
+Release Gate checkpoints before publication. CodeQL, stable packaging, and
+final documentation publication remain release-gate work rather than evidence
+earned by an unpublished candidate.
 
 The maintained local parity suite covers project loading, Compose and
 Dockerfile models, lifecycle, logging, terminal sessions, networking, IPAM,

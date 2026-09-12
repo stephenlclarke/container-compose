@@ -386,38 +386,143 @@ jobs:
                     printf 'Skipping current package because stable candidate %s owns exact main %s.\n' \
                       "${stable_candidate_tag}" "${WORKFLOW_RUN_HEAD_SHA}"
                   else
+                    current_tag="current-${WORKFLOW_RUN_HEAD_SHA}"
                     current_tag_sha="$(
-                      git ls-remote --tags "${remote}" 'refs/tags/current' 'refs/tags/current^{}' \
-                        | awk '$2 == "refs/tags/current^{}" { print $1; found = 1 } END { if (!found) print "" }' \
+                      git ls-remote --tags "${remote}" "refs/tags/${current_tag}" "refs/tags/${current_tag}^{}" \
+                        | awk -v peeled="refs/tags/${current_tag}^{}" '$2 == peeled { print $1; found = 1 } END { if (!found) print "" }' \
                         | tail -n 1
                     )"
                     if [[ -z "${current_tag_sha}" ]]; then
                       current_tag_sha="$(
-                        git ls-remote --tags --refs "${remote}" 'refs/tags/current' \
+                        git ls-remote --tags --refs "${remote}" "refs/tags/${current_tag}" \
                           | awk '{ print $1 }' \
                           | tail -n 1
                       )"
                     fi
-                    current_release_exists="false"
+                    current_release_complete="false"
                     if [[ "${current_tag_sha}" == "${WORKFLOW_RUN_HEAD_SHA}" ]]; then
                       set +e
                       current_release_output="$(
-                        gh api --silent "repos/${GITHUB_REPOSITORY}/releases/tags/current" 2>&1
+                        gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${current_tag}" 2>&1
                       )"
                       current_release_status=$?
                       set -e
                       if (( current_release_status == 0 )); then
-                        current_release_exists="true"
+                        short_sha="${WORKFLOW_RUN_HEAD_SHA:0:12}"
+                        expected_current_assets="$(
+                          printf '%s\n' \
+                            "container-compose-plugin-current-${short_sha}-arm64.tar.gz" \
+                            "container-compose-plugin-current-${short_sha}-arm64.tar.gz.sha256" \
+                            "container-current-${short_sha}-arm64.tar.gz" \
+                            "container-current-${short_sha}-arm64.tar.gz.sha256" \
+                            "container-vminit-current-${short_sha}-arm64.oci.tar" \
+                            "container-vminit-current-${short_sha}-arm64.oci.tar.sha256" \
+                            "release-highlights-current-${short_sha}.json" \
+                            "quality-snapshot-current.svg" \
+                            | sort
+                        )"
+                        actual_current_assets="$(
+                          jq -r '.assets[].name' <<<"${current_release_output}" | sort
+                        )"
+                        if [[ "$(jq -r '.draft' <<<"${current_release_output}")" == "false" &&
+                              "$(jq -r '.immutable' <<<"${current_release_output}")" == "true" &&
+                              "$(jq -r '.prerelease' <<<"${current_release_output}")" == "true" &&
+                              "$(jq -r '.tag_name' <<<"${current_release_output}")" == "${current_tag}" &&
+                              "$(jq -r '.target_commitish' <<<"${current_release_output}")" == "${WORKFLOW_RUN_HEAD_SHA}" &&
+                              "${actual_current_assets}" == "${expected_current_assets}" ]]; then
+                          current_release_complete="true"
+                        elif [[ "$(jq -r '.draft' <<<"${current_release_output}")" != "true" ]]; then
+                          printf 'published immutable Current release %s has an invalid closure; refusing an unrecoverable overwrite\n' \
+                            "${current_tag}" >&2
+                          exit 1
+                        fi
                       elif [[ "${current_release_output}" != *"HTTP 404"* ]]; then
                         printf 'could not determine whether the current release exists:\n%s\n' \
                           "${current_release_output}" >&2
                         exit 1
                       fi
                     fi
-                    if [[ "${current_tag_sha}" == "${WORKFLOW_RUN_HEAD_SHA}" && "${current_release_exists}" == "true" ]]; then
-                      printf 'Skipping current package because current already points at %s.\n' \
-                        "${WORKFLOW_RUN_HEAD_SHA}"
+                    current_tap_complete="false"
+                    current_success_authority="false"
+                    current_formula_run_number=""
+                    if [[ "${current_release_complete}" == "true" ]]; then
+                      current_tap_complete="true"
+                      for formula in container-current container-compose-current; do
+                        if [[ "${formula}" == "container-current" ]]; then
+                          formula_asset="container-current-${short_sha}-arm64.tar.gz"
+                        else
+                          formula_asset="container-compose-plugin-current-${short_sha}-arm64.tar.gz"
+                        fi
+                        formula_digest="$(
+                          jq -r --arg name "${formula_asset}" \
+                            '.assets[] | select(.name == $name) | .digest // ""' \
+                            <<<"${current_release_output}"
+                        )"
+                        formula_body="$(
+                          github_authority_query "${formula} formula" \
+                            api -H 'Accept: application/vnd.github.raw+json' \
+                            "repos/stephenlclarke/homebrew-tap/contents/Formula/${formula}.rb?ref=main"
+                        )"
+                        formula_url="$(
+                          sed -nE 's/^  url "([^"]+)"[[:space:]]*$/\1/p' \
+                            <<<"${formula_body}"
+                        )"
+                        formula_sha256="$(
+                          sed -nE 's/^  sha256 "([0-9a-f]{64})"[[:space:]]*$/\1/p' \
+                            <<<"${formula_body}"
+                        )"
+                        formula_version="$(
+                          sed -nE 's/^  version "([^"]+)"[[:space:]]*$/\1/p' \
+                            <<<"${formula_body}"
+                        )"
+                        expected_formula_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${current_tag}/${formula_asset}"
+                        if [[ "${formula_url}" != "${expected_formula_url}" ]] ||
+                          [[ ! "${formula_digest}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+                          [[ "${formula_sha256}" != "${formula_digest#sha256:}" ]] ||
+                          [[ ! "${formula_version}" =~ ^current\.([1-9][0-9]*)\.${short_sha}$ ]]; then
+                          current_tap_complete="false"
+                        elif [[ -z "${current_formula_run_number}" ]]; then
+                          current_formula_run_number="${BASH_REMATCH[1]}"
+                        elif [[ "${current_formula_run_number}" != "${BASH_REMATCH[1]}" ]]; then
+                          current_tap_complete="false"
+                        fi
+                      done
+                    fi
+                    if [[ "${current_release_complete}" == "true" && "${current_tap_complete}" == "true" ]]; then
+                      successful_current_runs="$(
+                        github_authority_query "successful exact Current package run" \
+                          api \
+                          "repos/${GITHUB_REPOSITORY}/actions/workflows/prebuilt-binaries.yml/runs?head_sha=${WORKFLOW_RUN_HEAD_SHA}&status=success&per_page=100"
+                      )"
+                      if jq -e --arg sha "${WORKFLOW_RUN_HEAD_SHA}" \
+                        --argjson run_number "${current_formula_run_number}" \
+                        '[.workflow_runs[] | select(
+                          .run_number == $run_number and
+                          .head_sha == $sha and
+                          .status == "completed" and
+                          .conclusion == "success"
+                        )] | length > 0' \
+                        <<<"${successful_current_runs}" >/dev/null; then
+                        current_success_authority="true"
+                      fi
+                    fi
+                    if [[ "${current_release_complete}" == "true" &&
+                          "${current_tap_complete}" == "true" &&
+                          "${current_success_authority}" == "true" ]]; then
+                      printf 'Skipping current package because immutable release %s already owns %s.\n' \
+                        "${current_tag}" "${WORKFLOW_RUN_HEAD_SHA}"
                     else
+                      if [[ "${current_release_complete}" == "true" &&
+                            "${current_tap_complete}" == "true" ]]; then
+                        printf 'Resuming Current transaction because no successful exact-commit package run proves %s.\n' \
+                          "${current_tag}"
+                      elif [[ "${current_release_complete}" == "true" ]]; then
+                        printf 'Resuming Current transaction because the Homebrew pair does not select %s.\n' \
+                          "${current_tag}"
+                      elif [[ "${current_tag_sha}" == "${WORKFLOW_RUN_HEAD_SHA}" ]]; then
+                        printf 'Resuming incomplete Current release transaction for %s.\n' \
+                          "${current_tag}"
+                      fi
                       ref_type="branch"
                       ref_name="${WORKFLOW_RUN_HEAD_BRANCH}"
                       checkout_ref="${WORKFLOW_RUN_HEAD_SHA}"
@@ -662,10 +767,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          preflight_flags=()
+          if [[ "${{ needs.resolve-publish-context.outputs.ref_type }}" == "branch" ]]; then
+            preflight_flags+=(--allow-legacy-current-pair)
+          fi
           python3 release-tools/Tools/release/homebrew-preflight.py \
             --tap homebrew-tap \
             --compose-repository container-compose \
-            --container-repository container
+            --container-repository container \
+            "${preflight_flags[@]}"
           [[ "$(git -C container-compose rev-parse HEAD)" == \
             "${{ needs.resolve-publish-context.outputs.sha }}" ]]
           [[ "$(git -C release-tools rev-parse HEAD)" == "${{ github.sha }}" ]]
@@ -872,17 +982,16 @@ jobs:
           short_sha="${PUBLISH_SHA:0:12}"
           case "${PUBLISH_REF_TYPE}:${PUBLISH_REF_NAME}" in
             branch:main)
-              # `current` is deliberately the sole mutable prerelease pointer.
-              # Semver tags remain immutable stable release identities.
-              release_tag="current"
+              # Current releases are immutable and content-addressed just like
+              # stable releases. Homebrew selects the active exact-SHA tag.
+              release_tag="current-${PUBLISH_SHA}"
               release_title="Current build"
               release_label="current build"
               release_latest="false"
               release_prerelease="true"
               update_tap="true"
-              # A commit-identified asset keeps the old formula pair valid
-              # while the candidate is staged. The current tag moves only
-              # after both matching formulae point at this immutable asset.
+              # Commit-identified assets and release tags keep the old formula
+              # pair valid until both matching formulae select this release.
               asset="container-compose-plugin-current-${short_sha}-arm64.tar.gz"
               highlights_asset="release-highlights-current-${short_sha}.json"
               quality_snapshot_asset="quality-snapshot-current.svg"
@@ -1840,7 +1949,7 @@ jobs:
             --repo "${GITHUB_REPOSITORY}"
             --commit "${PUBLISH_SHA}"
             --release-kind "${quality_release_kind}"
-            --badge-snapshot-id "${PUBLISH_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            --badge-snapshot-id "${PUBLISH_SHA}"
             --verify-static-badges
           )
           if [[ "${quality_release_kind}" == "stable" ]]; then
@@ -2003,25 +2112,6 @@ jobs:
             fi
           done
 
-          # Finalizing Current edits the mutable release in place. Carry the
-          # last successful, non-authoritative demo through the idempotent asset
-          # upload so a failed asynchronous recording never removes it.
-          retained_demo="${RUNNER_TEMP}/container-compose-demo-current.gif"
-          demo_asset_present="$(
-            gh release view "${RELEASE_TAG}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --json assets \
-              --jq '[.assets[].name == "container-compose-demo-current.gif"] | any'
-          )"
-          if [[ "${demo_asset_present}" == "true" ]]; then
-            gh release download "${RELEASE_TAG}" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --pattern "container-compose-demo-current.gif" \
-              --dir "${RUNNER_TEMP}" \
-              --clobber
-            printf '%s\n' "${retained_demo}" >> "${extra_assets}"
-          fi
-
           RELEASE_REPOSITORY="${GITHUB_REPOSITORY}" \
             RELEASE_TAG="${RELEASE_TAG}" \
             RELEASE_TITLE="${RELEASE_TITLE}" \
@@ -2076,9 +2166,6 @@ jobs:
               --current-asset "${CURRENT_INIT_ASSET}.sha256" \
               --current-asset "${HIGHLIGHTS_ASSET}" \
               --current-asset "${QUALITY_SNAPSHOT_ASSET}"
-              # The separately generated demo is non-authoritative, but retain
-              # the last good recording until its recoverable workflow replaces it.
-              --current-asset "container-compose-demo-current.gif"
             )
           fi
           python3 ../release-tools/Tools/release/retain-release-assets.py \

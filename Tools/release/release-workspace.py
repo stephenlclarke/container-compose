@@ -161,12 +161,21 @@ def mutable_tags(component_name: str) -> frozenset[str]:
     return MUTABLE_TAGS_BY_COMPONENT.get(component_name, frozenset())
 
 
+def checkpoint_ignored_tag(component_name: str, name: str) -> bool:
+    """Return tags that are release pointers/history, not source authority."""
+
+    return name in mutable_tags(component_name) or (
+        component_name == "container-compose"
+        and re.fullmatch(r"current-[0-9a-f]{40}", name) is not None
+    )
+
+
 def remote_immutable_tag_refs(url: str, component_name: str) -> dict[str, str]:
     refs: dict[str, str] = {}
     for line in run_git("ls-remote", "--tags", "--refs", url).splitlines():
         reference_sha, reference = line.split(maxsplit=1)
         name = reference.removeprefix("refs/tags/")
-        if name not in mutable_tags(component_name):
+        if not checkpoint_ignored_tag(component_name, name):
             refs[name] = reference_sha
     return refs
 
@@ -183,7 +192,7 @@ def local_immutable_tag_refs(path: Path, component_name: str) -> dict[str, str]:
         fields = line.split()
         if len(fields) != 2 or not SHA.fullmatch(fields[1]):
             raise WorkspaceError(f"could not inspect tags in {path}")
-        if fields[0] not in mutable_tags(component_name):
+        if not checkpoint_ignored_tag(component_name, fields[0]):
             refs[fields[0]] = fields[1]
     return refs
 
@@ -521,7 +530,7 @@ def verify_workspace(root: Path, build_root: Path) -> dict[str, object]:
             if not isinstance(component_tags, dict) or any(
                 not isinstance(name, str)
                 or not name
-                or name in mutable_tags(component_name)
+                or checkpoint_ignored_tag(component_name, name)
                 or not isinstance(value, str)
                 or not SHA.fullmatch(value)
                 for name, value in component_tags.items()
@@ -655,33 +664,17 @@ def ensure_workspace_is_idle(marker: dict[str, object]) -> None:
     raise WorkspaceError("release transaction lease belongs to another host")
 
 
-def refresh_mutable_current_tag(root: Path) -> None:
-    """Refresh the one mutable release pointer before resuming a checkpoint."""
+def refresh_current_release_tags(root: Path) -> None:
+    """Fetch immutable content-addressed Current tags before checkpoint recovery."""
 
     compose = root / "container-compose"
-    output = run_git(
-        "ls-remote",
-        "--tags",
-        "--refs",
-        "origin",
-        "refs/tags/current",
-        cwd=compose,
-    )
-    if not output.strip():
-        raise WorkspaceError("container-compose current tag is missing from origin")
-    fields = output.split()
-    if len(fields) != 2 or not SHA.fullmatch(fields[0]):
-        raise WorkspaceError("could not resolve container-compose current tag")
     run_git(
         "fetch",
         "--no-write-fetch-head",
         "origin",
-        "+refs/tags/current:refs/tags/current",
+        "refs/tags/current-*:refs/tags/current-*",
         cwd=compose,
     )
-    local_current = run_git("rev-parse", "refs/tags/current", cwd=compose).strip()
-    if local_current != fields[0]:
-        raise WorkspaceError("container-compose current tag changed while refreshing")
 
 
 def workspace_matches_initial_checkpoint(
@@ -1389,7 +1382,7 @@ def _materialize_locked(
             ):
                 stale_retained = retained
             else:
-                refresh_mutable_current_tag(retained)
+                refresh_current_release_tags(retained)
                 if retained_baseline is not None and (
                     workspace_baseline_state(retained) == retained_baseline
                     and workspace_matches_initial_checkpoint(retained, marker)
@@ -1399,7 +1392,7 @@ def _materialize_locked(
                     )
                 return retained
         else:
-            refresh_mutable_current_tag(retained)
+            refresh_current_release_tags(retained)
             return retained
 
     if snapshot is None:
@@ -1439,7 +1432,7 @@ def _materialize_locked(
         ):
             stale_destination = destination
         elif destination != stale_retained:
-            refresh_mutable_current_tag(destination)
+            refresh_current_release_tags(destination)
             destination_tags = workspace_semantic_tag_targets(destination, marker)
             retired: Path | None = None
             if stale_retained is not None:
@@ -1564,7 +1557,7 @@ def _materialize_locked(
         shutil.rmtree(stage, ignore_errors=True)
         raise
     verify_workspace(destination, safe_root)
-    refresh_mutable_current_tag(destination)
+    refresh_current_release_tags(destination)
     return destination
 
 

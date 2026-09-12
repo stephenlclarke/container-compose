@@ -94,17 +94,19 @@ require_release_inputs() {
 
 # Wait for the released GitHub object to be visible and match the selected lane.
 verify_published_release() {
-  local attempt details exit_status actual_tag is_draft is_prerelease
+  local attempt details exit_status actual_tag is_draft is_immutable is_prerelease
   local max_attempts=6
 
   for ((attempt = 1; attempt <= max_attempts; attempt++)); do
     if details="$(gh release view "${RELEASE_TAG}" \
       --repo "${RELEASE_REPOSITORY}" \
-      --json tagName,isDraft,isPrerelease \
-      --jq '[.tagName, .isDraft, .isPrerelease] | @tsv' 2>&1)"; then
-      IFS=$'\t' read -r actual_tag is_draft is_prerelease <<<"${details}"
-      if [[ "${actual_tag}" != "${RELEASE_TAG}" || "${is_draft}" != "false" || "${is_prerelease}" != "${RELEASE_PRERELEASE}" ]]; then
-        error "published release state does not match ${RELEASE_TAG}: tag=${actual_tag:-missing}, draft=${is_draft:-missing}, prerelease=${is_prerelease:-missing}"
+      --json tagName,isDraft,isImmutable,isPrerelease \
+      --jq '[.tagName, .isDraft, .isImmutable, .isPrerelease] | @tsv' 2>&1)"; then
+      IFS=$'\t' read -r actual_tag is_draft is_immutable is_prerelease <<<"${details}"
+      if [[ "${actual_tag}" != "${RELEASE_TAG}" || "${is_draft}" != "false" || \
+        "${is_immutable}" != "true" || \
+        "${is_prerelease}" != "${RELEASE_PRERELEASE}" ]]; then
+        error "published release state does not match ${RELEASE_TAG}: tag=${actual_tag:-missing}, draft=${is_draft:-missing}, immutable=${is_immutable:-missing}, prerelease=${is_prerelease:-missing}"
       fi
       return 0
     else
@@ -208,7 +210,7 @@ main() {
 
   compose_url="https://github.com/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}/${ASSET}"
   runtime_url="https://github.com/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}/${RUNTIME_ASSET}"
-  if [[ "${RELEASE_TAG}" != "current" ]]; then
+  if [[ "${RELEASE_PRERELEASE}" != "true" ]]; then
     version_policy_args+=(--omit-version)
   fi
 
