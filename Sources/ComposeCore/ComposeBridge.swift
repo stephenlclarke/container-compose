@@ -94,9 +94,7 @@ extension ComposeOrchestrator {
         model: ComposeValue? = nil,
         options convert: ComposeBridgeConvertOptions,
     ) async throws {
-        let transformations = convert.transformations.isEmpty
-            ? [Self.defaultBridgeTransformerImage]
-            : convert.transformations
+        let transformations = bridgeTransformations(convert.transformations)
         let output = absoluteBridgePath(convert.output)
         let templates = convert.templates.flatMap { $0.isEmpty ? nil : absoluteBridgePath($0) }
 
@@ -114,33 +112,21 @@ extension ComposeOrchestrator {
         }
 
         if options.dryRun {
-            for transformation in transformations {
-                try await runContainer(bridgeConvertRunArguments(
-                    transformation: transformation,
-                    input: Self.dryRunBridgeInputPath,
-                    output: output,
-                    templates: templates,
-                ))
-            }
-            return
+            return try await bridgeConvertDryRun(
+                transformations: transformations,
+                output: output,
+                templates: templates,
+            )
         }
 
         let input = try createBridgeInputDirectory(composeYAML: composeYAML)
         defer { try? FileManager.default.removeItem(at: input) }
 
-        let stagedOutput: URL?
-        if !convert.output.isEmpty {
-            try await prepareBridgeOutputDirectory(output, assumeYes: convert.assumeYes)
-            // Virtualization.framework can block while opening a share on an
-            // external volume. Keep transformer mounts beside the already-safe
-            // input directory, then publish the completed tree to the user path.
-            stagedOutput = try ComposeTemporaryFiles.createDirectory(
-                in: input.deletingLastPathComponent(),
-                prefix: "container-compose-bridge-output-",
-            )
-        } else {
-            stagedOutput = nil
-        }
+        let stagedOutput = try await createBridgeOutputStagingDirectory(
+            output: output,
+            input: input,
+            options: convert,
+        )
         defer {
             if let stagedOutput {
                 try? FileManager.default.removeItem(at: stagedOutput)
@@ -163,6 +149,44 @@ extension ComposeOrchestrator {
         if let stagedOutput {
             try publishBridgeOutputDirectory(from: stagedOutput, to: output)
         }
+    }
+
+    private func bridgeTransformations(_ transformations: [String]) -> [String] {
+        transformations.isEmpty ? [Self.defaultBridgeTransformerImage] : transformations
+    }
+
+    private func bridgeConvertDryRun(
+        transformations: [String],
+        output: String,
+        templates: String?,
+    ) async throws {
+        for transformation in transformations {
+            try await runContainer(bridgeConvertRunArguments(
+                transformation: transformation,
+                input: Self.dryRunBridgeInputPath,
+                output: output,
+                templates: templates,
+            ))
+        }
+    }
+
+    private func createBridgeOutputStagingDirectory(
+        output: String,
+        input: URL,
+        options convert: ComposeBridgeConvertOptions,
+    ) async throws -> URL? {
+        guard !convert.output.isEmpty else {
+            return nil
+        }
+
+        try await prepareBridgeOutputDirectory(output, assumeYes: convert.assumeYes)
+        // Virtualization.framework can block while opening a share on an
+        // external volume. Keep transformer mounts beside the already-safe
+        // input directory, then publish the completed tree to the user path.
+        return try ComposeTemporaryFiles.createDirectory(
+            in: input.deletingLastPathComponent(),
+            prefix: "container-compose-bridge-output-",
+        )
     }
 
     private func prepareBridgeOutputDirectory(_ output: String, assumeYes: Bool) async throws {
