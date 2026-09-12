@@ -8531,6 +8531,28 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/634"
     },
     {
+      "id": "container-compose-645",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(bridge): stage transformer output on internal volume",
+      "state": "active-draft",
+      "lastVerified": "2026-09-12",
+      "commits": [
+        "12f72fedf468387f6c7e5f951b9223c29aa80446",
+        "6f12e30a007c4c1a81c32d5b0b589861e47b980c"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-645.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-646.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/646"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",

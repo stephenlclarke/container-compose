@@ -111,6 +111,22 @@ func recreateBridgeOutputDirectory(_ output: String) throws {
     try FileManager.default.setAttributes([.posixPermissions: 0o744], ofItemAtPath: output)
 }
 
+/// Copies a completed transformer tree from its private runtime staging area
+/// into the user-selected output directory without skipping hidden entries.
+func publishBridgeOutputDirectory(from stagingDirectory: URL, to output: String) throws {
+    let fileManager = FileManager.default
+    let outputDirectory = URL(fileURLWithPath: output, isDirectory: true)
+    for item in try fileManager.contentsOfDirectory(
+        at: stagingDirectory,
+        includingPropertiesForKeys: nil,
+    ) {
+        try fileManager.copyItem(
+            at: item,
+            to: outputDirectory.appendingPathComponent(item.lastPathComponent),
+        )
+    }
+}
+
 func ensureBridgeDestinationIsNew(_ destination: String) throws {
     if FileManager.default.fileExists(atPath: destination) {
         throw ComposeError.invalidProject("output folder \(destination) already exists")
