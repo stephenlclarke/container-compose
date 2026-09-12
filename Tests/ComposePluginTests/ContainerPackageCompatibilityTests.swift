@@ -375,6 +375,28 @@ struct ContainerPackageCompatibilityTests {
     #expect(selection.snapshot().identifiers.isEmpty)
   }
 
+  @Test("unresolved runtime selection uses compile-time capabilities")
+  func unresolvedRuntimeSelectionUsesCompileTimeCapabilities() {
+    let selection = InstalledRuntimeCapabilities()
+    let fallback = ComposeRuntimeCapabilities(identifiers: [
+      ComposeRuntimeCapabilities.networkScopedAliasesV1Identifier,
+    ])
+
+    #expect(selection.snapshot(fallback: fallback) == fallback)
+  }
+
+  @Test("explicit runtime selection overrides compile-time capabilities")
+  func explicitRuntimeSelectionOverridesCompileTimeCapabilities() {
+    let selection = InstalledRuntimeCapabilities()
+    let fallback = ComposeRuntimeCapabilities(identifiers: [
+      ComposeRuntimeCapabilities.networkScopedAliasesV1Identifier,
+    ])
+
+    selection.replace(with: ComposeRuntimeCapabilities())
+
+    #expect(selection.snapshot(fallback: fallback).identifiers.isEmpty)
+  }
+
   @Test("mismatched package pins report install guidance")
   func mismatchedPackagePinsReportInstallGuidance() throws {
     let components = [

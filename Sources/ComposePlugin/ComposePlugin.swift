@@ -39,7 +39,12 @@ private func selectedRuntimeDependencies(
 }
 
 private func selectedRuntimeCapabilities() -> ComposeRuntimeCapabilities {
-    var identifiers = installedRuntimeCapabilities.snapshot().identifiers
+    let compiledCapabilities = ComposeRuntimeCapabilities(
+        identifiers: ComposeBuildInfo.defaultRuntimeCapabilityManifest.identifiers,
+    )
+    var identifiers = installedRuntimeCapabilities.snapshot(
+        fallback: compiledCapabilities,
+    ).identifiers
     #if !CONTAINER_COMPOSE_ENHANCED_RUNTIME
         identifiers.insert(ComposeRuntimeCapabilities.containerLaunchV1Identifier)
     #endif
