@@ -19,6 +19,8 @@ set -Eeuo pipefail
 
 SELF_PATH="${BASH_SOURCE[0]:-$0}"
 readonly SELF_PATH
+SELF_DIRECTORY="$(cd "$(dirname "${SELF_PATH}")" && pwd -P)"
+readonly SELF_DIRECTORY
 SCRIPT_NAME="$(basename "${SELF_PATH}")"
 readonly SCRIPT_NAME
 readonly SCRIPT_USAGE="scripts/${SCRIPT_NAME}"
@@ -28,6 +30,7 @@ readonly RUNNER_LABEL="container-compose-release"
 REPOSITORY="${CONTAINER_COMPOSE_RELEASE_REPOSITORY:-${DEFAULT_REPOSITORY}}"
 RUNNER_DIR="${CONTAINER_COMPOSE_RELEASE_RUNNER_DIR:-${HOME}/.local/share/container-compose-release-runner}"
 RUNNER_NAME="${CONTAINER_COMPOSE_RELEASE_RUNNER_NAME:-}"
+RUNNER_API_DEADLINE_TOOL="${CONTAINER_COMPOSE_RELEASE_RUNNER_API_DEADLINE_TOOL:-${SELF_DIRECTORY}/../Tools/ci/run-command-with-deadline.py}"
 TEMPORARY_DIRECTORY=""
 RUNNER_ARCHIVE=""
 
@@ -61,6 +64,8 @@ Requirements:
   - gh authenticated as the owner of the target repository
   - git configured with user.name, user.email, gpg.format=ssh, commit.gpgsign=true, and user.signingkey
   - swift, go, node, npm, python3, docker compose, jq, GNU tar, and shasum
+  - Removable Volumes access for the installed Runner.Listener when _work is
+    placed on /Volumes/SSD; macOS treats each updated runner binary separately
 
 Options:
   --repository OWNER/REPOSITORY  Target repository (default: ${DEFAULT_REPOSITORY})
@@ -241,6 +246,88 @@ runner_service() {
   )
 }
 
+# Print the exact repository runner's state across every API page. Each request
+# is process-group supervised so an unavailable GitHub endpoint cannot turn the
+# configured attempt count into an unbounded maintenance hang.
+runner_remote_state() {
+  local request_timeout="${CONTAINER_COMPOSE_RELEASE_RUNNER_API_TIMEOUT_SECONDS:-10}"
+
+  if ! [[ "${request_timeout}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'runner API timeout seconds must be a positive integer: %s\n' \
+      "${request_timeout}" >&2
+    return 2
+  fi
+  if [[ ! -f "${RUNNER_API_DEADLINE_TOOL}" || \
+    ! -r "${RUNNER_API_DEADLINE_TOOL}" ]]; then
+    printf 'runner API deadline tool is unavailable: %s\n' \
+      "${RUNNER_API_DEADLINE_TOOL}" >&2
+    return 2
+  fi
+
+  python3 "${RUNNER_API_DEADLINE_TOOL}" \
+    --seconds "${request_timeout}" --grace-seconds 1 -- \
+    gh api "repos/${REPOSITORY}/actions/runners?per_page=100" --paginate \
+    2>/dev/null \
+    | jq -sr --arg name "${RUNNER_NAME}" \
+      '[.[].runners[] | select(.name == $name)] | if length == 1 then .[0].status elif length == 0 then "missing" else "ambiguous" end'
+}
+
+# Require the exact repository runner registration to reach one remote state.
+# launchctl can report a healthy wrapper while macOS privacy control blocks the
+# updated Runner.Listener at its external work directory, so service status is
+# not sufficient release-host evidence. Update callers first prove that the old
+# session went offline, preventing a delayed disconnect from masquerading as a
+# successful replacement connection.
+wait_for_runner_state() {
+  local expected_state="$1"
+  local attempt=0
+  local attempts="${CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_ATTEMPTS:-30}"
+  local poll_seconds="${CONTAINER_COMPOSE_RELEASE_RUNNER_ONLINE_POLL_SECONDS:-2}"
+  local runner_state=""
+
+  if [[ "${expected_state}" != "offline" && "${expected_state}" != "online" ]]; then
+    printf 'unsupported runner state target: %s\n' "${expected_state}" >&2
+    return 2
+  fi
+
+  if ! [[ "${attempts}" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'runner online attempts must be a positive integer: %s\n' "${attempts}" >&2
+    return 2
+  fi
+  if ! [[ "${poll_seconds}" =~ ^[0-9]+$ ]]; then
+    printf 'runner online poll seconds must be a non-negative integer: %s\n' \
+      "${poll_seconds}" >&2
+    return 2
+  fi
+
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    if ! runner_state="$(runner_remote_state 2>/dev/null)"; then
+      runner_state=""
+    fi
+    if [[ "${runner_state}" == "${expected_state}" ]]; then
+      printf 'scheduled release runner %s is remotely %s for %s\n' \
+        "${RUNNER_NAME}" "${expected_state}" "${REPOSITORY}"
+      return 0
+    fi
+    if ((attempt < attempts)); then
+      sleep "${poll_seconds}"
+    fi
+  done
+
+  printf 'scheduled release runner %s did not become remotely %s for %s (state: %s)\n' \
+    "${RUNNER_NAME}" "${expected_state}" "${REPOSITORY}" \
+    "${runner_state:-query failed}" >&2
+  if [[ "${expected_state}" == "online" ]]; then
+    printf 'On macOS, enable Privacy & Security > Files & Folders > Removable Volumes (or Full Disk Access) for %s, then rerun this installer.\n' \
+      "${RUNNER_DIR}/bin/Runner.Listener" >&2
+  fi
+  return 1
+}
+
+wait_for_runner_online() {
+  wait_for_runner_state online
+}
+
 # Download and verify the exact upstream runner archive before touching a service.
 download_verified_runner() {
   local asset="$1" digest="$2" actual_digest release_tag
@@ -263,6 +350,11 @@ update_runner() {
     printf 'could not stop scheduled release runner for update\n' >&2
     return 1
   fi
+  if ! wait_for_runner_state offline; then
+    printf 'could not prove the previous scheduled release runner session stopped\n' >&2
+    runner_service start || true
+    return 1
+  fi
   if ! tar -xzf "${RUNNER_ARCHIVE}" -C "${RUNNER_DIR}"; then
     printf 'could not extract verified actions runner archive\n' >&2
     runner_service start || true
@@ -277,6 +369,7 @@ update_runner() {
   fi
   runner_service start
   runner_service status
+  wait_for_runner_online || return
   printf 'updated scheduled release runner from %s to %s\n' \
     "${installed_version}" "${updated_version}"
 }
@@ -296,6 +389,7 @@ install_runner() {
     if [[ "${installed_version}" == "${release_version}" ]]; then
       printf 'scheduled release runner is already current at %s\n' "${installed_version}"
       runner_service status
+      wait_for_runner_online || return
       return 0
     fi
     if ! download_verified_runner "${asset}" "${digest}"; then
@@ -332,8 +426,7 @@ install_runner() {
     ./svc.sh start
     ./svc.sh status
   )
-  printf 'scheduled stable-release runner %s is online for %s\n' \
-    "${RUNNER_NAME}" "${REPOSITORY}"
+  wait_for_runner_online || return
 }
 
 # Install the runner after validating its requested configuration.
