@@ -185,6 +185,28 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
         )
         self.assertEqual(MAKEFILE.count("stack-self-test\n"), 1)
 
+    def test_tool_tests_ignore_a_release_controllers_temporary_root(self) -> None:
+        self.assertIn("override TOOL_TEST_TEMP_ROOT :=", MAKEFILE)
+        self.assertIn("-d /private/tmp && -w /private/tmp", MAKEFILE)
+        self.assertIn("printf '%s' /tmp", MAKEFILE)
+        expected_environment = (
+            'TMPDIR="$(TOOL_TEST_TEMP_ROOT)" TMP="$(TOOL_TEST_TEMP_ROOT)" '
+            'TEMP="$(TOOL_TEST_TEMP_ROOT)"'
+        )
+        self.assertIn(
+            f"override TOOL_TEST_TEMP_ENV := {expected_environment}",
+            MAKEFILE,
+        )
+        for target, end in (
+            ("stack-self-test", "stack-transient-clean-plan"),
+            ("coverage-python-tools-test", "release-tools-test"),
+            ("release-tools-test", "ci-tools-test"),
+            ("ci-tools-test", "coverage-tools-test"),
+        ):
+            with self.subTest(target=target):
+                recipe = make_target(target, end)
+                self.assertIn("$(TOOL_TEST_TEMP_ENV)", recipe)
+
     def test_runtime_validation_uses_pinned_managed_macos_toolchain(self) -> None:
         runtime_validation = CI_WORKFLOW.split("  validate_runtime:", 1)[1].split(
             "  prebuilt_binaries:", 1
