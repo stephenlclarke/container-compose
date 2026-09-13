@@ -524,6 +524,7 @@ jobs:
             printf 'stable release authority bundle already exists: %s\n' "${bundle}" >&2
             exit 2
           fi
+          mkdir -p "$(dirname "${bundle}")"
           mkdir "${bundle}"
           checkpoint="${evidence}/hosted-sibling-stack.success.json"
           output_name="$(python3 - "${checkpoint}" <<'PY'
