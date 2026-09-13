@@ -6361,7 +6361,7 @@ retain_stable_gate_authority() {
     if (( retained == 0 )); then
       archive="${tmp}/stable-release-authority.tar.gz"
       sidecar="${archive}.sha256"
-      /usr/bin/tar -C "${bundle}" -czf "${archive}" .
+      COPYFILE_DISABLE=1 /usr/bin/tar -C "${bundle}" -czf "${archive}" .
     fi
     receipt_sha="$(shasum -a 256 "${receipt}" | awk '{print $1}')"
     tag_sha="$(git -C "$(repo_path "${COMPOSE_REPO}")" rev-list -n 1 "refs/tags/${version}")"
