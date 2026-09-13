@@ -4563,6 +4563,14 @@ formula_digest="sha256:${DIGEST}"
         )
         self.assertIn('"stable-release-authority.tar.gz"', retention)
         self.assertIn('"stable-release-authority.tar.gz.sha256"', retention)
+        self.assertIn(
+            'COPYFILE_DISABLE=1 /usr/bin/tar -C "${authority_root}/bundle"',
+            workflow,
+        )
+        self.assertIn(
+            'COPYFILE_DISABLE=1 /usr/bin/tar -C "${bundle}"',
+            self.script,
+        )
 
     def test_package_authority_requires_a_successful_candidate_bound_gate(self) -> None:
         accepted = self.run_package_authority_step("tag", "0.6.70", "29288195238", "success")

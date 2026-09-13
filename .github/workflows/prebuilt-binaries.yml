@@ -1410,7 +1410,7 @@ jobs:
             --homebrew-tap-ref "${homebrew_tap_ref}" \
             --init-image-sha256 "${init_image_sha256}" >/dev/null
           authority_asset="stable-release-authority.tar.gz"
-          /usr/bin/tar -C "${authority_root}/bundle" -czf \
+          COPYFILE_DISABLE=1 /usr/bin/tar -C "${authority_root}/bundle" -czf \
             "${RUNNER_TEMP}/${authority_asset}" .
           python3 container-compose/Tools/release/write-sha256-sidecar.py \
             "${RUNNER_TEMP}/${authority_asset}"
