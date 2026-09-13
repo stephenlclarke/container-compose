@@ -722,6 +722,31 @@ jobs:
             exit 1
           fi
 
+          public_authority=false
+          for attempt in {1..12}; do
+            anonymous_token=''
+            if anonymous_token="$(
+                curl --fail --silent --show-error \
+                  'https://ghcr.io/token?service=ghcr.io&scope=repository:stephenlclarke/containerization/vminit:pull' \
+                  | jq -er '.token'
+              )" \
+              && curl --fail --silent --show-error --head \
+                --output /dev/null \
+                --header "Authorization: Bearer ${anonymous_token}" \
+                --header 'Accept: application/vnd.oci.image.index.v1+json' \
+                "https://ghcr.io/v2/stephenlclarke/containerization/vminit/manifests/${containerization_ref}"; then
+              public_authority=true
+              break
+            fi
+            (( attempt < 12 )) || break
+            sleep 5
+          done
+          if [[ "${public_authority}" != "true" ]]; then
+            printf 'exact VM-init authority is not anonymously resolvable: %s\n' \
+              "${containerization_ref}" >&2
+            exit 1
+          fi
+
       - name: Resolve the pinned Container formula source
         id: container-source
         working-directory: container-compose

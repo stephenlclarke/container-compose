@@ -8629,6 +8629,25 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/663"
     },
     {
+      "id": "container-compose-664",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): require public vminit authority",
+      "state": "active-draft",
+      "lastVerified": "2026-09-13",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-664.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-665.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/665"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
