@@ -51,19 +51,24 @@ Usage:
 Purpose:
   Register this Apple-silicon Mac as the dedicated local runner for the
   Scheduled Stable Release workflow, then install and start its launchd service.
-  Every invocation also updates an existing runner to the latest signed
-  macOS ARM64 GitHub Actions runner release before returning it to service.
+  Every invocation also verifies the unattended release authorities and
+  updates an existing runner to the latest signed macOS ARM64 GitHub Actions
+  runner release before returning it to service.
 
-The runner is restricted by the workflow to the main branch and the
-${RUNNER_LABEL} label. It uses this user's existing GitHub CLI login and SSH
-Git signing setup; this script never copies a GitHub token or private key into
-the repository, Actions secrets, or the runner workspace.
+  The runner is restricted by the workflow to the main branch and the
+  ${RUNNER_LABEL} label. Provisioning uses this user's existing GitHub CLI
+  login; release jobs use the repository's purpose-specific Actions secret and
+  an operation-scoped Developer ID keychain. The SSH Git signing key remains a
+  local noninteractive runner authority.
 
 Requirements:
   - macOS on Apple silicon with kern.hv_support=1
   - gh authenticated as the owner of the target repository
   - git configured with user.name, user.email, gpg.format=ssh, commit.gpgsign=true, and user.signingkey
   - swift, go, node, npm, python3, docker compose, jq, GNU tar, and shasum
+  - CONTAINER_FAMILY_RELEASE_TOKEN, DEVELOPER_ID_APPLICATION_P12_BASE64,
+    and DEVELOPER_ID_APPLICATION_P12_PASSWORD repository secrets
+  - DEVELOPER_ID_APPLICATION_SIGNING_IDENTITY repository variable
   - Removable Volumes access for the installed Runner.Listener when _work is
     placed on /Volumes/SSD; macOS treats each updated runner binary separately
 
@@ -173,7 +178,7 @@ ensure_release_host() {
 
 # Verify the local toolchain and repository access before registering a runner.
 ensure_tools() {
-  local command_name
+  local command_name name secret_names variable_names
   for command_name in docker gh git go jq make node npm python3 shasum ssh-keygen swift tar; do
     need_command "${command_name}"
   done
@@ -181,6 +186,27 @@ ensure_tools() {
   gh api "repos/${REPOSITORY}" --jq '.full_name' >/dev/null
   if [[ "$(gh api user --jq '.login')" != "stephenlclarke" ]]; then
     printf 'the scheduled release runner must authenticate as stephenlclarke\n' >&2
+    exit 1
+  fi
+  secret_names="$(
+    gh api --paginate "repos/${REPOSITORY}/actions/secrets?per_page=100" \
+      --jq '.secrets[].name'
+  )"
+  for name in \
+    CONTAINER_FAMILY_RELEASE_TOKEN \
+    DEVELOPER_ID_APPLICATION_P12_BASE64 \
+    DEVELOPER_ID_APPLICATION_P12_PASSWORD; do
+    if ! grep -Fxq "${name}" <<<"${secret_names}"; then
+      printf 'the unattended release secret is not configured: %s\n' "${name}" >&2
+      exit 1
+    fi
+  done
+  variable_names="$(
+    gh api --paginate "repos/${REPOSITORY}/actions/variables?per_page=100" \
+      --jq '.variables[].name'
+  )"
+  if ! grep -Fxq DEVELOPER_ID_APPLICATION_SIGNING_IDENTITY <<<"${variable_names}"; then
+    printf 'the unattended release variable is not configured: DEVELOPER_ID_APPLICATION_SIGNING_IDENTITY\n' >&2
     exit 1
   fi
 }

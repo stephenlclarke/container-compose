@@ -29,6 +29,16 @@ SCRIPT = Path(__file__).with_name("publish-github-release.sh")
 
 
 class PublishGitHubReleaseTests(unittest.TestCase):
+    def test_release_draft_creation_uses_the_bounded_reconciliation_helper(
+        self,
+    ) -> None:
+        contents = SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn('"${SELF_DIRECTORY}/create-github-release-draft.sh"', contents)
+        self.assertIn("RELEASE_GITHUB_RETRY_ATTEMPTS", contents)
+        self.assertIn("RELEASE_GITHUB_RETRY_DELAY_SECONDS", contents)
+        self.assertNotIn('"${GH}" release create', contents)
+
     def test_current_published_retry_restores_and_verifies_immutable_release(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -34,6 +35,108 @@ SPEC.loader.exec_module(MODULE)
 
 
 class RetainReleaseAssetsTests(unittest.TestCase):
+    def test_materialize_restores_the_complete_exact_asset_set(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            candidates = root / "candidates"
+            candidates.mkdir()
+            archive = candidates / "asset.tar.gz"
+            checksum = candidates / "asset.tar.gz.sha256"
+            archive.write_bytes(b"signed-archive")
+            checksum.write_text("digest  asset.tar.gz\n", encoding="utf-8")
+            os.chmod(archive, 0o750)
+            retained = root / "retained"
+            MODULE.retain(retained, "1.2.3", [archive, checksum])
+            retained_mode = MODULE.retained_path(
+                retained, "1.2.3", archive.name
+            ).stat().st_mode & 0o777
+            archive.write_bytes(b"rebuilt-archive")
+            checksum.write_text("other  asset.tar.gz\n", encoding="utf-8")
+
+            MODULE.materialize(retained, "1.2.3", [archive, checksum])
+
+            self.assertEqual(archive.read_bytes(), b"signed-archive")
+            self.assertEqual(
+                checksum.read_text(encoding="utf-8"), "digest  asset.tar.gz\n"
+            )
+            self.assertEqual(archive.stat().st_mode & 0o777, retained_mode)
+
+    def test_materialize_validates_every_source_before_replacing_any_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            candidates = root / "candidates"
+            candidates.mkdir()
+            archive = candidates / "asset.tar.gz"
+            missing = candidates / "missing.sha256"
+            archive.write_bytes(b"signed-archive")
+            retained = root / "retained"
+            MODULE.retain(retained, "1.2.3", [archive])
+            archive.write_bytes(b"rebuilt-archive")
+            missing.write_bytes(b"new")
+
+            with self.assertRaisesRegex(MODULE.RetentionUnavailable, "unavailable"):
+                MODULE.materialize(retained, "1.2.3", [archive, missing])
+
+            self.assertEqual(archive.read_bytes(), b"rebuilt-archive")
+            self.assertEqual(missing.read_bytes(), b"new")
+
+    def test_materialize_rejects_a_symlink_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / "source/asset.tar.gz"
+            source.parent.mkdir()
+            source.write_bytes(b"signed-archive")
+            retained = root / "retained"
+            MODULE.retain(retained, "1.2.3", [source])
+            destination_root = root / "destination"
+            destination_root.mkdir()
+            destination = destination_root / source.name
+            destination.symlink_to(source)
+
+            with self.assertRaisesRegex(MODULE.RetentionError, "unsafe"):
+                MODULE.materialize(retained, "1.2.3", [destination])
+
+    def test_materialize_rejects_bytes_changed_during_staging(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            destination = root / "asset.tar.gz"
+            destination.write_bytes(b"signed-archive")
+            retained = root / "retained"
+            MODULE.retain(retained, "1.2.3", [destination])
+            destination.write_bytes(b"rebuilt-archive")
+
+            def copy_changed_bytes(_input: object, output: object) -> None:
+                output.write(b"changed-during-copy")
+
+            with mock.patch.object(
+                MODULE.shutil, "copyfileobj", side_effect=copy_changed_bytes
+            ):
+                with self.assertRaisesRegex(MODULE.RetentionError, "changed"):
+                    MODULE.materialize(retained, "1.2.3", [destination])
+
+            self.assertEqual(destination.read_bytes(), b"rebuilt-archive")
+
+    def test_materialize_cli_distinguishes_an_unavailable_set(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            destination = root / "asset.tar.gz"
+            destination.write_bytes(b"candidate")
+
+            self.assertEqual(
+                MODULE.main(
+                    [
+                        "materialize",
+                        "--root",
+                        str(root / "retained"),
+                        "--version",
+                        "1.2.3",
+                        "--asset",
+                        str(destination),
+                    ]
+                ),
+                3,
+            )
+
     def test_retained_asset_survives_transient_cleanup_and_is_discoverable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

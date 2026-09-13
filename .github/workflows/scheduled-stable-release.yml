@@ -15,7 +15,7 @@
 #===----------------------------------------------------------------------===#
 
 name: Scheduled Stable Release
-run-name: Scheduled Stable Release · ${{ inputs.version_selector || 'auto' }}
+run-name: Unattended Stable Release · ${{ inputs.intent || 'milestone' }} · ${{ inputs.version_selector || 'auto' }}
 
 on:
   schedule:
@@ -23,16 +23,30 @@ on:
     - cron: "17 9 * * 1"
   workflow_dispatch:
     inputs:
-      version_selector:
-        description: "Stable release bump; auto derives it from Conventional Commits"
+      intent:
+        description: "Release policy"
         required: true
-        default: "auto"
+        default: "milestone"
         type: choice
         options:
-          - "auto"
-          - "--+"
-          - "-+-"
-          - "+--"
+          - "milestone"
+          - "maintenance"
+          - "security"
+      version_selector:
+        description: "auto, --+, -+-, +--, or an exact MAJOR.MINOR.PATCH"
+        required: true
+        default: "auto"
+        type: string
+      reason:
+        description: "Required operational/advisory reason for maintenance or security"
+        required: false
+        default: ""
+        type: string
+      soak_override_reason:
+        description: "Exceptional milestone-only Current soak override"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   actions: read
@@ -49,7 +63,11 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       should_release: ${{ steps.decision.outputs.should_release }}
-      selector: ${{ steps.selector.outputs.selector }}
+      selector: ${{ steps.request.outputs.selector }}
+      intent: ${{ steps.request.outputs.intent }}
+      maintenance_reason: ${{ steps.request.outputs.maintenance_reason }}
+      security_reason: ${{ steps.request.outputs.security_reason }}
+      soak_override_reason: ${{ steps.request.outputs.soak_override_reason }}
       reason: ${{ steps.decision.outputs.reason }}
     steps:
       - name: Checkout release controls
@@ -57,13 +75,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Select release increment
-        id: selector
+      - name: Validate unattended release request
+        id: request
         env:
+          EVENT_NAME: ${{ github.event_name }}
+          INTENT: ${{ inputs.intent || 'milestone' }}
+          REASON: ${{ inputs.reason || '' }}
           SELECTOR: ${{ inputs.version_selector || 'auto' }}
+          SOAK_OVERRIDE_REASON: ${{ inputs.soak_override_reason || '' }}
         shell: bash
         run: |
           set -euo pipefail
+          existing_release_argument=()
+          if [[ "${SELECTOR}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] &&
+            git ls-remote --exit-code --tags --refs origin "refs/tags/${SELECTOR}" >/dev/null; then
+            existing_release_argument=(--existing-release)
+          fi
+          request="$(python3 Tools/release/unattended-release-request.py \
+            --event-name "${EVENT_NAME}" \
+            --intent "${INTENT}" \
+            --selector "${SELECTOR}" \
+            --reason "${REASON}" \
+            --soak-override-reason "${SOAK_OVERRIDE_REASON}" \
+            "${existing_release_argument[@]}")"
+          INTENT="$(jq -r '.intent' <<<"${request}")"
+          SELECTOR="$(jq -r '.selector' <<<"${request}")"
+          maintenance_reason="$(jq -r '.maintenance_reason' <<<"${request}")"
+          security_reason="$(jq -r '.security_reason' <<<"${request}")"
+          SOAK_OVERRIDE_REASON="$(jq -r '.soak_override_reason' <<<"${request}")"
           requested_selector="${SELECTOR}"
           case "${SELECTOR}" in
             auto)
@@ -72,14 +111,20 @@ jobs:
               ;;
             --+|-+-|+--)
               ;;
+            [0-9]*.[0-9]*.[0-9]*)
+              if ! [[ "${SELECTOR}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]]; then
+                printf 'invalid exact stable release version: %s\n' "${SELECTOR}" >&2
+                exit 2
+              fi
+              ;;
             *)
-              printf 'stable release selector must be auto, --+, -+-, or +--: %s\n' \
+              printf 'stable release selector must be auto, --+, -+-, +--, or MAJOR.MINOR.PATCH: %s\n' \
                 "${SELECTOR}" >&2
               exit 2
               ;;
           esac
           case "${SELECTOR}" in
-            --+|-+-|+--)
+            --+|-+-|+--|[0-9]*.[0-9]*.[0-9]*)
               printf 'selector=%s\n' "${SELECTOR}" >> "$GITHUB_OUTPUT"
               ;;
             "")
@@ -92,12 +137,21 @@ jobs:
               exit 2
               ;;
           esac
+          {
+            printf 'intent=%s\n' "${INTENT}"
+            printf 'maintenance_reason=%s\n' "${maintenance_reason}"
+            printf 'security_reason=%s\n' "${security_reason}"
+            printf 'soak_override_reason=%s\n' "${SOAK_OVERRIDE_REASON}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Require a soaked, changed Current build
         id: decision
         env:
           GH_TOKEN: ${{ github.token }}
-          SELECTED_SELECTOR: ${{ steps.selector.outputs.selector }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_INTENT: ${{ steps.request.outputs.intent }}
+          SELECTED_SELECTOR: ${{ steps.request.outputs.selector }}
+          SOAK_OVERRIDE_REASON: ${{ steps.request.outputs.soak_override_reason }}
         shell: bash
         run: |
           set -euo pipefail
@@ -176,6 +230,11 @@ jobs:
             --latest-stable-sha "${latest_stable_sha}" > "${decision_file}"
           should_release="$(jq -r '.should_release' "${decision_file}")"
           reason="$(jq -r '.reason' "${decision_file}")"
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" &&
+            ("${RELEASE_INTENT}" != "milestone" || -n "${SOAK_OVERRIDE_REASON}") ]]; then
+            should_release=true
+            reason="Manual ${RELEASE_INTENT} release request passed immutable Current authority preflight."
+          fi
           if [[ "${should_release}" == "true" && -z "${SELECTED_SELECTOR}" ]]; then
             should_release=false
             reason="Current is newer, but Conventional Commit history contains no release-producing change."
@@ -212,8 +271,11 @@ jobs:
             Makefile
             scripts/CONTAINER_STACK_RELEASE.sh
             Tools/ci/container-runtime-lock.sh
+            Tools/ci/run-command-with-deadline.py
             Tools/release/release-host-state.py
             Tools/release/release-workspace.py
+            Tools/release/temporary-developer-id-keychain.sh
+            Tools/release/unattended-release-request.py
           )
           origin_url="$(git remote get-url origin)"
           case "${origin_url}" in
@@ -261,21 +323,30 @@ jobs:
             fi
           done
 
+      - name: Install operation-scoped Developer ID identity
+        env:
+          DEVELOPER_ID_APPLICATION_P12_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}
+          DEVELOPER_ID_APPLICATION_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}
+          DEVELOPER_ID_EXPECTED_IDENTITY: ${{ vars.DEVELOPER_ID_APPLICATION_SIGNING_IDENTITY }}
+          DEVELOPER_ID_TEMPORARY_ROOT: ${{ runner.temp }}
+          DEVELOPER_ID_KEYCHAIN: ${{ runner.temp }}/container-compose-controller-${{ github.run_id }}-${{ github.run_attempt }}.keychain-db
+          DEVELOPER_ID_ORIGINAL_KEYCHAINS: ${{ runner.temp }}/container-compose-controller-${{ github.run_id }}-${{ github.run_attempt }}.keychains
+          DEVELOPER_ID_ENVIRONMENT_FILE: ${{ github.env }}
+        shell: bash
+        run: release-controls/container-compose/Tools/release/temporary-developer-id-keychain.sh install
+
       - name: Configure isolated release controller
+        env:
+          GH_TOKEN: ${{ secrets.CONTAINER_FAMILY_RELEASE_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          automation_token="$(
-            unset GH_TOKEN GITHUB_TOKEN
-            gh auth token
-          )"
-          if [[ -z "${automation_token}" ]]; then
-            printf 'the local release runner has no GitHub CLI token\n' >&2
+          if [[ -z "${GH_TOKEN}" ]]; then
+            printf 'CONTAINER_FAMILY_RELEASE_TOKEN is required\n' >&2
             exit 1
           fi
-          export GH_TOKEN="${automation_token}"
           if [[ "$(gh api user --jq '.login')" != "stephenlclarke" ]]; then
-            printf 'the local release runner must authenticate as stephenlclarke\n' >&2
+            printf 'the unattended release token must authenticate as stephenlclarke\n' >&2
             exit 1
           fi
 
@@ -302,13 +373,33 @@ jobs:
         working-directory: release-controls/container-compose
         env:
           CONTAINER_STACK_RELEASE_BUILD_ROOT: /Volumes/SSD/github/container-compose-release-transactions
-          CONTAINER_STACK_RELEASE_INTENT: milestone
+          CONTAINER_STACK_MAINTENANCE_REASON: ${{ needs.preflight.outputs.maintenance_reason }}
+          CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON: ${{ needs.preflight.outputs.soak_override_reason }}
+          CONTAINER_STACK_RELEASE_INTENT: ${{ needs.preflight.outputs.intent }}
+          CONTAINER_STACK_SECURITY_REASON: ${{ needs.preflight.outputs.security_reason }}
+          GH_TOKEN: ${{ secrets.CONTAINER_FAMILY_RELEASE_TOKEN }}
           VERSION_SELECTOR: ${{ needs.preflight.outputs.selector }}
         run: |
           set -euo pipefail
-          release_token="$(
-            unset GH_TOKEN GITHUB_TOKEN
-            gh auth token
-          )"
-          export GH_TOKEN="${release_token}"
           make release VERSION_SELECTOR="${VERSION_SELECTOR}"
+
+      - name: Remove operation-scoped Developer ID identity
+        if: always()
+        env:
+          DEVELOPER_ID_TEMPORARY_ROOT: ${{ runner.temp }}
+          DEVELOPER_ID_KEYCHAIN: ${{ runner.temp }}/container-compose-controller-${{ github.run_id }}-${{ github.run_attempt }}.keychain-db
+          DEVELOPER_ID_ORIGINAL_KEYCHAINS: ${{ runner.temp }}/container-compose-controller-${{ github.run_id }}-${{ github.run_attempt }}.keychains
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=release-controls/container-compose/Tools/release/temporary-developer-id-keychain.sh
+          if [[ ! -e "${DEVELOPER_ID_KEYCHAIN}" &&
+            ! -e "${DEVELOPER_ID_ORIGINAL_KEYCHAINS}" ]]; then
+            exit 0
+          fi
+          if [[ ! -x "${helper}" ]]; then
+            printf 'cannot safely restore the Developer ID keychain search list: %s is unavailable\n' \
+              "${helper}" >&2
+            exit 1
+          fi
+          "${helper}" cleanup

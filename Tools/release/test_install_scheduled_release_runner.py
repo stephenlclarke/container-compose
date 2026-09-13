@@ -74,6 +74,22 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
             "#!/usr/bin/env bash\n"
             "set -euo pipefail\n"
             "printf 'gh:%s\\n' \"$*\" >> \"${RUNNER_TEST_LOG}\"\n"
+            "if [[ \"$*\" == *'/actions/secrets?per_page=100'* ]]; then\n"
+            "  printf '%s\\n' CONTAINER_FAMILY_RELEASE_TOKEN "
+            "DEVELOPER_ID_APPLICATION_P12_BASE64\n"
+            "  if [[ \"${RUNNER_TEST_MISSING_SECRET:-0}\" != 1 ]]; then\n"
+            "    printf '%s\\n' DEVELOPER_ID_APPLICATION_P12_PASSWORD\n"
+            "  fi\n"
+            "  exit 0\n"
+            "fi\n"
+            "if [[ \"$*\" == *'/actions/variables?per_page=100'* ]]; then\n"
+            "  printf '%s\\n' DEVELOPER_ID_APPLICATION_SIGNING_IDENTITY\n"
+            "  exit 0\n"
+            "fi\n"
+            "if [[ \"$*\" == 'api user --jq .login' ]]; then\n"
+            "  printf '%s\\n' stephenlclarke\n"
+            "  exit 0\n"
+            "fi\n"
             "if [[ \"$1\" == api ]]; then\n"
             "  if [[ \"${2:-}\" == */actions/runners\\?per_page=100 ]]; then\n"
             "    if [[ -n \"${RUNNER_TEST_API_SLEEP_SECONDS:-}\" ]]; then\n"
@@ -110,6 +126,11 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
             "fi\n"
             "printf 'unexpected gh invocation: %s\\n' \"$*\" >&2\n"
             "exit 1\n",
+        )
+        self.write_executable(
+            bin_dir / "docker",
+            "#!/usr/bin/env bash\nset -euo pipefail\n"
+            "[[ \"$*\" == 'compose version' ]]\n",
         )
         self.write_executable(
             bin_dir / "tar",
@@ -262,6 +283,49 @@ class ScheduledReleaseRunnerInstallerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("updates an existing runner", result.stdout)
         self.assertIn("Removable Volumes access", result.stdout)
+
+    def run_ensure_tools(self, *, missing_secret: bool = False) -> subprocess.CompletedProcess[str]:
+        """Execute only the noninteractive prerequisite inventory."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            bin_dir = temporary_root / "bin"
+            log_path = temporary_root / "runner.log"
+            bin_dir.mkdir()
+            self.write_fake_tools(bin_dir)
+            library = temporary_root / "installer-library.sh"
+            source = INSTALLER.read_text(encoding="utf-8")
+            library.write_text(
+                source.rsplit('\nmain "$@"', 1)[0] + "\n", encoding="utf-8"
+            )
+            environment = os.environ.copy()
+            environment["PATH"] = f"{bin_dir}:{environment['PATH']}"
+            environment["RUNNER_TEST_LOG"] = str(log_path)
+            if missing_secret:
+                environment["RUNNER_TEST_MISSING_SECRET"] = "1"
+            environment.pop("BASH_ENV", None)
+            return subprocess.run(
+                ["bash", "-c", f"source {shlex.quote(str(library))}; ensure_tools"],
+                capture_output=True,
+                check=False,
+                cwd=temporary_root,
+                env=environment,
+                text=True,
+            )
+
+    def test_tool_preflight_requires_unattended_release_authorities(self) -> None:
+        result = self.run_ensure_tools()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_tool_preflight_rejects_a_missing_release_secret(self) -> None:
+        result = self.run_ensure_tools(missing_secret=True)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "unattended release secret is not configured: "
+            "DEVELOPER_ID_APPLICATION_P12_PASSWORD",
+            result.stderr,
+        )
 
     def test_launchd_status_does_not_substitute_for_remote_runner_health(self) -> None:
         """A running wrapper cannot mask an offline updated listener."""

@@ -25,6 +25,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import stat
 import sys
 import tempfile
@@ -43,6 +44,10 @@ VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 
 class RetentionError(RuntimeError):
     """A retained release manifest or candidate asset is unsafe."""
+
+
+class RetentionUnavailable(RetentionError):
+    """A requested retained release asset has not been recorded."""
 
 
 def sha256(path: Path) -> str:
@@ -174,7 +179,9 @@ def retained_path(root: Path, version: str, name: str) -> Path:
     manifest = read_manifest(manifest_path(root, version))
     record = manifest["assets"].get(name)
     if not isinstance(record, dict) or not isinstance(record.get("path"), str):
-        raise RetentionError(f"retained stable asset is unavailable: {version}/{name}")
+        raise RetentionUnavailable(
+            f"retained stable asset is unavailable: {version}/{name}"
+        )
     path = Path(record["path"])
     artifact_root = (root / "release/artifacts").resolve(strict=True)
     if (
@@ -190,9 +197,90 @@ def retained_path(root: Path, version: str, name: str) -> Path:
     return path
 
 
+def materialize(root: Path, version: str, destinations: list[Path]) -> None:
+    """Validate and stage a complete set before replacing each destination."""
+    if len({destination.name for destination in destinations}) != len(destinations):
+        raise RetentionError("materialize destinations must have unique asset names")
+
+    manifest = read_manifest(manifest_path(root, version))
+    sources: list[tuple[Path, Path, str]] = []
+    for destination in destinations:
+        if not destination.is_absolute():
+            raise RetentionError(
+                f"release asset destination must be absolute: {destination}"
+            )
+        STACK_ARTIFACT.validate_name(destination.name)
+        parent = destination.parent
+        if parent.is_symlink() or not parent.is_dir():
+            raise RetentionError(
+                f"release asset destination parent is unsafe: {parent}"
+            )
+        if destination.is_symlink() or (
+            destination.exists() and not destination.is_file()
+        ):
+            raise RetentionError(
+                f"release asset destination is unsafe: {destination}"
+            )
+        record = manifest["assets"].get(destination.name)
+        if not isinstance(record, dict) or not isinstance(record.get("sha256"), str):
+            raise RetentionUnavailable(
+                "retained stable asset is unavailable: "
+                f"{version}/{destination.name}"
+            )
+        sources.append(
+            (
+                retained_path(root, version, destination.name),
+                destination,
+                record["sha256"],
+            )
+        )
+
+    staged: list[tuple[Path, Path]] = []
+    try:
+        for source, destination, expected_digest in sources:
+            descriptor, name = tempfile.mkstemp(
+                dir=destination.parent,
+                prefix=f".{destination.name}-",
+                suffix=".tmp",
+            )
+            temporary = Path(name)
+            try:
+                with source.open("rb") as input_stream, os.fdopen(
+                    descriptor, "wb"
+                ) as output_stream:
+                    shutil.copyfileobj(input_stream, output_stream)
+                    os.fchmod(
+                        output_stream.fileno(),
+                        stat.S_IMODE(source.lstat().st_mode),
+                    )
+                    output_stream.flush()
+                    os.fsync(output_stream.fileno())
+                if sha256(temporary) != expected_digest:
+                    raise RetentionError(
+                        f"retained stable asset changed while restoring {version}: "
+                        f"{destination.name}"
+                    )
+            except BaseException:
+                temporary.unlink(missing_ok=True)
+                raise
+            staged.append((temporary, destination))
+
+        for temporary, destination in staged:
+            os.replace(temporary, destination)
+        for parent in {destination.parent for _, destination, _ in sources}:
+            directory = os.open(parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        for temporary, _ in staged:
+            temporary.unlink(missing_ok=True)
+
+
 def main(arguments: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("retain", "path"))
+    parser.add_argument("action", choices=("retain", "materialize", "path"))
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--asset", type=Path, action="append", default=[])
@@ -203,10 +291,17 @@ def main(arguments: list[str] | None = None) -> int:
             if not options.asset:
                 raise RetentionError("retain requires at least one --asset")
             retain(options.root, options.version, options.asset)
+        elif options.action == "materialize":
+            if not options.asset:
+                raise RetentionError("materialize requires at least one --asset")
+            materialize(options.root, options.version, options.asset)
         else:
             if not options.name:
                 raise RetentionError("path requires --name")
             print(retained_path(options.root, options.version, options.name))
+    except RetentionUnavailable as error:
+        print(f"retain-release-assets: {error}", file=sys.stderr)
+        return 3
     except (RetentionError, STACK_ARTIFACT.ArtifactError, OSError, json.JSONDecodeError) as error:
         print(f"retain-release-assets: {error}", file=sys.stderr)
         return 2
