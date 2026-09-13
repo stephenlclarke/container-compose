@@ -20,6 +20,7 @@ set -Eeuo pipefail
 GH="${GH:-gh}"
 RETRY_ATTEMPTS="${RELEASE_GITHUB_RETRY_ATTEMPTS:-5}"
 RETRY_DELAY_SECONDS="${RELEASE_GITHUB_RETRY_DELAY_SECONDS:-5}"
+RELEASE_TARGET_COMMITISH="${RELEASE_TARGET_COMMITISH:-main}"
 
 required_variables=(
   PUBLISH_SHA
@@ -43,6 +44,10 @@ if [[ ! -f "${RELEASE_NOTES_FILE}" || -L "${RELEASE_NOTES_FILE}" ]]; then
 fi
 if [[ ! "${PUBLISH_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
   printf 'release target must be a lowercase 40-character commit SHA\n' >&2
+  exit 2
+fi
+if [[ "${RELEASE_TARGET_COMMITISH}" != main ]]; then
+  printf 'release target commitish must be the protected default branch\n' >&2
   exit 2
 fi
 if [[ ! "${RETRY_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]] || \
@@ -80,7 +85,7 @@ matching_draft_exists() {
   jq -e \
     --argjson prerelease "${RELEASE_PRERELEASE}" \
     --arg tag "${RELEASE_TAG}" \
-    --arg target "${PUBLISH_SHA}" \
+    --arg target "${RELEASE_TARGET_COMMITISH}" \
     --arg title "${RELEASE_TITLE}" \
     '(
       .isDraft == true and
@@ -99,7 +104,7 @@ while true; do
       --repo "${RELEASE_REPOSITORY}" \
       --title "${RELEASE_TITLE}" \
       --notes-file "${RELEASE_NOTES_FILE}" \
-      --target "${PUBLISH_SHA}" \
+      --target "${RELEASE_TARGET_COMMITISH}" \
       --verify-tag \
       "${release_flags[@]}" \
       --draft 2>&1

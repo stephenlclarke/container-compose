@@ -3886,6 +3886,35 @@ formula_digest="sha256:${DIGEST}"
         published = publisher[publisher.index('if [[ "${published_release_state}" == "exists" ]]') :]
         self.assertNotIn("release delete", published)
 
+    def test_release_metadata_targets_main_without_weakening_tag_authority(self) -> None:
+        publisher = (
+            ROOT / "Tools" / "release" / "publish-github-release.sh"
+        ).read_text(encoding="utf-8")
+        creator = (
+            ROOT / "Tools" / "release" / "create-github-release-draft.sh"
+        ).read_text(encoding="utf-8")
+
+        for contents in (publisher, creator):
+            self.assertIn(
+                'RELEASE_TARGET_COMMITISH="${RELEASE_TARGET_COMMITISH:-main}"',
+                contents,
+            )
+            self.assertIn(
+                '"${RELEASE_TARGET_COMMITISH}" != main',
+                contents,
+            )
+        self.assertIn('--target "${RELEASE_TARGET_COMMITISH}"', creator)
+        self.assertIn('--target "${RELEASE_TARGET_COMMITISH}"', publisher)
+        self.assertIn(
+            '"${target_commitish}" != "${PUBLISH_SHA}"',
+            publisher,
+        )
+        self.assertIn(
+            '"${target_commitish}" != "${RELEASE_TARGET_COMMITISH}"',
+            publisher,
+        )
+        self.assertIn("published release tag target mismatch", publisher)
+
     def test_current_package_yields_to_an_exact_stable_candidate(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
         stable_skip = (

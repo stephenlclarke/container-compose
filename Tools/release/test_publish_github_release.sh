@@ -311,10 +311,10 @@ fi
 
 stable_create_calls="${temporary_directory}/stable-create.calls"
 run_publisher tag missing "${stable_create_calls}"
-grep -Fqx "release create 1.2.3 --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --target 0123456789012345678901234567890123456789 --verify-tag --prerelease=false --latest --draft" "${stable_create_calls}"
+grep -Fqx "release create 1.2.3 --repo stephenlclarke/container-compose --title 1.2.3 --notes-file ${notes} --target main --verify-tag --prerelease=false --latest --draft" "${stable_create_calls}"
 grep -Fqx "release upload 1.2.3 ${asset} --repo stephenlclarke/container-compose" "${stable_create_calls}"
 grep -Fqx "release upload 1.2.3 ${checksum} --repo stephenlclarke/container-compose" "${stable_create_calls}"
-grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --title 1.2.3 --notes-file ${notes} --draft=false --prerelease=false --latest" "${stable_create_calls}"
+grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --target main --title 1.2.3 --notes-file ${notes} --draft=false --prerelease=false --latest" "${stable_create_calls}"
 if grep -Eq 'clobber|release delete' "${stable_create_calls}"; then
   printf 'stable publication attempted to replace immutable state\n' >&2
   exit 1
@@ -324,7 +324,7 @@ stable_draft_calls="${temporary_directory}/stable-draft.calls"
 run_publisher tag draft "${stable_draft_calls}"
 grep -Fqx "release upload 1.2.3 ${asset} --repo stephenlclarke/container-compose" "${stable_draft_calls}"
 grep -Fqx "release upload 1.2.3 ${checksum} --repo stephenlclarke/container-compose" "${stable_draft_calls}"
-grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --title 1.2.3 --notes-file ${notes} --draft=false --prerelease=false --latest" "${stable_draft_calls}"
+grep -Fqx "release edit 1.2.3 --repo stephenlclarke/container-compose --target main --title 1.2.3 --notes-file ${notes} --draft=false --prerelease=false --latest" "${stable_draft_calls}"
 if grep -Eq 'release create|clobber|release delete' "${stable_draft_calls}"; then
   printf 'stable draft recovery recreated or clobbered release state\n' >&2
   exit 1
@@ -506,10 +506,10 @@ fi
 main_create_calls="${temporary_directory}/main-create.calls"
 run_publisher branch missing "${main_create_calls}" "" stage
 current_tag="current-0123456789012345678901234567890123456789"
-grep -Fqx "release create ${current_tag} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target 0123456789012345678901234567890123456789 --verify-tag --prerelease=true --latest=false --draft" "${main_create_calls}"
+grep -Fqx "release create ${current_tag} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target main --verify-tag --prerelease=true --latest=false --draft" "${main_create_calls}"
 grep -Fqx "release upload ${current_tag} ${asset} --repo stephenlclarke/container-compose" "${main_create_calls}"
 grep -Fqx "release upload ${current_tag} ${checksum} --repo stephenlclarke/container-compose" "${main_create_calls}"
-grep -Fqx "release edit ${current_tag} --repo stephenlclarke/container-compose --target 0123456789012345678901234567890123456789 --title Current build --notes-file ${notes} --draft=false --prerelease=true --latest=false" "${main_create_calls}"
+grep -Fqx "release edit ${current_tag} --repo stephenlclarke/container-compose --target main --title Current build --notes-file ${notes} --draft=false --prerelease=true --latest=false" "${main_create_calls}"
 grep -Fqx "tag --no-sign ${current_tag} 0123456789012345678901234567890123456789" "${main_create_calls}.git"
 grep -Fqx "push origin refs/tags/${current_tag}" "${main_create_calls}.git"
 if grep -Eq -- '--force|--clobber|release delete' "${main_create_calls}" "${main_create_calls}.git"; then
@@ -519,7 +519,7 @@ fi
 
 main_missing_finalize_calls="${temporary_directory}/main-missing-finalize.calls"
 run_publisher branch missing "${main_missing_finalize_calls}" "" finalize
-grep -Fqx "release create ${current_tag} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target 0123456789012345678901234567890123456789 --verify-tag --prerelease=true --latest=false --draft" "${main_missing_finalize_calls}"
+grep -Fqx "release create ${current_tag} --repo stephenlclarke/container-compose --title Current build --notes-file ${notes} --target main --verify-tag --prerelease=true --latest=false --draft" "${main_missing_finalize_calls}"
 if grep -Fq "release edit ${current_tag}" "${main_missing_finalize_calls}" && \
   grep -Fq -- '--draft=false' "${main_missing_finalize_calls}"; then
   :

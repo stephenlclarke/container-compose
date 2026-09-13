@@ -23,6 +23,7 @@ GH="${GH:-gh}"
 GIT="${GIT:-git}"
 RELEASE_MUTABLE="${RELEASE_MUTABLE:-false}"
 RELEASE_PHASE="${RELEASE_PHASE:-publish}"
+RELEASE_TARGET_COMMITISH="${RELEASE_TARGET_COMMITISH:-main}"
 
 required_variables=(
   RELEASE_REPOSITORY
@@ -43,6 +44,11 @@ for variable in "${required_variables[@]}"; do
     exit 2
   fi
 done
+
+if [[ "${RELEASE_TARGET_COMMITISH}" != main ]]; then
+  printf 'release target commitish must be the protected default branch\n' >&2
+  exit 2
+fi
 
 for variable in RELEASE_NOTES_FILE RELEASE_ASSET_PATH RELEASE_CHECKSUM_PATH; do
   if [[ ! -f "${!variable}" ]]; then
@@ -225,6 +231,7 @@ create_release_draft() {
     RELEASE_NOTES_FILE="${RELEASE_NOTES_FILE}" \
     RELEASE_PRERELEASE="${RELEASE_PRERELEASE}" \
     RELEASE_REPOSITORY="${RELEASE_REPOSITORY}" \
+    RELEASE_TARGET_COMMITISH="${RELEASE_TARGET_COMMITISH}" \
     RELEASE_TAG="${RELEASE_TAG}" \
     RELEASE_TITLE="${RELEASE_TITLE}" \
     PUBLISH_SHA="${PUBLISH_SHA}" \
@@ -236,13 +243,15 @@ create_release_draft() {
 # only that draft object after a final exact-state check. Never ask GitHub CLI
 # to clean up the source tag: both Current and stable tags are immutable input.
 recreate_release_draft() {
-  local snapshot remote_tag_sha
+  local snapshot remote_tag_sha target_commitish
   snapshot="$("${GH}" release view "${RELEASE_TAG}" \
     --repo "${RELEASE_REPOSITORY}" \
     --json isDraft,tagName,targetCommitish)"
+  target_commitish="$(jq -r '.targetCommitish' <<<"${snapshot}")"
   if [[ "$(jq -r '.isDraft' <<<"${snapshot}")" != true ||
         "$(jq -r '.tagName' <<<"${snapshot}")" != "${RELEASE_TAG}" ||
-        "$(jq -r '.targetCommitish' <<<"${snapshot}")" != "${PUBLISH_SHA}" ]]; then
+        ( "${target_commitish}" != "${PUBLISH_SHA}" &&
+          "${target_commitish}" != "${RELEASE_TARGET_COMMITISH}" ) ]]; then
     printf 'release draft changed before bounded replacement: %s\n' \
       "${RELEASE_TAG}" >&2
     return 1
@@ -325,7 +334,15 @@ validate_release_draft_asset_digests() {
 # mutation or a lost publish response can never be reported as success.
 validate_published_release_identity() {
   local snapshot="$1"
-  local field actual expected
+  local field actual expected target_commitish
+  target_commitish="$(jq -er '.targetCommitish | strings' <<<"${snapshot}")"
+  if [[ "${target_commitish}" != "${PUBLISH_SHA}" &&
+        "${target_commitish}" != "${RELEASE_TARGET_COMMITISH}" ]]; then
+    printf 'published release target mismatch: expected %s or %s, got %s\n' \
+      "${PUBLISH_SHA}" "${RELEASE_TARGET_COMMITISH}" \
+      "${target_commitish}" >&2
+    return 1
+  fi
   while IFS=$'\t' read -r field actual expected; do
     if [[ "${actual}" != "${expected}" ]]; then
       printf 'published release %s mismatch: expected %s, got %s\n' \
@@ -333,10 +350,10 @@ validate_published_release_identity() {
       return 1
     fi
   done < <(
-    jq -r --arg tag "${RELEASE_TAG}" --arg target "${PUBLISH_SHA}" \
+    jq -r --arg tag "${RELEASE_TAG}" \
       --arg name "${RELEASE_TITLE}" \
       --argjson prerelease "${RELEASE_PRERELEASE}" \
-      '["draft state", .isDraft, false], ["immutability", .isImmutable, true], ["prerelease state", .isPrerelease, $prerelease], ["tag", .tagName, $tag], ["target", .targetCommitish, $target], ["title", .name, $name] | @tsv' \
+      '["draft state", .isDraft, false], ["immutability", .isImmutable, true], ["prerelease state", .isPrerelease, $prerelease], ["tag", .tagName, $tag], ["title", .name, $name] | @tsv' \
       <<<"${snapshot}"
   )
 }
@@ -608,7 +625,7 @@ reconcile_release_draft() {
   validate_release_draft_asset_names "${remote_names}" "${expected_names}" true
   validate_release_draft_asset_digests "${remote_assets}"
   "${GH}" release edit "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
-    --target "${PUBLISH_SHA}" --title "${RELEASE_TITLE}" \
+    --target "${RELEASE_TARGET_COMMITISH}" --title "${RELEASE_TITLE}" \
     --notes-file "${RELEASE_NOTES_FILE}" \
     --draft=false "${release_flags[@]}"
   verify_published_release "${expected_names}"

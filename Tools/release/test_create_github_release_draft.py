@@ -67,7 +67,7 @@ if [[ "${1:-}:${2:-}" == release:view && -f "${TEST_DRAFT}" ]]; then
   [[ "${TEST_MODE}" != mismatch ]] || title="wrong release"
   jq -n \
     --arg tag "${RELEASE_TAG}" \
-    --arg target "${PUBLISH_SHA}" \
+    --arg target "${RELEASE_TARGET_COMMITISH}" \
     --arg title "${title}" \
     --argjson prerelease "${RELEASE_PRERELEASE}" \
     '{isDraft:true,isPrerelease:$prerelease,tagName:$tag,
@@ -90,6 +90,7 @@ exit 1
             "RELEASE_PRERELEASE": "false",
             "RELEASE_REPOSITORY": "owner/repository",
             "RELEASE_TAG": "1.2.3",
+            "RELEASE_TARGET_COMMITISH": "main",
             "RELEASE_TITLE": "1.2.3",
             "TEST_COUNT": str(root / "count"),
             "TEST_DRAFT": str(root / "draft"),
@@ -120,6 +121,7 @@ exit 1
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((root / "count").read_text().strip(), "2")
             self.assertIn("retrying exact draft", result.stderr)
+            self.assertIn("--target main", (root / "trace").read_text())
 
     def test_accepts_an_exact_draft_after_an_ambiguous_response(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -164,6 +166,18 @@ exit 1
             result = self.run_helper(environment)
 
             self.assertEqual(result.returncode, 2)
+            self.assertFalse((root / "trace").exists())
+
+    def test_rejects_a_non_default_release_metadata_target(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            environment = self.fixture(root, "transient")
+            environment["RELEASE_TARGET_COMMITISH"] = "a" * 40
+
+            result = self.run_helper(environment)
+
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("protected default branch", result.stderr)
             self.assertFalse((root / "trace").exists())
 
 
