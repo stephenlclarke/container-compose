@@ -2443,6 +2443,18 @@ github_cli() {{
         self.assertIn("name: Require exact Current VM-init authority", fail_fast)
         self.assertIn("run-candidates", fail_fast)
         self.assertIn("validate-initfs", fail_fast)
+        self.assertIn("public_authority=false", fail_fast)
+        self.assertIn("anonymous_token", fail_fast)
+        self.assertIn(
+            "https://ghcr.io/token?service=ghcr.io&scope=repository:"
+            "stephenlclarke/containerization/vminit:pull",
+            fail_fast,
+        )
+        self.assertIn(
+            "exact VM-init authority is not anonymously resolvable",
+            fail_fast,
+        )
+        self.assertNotIn("--user", fail_fast)
         self.assertIn(
             "no exact, retained initfs artifact exists for Containerization",
             fail_fast,
