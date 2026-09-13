@@ -4327,6 +4327,18 @@ formula_digest="sha256:${DIGEST}"
         )
         self.assertIn("Create candidate-bound authority receipt", workflow)
         self.assertIn("Upload candidate-bound authority receipt", workflow)
+        receipt_start = workflow.index(
+            "      - name: Create candidate-bound authority receipt"
+        )
+        receipt_end = workflow.index(
+            "      - name: Upload candidate-bound authority receipt"
+        )
+        receipt = workflow[receipt_start:receipt_end]
+        self.assertIn('mkdir -p "$(dirname "${bundle}")"', receipt)
+        self.assertLess(
+            receipt.index('mkdir -p "$(dirname "${bundle}")"'),
+            receipt.index('mkdir "${bundle}"'),
+        )
         self.assertIn(
             'summary+=" Authority receipt SHA-256: ${AUTHORITY_RECEIPT_SHA256}."',
             workflow,
