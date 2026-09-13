@@ -1434,6 +1434,13 @@ jobs:
             "${RUNNER_TEMP}/${authority_asset}" .
           python3 container-compose/Tools/release/write-sha256-sidecar.py \
             "${RUNNER_TEMP}/${authority_asset}"
+          # Complete the provisional retained authority pair immediately. On a
+          # retry this makes the earlier signed package/runtime bytes reusable
+          # before staging compares newly timestamp-signed build products.
+          python3 release-tools/Tools/release/retain-local-release-assets.py retain \
+            --root "${retained_root}" --version "${PUBLISH_REF_NAME}" \
+            --asset "${RUNNER_TEMP}/${authority_asset}" \
+            --asset "${RUNNER_TEMP}/${authority_asset}.sha256"
           {
             printf 'asset=%s\n' "${authority_asset}"
             printf 'local_asset=%s\n' "${RUNNER_TEMP}/${authority_asset}"
