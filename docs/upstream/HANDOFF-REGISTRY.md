@@ -8,9 +8,9 @@ links to an immutable Git snapshot.
 
 Last verified: 2026-09-10
 
-Entries: 437. Document snapshots: 766. Current supporting documents: 160.
+Entries: 438. Document snapshots: 768. Current supporting documents: 162.
 
-States: `active-draft` 42, `archived` 304, `closed` 22, `merged` 11, `submitted` 16, `tracked-upstream` 15, `unsubmitted` 27.
+States: `active-draft` 43, `archived` 304, `closed` 22, `merged` 11, `submitted` 16, `tracked-upstream` 15, `unsubmitted` 27.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -267,6 +267,7 @@ States: `active-draft` 42, `archived` 304, `closed` 22, `merged` 11, `submitted`
 | `stephenlclarke/container-compose` | [fix(release): make stable promotion unattended](https://github.com/stephenlclarke/container-compose/pull/656) | `active-draft` | None recorded | [Issue details](container-compose/ISSUE-324.md); [PR details](container-compose/PR-656.md) |
 | `stephenlclarke/container-compose` | [fix(release): hand off downstream runner work](https://github.com/stephenlclarke/container-compose/pull/659) | `active-draft` | None recorded | [Issue details](container-compose/ISSUE-658.md); [PR details](container-compose/PR-659.md) |
 | `stephenlclarke/container-compose` | [fix(release): complete retained authority recovery](https://github.com/stephenlclarke/container-compose/pull/661) | `active-draft` | None recorded | [Issue details](container-compose/ISSUE-660.md); [PR details](container-compose/PR-661.md) |
+| `stephenlclarke/container-compose` | [fix(release): target default branch metadata](https://github.com/stephenlclarke/container-compose/pull/663) | `active-draft` | None recorded | [Issue details](container-compose/ISSUE-662.md); [PR details](container-compose/PR-663.md) |
 | `stephenlclarke/container-compose` | Isolate deterministic anonymous volume identities | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-anonymous-volume-identity.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-anonymous-volume-identity.md) |
 | `stephenlclarke/container-compose` | Support bind create_host_path policy | `archived` | `12c6ed0b8a1e` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-create-host-path.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-create-host-path.md) |
 | `stephenlclarke/container-compose` | Support bind propagation mount options | `archived` | `5fbe9f0937d8` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-propagation.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-propagation.md) |
