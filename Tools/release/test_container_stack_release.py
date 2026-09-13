@@ -4370,6 +4370,19 @@ formula_digest="sha256:${DIGEST}"
         self.assertIn("invalidate-authority", receipt)
         self.assertIn('[[ "${release_state}" != *"HTTP 404"* ]]', receipt)
         self.assertIn("Discarded stale unpublished authority records", receipt)
+        receipt_step = receipt
+        immediate_retention = (
+            "python3 release-tools/Tools/release/retain-local-release-assets.py retain"
+        )
+        self.assertIn(immediate_retention, receipt_step)
+        self.assertIn(
+            '--asset "${RUNNER_TEMP}/${authority_asset}.sha256"',
+            receipt_step,
+        )
+        self.assertGreater(
+            receipt_step.index(immediate_retention),
+            receipt_step.index("verify-stable-authority-bundle.py"),
+        )
         self.assertNotIn(
             "git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git",
             receipt,

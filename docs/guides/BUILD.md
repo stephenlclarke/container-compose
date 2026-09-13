@@ -180,7 +180,7 @@ decision using `make release-recovery-plan VERSION=X.Y.Z`. An unknown dispatch
 is reported by request ID and must be reconciled; it is never treated as an
 absent run or permission to dispatch again.
 
-A retained authority bundle remains provisional until its GitHub release exists. If an unpublished retry obtains a newer successful gate receipt for the same immutable tag, the package workflow first proves that GitHub has neither a draft nor a published release, invalidates only the retained authority pair's manifest records, and downloads the current receipt-bound artifact. The content-addressed former objects remain recoverable; package, runtime, highlight, and quality assets remain retained. An existing release or an unreadable release state always blocks replacement.
+A retained authority bundle remains provisional until its GitHub release exists. If an unpublished retry obtains a newer successful gate receipt for the same immutable tag, the package workflow first proves that GitHub has neither a draft nor a published release, invalidates only the retained authority pair's manifest records, downloads the current receipt-bound artifact, and immediately completes that pair in the retained manifest. Staging can then atomically rematerialize the complete earlier package, runtime, highlight, and quality set before it compares timestamp-signed build products. The content-addressed former authority objects remain recoverable. An existing release, an unreadable release state, or any unrelated retained conflict always blocks replacement.
 
 The self-hosted release runner's `_work` link must also resolve to the external
 volume so Actions checkouts, action caches, tool downloads, and `RUNNER_TEMP`
