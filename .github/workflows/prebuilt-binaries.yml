@@ -1336,21 +1336,41 @@ jobs:
               jq -r '.message' <<< "${init_authority}" |
                 sed -nE 's/^Guest init image SHA-256: ([0-9a-f]{64})[.]$/\1/p'
             )"
-            python3 release-tools/Tools/release/verify-stable-authority-bundle.py \
+            if python3 release-tools/Tools/release/verify-stable-authority-bundle.py \
               --archive "${retained_archive}" --release-tag "${PUBLISH_REF_NAME}" \
               --candidate-sha "${PUBLISH_SHA}" --builder-ref "${BUILDER_REF}" \
               --containerization-ref "${CONTAINERIZATION_REF}" \
               --container-ref "${CONTAINER_REF}" \
               --init-image-sha256 "${init_image_sha256}" \
-              --receipt-sha256 "${AUTHORITY_RECEIPT_SHA256}" >/dev/null
-            local_archive="${RUNNER_TEMP}/stable-release-authority.tar.gz"
-            cp "${retained_archive}" "${local_archive}"
-            cp "${retained_sidecar}" "${local_archive}.sha256"
-            {
-              printf 'asset=stable-release-authority.tar.gz\n'
-              printf 'local_asset=%s\n' "${local_archive}"
-            } >> "${GITHUB_OUTPUT}"
-            exit 0
+              --receipt-sha256 "${AUTHORITY_RECEIPT_SHA256}" >/dev/null 2>&1
+            then
+              local_archive="${RUNNER_TEMP}/stable-release-authority.tar.gz"
+              cp "${retained_archive}" "${local_archive}"
+              cp "${retained_sidecar}" "${local_archive}.sha256"
+              {
+                printf 'asset=stable-release-authority.tar.gz\n'
+                printf 'local_asset=%s\n' "${local_archive}"
+              } >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+          fi
+          if [[ -n "${retained_archive}" || -n "${retained_sidecar}" ]]; then
+            set +e
+            release_state="$(
+              gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${PUBLISH_REF_NAME}" \
+                2>&1
+            )"
+            release_status="$?"
+            set -e
+            if (( release_status == 0 )) || [[ "${release_state}" != *"HTTP 404"* ]]; then
+              printf 'refusing to replace retained authority after a GitHub release exists or its state is unknown\n' >&2
+              exit 1
+            fi
+            python3 release-tools/Tools/release/retain-local-release-assets.py \
+              invalidate-authority --root "${retained_root}" \
+              --version "${PUBLISH_REF_NAME}"
+            printf 'Discarded stale unpublished authority records for %s; using the current gate receipt.\n' \
+              "${PUBLISH_REF_NAME}"
           fi
           authority_root="${RUNNER_TEMP}/stable-release-authority-${PUBLISH_REF_NAME}"
           mkdir "${authority_root}"

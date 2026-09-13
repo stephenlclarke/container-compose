@@ -249,6 +249,11 @@ jobs:
     if: needs.preflight.outputs.should_release == 'true'
     runs-on: [self-hosted, macOS, ARM64, container-compose-release]
     timeout-minutes: 360
+    outputs:
+      version: ${{ steps.promote.outputs.version }}
+      stable_gate_run_id: ${{ steps.promote.outputs.stable_gate_run_id }}
+      control_sha: ${{ steps.promote.outputs.control_sha }}
+      release_was_published: ${{ steps.promote.outputs.release_was_published }}
     steps:
       - name: Checkout container-compose release controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -369,6 +374,7 @@ jobs:
           ssh-keygen -y -P '' -f "${signing_private_key}" >/dev/null
 
       - name: Promote the selected stable release
+        id: promote
         shell: bash
         working-directory: release-controls/container-compose
         env:
@@ -381,6 +387,8 @@ jobs:
           VERSION_SELECTOR: ${{ needs.preflight.outputs.selector }}
         run: |
           set -euo pipefail
+          export CONTAINER_STACK_RELEASE_ASYNC_AFTER_STABLE_GATE=1
+          export CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT="${GITHUB_OUTPUT}"
           make release VERSION_SELECTOR="${VERSION_SELECTOR}"
 
       - name: Remove operation-scoped Developer ID identity
@@ -403,3 +411,114 @@ jobs:
             exit 1
           fi
           "${helper}" cleanup
+
+  complete:
+    name: Complete Stable Release Off-Runner
+    needs: [preflight, release]
+    if: needs.release.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.release.outputs.version }}
+      STABLE_GATE_RUN_ID: ${{ needs.release.outputs.stable_gate_run_id }}
+      CONTROL_SHA: ${{ needs.release.outputs.control_sha }}
+      RELEASE_WAS_PUBLISHED: ${{ needs.release.outputs.release_was_published }}
+    steps:
+      - name: Wait for gate, package, documentation, and immutable publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_TAG}" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ ]] ||
+            [[ ! "${STABLE_GATE_RUN_ID}" =~ ^[0-9]+$ ]] ||
+            [[ ! "${CONTROL_SHA}" =~ ^[0-9a-f]{40}$ ]] ||
+            [[ "${RELEASE_WAS_PUBLISHED}" != true &&
+              "${RELEASE_WAS_PUBLISHED}" != false ]] ||
+            [[ "${CONTROL_SHA}" != "${GITHUB_SHA}" ]]; then
+            printf 'stable release handoff is incomplete or stale\n' >&2
+            exit 1
+          fi
+          dispatch_and_wait() {
+            local workflow="$1" run_id request_id
+            local -a extra_inputs=()
+            if (( $# > 1 )); then
+              extra_inputs=(-F "inputs[repair_tap]=$2")
+            fi
+            request_id="$(</proc/sys/kernel/random/uuid)"
+            run_id="$(
+              gh api --method POST \
+                -H 'X-GitHub-Api-Version: 2026-03-10' \
+                "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
+                -f ref=main \
+                -f "inputs[ref]=${RELEASE_TAG}" \
+                -f "inputs[expected_control_sha]=${CONTROL_SHA}" \
+                -f "inputs[request_id]=${request_id}" \
+                "${extra_inputs[@]}" \
+                --jq '.workflow_run_id'
+            )"
+            if [[ ! "${run_id}" =~ ^[0-9]+$ ]]; then
+              printf 'GitHub did not return a run ID for %s\n' "${workflow}" >&2
+              exit 1
+            fi
+            gh run watch "${run_id}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --exit-status \
+              --interval 30
+          }
+
+          gh run watch "${STABLE_GATE_RUN_ID}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --exit-status \
+            --interval 30
+          if [[ "${RELEASE_WAS_PUBLISHED}" == false ]]; then
+            dispatch_and_wait prebuilt-binaries.yml false
+          else
+            latest="$(
+              gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name'
+            )"
+            formula_current=true
+            if [[ "${latest}" == "${RELEASE_TAG}" ]]; then
+              for formula in container container-compose; do
+                contents="$(
+                  gh api -H 'Accept: application/vnd.github.raw+json' \
+                    "repos/stephenlclarke/homebrew-tap/contents/Formula/${formula}.rb?ref=main"
+                )"
+                if ! grep -F "/releases/download/${RELEASE_TAG}/" \
+                  <<<"${contents}" >/dev/null; then
+                  formula_current=false
+                fi
+              done
+              if [[ "${formula_current}" == false ]]; then
+                dispatch_and_wait prebuilt-binaries.yml true
+              fi
+            fi
+          fi
+          dispatch_and_wait docs.yml
+
+          release="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}"
+          )"
+          jq -e --arg tag "${RELEASE_TAG}" '(
+            .tag_name == $tag and
+            .draft == false and
+            .prerelease == false and
+            .immutable == true
+          )' <<<"${release}" >/dev/null
+          latest="$(
+            gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name'
+          )"
+          if [[ "${latest}" == "${RELEASE_TAG}" ]]; then
+            for formula in container container-compose; do
+              contents="$(
+                gh api -H 'Accept: application/vnd.github.raw+json' \
+                  "repos/stephenlclarke/homebrew-tap/contents/Formula/${formula}.rb?ref=main"
+              )"
+              grep -F "/releases/download/${RELEASE_TAG}/" \
+                <<<"${contents}" >/dev/null
+            done
+          fi
+          printf 'Published and verified container-compose %s.\n' \
+            "${RELEASE_TAG}" >>"${GITHUB_STEP_SUMMARY}"
