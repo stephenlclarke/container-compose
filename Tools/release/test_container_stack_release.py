@@ -4367,6 +4367,9 @@ formula_digest="sha256:${DIGEST}"
         self.assertIn("--candidate-sha \"${PUBLISH_SHA}\"", receipt)
         self.assertIn("stable-release-authority.tar.gz", receipt)
         self.assertIn("'.components[\"homebrew-tap\"]'", receipt)
+        self.assertIn("invalidate-authority", receipt)
+        self.assertIn('[[ "${release_state}" != *"HTTP 404"* ]]', receipt)
+        self.assertIn("Discarded stale unpublished authority records", receipt)
         self.assertNotIn(
             "git ls-remote --heads https://github.com/stephenlclarke/homebrew-tap.git",
             receipt,
@@ -5907,7 +5910,76 @@ formula_digest="sha256:${DIGEST}"
         self.assertIn("actions: read", workflow)
         self.assertNotIn("--current-published-at", workflow)
         self.assertIn("runs-on: [self-hosted, macOS, ARM64, container-compose-release]", workflow)
+        self.assertIn("CONTAINER_STACK_RELEASE_ASYNC_AFTER_STABLE_GATE=1", workflow)
+        self.assertIn(
+            'CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT="${GITHUB_OUTPUT}"',
+            workflow,
+        )
+        self.assertIn("name: Complete Stable Release Off-Runner", workflow)
+        continuation = workflow[workflow.index("  complete:\n") :]
+        self.assertIn("runs-on: ubuntu-24.04", continuation)
+        self.assertIn("GH_TOKEN: ${{ github.token }}", continuation)
+        self.assertNotIn("CONTAINER_FAMILY_RELEASE_TOKEN", continuation)
+        self.assertIn('gh run watch "${STABLE_GATE_RUN_ID}"', continuation)
+        self.assertIn("dispatch_and_wait prebuilt-binaries.yml false", continuation)
+        self.assertIn("dispatch_and_wait prebuilt-binaries.yml true", continuation)
+        self.assertIn("dispatch_and_wait docs.yml", continuation)
+        self.assertIn(".immutable == true", continuation)
         self.assertTrue(os.access(RUNNER_INSTALLER, os.X_OK))
+
+    def test_async_stable_gate_handoff_releases_the_single_runner(self) -> None:
+        handoff = self.script[
+            self.script.index("record_async_stable_gate_handoff() {") :
+            self.script.index("dispatch_stable_release_gate() {")
+        ]
+        publish = self.script[
+            self.script.index("publish_stable_release() {") :
+            self.script.index("tag_stable_version() {")
+        ]
+        resume = self.script[
+            self.script.index("resume_stable_release() {") :
+            self.script.index("# Stable releases must not knowingly")
+        ]
+
+        self.assertIn("stable_gate_run_id=%s", handoff)
+        self.assertIn("control_sha=%s", handoff)
+        self.assertIn("ASYNC_HANDOFF_OUTPUT", handoff)
+        self.assertIn('"${async_run}" "${async_control_sha}" true', resume)
+        self.assertIn('if [[ "${ASYNC_AFTER_STABLE_GATE}" == "1" ]]', publish)
+        self.assertLess(
+            publish.index('dispatch_stable_release_gate "${version}"'),
+            publish.index("stable release %s handed to the hosted continuation"),
+        )
+        self.assertLess(
+            publish.index("stable release %s handed to the hosted continuation"),
+            publish.index('dispatch_compose_stable_package "${version}"'),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "github.output"
+            output.touch()
+            result = self.run_release_function(
+                root,
+                "record_async_stable_gate_handoff 0.15.1 123456 " + "a" * 40,
+                shell_setup="\n".join(
+                    (
+                        "ASYNC_AFTER_STABLE_GATE=1",
+                        f"ASYNC_HANDOFF_OUTPUT={shlex.quote(str(output))}",
+                    )
+                ),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                output.read_text(encoding="utf-8").splitlines(),
+                [
+                    "version=0.15.1",
+                    "stable_gate_run_id=123456",
+                    f"control_sha={'a' * 40}",
+                    "release_was_published=false",
+                ],
+            )
 
     def test_local_release_gate_requires_hardware_virtualization(self) -> None:
         local_gate = self.script[

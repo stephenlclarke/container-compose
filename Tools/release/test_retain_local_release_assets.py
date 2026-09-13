@@ -164,6 +164,45 @@ class RetainReleaseAssetsTests(unittest.TestCase):
             objects = list((retained / "release/artifacts/objects/sha256").glob("*/*/*"))
             self.assertEqual(len(objects), 1)
 
+    def test_unpublished_authority_can_be_invalidated_without_losing_other_assets(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            candidates = root / "candidates"
+            candidates.mkdir()
+            authority = candidates / MODULE.AUTHORITY_ASSETS[0]
+            sidecar = candidates / MODULE.AUTHORITY_ASSETS[1]
+            package = candidates / "container-compose-plugin-release-arm64.tar.gz"
+            authority.write_bytes(b"stale-authority")
+            sidecar.write_text("stale checksum\n", encoding="utf-8")
+            package.write_bytes(b"signed-package")
+            retained = root / "retained"
+            MODULE.retain(retained, "1.2.3", [authority, sidecar, package])
+            old_authority_object = MODULE.retained_path(
+                retained, "1.2.3", authority.name
+            )
+
+            MODULE.invalidate_authority(retained, "1.2.3")
+
+            with self.assertRaises(MODULE.RetentionUnavailable):
+                MODULE.retained_path(retained, "1.2.3", authority.name)
+            with self.assertRaises(MODULE.RetentionUnavailable):
+                MODULE.retained_path(retained, "1.2.3", sidecar.name)
+            self.assertEqual(
+                MODULE.retained_path(retained, "1.2.3", package.name).read_bytes(),
+                b"signed-package",
+            )
+            self.assertTrue(old_authority_object.is_file())
+
+            authority.write_bytes(b"current-authority")
+            sidecar.write_text("current checksum\n", encoding="utf-8")
+            MODULE.retain(retained, "1.2.3", [authority, sidecar])
+            self.assertEqual(
+                MODULE.retained_path(retained, "1.2.3", authority.name).read_bytes(),
+                b"current-authority",
+            )
+
     def test_manifest_cannot_redirect_lookup_outside_retained_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

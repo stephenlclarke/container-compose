@@ -158,6 +158,13 @@ Environment:
       Override the default two-hour wait for the four parallel, release-only
       DocC sites and their GitHub Pages deployment.
 
+  CONTAINER_STACK_RELEASE_ASYNC_AFTER_STABLE_GATE=1
+  CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT=/absolute/path
+      Internal unattended-controller mode. Dispatch or reuse the exact stable
+      gate, write its run ID and source authority to a GitHub step-output file,
+      then return so that the only release runner can execute that gate. Normal
+      local release commands remain synchronous.
+
   CONTAINER_STACK_RELEASE_CANDIDATE_STOP_TIMEOUT_SECONDS
       Override the default 30-second bound for stopping the exact candidate
       runtime namespace during local release-gate cleanup.
@@ -298,6 +305,8 @@ RELEASE_CURL="${CONTAINER_STACK_RELEASE_CURL:-/usr/bin/curl}"
 RELEASE_GITHUB_CLI="${CONTAINER_STACK_RELEASE_GITHUB_CLI:-$(command -v gh || true)}"
 COMPOSE_MAIN_PROMOTION_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_PROMOTION_MODE:-pr}"
 COMPOSE_MAIN_MERGE_MODE="${CONTAINER_STACK_RELEASE_COMPOSE_MAIN_MERGE_MODE:-checked-admin}"
+ASYNC_AFTER_STABLE_GATE="${CONTAINER_STACK_RELEASE_ASYNC_AFTER_STABLE_GATE:-0}"
+ASYNC_HANDOFF_OUTPUT="${CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT:-}"
 RELEASE_INTENT="${CONTAINER_STACK_RELEASE_INTENT:-}"
 SECURITY_REASON="${CONTAINER_STACK_SECURITY_REASON:-}"
 MAINTENANCE_REASON="${CONTAINER_STACK_MAINTENANCE_REASON:-}"
@@ -7130,6 +7139,40 @@ dispatch_compose_stable_tap_repair() {
   dispatch_compose_stable_workflow "${version}" "Homebrew tap repair" "true"
 }
 
+# Hand an exact downstream run to a hosted workflow job, allowing the sole
+# release runner to become available for the stable gate and package jobs.
+record_async_stable_gate_handoff() {
+  local version="$1" run_id="$2" control_sha="$3" published="${4:-false}"
+  local output_parent output_path
+  if [[ "${ASYNC_AFTER_STABLE_GATE}" != "1" ]]; then
+    return 1
+  fi
+  if [[ ! "${run_id}" =~ ^[0-9]+$ ]] || \
+    [[ ! "${control_sha}" =~ ^[0-9a-f]{40}$ ]] || \
+    [[ "${published}" != true && "${published}" != false ]]; then
+    printf 'asynchronous stable-gate handoff has invalid authority\n' >&2
+    return 2
+  fi
+  if [[ -z "${ASYNC_HANDOFF_OUTPUT}" || "${ASYNC_HANDOFF_OUTPUT}" != /* || \
+    -L "${ASYNC_HANDOFF_OUTPUT}" || ! -f "${ASYNC_HANDOFF_OUTPUT}" ]]; then
+    printf 'asynchronous stable-gate handoff output is missing or unsafe\n' >&2
+    return 2
+  fi
+  output_parent="$(cd "$(dirname "${ASYNC_HANDOFF_OUTPUT}")" && pwd -P)"
+  output_path="${output_parent}/$(basename "${ASYNC_HANDOFF_OUTPUT}")"
+  [[ -f "${output_path}" && ! -L "${output_path}" ]] || {
+    printf 'canonical asynchronous handoff output is missing or unsafe\n' >&2
+    return 2
+  }
+  {
+    printf 'version=%s\n' "${version}"
+    printf 'stable_gate_run_id=%s\n' "${run_id}"
+    printf 'control_sha=%s\n' "${control_sha}"
+    printf 'release_was_published=%s\n' "${published}"
+  } >> "${output_path}"
+  return 0
+}
+
 dispatch_stable_release_gate() {
   local version="$1" details previous_run run_id status conclusion init_image_digest control_sha
   print_header "dispatch hosted stable release gate for ${version}"
@@ -7158,11 +7201,20 @@ dispatch_stable_release_gate() {
     printf 'hosted stable release gate already passed for the exact release controls: %s\n' \
       "${previous_run}"
     retain_stable_gate_authority "${version}" "${previous_run}" "${init_image_digest}"
+    record_async_stable_gate_handoff \
+      "${version}" "${previous_run}" "${control_sha}" false || \
+      [[ "${ASYNC_AFTER_STABLE_GATE}" != "1" ]]
     return 0
   fi
   if [[ -n "${previous_run}" && "${status}" != "completed" ]]; then
     printf 'hosted stable release gate is already running for the exact release controls: %s\n' \
       "${previous_run}"
+    if record_async_stable_gate_handoff \
+      "${version}" "${previous_run}" "${control_sha}" false; then
+      return 0
+    elif [[ "${ASYNC_AFTER_STABLE_GATE}" == "1" ]]; then
+      return 2
+    fi
     wait_for_github_run_success \
       "${previous_run}" "hosted stable release gate" \
       "${STABLE_RELEASE_GATE_WAIT_SECONDS}"
@@ -7172,6 +7224,12 @@ dispatch_stable_release_gate() {
   run_id="$(dispatch_github_workflow_run \
     stable-release-gate.yml "${version}" "${control_sha}")"
   printf 'stable release gate started: %s\n' "${run_id}"
+  if record_async_stable_gate_handoff \
+    "${version}" "${run_id}" "${control_sha}" false; then
+    return 0
+  elif [[ "${ASYNC_AFTER_STABLE_GATE}" == "1" ]]; then
+    return 2
+  fi
   wait_for_github_run_success \
     "${run_id}" "hosted stable release gate" "${STABLE_RELEASE_GATE_WAIT_SECONDS}"
   retain_stable_gate_authority "${version}" "${run_id}" "${init_image_digest}"
@@ -7366,6 +7424,10 @@ EOF
 publish_stable_release() {
   local version="$1"
   dispatch_stable_release_gate "${version}"
+  if [[ "${ASYNC_AFTER_STABLE_GATE}" == "1" ]]; then
+    printf 'stable release %s handed to the hosted continuation\n' "${version}"
+    return 0
+  fi
   dispatch_compose_stable_package "${version}"
   dispatch_stable_documentation "${version}"
   print_stable_release_point "${version}" "container-compose stable package workflow dispatch"
@@ -7383,8 +7445,35 @@ tag_stable_version() {
 resume_stable_release() {
   local version="$1" promote_default_lane stable_formula_identities_before recovery_status
   local authority_record authority_object authority_init_digest
+  local async_control_sha async_run
   print_header "resume stable release ${version}"
   verify_github_stable_tag_signature "${version}"
+  if [[ "${ASYNC_AFTER_STABLE_GATE}" == "1" ]] && \
+    stable_release_is_published "${version}"; then
+    async_control_sha="$(remote_main_commit "${COMPOSE_REPO}")"
+    async_run="$(
+      github_cli run list \
+        --repo "$(github_repo "${COMPOSE_REPO}")" \
+        --workflow stable-release-gate.yml \
+        --event workflow_dispatch \
+        --limit 100 \
+        --json databaseId,displayTitle,status,conclusion,createdAt \
+        --jq "map(select(
+          (.displayTitle | startswith(\"Stable Release Gate · ${version} · \")) and
+          .status == \"completed\" and .conclusion == \"success\"
+        )) | sort_by(.createdAt) | reverse | .[0].databaseId // empty"
+    )"
+    if [[ ! "${async_run}" =~ ^[0-9]+$ ]]; then
+      printf 'published stable release %s has no successful gate for asynchronous recovery\n' \
+        "${version}" >&2
+      return 1
+    fi
+    record_async_stable_gate_handoff \
+      "${version}" "${async_run}" "${async_control_sha}" true
+    printf 'published stable release %s handed to the hosted continuation\n' \
+      "${version}"
+    return 0
+  fi
   if stable_release_is_published "${version}"; then
     promote_default_lane="$(stable_version_promotes_default_lane "${version}")"
     if [[ "${promote_default_lane}" == "true" ]]; then
@@ -7699,6 +7788,15 @@ run_isolated_release() {
 
 main() {
   parse_arguments "$@"
+  if [[ "${ASYNC_AFTER_STABLE_GATE}" != "0" && \
+    "${ASYNC_AFTER_STABLE_GATE}" != "1" ]]; then
+    printf 'CONTAINER_STACK_RELEASE_ASYNC_AFTER_STABLE_GATE must be 0 or 1\n' >&2
+    exit 2
+  fi
+  if [[ "${ASYNC_AFTER_STABLE_GATE}" == "1" && "${EXECUTE}" != "1" ]]; then
+    printf 'asynchronous stable-gate handoff requires --execute\n' >&2
+    exit 2
+  fi
   case "${MODE}" in
     plan)
       plan

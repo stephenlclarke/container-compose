@@ -40,6 +40,10 @@ assert SPEC is not None and SPEC.loader is not None
 STACK_ARTIFACT = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(STACK_ARTIFACT)
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
+AUTHORITY_ASSETS = (
+    "stable-release-authority.tar.gz",
+    "stable-release-authority.tar.gz.sha256",
+)
 
 
 class RetentionError(RuntimeError):
@@ -278,9 +282,34 @@ def materialize(root: Path, version: str, destinations: list[Path]) -> None:
             temporary.unlink(missing_ok=True)
 
 
+def invalidate_authority(root: Path, version: str) -> None:
+    """Forget a stale unpublished authority pair without deleting its objects."""
+    path = manifest_path(root, version)
+    path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    lock_path = path.with_suffix(".lock")
+    if lock_path.is_symlink():
+        raise RetentionError(f"unsafe retained release lock: {lock_path}")
+    with lock_path.open("a+", encoding="utf-8") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        manifest = read_manifest(path)
+        assets: dict[str, Any] = manifest["assets"]
+        for name in AUTHORITY_ASSETS:
+            record = assets.get(name)
+            if record is not None and not isinstance(record, dict):
+                raise RetentionError(
+                    f"retained stable asset conflicts for {version}: {name}"
+                )
+        for name in AUTHORITY_ASSETS:
+            assets.pop(name, None)
+        write_manifest(path, manifest)
+
+
 def main(arguments: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("retain", "materialize", "path"))
+    parser.add_argument(
+        "action",
+        choices=("retain", "materialize", "path", "invalidate-authority"),
+    )
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--asset", type=Path, action="append", default=[])
@@ -295,10 +324,16 @@ def main(arguments: list[str] | None = None) -> int:
             if not options.asset:
                 raise RetentionError("materialize requires at least one --asset")
             materialize(options.root, options.version, options.asset)
-        else:
+        elif options.action == "path":
             if not options.name:
                 raise RetentionError("path requires --name")
             print(retained_path(options.root, options.version, options.name))
+        else:
+            if options.asset or options.name:
+                raise RetentionError(
+                    "invalidate-authority does not accept asset or name arguments"
+                )
+            invalidate_authority(options.root, options.version)
     except RetentionUnavailable as error:
         print(f"retain-release-assets: {error}", file=sys.stderr)
         return 3
