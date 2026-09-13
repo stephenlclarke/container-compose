@@ -17,6 +17,8 @@
 
 set -Eeuo pipefail
 
+SELF_DIRECTORY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SELF_DIRECTORY
 GH="${GH:-gh}"
 GIT="${GIT:-git}"
 RELEASE_MUTABLE="${RELEASE_MUTABLE:-false}"
@@ -216,9 +218,17 @@ publish_current_tag() {
 }
 
 create_release_draft() {
-  "${GH}" release create "${RELEASE_TAG}" --repo "${RELEASE_REPOSITORY}" \
-    --title "${RELEASE_TITLE}" --notes-file "${RELEASE_NOTES_FILE}" \
-    --target "${PUBLISH_SHA}" --verify-tag "${release_flags[@]}" --draft
+  GH="${GH}" \
+    RELEASE_GITHUB_RETRY_ATTEMPTS="${RELEASE_GITHUB_RETRY_ATTEMPTS:-5}" \
+    RELEASE_GITHUB_RETRY_DELAY_SECONDS="${RELEASE_GITHUB_RETRY_DELAY_SECONDS:-5}" \
+    RELEASE_LATEST="${RELEASE_LATEST}" \
+    RELEASE_NOTES_FILE="${RELEASE_NOTES_FILE}" \
+    RELEASE_PRERELEASE="${RELEASE_PRERELEASE}" \
+    RELEASE_REPOSITORY="${RELEASE_REPOSITORY}" \
+    RELEASE_TAG="${RELEASE_TAG}" \
+    RELEASE_TITLE="${RELEASE_TITLE}" \
+    PUBLISH_SHA="${PUBLISH_SHA}" \
+    "${SELF_DIRECTORY}/create-github-release-draft.sh"
 }
 
 # A private draft is staging state, not immutable release authority. If an

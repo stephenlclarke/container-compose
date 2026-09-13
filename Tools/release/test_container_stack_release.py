@@ -63,6 +63,9 @@ STABLE_RELEASE_LANE_CLASSIFIER = (
 RUNNER_INSTALLER = ROOT / "scripts" / "install-scheduled-release-runner.sh"
 HAWKEYE_INSTALLER = ROOT / "scripts" / "install-hawkeye.sh"
 HOST_STATE_TOOL = ROOT / "Tools" / "release" / "release-host-state.py"
+TEMPORARY_DEVELOPER_ID_KEYCHAIN = (
+    ROOT / "Tools" / "release" / "temporary-developer-id-keychain.sh"
+)
 
 
 class ContainerStackReleasePolicyTests(unittest.TestCase):
@@ -95,6 +98,25 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
 
     def test_stable_publish_uses_the_retained_assets_manifest(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
+        stage = workflow[workflow.index("- name: Stage release assets and notes") :]
+        self.assertIn(
+            "retain-local-release-assets.py materialize",
+            stage,
+        )
+        self.assertIn('reused_retained_assets="true"', stage)
+        self.assertIn(
+            'release_highlights_output="${RUNNER_TEMP}/'
+            'release-highlights-recomputed.json"',
+            stage,
+        )
+        self.assertIn(
+            'quality_snapshot_render="${RUNNER_TEMP}/quality-snapshot-recomputed.svg"',
+            stage,
+        )
+        self.assertLess(
+            stage.index("retain-local-release-assets.py materialize"),
+            stage.index('sha256="$(shasum -a 256'),
+        )
         self.assertIn(
             'retained_complete_manifest="${retained_root}/release/releases/'
             '${COMPOSE_VERSION}/assets.json"',
@@ -223,6 +245,56 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertNotIn("Checkout containerization source", release)
         self.assertNotIn("Checkout container runtime source", release)
         self.assertNotIn("Checkout Homebrew tap", release)
+
+    def test_scheduled_release_is_unattended_for_every_release_intent(self) -> None:
+        workflow = SCHEDULED_STABLE_RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        release = workflow.split("  release:", 1)[1]
+
+        self.assertIn('description: "Release policy"', workflow)
+        self.assertIn('- "milestone"', workflow)
+        self.assertIn('- "maintenance"', workflow)
+        self.assertIn('- "security"', workflow)
+        self.assertIn('type: string', workflow)
+        self.assertIn('Tools/release/unattended-release-request.py', workflow)
+        self.assertIn(
+            'DEVELOPER_ID_APPLICATION_P12_BASE64: '
+            '${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}',
+            release,
+        )
+        self.assertIn(
+            'DEVELOPER_ID_APPLICATION_P12_PASSWORD: '
+            '${{ secrets.DEVELOPER_ID_APPLICATION_P12_PASSWORD }}',
+            release,
+        )
+        self.assertIn(
+            'DEVELOPER_ID_EXPECTED_IDENTITY: '
+            '${{ vars.DEVELOPER_ID_APPLICATION_SIGNING_IDENTITY }}',
+            release,
+        )
+        self.assertIn(
+            'temporary-developer-id-keychain.sh install', release
+        )
+        self.assertIn('"${helper}" cleanup', release)
+        cleanup = release[release.index("Remove operation-scoped Developer ID identity") :]
+        self.assertIn("if: always()", cleanup)
+        self.assertIn('! -e "${DEVELOPER_ID_KEYCHAIN}"', cleanup)
+        self.assertIn('! -e "${DEVELOPER_ID_ORIGINAL_KEYCHAINS}"', cleanup)
+        self.assertIn('if [[ ! -x "${helper}" ]]', cleanup)
+        self.assertIn(
+            "CONTAINER_STACK_MAINTENANCE_REASON: "
+            "${{ needs.preflight.outputs.maintenance_reason }}",
+            release,
+        )
+        self.assertIn(
+            "CONTAINER_STACK_SECURITY_REASON: "
+            "${{ needs.preflight.outputs.security_reason }}",
+            release,
+        )
+        self.assertNotIn("read -p", workflow)
+        self.assertNotIn("read -s", workflow)
+        self.assertTrue(TEMPORARY_DEVELOPER_ID_KEYCHAIN.is_file())
+        helper = TEMPORARY_DEVELOPER_ID_KEYCHAIN.read_text(encoding="utf-8")
+        self.assertIn("PATH=/usr/bin:/bin:/usr/sbin:/sbin", helper)
 
     def test_local_release_gate_uses_a_stable_noninteractive_path(self) -> None:
         completed = subprocess.run(
@@ -5825,9 +5897,9 @@ formula_digest="sha256:${DIGEST}"
         self.assertIn('default: "auto"', workflow)
         self.assertIn('--format selector --allow-no-release', workflow)
         self.assertIn('Conventional Commit history contains no release-producing change', workflow)
-        self.assertIn('  - "--+"', workflow)
-        self.assertIn('  - "-+-"', workflow)
-        self.assertIn('  - "+--"', workflow)
+        self.assertIn('description: "auto, --+, -+-, +--, or an exact MAJOR.MINOR.PATCH"', workflow)
+        self.assertIn('--+|-+-|+--', workflow)
+        self.assertIn('[0-9]*.[0-9]*.[0-9]*', workflow)
         self.assertIn("verify-current-release-readiness.py", workflow)
         self.assertIn("actions/workflows/prebuilt-binaries.yml/runs?head_sha=", workflow)
         self.assertIn("container-compose-current.rb?ref=main", workflow)

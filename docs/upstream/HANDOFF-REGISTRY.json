@@ -8553,6 +8553,25 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/646"
     },
     {
+      "id": "container-compose-656",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): make stable promotion unattended",
+      "state": "active-draft",
+      "lastVerified": "2026-09-13",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-324.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-656.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/656"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
