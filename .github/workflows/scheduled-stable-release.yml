@@ -94,7 +94,7 @@ jobs:
           request="$(python3 Tools/release/unattended-release-request.py \
             --event-name "${EVENT_NAME}" \
             --intent "${INTENT}" \
-            --selector "${SELECTOR}" \
+            --selector="${SELECTOR}" \
             --reason "${REASON}" \
             --soak-override-reason "${SOAK_OVERRIDE_REASON}" \
             "${existing_release_argument[@]}")"

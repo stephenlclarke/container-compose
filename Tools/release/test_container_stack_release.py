@@ -256,6 +256,8 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
         self.assertIn('- "security"', workflow)
         self.assertIn('type: string', workflow)
         self.assertIn('Tools/release/unattended-release-request.py', workflow)
+        self.assertIn('--selector="${SELECTOR}"', workflow)
+        self.assertNotIn('--selector "${SELECTOR}"', workflow)
         self.assertIn(
             'DEVELOPER_ID_APPLICATION_P12_BASE64: '
             '${{ secrets.DEVELOPER_ID_APPLICATION_P12_BASE64 }}',
