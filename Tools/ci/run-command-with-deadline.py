@@ -35,7 +35,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 TIMEOUT_EXIT_STATUS = 124
-LEAKED_PROCESS_GROUP_EXIT_STATUS = 125
+CLEANED_PROCESS_GROUP_EXIT_STATUS = 125
+UNVERIFIED_PROCESS_CLEANUP_EXIT_STATUS = 70
 # Xcode and SwiftPM can retain a short-lived helper after their parent reports
 # success. Keep this bounded so persistent descendants still fail closed.
 NATURAL_DRAIN_SECONDS = 5.0
@@ -481,16 +482,25 @@ def run_command(options: argparse.Namespace) -> int:
                         file=sys.stderr,
                     )
                     if exit_status == 0:
-                        return LEAKED_PROCESS_GROUP_EXIT_STATUS
+                        return UNVERIFIED_PROCESS_CLEANUP_EXIT_STATUS
                 elif drain_state is SessionState.LIVE:
-                    terminate_live_session(process.pid, options.grace_seconds)
+                    cleanup_state = terminate_live_session(
+                        process.pid, options.grace_seconds
+                    )
                     print(
                         "command left live processes after exit: "
                         + options.command[0],
                         file=sys.stderr,
                     )
                     if exit_status == 0:
-                        return LEAKED_PROCESS_GROUP_EXIT_STATUS
+                        if cleanup_state is SessionState.DRAINED:
+                            return CLEANED_PROCESS_GROUP_EXIT_STATUS
+                        print(
+                            "could not verify that post-exit cleanup completed: "
+                            + options.command[0],
+                            file=sys.stderr,
+                        )
+                        return UNVERIFIED_PROCESS_CLEANUP_EXIT_STATUS
                 return exit_status
 
             if deadline is None:

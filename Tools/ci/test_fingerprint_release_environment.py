@@ -111,6 +111,51 @@ class FingerprintReleaseEnvironmentTest(unittest.TestCase):
 
         self.assertEqual(baseline, retry)
 
+    def test_github_retry_control_paths_do_not_invalidate_proof(self) -> None:
+        root = Path("/")
+        baseline = self.module.fingerprint_environment(
+            {
+                "PATH": "/usr/bin",
+                "CONTAINER_RUNTIME_CODESIGN_IDENTITY": "A" * 40,
+                "CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT": (
+                    "/runner/_temp/first/output"
+                ),
+                "DEVELOPER_ID_KEYCHAIN": (
+                    "/runner/_temp/container-compose-controller-123-1.keychain-db"
+                ),
+            },
+            root,
+        )
+        retry = self.module.fingerprint_environment(
+            {
+                "PATH": "/usr/bin",
+                "CONTAINER_RUNTIME_CODESIGN_IDENTITY": "A" * 40,
+                "CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT": (
+                    "/runner/_temp/second/output"
+                ),
+                "DEVELOPER_ID_KEYCHAIN": (
+                    "/runner/_temp/container-compose-controller-123-2.keychain-db"
+                ),
+            },
+            root,
+        )
+        changed_identity = self.module.fingerprint_environment(
+            {
+                "PATH": "/usr/bin",
+                "CONTAINER_RUNTIME_CODESIGN_IDENTITY": "B" * 40,
+                "CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT": (
+                    "/runner/_temp/second/output"
+                ),
+                "DEVELOPER_ID_KEYCHAIN": (
+                    "/runner/_temp/container-compose-controller-123-2.keychain-db"
+                ),
+            },
+            root,
+        )
+
+        self.assertEqual(baseline, retry)
+        self.assertNotEqual(retry, changed_identity)
+
     def test_staged_init_archive_uses_content_identity(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

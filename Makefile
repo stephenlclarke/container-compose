@@ -833,14 +833,15 @@ print-release-gate-fingerprint: release-gate-environment-fingerprint-check
 	printf '%s:environment=%s\n' "$(RELEASE_GATE_STATIC_FINGERPRINT)" "$$environment_fingerprint"
 
 release-gate:
-	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" --natural-drain-seconds "$(RELEASE_GATE_STACK_NATURAL_DRAIN_SECONDS)" -- $(MAKE) --no-print-directory container-stack-release-validation
-	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" --required-output "$(abspath .build/debug/compose)" --required-output "$(abspath Tools/compose-normalizer/compose-normalizer)" --required-output "$(abspath $(VOLUME_INITIALIZER_ARM64))" --required-output "$(abspath $(VOLUME_INITIALIZER_AMD64))" -- $(MAKE) --no-print-directory ci
-	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage swift-runtime --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory swift-runtime-test
-	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-parity --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory docker-compose-parity
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --recover-cleaned-success --stage sibling-stack --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" --natural-drain-seconds "$(RELEASE_GATE_STACK_NATURAL_DRAIN_SECONDS)" -- $(MAKE) --no-print-directory container-stack-release-validation
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --recover-cleaned-success --stage compose-ci --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" --required-output "$(abspath .build/debug/compose)" --required-output "$(abspath Tools/compose-normalizer/compose-normalizer)" --required-output "$(abspath $(VOLUME_INITIALIZER_ARM64))" --required-output "$(abspath $(VOLUME_INITIALIZER_AMD64))" -- $(MAKE) --no-print-directory ci
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --recover-cleaned-success --stage swift-runtime --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory swift-runtime-test
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --recover-cleaned-success --stage compose-parity --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory docker-compose-parity
 
 release-gate-hosted:
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py \
-		--checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage hosted-sibling-stack \
+		--checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --recover-cleaned-success \
+		--stage hosted-sibling-stack \
 		--fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py \
 		--seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- \
 		$(MAKE) --no-print-directory container-stack-hosted-release-validation
@@ -2164,6 +2165,7 @@ docker-compose-parity-stages:
 		RELEASE_GATE_PARITY_COMPOSE_BINARY="$(RELEASE_PARITY_COMPOSE_BINARY)" \
 		RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py \
 			--checkpoint-dir "$(PARITY_GATE_CHECKPOINT_DIR)" \
+			--recover-cleaned-success \
 			--stage "$$target" \
 			--fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py \
 			--seconds "$(PARITY_STAGE_TIMEOUT_SECONDS)" -- \

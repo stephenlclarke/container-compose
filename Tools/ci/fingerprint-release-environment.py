@@ -37,6 +37,12 @@ SCHEMA_VERSION = 2
 # being proved. Everything else is included by default so a newly introduced
 # environment or make-command-line override fails closed without updating this
 # tool first.
+#
+# GitHub retries also allocate a new signing-keychain filename and step-output
+# destination. The workflow verifies the keychain before invoking Make, while
+# CONTAINER_RUNTIME_CODESIGN_IDENTITY remains hashed as the result-bearing
+# certificate authority. The two filenames are therefore execution locations,
+# not release inputs.
 NON_RESULT_VARIABLES = frozenset(
     {
         "COMPOSE_CLI_SURFACE_REPORT",
@@ -47,9 +53,11 @@ NON_RESULT_VARIABLES = frozenset(
         "CONTAINER_RUNTIME_RUN_ID",
         "CONTAINER_RUNTIME_SERVICE_NAMESPACE",
         "CONTAINER_SERVICE_NAMESPACE",
+        "CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT",
         "CONTAINER_STACK_VALIDATION_CHECKPOINT_DIR",
         "CONTAINER_STACK_VALIDATION_RUNTIME_ROOT",
         "CONTAINER_STACK_VALIDATION_SCRATCH_ROOT",
+        "DEVELOPER_ID_KEYCHAIN",
         "LLVM_PROFILE_FILE",
         "LOG_COMPLETION_FILE",
         "PARITY_EVIDENCE_DIR",
