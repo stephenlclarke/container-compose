@@ -8745,6 +8745,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/678"
     },
     {
+      "id": "container-compose-679",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): bind signing to temporary keychain",
+      "state": "submitted",
+      "lastVerified": "2026-09-14",
+      "commits": [
+        "f858c4f60375ed05ffdd6a95364e9f0e136e64d8"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-679.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-680.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/680"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
