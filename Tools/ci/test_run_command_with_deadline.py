@@ -245,6 +245,49 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertEqual(result.stdout, "complete\n")
 
+    def test_configured_natural_drain_is_forwarded(self) -> None:
+        with mock.patch.object(
+            self.module,
+            "wait_for_session_to_drain",
+            return_value=self.module.SessionState.DRAINED,
+        ) as wait_for_drain:
+            status = self.module.run(
+                [
+                    "--seconds",
+                    "5",
+                    "--natural-drain-seconds",
+                    "12.5",
+                    "--",
+                    "/usr/bin/true",
+                ]
+            )
+
+        self.assertEqual(status, 0)
+        wait_for_drain.assert_called_once()
+        self.assertEqual(wait_for_drain.call_args.args[1], 12.5)
+
+    def test_negative_natural_drain_is_rejected(self) -> None:
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--seconds",
+                "5",
+                "--natural-drain-seconds",
+                "-1",
+                "--",
+                "/usr/bin/true",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(
+            "--natural-drain-seconds must be non-negative", result.stderr
+        )
+
     def test_successful_child_allows_short_lived_descendant_to_drain(self) -> None:
         result = subprocess.run(
             [

@@ -64,6 +64,15 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
         help="supervise the command process group without a wall-clock deadline",
     )
     parser.add_argument("--grace-seconds", type=float, default=10.0)
+    parser.add_argument(
+        "--natural-drain-seconds",
+        type=float,
+        default=NATURAL_DRAIN_SECONDS,
+        help=(
+            "allow verified descendants this long to exit naturally after "
+            "the direct child completes"
+        ),
+    )
     parser.add_argument("--timing-log", type=Path)
     parser.add_argument("--timing-label")
     parser.add_argument(
@@ -79,6 +88,8 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
         parser.error("--seconds must be greater than zero")
     if parsed.grace_seconds < 0:
         parser.error("--grace-seconds must be non-negative")
+    if parsed.natural_drain_seconds < 0:
+        parser.error("--natural-drain-seconds must be non-negative")
     if not parsed.command:
         parser.error("a command is required after --")
     if (parsed.timing_log is None) != (parsed.timing_label is None):
@@ -431,7 +442,7 @@ def run_command(options: argparse.Namespace) -> int:
             if return_code is not None:
                 exit_status = normalized_exit_status(return_code)
                 drain_state = wait_for_session_to_drain(
-                    process.pid, NATURAL_DRAIN_SECONDS
+                    process.pid, options.natural_drain_seconds
                 )
                 if drain_state is SessionState.UNKNOWN:
                     print(
