@@ -29,7 +29,7 @@ import stat
 import subprocess
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from enum import Enum
 from pathlib import Path
 from typing import NamedTuple
@@ -275,11 +275,15 @@ def terminate_live_session(
 
 
 def wait_for_session_to_drain(
-    session_id: int, wait_seconds: float
+    session_id: int,
+    wait_seconds: float,
+    should_interrupt: Callable[[], bool] | None = None,
 ) -> SessionState:
     """Allow short-lived descendants to exit naturally after their parent."""
     drain_deadline = time.monotonic() + wait_seconds
     while True:
+        if should_interrupt is not None and should_interrupt():
+            return SessionState.LIVE
         inspection = inspect_supervised_session(session_id)
         if inspection.state is not SessionState.LIVE:
             return inspection.state
@@ -446,8 +450,21 @@ def run_command(options: argparse.Namespace) -> int:
             if return_code is not None:
                 exit_status = normalized_exit_status(return_code)
                 drain_state = wait_for_session_to_drain(
-                    process.pid, options.natural_drain_seconds
+                    process.pid,
+                    options.natural_drain_seconds,
+                    lambda: forwarded_signal is not None,
                 )
+                if forwarded_signal is not None:
+                    cleanup_state = terminate_live_session(
+                        process.pid, options.grace_seconds
+                    )
+                    if cleanup_state is SessionState.UNKNOWN:
+                        print(
+                            "could not inspect the command session during "
+                            "signal cleanup: " + options.command[0],
+                            file=sys.stderr,
+                        )
+                    return 128 + forwarded_signal
                 if drain_state is SessionState.UNKNOWN:
                     print(
                         "could not verify that the command session drained: "

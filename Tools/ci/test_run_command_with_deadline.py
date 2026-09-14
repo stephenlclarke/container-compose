@@ -316,6 +316,67 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("command left live processes after exit", result.stderr)
 
+    def test_signal_interrupts_an_extended_natural_drain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            drain_started = root / "drain-started"
+            descendant_pid = root / "descendant-pid"
+            harness = root / "drain-signal.py"
+            descendant_command = (
+                "(trap '' TERM; exec /bin/sleep 30) & "
+                f'printf \'%s\' "$!" > {str(descendant_pid)!r}; exit 0'
+            )
+            harness.write_text(
+                f"""\
+import importlib.util
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("deadline_runner", {str(SCRIPT)!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+original_wait = module.wait_for_session_to_drain
+
+def recording_wait(session_id, wait_seconds, should_interrupt=None):
+    Path({str(drain_started)!r}).touch()
+    return original_wait(session_id, wait_seconds, should_interrupt)
+
+module.wait_for_session_to_drain = recording_wait
+raise SystemExit(module.run([
+    "--seconds", "30", "--natural-drain-seconds", "30",
+    "--grace-seconds", "0.2", "--", "/bin/sh", "-c",
+    {descendant_command!r},
+]))
+""",
+                encoding="utf-8",
+            )
+
+            process = subprocess.Popen(
+                [sys.executable, str(harness)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            drain_deadline = time.monotonic() + 2
+            while not drain_started.exists():
+                if process.poll() is not None:
+                    stdout, stderr = process.communicate()
+                    self.fail(
+                        "runner exited before the natural-drain phase: "
+                        + stdout
+                        + stderr
+                    )
+                if time.monotonic() >= drain_deadline:
+                    process.kill()
+                    self.fail("runner did not enter the natural-drain phase")
+                time.sleep(0.01)
+
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=3)
+
+            self.assertEqual(process.returncode, 143, stdout + stderr)
+            pid = int(descendant_pid.read_text(encoding="utf-8"))
+            self.assertIn(process_state(pid), ("", "Z"))
+
     def test_successful_child_with_live_descendant_fails_and_cleans_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             child_pid = Path(directory) / "child-pid"
