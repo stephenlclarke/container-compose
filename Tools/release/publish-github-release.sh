@@ -23,7 +23,7 @@ GH="${GH:-gh}"
 GIT="${GIT:-git}"
 RELEASE_MUTABLE="${RELEASE_MUTABLE:-false}"
 RELEASE_PHASE="${RELEASE_PHASE:-publish}"
-RELEASE_TARGET_COMMITISH="${RELEASE_TARGET_COMMITISH:-main}"
+RELEASE_TARGET_COMMITISH="${RELEASE_TARGET_COMMITISH:-${PUBLISH_SHA:-}}"
 
 required_variables=(
   RELEASE_REPOSITORY
@@ -45,8 +45,8 @@ for variable in "${required_variables[@]}"; do
   fi
 done
 
-if [[ "${RELEASE_TARGET_COMMITISH}" != main ]]; then
-  printf 'release target commitish must be the protected default branch\n' >&2
+if [[ "${RELEASE_TARGET_COMMITISH}" != "${PUBLISH_SHA}" ]]; then
+  printf 'release target commitish must be the exact source commit\n' >&2
   exit 2
 fi
 

@@ -20,7 +20,7 @@ set -Eeuo pipefail
 GH="${GH:-gh}"
 RETRY_ATTEMPTS="${RELEASE_GITHUB_RETRY_ATTEMPTS:-5}"
 RETRY_DELAY_SECONDS="${RELEASE_GITHUB_RETRY_DELAY_SECONDS:-5}"
-RELEASE_TARGET_COMMITISH="${RELEASE_TARGET_COMMITISH:-main}"
+RELEASE_TARGET_COMMITISH="${RELEASE_TARGET_COMMITISH:-${PUBLISH_SHA:-}}"
 
 required_variables=(
   PUBLISH_SHA
@@ -46,8 +46,8 @@ if [[ ! "${PUBLISH_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
   printf 'release target must be a lowercase 40-character commit SHA\n' >&2
   exit 2
 fi
-if [[ "${RELEASE_TARGET_COMMITISH}" != main ]]; then
-  printf 'release target commitish must be the protected default branch\n' >&2
+if [[ "${RELEASE_TARGET_COMMITISH}" != "${PUBLISH_SHA}" ]]; then
+  printf 'release target commitish must be the exact source commit\n' >&2
   exit 2
 fi
 if [[ ! "${RETRY_ATTEMPTS}" =~ ^[1-9][0-9]*$ ]] || \

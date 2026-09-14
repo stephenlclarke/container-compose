@@ -3898,7 +3898,7 @@ formula_digest="sha256:${DIGEST}"
         published = publisher[publisher.index('if [[ "${published_release_state}" == "exists" ]]') :]
         self.assertNotIn("release delete", published)
 
-    def test_release_metadata_targets_main_without_weakening_tag_authority(self) -> None:
+    def test_release_metadata_targets_exact_source_without_weakening_tag_authority(self) -> None:
         publisher = (
             ROOT / "Tools" / "release" / "publish-github-release.sh"
         ).read_text(encoding="utf-8")
@@ -3908,11 +3908,11 @@ formula_digest="sha256:${DIGEST}"
 
         for contents in (publisher, creator):
             self.assertIn(
-                'RELEASE_TARGET_COMMITISH="${RELEASE_TARGET_COMMITISH:-main}"',
+                'RELEASE_TARGET_COMMITISH="${RELEASE_TARGET_COMMITISH:-${PUBLISH_SHA:-}}"',
                 contents,
             )
             self.assertIn(
-                '"${RELEASE_TARGET_COMMITISH}" != main',
+                '"${RELEASE_TARGET_COMMITISH}" != "${PUBLISH_SHA}"',
                 contents,
             )
         self.assertIn('--target "${RELEASE_TARGET_COMMITISH}"', creator)
