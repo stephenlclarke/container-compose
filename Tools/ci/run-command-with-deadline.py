@@ -35,7 +35,9 @@ from typing import NamedTuple
 
 TIMEOUT_EXIT_STATUS = 124
 LEAKED_PROCESS_GROUP_EXIT_STATUS = 125
-NATURAL_DRAIN_SECONDS = 0.5
+# Xcode and SwiftPM can retain a short-lived helper after their parent reports
+# success. Keep this bounded so persistent descendants still fail closed.
+NATURAL_DRAIN_SECONDS = 5.0
 FORCED_CLEANUP_SECONDS = 1.0
 PROCESS_INSPECTION_SECONDS = 1.0
 
