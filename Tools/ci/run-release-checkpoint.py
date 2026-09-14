@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import secrets
 import signal
@@ -50,6 +51,11 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     fingerprint.add_argument("--fingerprint-command")
     parser.add_argument("--seconds", type=int, required=True)
     parser.add_argument(
+        "--natural-drain-seconds",
+        type=float,
+        help="allow verified checkpoint descendants this long to exit naturally",
+    )
+    parser.add_argument(
         "--required-output",
         action="append",
         default=[],
@@ -70,6 +76,14 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
         parser.error("--stage must use lowercase letters, digits, dash, dot, or underscore")
     if options.seconds <= 0:
         parser.error("--seconds must be greater than zero")
+    if (
+        options.natural_drain_seconds is not None
+        and (
+            not math.isfinite(options.natural_drain_seconds)
+            or options.natural_drain_seconds < 0
+        )
+    ):
+        parser.error("--natural-drain-seconds must be finite and non-negative")
     if options.fingerprint == "":
         parser.error("--fingerprint must not be empty")
     if not options.command:
@@ -110,11 +124,13 @@ def stage_digest(
     seconds: int,
     command: Sequence[str],
     required_outputs: Sequence[str] = (),
+    natural_drain_seconds: float | None = None,
 ) -> str:
     encoded = json.dumps(
         {
             "command": list(command),
             "fingerprint": fingerprint,
+            "natural_drain_seconds": natural_drain_seconds,
             "seconds": seconds,
             "schema": SCHEMA_VERSION,
             "stage": stage,
@@ -353,6 +369,7 @@ def run_supervised(options: argparse.Namespace) -> int:
         options.seconds,
         options.command,
         options.required_output,
+        options.natural_drain_seconds,
     )
     required_outputs = [required_output_path(value) for value in options.required_output]
     checkpoint_directory = (
@@ -492,6 +509,7 @@ def run_supervised(options: argparse.Namespace) -> int:
         "fingerprint": fingerprint_before,
         "fingerprint_after": fingerprint_after,
         "fingerprint_before": fingerprint_before,
+        "natural_drain_seconds": options.natural_drain_seconds,
         "schema": SCHEMA_VERSION,
         "seconds": options.seconds,
         "stage": options.stage,
@@ -530,11 +548,17 @@ def run(arguments: Sequence[str]) -> int:
         )
         worker_arguments.extend(["--active-output", str(active_output_path)])
     worker_arguments.extend(arguments)
+    natural_drain_arguments = (
+        ["--natural-drain-seconds", str(options.natural_drain_seconds)]
+        if options.natural_drain_seconds is not None
+        else []
+    )
     deadline_arguments = [
         sys.executable,
         os.path.abspath(DEADLINE_RUNNER),
         "--seconds",
         str(options.seconds),
+        *natural_drain_arguments,
         "--",
         *worker_arguments,
     ]

@@ -302,10 +302,16 @@ class RunReleaseCheckpointTest(unittest.TestCase):
         status: int = 0,
         seconds: int = 5,
         required_output: Path | None = None,
+        natural_drain_seconds: float | None = None,
     ) -> subprocess.CompletedProcess[str]:
         output_arguments = (
             ["--required-output", str(required_output)]
             if required_output is not None
+            else []
+        )
+        natural_drain_arguments = (
+            ["--natural-drain-seconds", str(natural_drain_seconds)]
+            if natural_drain_seconds is not None
             else []
         )
         return subprocess.run(
@@ -320,6 +326,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 fingerprint,
                 "--seconds",
                 str(seconds),
+                *natural_drain_arguments,
                 *output_arguments,
                 "--",
                 "/bin/sh",
@@ -608,6 +615,73 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             self.assertIn("exceeded 1-second deadline", completed.stderr)
             self.assertIn("timeout diagnostic", completed.stderr)
 
+    def test_configured_natural_drain_reaches_nested_supervisor(self) -> None:
+        child_program = (
+            "import os, time; "
+            "child = os.fork(); "
+            "time.sleep(0.75) if child == 0 else None; "
+            "os._exit(0)"
+        )
+
+        def run_with_drain(seconds: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint",
+                    "tree-a",
+                    "--seconds",
+                    "5",
+                    "--natural-drain-seconds",
+                    seconds,
+                    "--",
+                    sys.executable,
+                    "-c",
+                    child_program,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=8,
+            )
+
+        too_short = run_with_drain("0")
+        sufficient = run_with_drain("2")
+
+        self.assertEqual(too_short.returncode, 125, too_short.stderr)
+        self.assertIn("command left live processes after exit", too_short.stderr)
+        self.assertEqual(sufficient.returncode, 0, sufficient.stderr)
+
+    def test_natural_drain_must_be_finite_and_non_negative(self) -> None:
+        for value in ("nan", "inf", "-1"):
+            with self.subTest(value=value):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "--stage",
+                        "compose-ci",
+                        "--fingerprint",
+                        "tree-a",
+                        "--seconds",
+                        "5",
+                        f"--natural-drain-seconds={value}",
+                        "--",
+                        "/usr/bin/true",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                self.assertEqual(completed.returncode, 2)
+                self.assertIn(
+                    "--natural-drain-seconds must be finite and non-negative",
+                    completed.stderr,
+                )
+
     @unittest.skipUnless(hasattr(os, "mkfifo"), "requires FIFO support")
     def test_timeout_diagnostic_rejects_a_fifo_without_blocking(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -732,6 +806,28 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 (checkpoints / "compose-ci.success.json").read_text(encoding="utf-8")
             )
             self.assertEqual(checkpoint["seconds"], 4)
+
+    def test_changing_the_natural_drain_invalidates_the_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints = root / "checkpoints"
+            log = root / "runs.log"
+
+            first = self.run_stage(
+                checkpoints, log, "tree-a", natural_drain_seconds=2
+            )
+            changed = self.run_stage(
+                checkpoints, log, "tree-a", natural_drain_seconds=0
+            )
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(changed.returncode, 0, changed.stderr)
+            self.assertEqual(log.read_text(encoding="utf-8"), "run\nrun\n")
+            self.assertNotIn("reusing exact-input release checkpoint", changed.stdout)
+            checkpoint = json.loads(
+                (checkpoints / "compose-ci.success.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(checkpoint["natural_drain_seconds"], 0)
 
     def test_fingerprint_command_and_stage_share_one_deadline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -942,7 +1038,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                     "BASH_ENV": "/dev/null",
                     "ENV": "/dev/null",
                     "PATH": f"{fake_bin}:/opt/homebrew/bin:/usr/bin:/bin",
-                    "STACK_MUTATION_REPO": str(builder),
+                    "STACK_MUTATION_REPO": str(builder.resolve()),
                 }
             )
 
