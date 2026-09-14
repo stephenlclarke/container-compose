@@ -124,11 +124,13 @@ def stage_digest(
     seconds: int,
     command: Sequence[str],
     required_outputs: Sequence[str] = (),
+    natural_drain_seconds: float | None = None,
 ) -> str:
     encoded = json.dumps(
         {
             "command": list(command),
             "fingerprint": fingerprint,
+            "natural_drain_seconds": natural_drain_seconds,
             "seconds": seconds,
             "schema": SCHEMA_VERSION,
             "stage": stage,
@@ -367,6 +369,7 @@ def run_supervised(options: argparse.Namespace) -> int:
         options.seconds,
         options.command,
         options.required_output,
+        options.natural_drain_seconds,
     )
     required_outputs = [required_output_path(value) for value in options.required_output]
     checkpoint_directory = (

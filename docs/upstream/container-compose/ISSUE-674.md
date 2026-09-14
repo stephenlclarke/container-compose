@@ -38,5 +38,9 @@ the expensive `sibling-stack` checkpoint. Ordinary checkpoints retain the
 five-second default, and a descendant that remains after the configured interval
 continues to fail closed with bounded TERM-to-KILL cleanup.
 
+The configured interval is also part of checkpoint identity. Tightening or
+otherwise changing that policy must rerun the stage rather than reuse success
+recorded under a different teardown contract.
+
 Related issue:
 [#674](https://github.com/stephenlclarke/container-compose/issues/674).

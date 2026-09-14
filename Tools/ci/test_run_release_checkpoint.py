@@ -302,10 +302,16 @@ class RunReleaseCheckpointTest(unittest.TestCase):
         status: int = 0,
         seconds: int = 5,
         required_output: Path | None = None,
+        natural_drain_seconds: float | None = None,
     ) -> subprocess.CompletedProcess[str]:
         output_arguments = (
             ["--required-output", str(required_output)]
             if required_output is not None
+            else []
+        )
+        natural_drain_arguments = (
+            ["--natural-drain-seconds", str(natural_drain_seconds)]
+            if natural_drain_seconds is not None
             else []
         )
         return subprocess.run(
@@ -320,6 +326,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 fingerprint,
                 "--seconds",
                 str(seconds),
+                *natural_drain_arguments,
                 *output_arguments,
                 "--",
                 "/bin/sh",
@@ -799,6 +806,28 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                 (checkpoints / "compose-ci.success.json").read_text(encoding="utf-8")
             )
             self.assertEqual(checkpoint["seconds"], 4)
+
+    def test_changing_the_natural_drain_invalidates_the_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints = root / "checkpoints"
+            log = root / "runs.log"
+
+            first = self.run_stage(
+                checkpoints, log, "tree-a", natural_drain_seconds=2
+            )
+            changed = self.run_stage(
+                checkpoints, log, "tree-a", natural_drain_seconds=0
+            )
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(changed.returncode, 0, changed.stderr)
+            self.assertEqual(log.read_text(encoding="utf-8"), "run\nrun\n")
+            self.assertNotIn("reusing exact-input release checkpoint", changed.stdout)
+            checkpoint = json.loads(
+                (checkpoints / "compose-ci.success.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(checkpoint["natural_drain_seconds"], 0)
 
     def test_fingerprint_command_and_stage_share_one_deadline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
