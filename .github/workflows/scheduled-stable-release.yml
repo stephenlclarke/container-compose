@@ -383,13 +383,29 @@ jobs:
           CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON: ${{ needs.preflight.outputs.soak_override_reason }}
           CONTAINER_STACK_RELEASE_INTENT: ${{ needs.preflight.outputs.intent }}
           CONTAINER_STACK_SECURITY_REASON: ${{ needs.preflight.outputs.security_reason }}
+          DEVELOPER_ID_KEYCHAIN: ${{ runner.temp }}/container-compose-controller-${{ github.run_id }}-${{ github.run_attempt }}.keychain-db
           GH_TOKEN: ${{ secrets.CONTAINER_FAMILY_RELEASE_TOKEN }}
           VERSION_SELECTOR: ${{ needs.preflight.outputs.selector }}
         run: |
           set -euo pipefail
+          if [[ ! -f "${DEVELOPER_ID_KEYCHAIN}" || -L "${DEVELOPER_ID_KEYCHAIN}" ]]; then
+            printf 'the unattended Developer ID keychain is missing or unsafe\n' >&2
+            exit 1
+          fi
+          release_signing_identity="$(
+            /usr/bin/security find-identity -v -p codesigning "${DEVELOPER_ID_KEYCHAIN}" \
+              | /usr/bin/awk '/"Developer ID Application:/ { print $2 }' \
+              | /usr/bin/sort -u
+          )"
+          if [[ ! "${release_signing_identity}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            printf 'the unattended keychain does not contain one Developer ID Application identity\n' >&2
+            exit 1
+          fi
           export CONTAINER_STACK_RELEASE_ASYNC_AFTER_STABLE_GATE=1
           export CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT="${GITHUB_OUTPUT}"
-          make release VERSION_SELECTOR="${VERSION_SELECTOR}"
+          make release \
+            VERSION_SELECTOR="${VERSION_SELECTOR}" \
+            CONTAINER_RUNTIME_CODESIGN_IDENTITY="${release_signing_identity}"
 
       - name: Remove operation-scoped Developer ID identity
         if: always()
