@@ -4811,6 +4811,13 @@ formula_digest="sha256:${DIGEST}"
         self.assertIn("release-gate:", makefile)
         for stage in ("sibling-stack", "compose-ci", "swift-runtime", "compose-parity"):
             self.assertIn(f"--stage {stage}", makefile)
+        self.assertIn("RELEASE_GATE_STACK_NATURAL_DRAIN_SECONDS ?= 30", makefile)
+        self.assertEqual(
+            makefile.count(
+                '--natural-drain-seconds "$(RELEASE_GATE_STACK_NATURAL_DRAIN_SECONDS)"'
+            ),
+            1,
+        )
         self.assertIn("docker-compose-parity-stages:", makefile)
         self.assertIn("docker-compose-parity: docker-compose-reference", makefile)
         self.assertIn(

@@ -608,6 +608,73 @@ class RunReleaseCheckpointTest(unittest.TestCase):
             self.assertIn("exceeded 1-second deadline", completed.stderr)
             self.assertIn("timeout diagnostic", completed.stderr)
 
+    def test_configured_natural_drain_reaches_nested_supervisor(self) -> None:
+        child_program = (
+            "import os, time; "
+            "child = os.fork(); "
+            "time.sleep(0.75) if child == 0 else None; "
+            "os._exit(0)"
+        )
+
+        def run_with_drain(seconds: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint",
+                    "tree-a",
+                    "--seconds",
+                    "5",
+                    "--natural-drain-seconds",
+                    seconds,
+                    "--",
+                    sys.executable,
+                    "-c",
+                    child_program,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=8,
+            )
+
+        too_short = run_with_drain("0")
+        sufficient = run_with_drain("2")
+
+        self.assertEqual(too_short.returncode, 125, too_short.stderr)
+        self.assertIn("command left live processes after exit", too_short.stderr)
+        self.assertEqual(sufficient.returncode, 0, sufficient.stderr)
+
+    def test_natural_drain_must_be_finite_and_non_negative(self) -> None:
+        for value in ("nan", "inf", "-1"):
+            with self.subTest(value=value):
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "--stage",
+                        "compose-ci",
+                        "--fingerprint",
+                        "tree-a",
+                        "--seconds",
+                        "5",
+                        f"--natural-drain-seconds={value}",
+                        "--",
+                        "/usr/bin/true",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                self.assertEqual(completed.returncode, 2)
+                self.assertIn(
+                    "--natural-drain-seconds must be finite and non-negative",
+                    completed.stderr,
+                )
+
     @unittest.skipUnless(hasattr(os, "mkfifo"), "requires FIFO support")
     def test_timeout_diagnostic_rejects_a_fifo_without_blocking(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -942,7 +1009,7 @@ class RunReleaseCheckpointTest(unittest.TestCase):
                     "BASH_ENV": "/dev/null",
                     "ENV": "/dev/null",
                     "PATH": f"{fake_bin}:/opt/homebrew/bin:/usr/bin:/bin",
-                    "STACK_MUTATION_REPO": str(builder),
+                    "STACK_MUTATION_REPO": str(builder.resolve()),
                 }
             )
 

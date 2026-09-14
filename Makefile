@@ -208,6 +208,7 @@ export PARITY_SINK_BIND_ADDRESS
 RELEASE_GATE_STAGE_TIMEOUT_SECONDS ?= 7200
 RELEASE_GATE_STACK_TIMEOUT_SECONDS ?= 14400
 RELEASE_GATE_PARITY_TIMEOUT_SECONDS ?= 14400
+RELEASE_GATE_STACK_NATURAL_DRAIN_SECONDS ?= 30
 PARITY_STAGE_TIMEOUT_SECONDS ?= 900
 CONTAINER_RUNTIME_START_DEADLINE_SECONDS ?= 300
 # Completed artifacts and evidence survive disposal of external workspaces and
@@ -832,7 +833,7 @@ print-release-gate-fingerprint: release-gate-environment-fingerprint-check
 	printf '%s:environment=%s\n' "$(RELEASE_GATE_STATIC_FINGERPRINT)" "$$environment_fingerprint"
 
 release-gate:
-	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory container-stack-release-validation
+	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage sibling-stack --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STACK_TIMEOUT_SECONDS)" --natural-drain-seconds "$(RELEASE_GATE_STACK_NATURAL_DRAIN_SECONDS)" -- $(MAKE) --no-print-directory container-stack-release-validation
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-ci --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" --required-output "$(abspath .build/debug/compose)" --required-output "$(abspath Tools/compose-normalizer/compose-normalizer)" --required-output "$(abspath $(VOLUME_INITIALIZER_ARM64))" --required-output "$(abspath $(VOLUME_INITIALIZER_AMD64))" -- $(MAKE) --no-print-directory ci
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage swift-runtime --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_STAGE_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory swift-runtime-test
 	RELEASE_GATE_MAKE="$(MAKE)" /usr/bin/python3 ./Tools/ci/run-release-checkpoint.py --checkpoint-dir "$(RELEASE_GATE_CHECKPOINT_DIR)" --stage compose-parity --fingerprint-command ./Tools/ci/print-release-gate-fingerprint.py --seconds "$(RELEASE_GATE_PARITY_TIMEOUT_SECONDS)" -- $(MAKE) --no-print-directory docker-compose-parity

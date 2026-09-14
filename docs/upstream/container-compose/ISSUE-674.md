@@ -23,5 +23,20 @@ drain must use the same detached cleanup watchdog as cancellation while the
 direct child is running, so an outer `SIGKILL` escalation cannot orphan the
 verified session.
 
+Pull request 675 applied that bound to the release transaction's outer process
+supervisor. The next unattended promotion,
+[34843652063](https://github.com/stephenlclarke/container-compose/actions/runs/34843652063),
+proved the remaining gap: the nested `run-release-checkpoint.py` controller
+constructed its own supervisor without forwarding the configured drain. Its
+`sibling-stack` command passed 309 concurrent and 100 serial live integration
+tests plus combined coverage, then the nested five-second default returned exit
+125 before the outer 30-second policy could observe a clean session.
+
+The checkpoint controller must accept, validate, and forward the drain interval
+to its nested process supervisor. The Makefile must select 30 seconds only for
+the expensive `sibling-stack` checkpoint. Ordinary checkpoints retain the
+five-second default, and a descendant that remains after the configured interval
+continues to fail closed with bounded TERM-to-KILL cleanup.
+
 Related issue:
 [#674](https://github.com/stephenlclarke/container-compose/issues/674).
