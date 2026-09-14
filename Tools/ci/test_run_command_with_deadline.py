@@ -245,6 +245,83 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
         self.assertEqual(result.returncode, 7, result.stderr)
         self.assertEqual(result.stdout, "complete\n")
 
+    def test_configured_natural_drain_is_forwarded(self) -> None:
+        with mock.patch.object(
+            self.module,
+            "wait_for_session_to_drain",
+            return_value=self.module.SessionState.DRAINED,
+        ) as wait_for_drain:
+            status = self.module.run(
+                [
+                    "--seconds",
+                    "5",
+                    "--natural-drain-seconds",
+                    "12.5",
+                    "--",
+                    "/usr/bin/true",
+                ]
+            )
+
+        self.assertEqual(status, 0)
+        wait_for_drain.assert_called_once()
+        self.assertEqual(wait_for_drain.call_args.args[1], 12.5)
+
+    def test_invalid_natural_drain_is_rejected(self) -> None:
+        for value in ("-1", "nan", "inf", "-inf"):
+            with self.subTest(value=value):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "--seconds",
+                        "5",
+                        f"--natural-drain-seconds={value}",
+                        "--",
+                        "/usr/bin/true",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(
+                    "--natural-drain-seconds must be finite and non-negative",
+                    result.stderr,
+                )
+
+    def test_invalid_deadline_and_grace_values_are_rejected(self) -> None:
+        for option, expected in (
+            ("--seconds", "--seconds must be finite and greater than zero"),
+            (
+                "--grace-seconds",
+                "--grace-seconds must be finite and non-negative",
+            ),
+        ):
+            invalid_values = (
+                ("0", "-1", "nan", "inf", "-inf")
+                if option == "--seconds"
+                else ("-1", "nan", "inf", "-inf")
+            )
+            for value in invalid_values:
+                with self.subTest(option=option, value=value):
+                    arguments = [
+                        f"{option}={value}",
+                        "--",
+                        "/usr/bin/true",
+                    ]
+                    if option == "--grace-seconds":
+                        arguments[0:0] = ["--seconds", "5"]
+                    result = subprocess.run(
+                        [sys.executable, str(SCRIPT), *arguments],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn(expected, result.stderr)
+
     def test_successful_child_allows_short_lived_descendant_to_drain(self) -> None:
         result = subprocess.run(
             [
@@ -270,6 +347,164 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("command left live processes after exit", result.stderr)
+
+    def test_signal_interrupts_an_extended_natural_drain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            drain_started = root / "drain-started"
+            descendant_pid = root / "descendant-pid"
+            harness = root / "drain-signal.py"
+            descendant_command = (
+                "(trap '' TERM; exec /bin/sleep 30) & "
+                f'printf \'%s\' "$!" > {str(descendant_pid)!r}; exit 0'
+            )
+            harness.write_text(
+                f"""\
+import importlib.util
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("deadline_runner", {str(SCRIPT)!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+original_wait = module.wait_for_session_to_drain
+
+def recording_wait(session_id, wait_seconds, should_interrupt=None):
+    Path({str(drain_started)!r}).touch()
+    return original_wait(session_id, wait_seconds, should_interrupt)
+
+module.wait_for_session_to_drain = recording_wait
+raise SystemExit(module.run([
+    "--seconds", "30", "--natural-drain-seconds", "30",
+    "--grace-seconds", "0.2", "--", "/bin/sh", "-c",
+    {descendant_command!r},
+]))
+""",
+                encoding="utf-8",
+            )
+
+            process = subprocess.Popen(
+                [sys.executable, str(harness)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            drain_deadline = time.monotonic() + 2
+            while not drain_started.exists():
+                if process.poll() is not None:
+                    stdout, stderr = process.communicate()
+                    self.fail(
+                        "runner exited before the natural-drain phase: "
+                        + stdout
+                        + stderr
+                    )
+                if time.monotonic() >= drain_deadline:
+                    process.kill()
+                    self.fail("runner did not enter the natural-drain phase")
+                time.sleep(0.01)
+
+            process.send_signal(signal.SIGTERM)
+            stdout, stderr = process.communicate(timeout=3)
+
+            self.assertEqual(process.returncode, 143, stdout + stderr)
+            pid = int(descendant_pid.read_text(encoding="utf-8"))
+            self.assertIn(process_state(pid), ("", "Z"))
+
+    def test_watchdog_finishes_post_exit_cleanup_after_runner_is_killed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            drain_started = root / "drain-started"
+            watchdog_started = root / "watchdog-started"
+            descendant_pid = root / "descendant-pid"
+            harness = root / "post-exit-watchdog.py"
+            descendant_command = (
+                "(trap '' TERM; exec /bin/sleep 30) & "
+                f'printf \'%s\' "$!" > {str(descendant_pid)!r}; exit 0'
+            )
+            harness.write_text(
+                f"""\
+import importlib.util
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("deadline_runner", {str(SCRIPT)!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+original_wait = module.wait_for_session_to_drain
+original_watchdog = module.start_detached_cleanup_watchdog
+
+def recording_wait(session_id, wait_seconds, should_interrupt=None):
+    Path({str(drain_started)!r}).touch()
+    return original_wait(session_id, wait_seconds, should_interrupt)
+
+def recording_watchdog(session_id, grace_seconds):
+    watchdog_pid = original_watchdog(session_id, grace_seconds)
+    Path({str(watchdog_started)!r}).touch()
+    return watchdog_pid
+
+module.wait_for_session_to_drain = recording_wait
+module.start_detached_cleanup_watchdog = recording_watchdog
+raise SystemExit(module.run([
+    "--seconds", "30", "--natural-drain-seconds", "30",
+    "--grace-seconds", "0.5", "--", "/bin/sh", "-c",
+    {descendant_command!r},
+]))
+""",
+                encoding="utf-8",
+            )
+
+            process = subprocess.Popen(
+                [sys.executable, str(harness)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            descendant = None
+            try:
+                drain_deadline = time.monotonic() + 2
+                while not drain_started.exists():
+                    if process.poll() is not None:
+                        stdout, stderr = process.communicate()
+                        self.fail(
+                            "runner exited before the natural-drain phase: "
+                            + stdout
+                            + stderr
+                        )
+                    if time.monotonic() >= drain_deadline:
+                        self.fail("runner did not enter the natural-drain phase")
+                    time.sleep(0.01)
+
+                process.send_signal(signal.SIGTERM)
+                watchdog_deadline = time.monotonic() + 2
+                while not watchdog_started.exists():
+                    if process.poll() is not None:
+                        stdout, stderr = process.communicate()
+                        self.fail(
+                            "runner exited before starting the cleanup watchdog: "
+                            + stdout
+                            + stderr
+                        )
+                    if time.monotonic() >= watchdog_deadline:
+                        self.fail("cleanup watchdog did not start")
+                    time.sleep(0.01)
+
+                descendant = int(descendant_pid.read_text(encoding="utf-8"))
+                process.kill()
+                process.communicate(timeout=2)
+
+                cleanup_deadline = time.monotonic() + 3
+                while process_state(descendant) not in ("", "Z"):
+                    if time.monotonic() >= cleanup_deadline:
+                        self.fail(
+                            f"post-exit descendant {descendant} survived watchdog cleanup"
+                        )
+                    time.sleep(0.05)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate(timeout=2)
+                if descendant is not None and process_state(descendant) not in ("", "Z"):
+                    os.kill(descendant, signal.SIGKILL)
 
     def test_successful_child_with_live_descendant_fails_and_cleans_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

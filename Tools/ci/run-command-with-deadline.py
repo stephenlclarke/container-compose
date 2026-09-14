@@ -22,13 +22,14 @@ from __future__ import annotations
 import argparse
 import fcntl
 import json
+import math
 import os
 import signal
 import stat
 import subprocess
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from enum import Enum
 from pathlib import Path
 from typing import NamedTuple
@@ -64,6 +65,15 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
         help="supervise the command process group without a wall-clock deadline",
     )
     parser.add_argument("--grace-seconds", type=float, default=10.0)
+    parser.add_argument(
+        "--natural-drain-seconds",
+        type=float,
+        default=NATURAL_DRAIN_SECONDS,
+        help=(
+            "allow verified descendants this long to exit naturally after "
+            "the direct child completes"
+        ),
+    )
     parser.add_argument("--timing-log", type=Path)
     parser.add_argument("--timing-label")
     parser.add_argument(
@@ -75,10 +85,17 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     parsed = parser.parse_args(arguments)
     if parsed.command[:1] == ["--"]:
         parsed.command = parsed.command[1:]
-    if parsed.seconds is not None and parsed.seconds <= 0:
-        parser.error("--seconds must be greater than zero")
-    if parsed.grace_seconds < 0:
-        parser.error("--grace-seconds must be non-negative")
+    if parsed.seconds is not None and (
+        not math.isfinite(parsed.seconds) or parsed.seconds <= 0
+    ):
+        parser.error("--seconds must be finite and greater than zero")
+    if not math.isfinite(parsed.grace_seconds) or parsed.grace_seconds < 0:
+        parser.error("--grace-seconds must be finite and non-negative")
+    if (
+        not math.isfinite(parsed.natural_drain_seconds)
+        or parsed.natural_drain_seconds < 0
+    ):
+        parser.error("--natural-drain-seconds must be finite and non-negative")
     if not parsed.command:
         parser.error("a command is required after --")
     if (parsed.timing_log is None) != (parsed.timing_label is None):
@@ -260,11 +277,15 @@ def terminate_live_session(
 
 
 def wait_for_session_to_drain(
-    session_id: int, wait_seconds: float
+    session_id: int,
+    wait_seconds: float,
+    should_interrupt: Callable[[], bool] | None = None,
 ) -> SessionState:
     """Allow short-lived descendants to exit naturally after their parent."""
     drain_deadline = time.monotonic() + wait_seconds
     while True:
+        if should_interrupt is not None and should_interrupt():
+            return SessionState.LIVE
         inspection = inspect_supervised_session(session_id)
         if inspection.state is not SessionState.LIVE:
             return inspection.state
@@ -431,8 +452,28 @@ def run_command(options: argparse.Namespace) -> int:
             if return_code is not None:
                 exit_status = normalized_exit_status(return_code)
                 drain_state = wait_for_session_to_drain(
-                    process.pid, NATURAL_DRAIN_SECONDS
+                    process.pid,
+                    options.natural_drain_seconds,
+                    lambda: forwarded_signal is not None,
                 )
+                if forwarded_signal is not None:
+                    watchdog_pid = start_detached_cleanup_watchdog(
+                        process.pid, options.grace_seconds
+                    )
+                    cleanup_state = terminate_live_session(
+                        process.pid, options.grace_seconds
+                    )
+                    if cleanup_state is SessionState.UNKNOWN:
+                        print(
+                            "could not inspect the command session during "
+                            "signal cleanup: " + options.command[0],
+                            file=sys.stderr,
+                        )
+                    wait_for_watchdog(
+                        watchdog_pid,
+                        options.grace_seconds + FORCED_CLEANUP_SECONDS,
+                    )
+                    return 128 + forwarded_signal
                 if drain_state is SessionState.UNKNOWN:
                     print(
                         "could not verify that the command session drained: "

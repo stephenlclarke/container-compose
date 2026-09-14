@@ -2799,7 +2799,9 @@ run_local_release_gate_command() {
   (
     trap - HUP INT QUIT TERM
     exec "${RELEASE_COMMAND_DEADLINE_RUNNER}" \
-      --no-deadline --grace-seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" -- \
+      --no-deadline \
+      --natural-drain-seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" \
+      --grace-seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}" -- \
       "$@"
   ) &
   child_pid=$!

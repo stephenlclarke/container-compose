@@ -8672,9 +8672,11 @@
       "id": "container-compose-672",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(ci): allow bounded release helper drain",
-      "state": "active-draft",
+      "state": "merged",
       "lastVerified": "2026-09-14",
-      "commits": [],
+      "commits": [
+        "f06e13d5ad89323aa9dd008da0a09fffb5af3baa"
+      ],
       "documents": [
         {
           "kind": "issue",
@@ -8686,6 +8688,30 @@
         }
       ],
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/673"
+    },
+    {
+      "id": "container-compose-674",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): bound gate descendant drain",
+      "state": "active-draft",
+      "lastVerified": "2026-09-14",
+      "commits": [
+        "84f963eb5d0982ea645ec5e8c06a970f63926fac",
+        "78c6097794442484dfc9a0ce4b8e8afb2ef74435",
+        "deef529f61a878b96c9d86d15c4893a1834a391b",
+        "db9c914f46c490dce751535605df93e61d685502"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-674.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-675.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/675"
     },
     {
       "id": "process-list-compose-top-process-list",

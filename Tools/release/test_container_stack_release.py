@@ -7856,6 +7856,10 @@ esac
         ]
         self.assertIn('"${RELEASE_COMMAND_DEADLINE_RUNNER}"', local_gate)
         self.assertIn("--no-deadline", local_gate)
+        self.assertIn(
+            '--natural-drain-seconds "${CANDIDATE_STOP_TIMEOUT_SECONDS}"',
+            local_gate,
+        )
 
     def test_outer_marker_cleans_a_pre_runtime_interrupt_root(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp", prefix="cc-parent-test.") as directory:
