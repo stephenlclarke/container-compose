@@ -292,6 +292,19 @@ class ContainerStackReleasePolicyTests(unittest.TestCase):
             "${{ needs.preflight.outputs.security_reason }}",
             release,
         )
+        promote_step = release[
+            release.index("Promote the selected stable release") :
+            release.index("Remove operation-scoped Developer ID identity")
+        ]
+        self.assertIn("DEVELOPER_ID_KEYCHAIN: ${{ runner.temp }}/", promote_step)
+        self.assertIn(
+            'security find-identity -v -p codesigning "${DEVELOPER_ID_KEYCHAIN}"',
+            promote_step,
+        )
+        self.assertIn(
+            'CONTAINER_RUNTIME_CODESIGN_IDENTITY="${release_signing_identity}"',
+            promote_step,
+        )
         self.assertNotIn("read -p", workflow)
         self.assertNotIn("read -s", workflow)
         self.assertTrue(TEMPORARY_DEVELOPER_ID_KEYCHAIN.is_file())
