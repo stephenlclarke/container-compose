@@ -85,10 +85,12 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     parsed = parser.parse_args(arguments)
     if parsed.command[:1] == ["--"]:
         parsed.command = parsed.command[1:]
-    if parsed.seconds is not None and parsed.seconds <= 0:
-        parser.error("--seconds must be greater than zero")
-    if parsed.grace_seconds < 0:
-        parser.error("--grace-seconds must be non-negative")
+    if parsed.seconds is not None and (
+        not math.isfinite(parsed.seconds) or parsed.seconds <= 0
+    ):
+        parser.error("--seconds must be finite and greater than zero")
+    if not math.isfinite(parsed.grace_seconds) or parsed.grace_seconds < 0:
+        parser.error("--grace-seconds must be finite and non-negative")
     if (
         not math.isfinite(parsed.natural_drain_seconds)
         or parsed.natural_drain_seconds < 0

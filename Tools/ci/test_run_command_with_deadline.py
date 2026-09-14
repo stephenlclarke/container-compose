@@ -290,6 +290,38 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
                     result.stderr,
                 )
 
+    def test_invalid_deadline_and_grace_values_are_rejected(self) -> None:
+        for option, expected in (
+            ("--seconds", "--seconds must be finite and greater than zero"),
+            (
+                "--grace-seconds",
+                "--grace-seconds must be finite and non-negative",
+            ),
+        ):
+            invalid_values = (
+                ("0", "-1", "nan", "inf", "-inf")
+                if option == "--seconds"
+                else ("-1", "nan", "inf", "-inf")
+            )
+            for value in invalid_values:
+                with self.subTest(option=option, value=value):
+                    arguments = [
+                        f"{option}={value}",
+                        "--",
+                        "/usr/bin/true",
+                    ]
+                    if option == "--grace-seconds":
+                        arguments[0:0] = ["--seconds", "5"]
+                    result = subprocess.run(
+                        [sys.executable, str(SCRIPT), *arguments],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+
+                    self.assertEqual(result.returncode, 2)
+                    self.assertIn(expected, result.stderr)
+
     def test_successful_child_allows_short_lived_descendant_to_drain(self) -> None:
         result = subprocess.run(
             [
