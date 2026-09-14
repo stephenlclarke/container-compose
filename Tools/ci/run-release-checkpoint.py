@@ -39,7 +39,7 @@ from typing import BinaryIO
 SCHEMA_VERSION = 4
 FAILURE_TAIL_BYTES = 32 * 1024
 FAILURE_TAIL_LINES = 80
-LEAKED_PROCESS_GROUP_EXIT_STATUS = 125
+CLEANED_PROCESS_GROUP_EXIT_STATUS = 125
 RECOVERY_UNAVAILABLE_EXIT_STATUS = 76
 DEADLINE_RUNNER = Path(__file__).with_name("run-command-with-deadline.py")
 
@@ -697,7 +697,7 @@ def run(arguments: Sequence[str]) -> int:
     try:
         status = run_deadline(deadline_arguments)
         if (
-            status == LEAKED_PROCESS_GROUP_EXIT_STATUS
+            status == CLEANED_PROCESS_GROUP_EXIT_STATUS
             and forwarded_signal is None
             and options.recover_cleaned_success
             and bool(options.checkpoint_dir)

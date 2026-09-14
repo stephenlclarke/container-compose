@@ -149,10 +149,33 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
             )
 
         self.assertEqual(
-            status, self.module.LEAKED_PROCESS_GROUP_EXIT_STATUS
+            status, self.module.UNVERIFIED_PROCESS_CLEANUP_EXIT_STATUS
         )
         terminate_session.assert_not_called()
         signal_session.assert_not_called()
+
+    def test_success_after_incomplete_cleanup_is_not_recoverable(self) -> None:
+        for cleanup_state in (
+            self.module.SessionState.UNKNOWN,
+            self.module.SessionState.LIVE,
+        ):
+            with self.subTest(cleanup_state=cleanup_state), mock.patch.object(
+                self.module,
+                "wait_for_session_to_drain",
+                return_value=self.module.SessionState.LIVE,
+            ), mock.patch.object(
+                self.module,
+                "terminate_live_session",
+                return_value=cleanup_state,
+            ) as terminate_session:
+                status = self.module.run(
+                    ["--seconds", "5", "--", "/usr/bin/true"]
+                )
+
+            self.assertEqual(
+                status, self.module.UNVERIFIED_PROCESS_CLEANUP_EXIT_STATUS
+            )
+            terminate_session.assert_called_once()
 
     def test_returns_the_child_status_and_output(self) -> None:
         result = subprocess.run(
@@ -531,7 +554,7 @@ raise SystemExit(module.run([
 
             self.assertEqual(
                 result.returncode,
-                self.module.LEAKED_PROCESS_GROUP_EXIT_STATUS,
+                self.module.CLEANED_PROCESS_GROUP_EXIT_STATUS,
                 result.stderr,
             )
             self.assertIn("command left live processes after exit", result.stderr)
@@ -614,7 +637,7 @@ os._exit(0)
 
             self.assertEqual(
                 result.returncode,
-                self.module.LEAKED_PROCESS_GROUP_EXIT_STATUS,
+                self.module.CLEANED_PROCESS_GROUP_EXIT_STATUS,
                 result.stderr,
             )
             self.assertIn("command left live processes after exit", result.stderr)
