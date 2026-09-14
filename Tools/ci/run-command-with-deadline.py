@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import json
+import math
 import os
 import signal
 import stat
@@ -88,8 +89,11 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
         parser.error("--seconds must be greater than zero")
     if parsed.grace_seconds < 0:
         parser.error("--grace-seconds must be non-negative")
-    if parsed.natural_drain_seconds < 0:
-        parser.error("--natural-drain-seconds must be non-negative")
+    if (
+        not math.isfinite(parsed.natural_drain_seconds)
+        or parsed.natural_drain_seconds < 0
+    ):
+        parser.error("--natural-drain-seconds must be finite and non-negative")
     if not parsed.command:
         parser.error("a command is required after --")
     if (parsed.timing_log is None) != (parsed.timing_label is None):

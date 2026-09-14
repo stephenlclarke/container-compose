@@ -266,27 +266,29 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
         wait_for_drain.assert_called_once()
         self.assertEqual(wait_for_drain.call_args.args[1], 12.5)
 
-    def test_negative_natural_drain_is_rejected(self) -> None:
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(SCRIPT),
-                "--seconds",
-                "5",
-                "--natural-drain-seconds",
-                "-1",
-                "--",
-                "/usr/bin/true",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+    def test_invalid_natural_drain_is_rejected(self) -> None:
+        for value in ("-1", "nan", "inf", "-inf"):
+            with self.subTest(value=value):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(SCRIPT),
+                        "--seconds",
+                        "5",
+                        f"--natural-drain-seconds={value}",
+                        "--",
+                        "/usr/bin/true",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
 
-        self.assertEqual(result.returncode, 2)
-        self.assertIn(
-            "--natural-drain-seconds must be non-negative", result.stderr
-        )
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(
+                    "--natural-drain-seconds must be finite and non-negative",
+                    result.stderr,
+                )
 
     def test_successful_child_allows_short_lived_descendant_to_drain(self) -> None:
         result = subprocess.run(
