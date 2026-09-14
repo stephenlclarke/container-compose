@@ -134,7 +134,7 @@ in the stable baseline and current candidate. Planned compatibility work is kept
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
 > <!-- upstream-metrics:start -->
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 13 September 2026 snapshot, the three support forks are **1228 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 14 September 2026 snapshot, the three support forks are **1228 commits ahead of Apple upstream**:
 >
 > - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 322 ahead** at [`aa6b0bdeef88`](https://github.com/stephenlclarke/containerization/commit/aa6b0bdeef888b52afaf290cc7ac1909c3ac6fe5).
 > - [`container`](https://github.com/stephenlclarke/container): **0 behind, 847 ahead** at [`14257435e403`](https://github.com/stephenlclarke/container/commit/14257435e40367d60ac3904f4f67ca35d1c29fe5).
