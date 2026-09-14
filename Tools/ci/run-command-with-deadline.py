@@ -457,6 +457,9 @@ def run_command(options: argparse.Namespace) -> int:
                     lambda: forwarded_signal is not None,
                 )
                 if forwarded_signal is not None:
+                    watchdog_pid = start_detached_cleanup_watchdog(
+                        process.pid, options.grace_seconds
+                    )
                     cleanup_state = terminate_live_session(
                         process.pid, options.grace_seconds
                     )
@@ -466,6 +469,10 @@ def run_command(options: argparse.Namespace) -> int:
                             "signal cleanup: " + options.command[0],
                             file=sys.stderr,
                         )
+                    wait_for_watchdog(
+                        watchdog_pid,
+                        options.grace_seconds + FORCED_CLEANUP_SECONDS,
+                    )
                     return 128 + forwarded_signal
                 if drain_state is SessionState.UNKNOWN:
                     print(

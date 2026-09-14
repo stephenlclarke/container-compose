@@ -409,6 +409,103 @@ raise SystemExit(module.run([
             pid = int(descendant_pid.read_text(encoding="utf-8"))
             self.assertIn(process_state(pid), ("", "Z"))
 
+    def test_watchdog_finishes_post_exit_cleanup_after_runner_is_killed(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            drain_started = root / "drain-started"
+            watchdog_started = root / "watchdog-started"
+            descendant_pid = root / "descendant-pid"
+            harness = root / "post-exit-watchdog.py"
+            descendant_command = (
+                "(trap '' TERM; exec /bin/sleep 30) & "
+                f'printf \'%s\' "$!" > {str(descendant_pid)!r}; exit 0'
+            )
+            harness.write_text(
+                f"""\
+import importlib.util
+from pathlib import Path
+
+spec = importlib.util.spec_from_file_location("deadline_runner", {str(SCRIPT)!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+original_wait = module.wait_for_session_to_drain
+original_watchdog = module.start_detached_cleanup_watchdog
+
+def recording_wait(session_id, wait_seconds, should_interrupt=None):
+    Path({str(drain_started)!r}).touch()
+    return original_wait(session_id, wait_seconds, should_interrupt)
+
+def recording_watchdog(session_id, grace_seconds):
+    watchdog_pid = original_watchdog(session_id, grace_seconds)
+    Path({str(watchdog_started)!r}).touch()
+    return watchdog_pid
+
+module.wait_for_session_to_drain = recording_wait
+module.start_detached_cleanup_watchdog = recording_watchdog
+raise SystemExit(module.run([
+    "--seconds", "30", "--natural-drain-seconds", "30",
+    "--grace-seconds", "0.5", "--", "/bin/sh", "-c",
+    {descendant_command!r},
+]))
+""",
+                encoding="utf-8",
+            )
+
+            process = subprocess.Popen(
+                [sys.executable, str(harness)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            descendant = None
+            try:
+                drain_deadline = time.monotonic() + 2
+                while not drain_started.exists():
+                    if process.poll() is not None:
+                        stdout, stderr = process.communicate()
+                        self.fail(
+                            "runner exited before the natural-drain phase: "
+                            + stdout
+                            + stderr
+                        )
+                    if time.monotonic() >= drain_deadline:
+                        self.fail("runner did not enter the natural-drain phase")
+                    time.sleep(0.01)
+
+                process.send_signal(signal.SIGTERM)
+                watchdog_deadline = time.monotonic() + 2
+                while not watchdog_started.exists():
+                    if process.poll() is not None:
+                        stdout, stderr = process.communicate()
+                        self.fail(
+                            "runner exited before starting the cleanup watchdog: "
+                            + stdout
+                            + stderr
+                        )
+                    if time.monotonic() >= watchdog_deadline:
+                        self.fail("cleanup watchdog did not start")
+                    time.sleep(0.01)
+
+                descendant = int(descendant_pid.read_text(encoding="utf-8"))
+                process.kill()
+                process.communicate(timeout=2)
+
+                cleanup_deadline = time.monotonic() + 3
+                while process_state(descendant) not in ("", "Z"):
+                    if time.monotonic() >= cleanup_deadline:
+                        self.fail(
+                            f"post-exit descendant {descendant} survived watchdog cleanup"
+                        )
+                    time.sleep(0.05)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.communicate(timeout=2)
+                if descendant is not None and process_state(descendant) not in ("", "Z"):
+                    os.kill(descendant, signal.SIGKILL)
+
     def test_successful_child_with_live_descendant_fails_and_cleans_group(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             child_pid = Path(directory) / "child-pid"

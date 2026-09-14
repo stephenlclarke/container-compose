@@ -18,7 +18,10 @@ reusing the otherwise valid checkpoint.
 The process supervisor therefore needs an explicit, validated natural-drain
 option. Only the expensive release-gate wrapper should select the existing
 30-second bound. A process that remains live after that interval must still be
-terminated and make the release fail closed.
+terminated and make the release fail closed. Cancellation during this extended
+drain must use the same detached cleanup watchdog as cancellation while the
+direct child is running, so an outer `SIGKILL` escalation cannot orphan the
+verified session.
 
 Related issue:
 [#674](https://github.com/stephenlclarke/container-compose/issues/674).
