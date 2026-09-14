@@ -8692,14 +8692,20 @@
     {
       "id": "container-compose-674",
       "owner": "stephenlclarke/container-compose",
-      "title": "fix(release): bound gate descendant drain",
-      "state": "active-draft",
+      "title": "fix(release): propagate checkpoint descendant drain",
+      "state": "submitted",
       "lastVerified": "2026-09-14",
       "commits": [
         "84f963eb5d0982ea645ec5e8c06a970f63926fac",
+        "1cc9ae908cd53394c9dcca9abda0d826efdc4449",
         "78c6097794442484dfc9a0ce4b8e8afb2ef74435",
+        "62af12a78a110d7eb9cdf8ef1c03b40d1996404e",
         "deef529f61a878b96c9d86d15c4893a1834a391b",
-        "db9c914f46c490dce751535605df93e61d685502"
+        "3063ece8c782e701d6eea1af779499693bbd240f",
+        "db9c914f46c490dce751535605df93e61d685502",
+        "5f909c13d4b8eeca3f79eca62909b49c123a2777",
+        "12bbce686de9431cf878e407df2fcd7dc4864128",
+        "270d5fc5b2b2cd8634d6757cdf2411f382e68958"
       ],
       "documents": [
         {
@@ -8709,9 +8715,13 @@
         {
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-675.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-676.md"
         }
       ],
-      "upstream": "https://github.com/stephenlclarke/container-compose/pull/675"
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/676"
     },
     {
       "id": "process-list-compose-top-process-list",
