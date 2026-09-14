@@ -10988,6 +10988,8 @@ gh() {
         environment = os.environ.copy()
         environment["GIT_EDITOR"] = ":"
         for variable in (
+            "CONTAINER_STACK_RELEASE_ASYNC_AFTER_STABLE_GATE",
+            "CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT",
             "GNUMAKEFLAGS",
             "MAKEFLAGS",
             "MAKELEVEL",
@@ -10997,18 +10999,22 @@ gh() {
             environment.pop(variable, None)
         return environment
 
-    def test_non_interactive_environment_removes_recursive_make_state(self) -> None:
-        recursive_make_environment = {
+    def test_non_interactive_environment_removes_parent_orchestration_state(
+        self,
+    ) -> None:
+        parent_environment = {
+            "CONTAINER_STACK_RELEASE_ASYNC_AFTER_STABLE_GATE": "1",
+            "CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT": "/tmp/output",
             "GNUMAKEFLAGS": "--warn-undefined-variables",
             "MAKEFLAGS": "w -- CONTAINER_COMPOSE_CONTAINER=/tmp/candidate/container",
             "MAKELEVEL": "2",
             "MAKEOVERRIDES": "CONTAINER_COMPOSE_CONTAINER",
             "MFLAGS": "-w",
         }
-        with mock.patch.dict(os.environ, recursive_make_environment):
+        with mock.patch.dict(os.environ, parent_environment):
             environment = self.non_interactive_environment()
 
-        for variable in recursive_make_environment:
+        for variable in parent_environment:
             self.assertNotIn(variable, environment)
 
     def test_release_storage_claims_only_an_exact_marked_build_child(self) -> None:
