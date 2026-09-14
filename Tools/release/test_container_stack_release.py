@@ -5193,6 +5193,7 @@ formula_digest="sha256:${DIGEST}"
             ]
 
             environment.pop("CONTAINER_RUNTIME_CODESIGN_IDENTITY", None)
+            environment.pop("DEVELOPER_ID_KEYCHAIN", None)
             missing_signing_identity = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
                 check=False,
@@ -11099,6 +11100,8 @@ gh() {
         for variable in (
             "CONTAINER_STACK_RELEASE_ASYNC_AFTER_STABLE_GATE",
             "CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT",
+            "CONTAINER_RUNTIME_CODESIGN_IDENTITY",
+            "DEVELOPER_ID_KEYCHAIN",
             "GNUMAKEFLAGS",
             "MAKEFLAGS",
             "MAKELEVEL",
@@ -11114,6 +11117,8 @@ gh() {
         parent_environment = {
             "CONTAINER_STACK_RELEASE_ASYNC_AFTER_STABLE_GATE": "1",
             "CONTAINER_STACK_RELEASE_ASYNC_HANDOFF_OUTPUT": "/tmp/output",
+            "CONTAINER_RUNTIME_CODESIGN_IDENTITY": "A" * 40,
+            "DEVELOPER_ID_KEYCHAIN": "/tmp/release.keychain-db",
             "GNUMAKEFLAGS": "--warn-undefined-variables",
             "MAKEFLAGS": "w -- CONTAINER_COMPOSE_CONTAINER=/tmp/candidate/container",
             "MAKELEVEL": "2",
