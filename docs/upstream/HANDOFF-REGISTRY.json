@@ -8724,6 +8724,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/676"
     },
     {
+      "id": "container-compose-677",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): recover cleaned release checkpoints",
+      "state": "submitted",
+      "lastVerified": "2026-09-14",
+      "commits": [
+        "002e35c10897083322e2ea8683d77acd8f8da1e0"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-677.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-678.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/678"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
