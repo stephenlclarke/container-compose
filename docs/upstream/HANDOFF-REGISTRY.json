@@ -8648,6 +8648,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/665"
     },
     {
+      "id": "container-compose-670",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): isolate controller state from tests",
+      "state": "active-draft",
+      "lastVerified": "2026-09-14",
+      "commits": [
+        "20867e868920164fea26c6b796d68dc37be43042"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-670.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-671.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/671"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
