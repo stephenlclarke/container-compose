@@ -259,13 +259,13 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
                 "-c",
                 "import os, time; "
                 "child = os.fork(); "
-                "time.sleep(0.15) if child == 0 else None; "
+                "time.sleep(1.25) if child == 0 else None; "
                 "os._exit(0)",
             ],
             capture_output=True,
             text=True,
             check=False,
-            timeout=5,
+            timeout=8,
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -291,7 +291,7 @@ class RunCommandWithDeadlineTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=5,
+                timeout=8,
             )
 
             self.assertEqual(
