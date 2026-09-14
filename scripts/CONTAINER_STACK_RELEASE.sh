@@ -2096,16 +2096,38 @@ require_release_hawkeye_cli() {
 # timeout. Later sibling validation may rebuild the source checkout, but it
 # cannot replace the candidate already running or change the identity bound
 # into reusable checkpoint evidence.
+# Resolve and validate the operation-scoped keychain used by release signing.
+validated_release_signing_keychain() {
+  local signing_keychain="${DEVELOPER_ID_KEYCHAIN:-}"
+  local resolved_keychain
+
+  if [[ ! "${signing_keychain}" =~ ^/[A-Za-z0-9._/-]+$ ]] ||
+    [[ ! -f "${signing_keychain}" || -L "${signing_keychain}" ]]; then
+    printf 'a safe absolute operation-scoped Developer ID keychain is required; set DEVELOPER_ID_KEYCHAIN: %s\n' \
+      "${signing_keychain:-unset}" >&2
+    return 2
+  fi
+  resolved_keychain="$(cd "$(dirname "${signing_keychain}")" && pwd -P)/$(basename "${signing_keychain}")"
+  if [[ ! "${resolved_keychain}" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+    printf 'the operation-scoped Developer ID keychain resolves to an unsafe path: %s\n' \
+      "${resolved_keychain}" >&2
+    return 2
+  fi
+  printf '%s\n' "${resolved_keychain}"
+}
+
+# Build and retain the exact signed Container runtime used by the release gate.
 stage_container_runtime_candidate() {
   local container_path="$1" evidence_root="$2"
   local container_head artifact_parent artifact_root build_root archive archive_digest
-  local marker marker_value candidate_parent signing_identity expected_marker promotion_root
+  local marker marker_value candidate_parent signing_identity signing_keychain expected_marker promotion_root
 
   signing_identity="${CONTAINER_RUNTIME_CODESIGN_IDENTITY:-}"
   if [[ ! "${signing_identity}" =~ ^[0-9A-Fa-f]{40}$ ]]; then
     printf 'a Developer ID Application identity is required for the packaged Container runtime candidate; set CONTAINER_RUNTIME_CODESIGN_IDENTITY to its 40-character fingerprint\n' >&2
     return 2
   fi
+  signing_keychain="$(validated_release_signing_keychain)" || return $?
 
   container_head="$(git -C "${container_path}" rev-parse --verify 'HEAD^{commit}')"
   artifact_parent="${evidence_root}/runtime-candidates"
@@ -2178,7 +2200,7 @@ stage_container_runtime_candidate() {
     if ! make -C "${container_path}" homebrew-package \
       "BUILD_CONFIGURATION=release" \
       "HOMEBREW_ARCHIVE=${archive}" \
-      "CODESIGN_OPTS=--force --sign ${signing_identity} --timestamp=none"; then
+      "CODESIGN_OPTS=--force --keychain ${signing_keychain} --sign ${signing_identity} --timestamp=none"; then
       printf 'failed to build the packaged Container runtime candidate in: %s\n' \
         "${build_root}" >&2
       cleanup_unpublished_runtime_candidate_build 1 || true

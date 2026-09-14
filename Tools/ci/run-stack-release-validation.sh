@@ -160,6 +160,7 @@ runtime_cli_fingerprint="unset"
 runtime_cli_sha256="unset"
 runtime_candidate_sha256=${CONTAINER_RUNTIME_CANDIDATE_SHA256:-}
 runtime_codesign_identity=${CONTAINER_RUNTIME_CODESIGN_IDENTITY:-}
+runtime_codesign_keychain=${DEVELOPER_ID_KEYCHAIN:-}
 validation_environment_path=${PATH}
 runtime_make_args=()
 container_codesign_make_args=()
@@ -191,6 +192,19 @@ if [[ "${mode}" == "full" ]]; then
     printf 'full stack validation requires a Developer ID Application identity for unattended source-runtime tests; set CONTAINER_RUNTIME_CODESIGN_IDENTITY to its 40-character fingerprint\n' >&2
     exit 2
   fi
+  if [[ ! "${runtime_codesign_keychain}" =~ ^/[A-Za-z0-9._/-]+$ ]] ||
+    [[ ! -f "${runtime_codesign_keychain}" || -L "${runtime_codesign_keychain}" ]]; then
+    printf 'full stack validation requires a safe absolute operation-scoped Developer ID keychain via DEVELOPER_ID_KEYCHAIN: %s\n' \
+      "${runtime_codesign_keychain:-unset}" >&2
+    exit 2
+  fi
+  resolved_codesign_keychain="$(cd "$(dirname "${runtime_codesign_keychain}")" && pwd -P)/$(basename "${runtime_codesign_keychain}")"
+  if [[ ! "${resolved_codesign_keychain}" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+    printf 'full stack validation Developer ID keychain resolves to an unsafe path: %s\n' \
+      "${resolved_codesign_keychain}" >&2
+    exit 2
+  fi
+  runtime_codesign_keychain="${resolved_codesign_keychain}"
   runtime_cli_directory=$(cd "$(dirname "${runtime_cli}")" && pwd -P)
   runtime_cli="${runtime_cli_directory}/$(basename "${runtime_cli}")"
   runtime_path="${runtime_cli_directory}${PATH:+:${PATH}}"
@@ -258,7 +272,7 @@ PY
   # recognises successive builds as one application instead of opening a Local
   # Network approval dialog for every new ad-hoc cdhash.
   container_codesign_make_args+=(
-    "CODESIGN_OPTS=--force --sign ${runtime_codesign_identity} --timestamp=none"
+    "CODESIGN_OPTS=--force --keychain ${runtime_codesign_keychain} --sign ${runtime_codesign_identity} --timestamp=none"
   )
   if [[ "${CONTAINER_RUNTIME_MANAGED:-0}" == 1 ]]; then
     managed_runtime_enabled=true

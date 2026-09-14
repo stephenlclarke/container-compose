@@ -5207,6 +5207,21 @@ formula_digest="sha256:${DIGEST}"
             )
             signing_identity = "A" * 40
             environment["CONTAINER_RUNTIME_CODESIGN_IDENTITY"] = signing_identity
+            missing_signing_keychain = subprocess.run(
+                [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+            self.assertEqual(missing_signing_keychain.returncode, 2)
+            self.assertIn(
+                "requires a safe absolute operation-scoped Developer ID keychain",
+                missing_signing_keychain.stderr,
+            )
+            signing_keychain = root / "release.keychain-db"
+            signing_keychain.touch()
+            environment["DEVELOPER_ID_KEYCHAIN"] = str(signing_keychain)
 
             full = subprocess.run(
                 [str(STACK_RELEASE_VALIDATION), "full", *validation_paths],
@@ -5260,7 +5275,8 @@ formula_digest="sha256:${DIGEST}"
                 container,
                 ("check", "container", "dsym", "docs", "coverage"),
                 required_fragment=(
-                    "CODESIGN_OPTS=--force --sign "
+                    "CODESIGN_OPTS=--force --keychain "
+                    f"{signing_keychain.resolve()} --sign "
                     f"{signing_identity} --timestamp=none "
                     f"APP_ROOT={explicit_runtime_root.resolve()}/stack-release-app-root "
                     f"LOG_ROOT={explicit_runtime_root.resolve()}/stack-release-log-root "
@@ -8221,11 +8237,18 @@ esac
             'CONTAINER_RUNTIME_CODESIGN_IDENTITY="$(CONTAINER_RUNTIME_CODESIGN_IDENTITY)"',
             stack_validation,
         )
+        self.assertIn('signing_keychain="$${DEVELOPER_ID_KEYCHAIN:-}"', makefile)
+        self.assertIn(
+            'CODESIGN_OPTS="--force --keychain $$resolved_keychain '
+            '--sign $$signing_identity --timestamp=none"',
+            makefile,
+        )
         self.assertIn("homebrew-package", staging)
         self.assertIn('"BUILD_CONFIGURATION=release"', staging)
         self.assertIn('"HOMEBREW_ARCHIVE=${archive}"', staging)
         self.assertIn(
-            '"CODESIGN_OPTS=--force --sign ${signing_identity} --timestamp=none"',
+            '"CODESIGN_OPTS=--force --keychain ${signing_keychain} '
+            '--sign ${signing_identity} --timestamp=none"',
             staging,
         )
         self.assertIn(
@@ -8336,6 +8359,8 @@ esac
             )
             fake_make.chmod(0o755)
             evidence = root / "evidence"
+            signing_keychain = root / "release.keychain-db"
+            signing_keychain.touch()
             result = self.run_release_function(
                 root,
                 f"evidence={shlex.quote(str(evidence))}; "
@@ -8352,7 +8377,8 @@ esac
                     f"export PATH={shlex.quote(str(bin_directory))}:$PATH\n"
                     f"export MAKE_ARGUMENTS={shlex.quote(str(make_arguments))}\n"
                     "export CONTAINER_RUNTIME_CODESIGN_IDENTITY="
-                    f"{signing_identity}"
+                    f"{signing_identity}\n"
+                    f"export DEVELOPER_ID_KEYCHAIN={shlex.quote(str(signing_keychain))}"
                 ),
             )
 
@@ -8367,10 +8393,79 @@ esac
                 make_arguments.read_text(encoding="utf-8").splitlines(),
             )
             self.assertIn(
-                "CODESIGN_OPTS=--force --sign "
+                "CODESIGN_OPTS=--force --keychain "
+                f"{signing_keychain.resolve()} --sign "
                 f"{signing_identity} --timestamp=none",
                 make_arguments.read_text(encoding="utf-8").splitlines(),
             )
+
+    def test_runtime_candidate_staging_rejects_missing_signing_keychain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rejected = self.run_release_function(
+                root,
+                "stage_container_runtime_candidate /does/not/exist evidence",
+                shell_setup=(
+                    "export CONTAINER_RUNTIME_CODESIGN_IDENTITY=" + "A" * 40
+                ),
+            )
+
+            self.assertEqual(rejected.returncode, 2)
+            self.assertIn(
+                "safe absolute operation-scoped Developer ID keychain",
+                rejected.stderr,
+            )
+            self.assertFalse((root / "evidence").exists())
+
+    def test_runtime_candidate_staging_rejects_symlinked_signing_keychain(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            signing_keychain = root / "release.keychain-db"
+            signing_keychain.touch()
+            keychain_link = root / "release-link.keychain-db"
+            keychain_link.symlink_to(signing_keychain)
+            rejected = self.run_release_function(
+                root,
+                "stage_container_runtime_candidate /does/not/exist evidence",
+                shell_setup=(
+                    "export CONTAINER_RUNTIME_CODESIGN_IDENTITY="
+                    + "A" * 40
+                    + "\nexport DEVELOPER_ID_KEYCHAIN="
+                    + shlex.quote(str(keychain_link))
+                ),
+            )
+
+            self.assertEqual(rejected.returncode, 2)
+            self.assertIn(
+                "safe absolute operation-scoped Developer ID keychain",
+                rejected.stderr,
+            )
+            self.assertFalse((root / "evidence").exists())
+
+    def test_runtime_candidate_staging_rejects_unsafe_canonical_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            unsafe_parent = root / "unsafe parent"
+            unsafe_parent.mkdir()
+            signing_keychain = unsafe_parent / "release.keychain-db"
+            signing_keychain.touch()
+            parent_link = root / "keychains"
+            parent_link.symlink_to(unsafe_parent, target_is_directory=True)
+            configured_keychain = parent_link / signing_keychain.name
+            rejected = self.run_release_function(
+                root,
+                "stage_container_runtime_candidate /does/not/exist evidence",
+                shell_setup=(
+                    "export CONTAINER_RUNTIME_CODESIGN_IDENTITY="
+                    + "A" * 40
+                    + "\nexport DEVELOPER_ID_KEYCHAIN="
+                    + shlex.quote(str(configured_keychain))
+                ),
+            )
+
+            self.assertEqual(rejected.returncode, 2)
+            self.assertIn("resolves to an unsafe path", rejected.stderr)
+            self.assertFalse((root / "evidence").exists())
 
     def test_runtime_candidate_staging_rejects_invalid_signing_identity(
         self,
@@ -8419,6 +8514,8 @@ esac
             )
             fake_make.chmod(0o755)
             evidence = root / "evidence"
+            signing_keychain = root / "release.keychain-db"
+            signing_keychain.touch()
             shell = "\n".join(
                 [
                     "set -euo pipefail",
@@ -8430,6 +8527,7 @@ esac
                     f"export PATH={shlex.quote(str(bin_directory))}:$PATH",
                     f"export BUILD_READY={shlex.quote(str(ready))}",
                     f"export CONTAINER_RUNTIME_CODESIGN_IDENTITY={'B' * 40}",
+                    f"export DEVELOPER_ID_KEYCHAIN={shlex.quote(str(signing_keychain))}",
                     "stage_container_runtime_candidate "
                     f"{shlex.quote(str(container))} {shlex.quote(str(evidence))}",
                 ]

@@ -2086,12 +2086,23 @@ docker-rest-image-mutation-parity: docker-rest-image-mutation-oracle docker-rest
 container-stack-build:
 	@if [[ -f "$(CONTAINER_STACK_REPO)/Makefile" ]]; then \
 		signing_identity="$(CONTAINER_RUNTIME_CODESIGN_IDENTITY)"; \
+		signing_keychain="$${DEVELOPER_ID_KEYCHAIN:-}"; \
 		if ! [[ "$$signing_identity" =~ ^[0-9A-Fa-f]{40}$$ ]]; then \
 			printf 'a Developer ID Application identity is required for unattended Container runtime tests; set CONTAINER_RUNTIME_CODESIGN_IDENTITY to its 40-character fingerprint\n' >&2; \
 			exit 2; \
 		fi; \
+		if ! [[ "$$signing_keychain" =~ ^/[A-Za-z0-9._/-]+$$ ]] || \
+			[[ ! -f "$$signing_keychain" || -L "$$signing_keychain" ]]; then \
+			printf 'a safe absolute operation-scoped Developer ID keychain is required for unattended Container runtime tests; set DEVELOPER_ID_KEYCHAIN: %s\n' "$${signing_keychain:-unset}" >&2; \
+			exit 2; \
+		fi; \
+		resolved_keychain="$$(cd "$$(dirname "$$signing_keychain")" && pwd -P)/$$(basename "$$signing_keychain")"; \
+		if ! [[ "$$resolved_keychain" =~ ^/[A-Za-z0-9._/-]+$$ ]]; then \
+			printf 'the unattended Developer ID keychain resolves to an unsafe path: %s\n' "$$resolved_keychain" >&2; \
+			exit 2; \
+		fi; \
 		$(MAKE) -C "$(CONTAINER_STACK_REPO)" \
-			CODESIGN_OPTS="--force --sign $$signing_identity --timestamp=none" \
+			CODESIGN_OPTS="--force --keychain $$resolved_keychain --sign $$signing_identity --timestamp=none" \
 			container; \
 	else \
 		printf 'warning: sibling container repo not found at %s; using CONTAINER_COMPOSE_CONTAINER=%s\n' \
