@@ -31,7 +31,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO
@@ -39,6 +39,8 @@ from typing import BinaryIO
 SCHEMA_VERSION = 4
 FAILURE_TAIL_BYTES = 32 * 1024
 FAILURE_TAIL_LINES = 80
+LEAKED_PROCESS_GROUP_EXIT_STATUS = 125
+RECOVERY_UNAVAILABLE_EXIT_STATUS = 76
 DEADLINE_RUNNER = Path(__file__).with_name("run-command-with-deadline.py")
 
 
@@ -63,6 +65,17 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--supervised-worker", action="store_true", help=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--reuse-only", action="store_true", help=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--recover-cleaned-success",
+        action="store_true",
+        help=(
+            "after bounded leaked-process cleanup, verify and reuse a success "
+            "checkpoint without rerunning the stage"
+        ),
     )
     parser.add_argument("--active-output", default="", help=argparse.SUPPRESS)
     parser.add_argument("command", nargs=argparse.REMAINDER)
@@ -90,6 +103,8 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
         parser.error("a command is required after --")
     if options.active_output and not options.supervised_worker:
         parser.error("--active-output is reserved for the supervised worker")
+    if options.reuse_only and not options.supervised_worker:
+        parser.error("--reuse-only is reserved for the supervised worker")
     return options
 
 
@@ -220,6 +235,98 @@ def write_json_atomically(path: Path, value: dict[str, object]) -> None:
             os.close(directory_descriptor)
     finally:
         temporary_path.unlink(missing_ok=True)
+
+
+def record_cleaned_success_recovery(checkpoint_directory: Path, stage: str) -> None:
+    """Record that an exact success was reused after bounded process cleanup."""
+    recovered_at = utc_timestamp()
+    records: list[tuple[Path, dict[str, object]]] = []
+    for suffix in ("last", "success"):
+        path = checkpoint_directory / f"{stage}.{suffix}.json"
+        record = read_checkpoint(path)
+        if record is None or record.get("status") != 0:
+            raise OSError(f"release checkpoint recovery record is invalid: {path}")
+        records.append((path, record))
+    if records[0][1].get("digest") != records[1][1].get("digest"):
+        raise OSError("release checkpoint recovery records do not name one digest")
+    for path, record in records:
+        record["post_exit_cleanup_recovered"] = True
+        record["post_exit_cleanup_recovered_at"] = recovered_at
+        write_json_atomically(path, record)
+
+
+def checkpoint_worker_arguments(
+    original_arguments: Sequence[str],
+    active_output_path: Path | None,
+    reuse_only: bool = False,
+) -> list[str]:
+    """Build one internal worker command without changing the stage command."""
+    arguments = [
+        sys.executable,
+        os.path.abspath(__file__),
+        "--supervised-worker",
+    ]
+    if reuse_only:
+        arguments.append("--reuse-only")
+    if active_output_path is not None:
+        arguments.extend(["--active-output", str(active_output_path)])
+    arguments.extend(original_arguments)
+    return arguments
+
+
+def deadline_controller_arguments(
+    options: argparse.Namespace,
+    worker_arguments: Sequence[str],
+) -> list[str]:
+    """Build the nested deadline command for one checkpoint worker."""
+    natural_drain_arguments = (
+        ["--natural-drain-seconds", str(options.natural_drain_seconds)]
+        if options.natural_drain_seconds is not None
+        else []
+    )
+    return [
+        sys.executable,
+        os.path.abspath(DEADLINE_RUNNER),
+        "--seconds",
+        str(options.seconds),
+        *natural_drain_arguments,
+        "--",
+        *worker_arguments,
+    ]
+
+
+def recover_cleaned_success(
+    options: argparse.Namespace,
+    original_arguments: Sequence[str],
+    active_output_path: Path | None,
+    run_deadline: Callable[[Sequence[str]], int],
+) -> int:
+    """Verify an exact checkpoint in a new session after bounded cleanup."""
+    print(
+        "verifying exact release checkpoint after bounded "
+        f"process cleanup: {options.stage}"
+    )
+    worker_arguments = checkpoint_worker_arguments(
+        original_arguments, active_output_path, reuse_only=True
+    )
+    status = run_deadline(deadline_controller_arguments(options, worker_arguments))
+    if status != 0:
+        return status
+
+    checkpoint_directory = Path(options.checkpoint_dir).expanduser().resolve()
+    try:
+        record_cleaned_success_recovery(checkpoint_directory, options.stage)
+    except OSError as error:
+        print(
+            f"could not record release checkpoint cleanup recovery: {error}",
+            file=sys.stderr,
+        )
+        return 74
+    print(
+        "recovered exact release checkpoint after bounded "
+        f"process cleanup: {options.stage}"
+    )
+    return 0
 
 
 def run_fingerprint_command(command: str) -> tuple[int, str | None]:
@@ -432,6 +539,14 @@ def run_supervised(options: argparse.Namespace) -> int:
                 )
                 return 74
 
+    if options.reuse_only:
+        print(
+            f"exact-input release checkpoint is unavailable for cleanup recovery: "
+            f"{options.stage}",
+            file=sys.stderr,
+        )
+        return RECOVERY_UNAVAILABLE_EXIT_STATUS
+
     stage_output_path = active_output_path or output_path
     if stage_output_path is not None:
         print(
@@ -536,32 +651,15 @@ def run(arguments: Sequence[str]) -> int:
         return run_supervised(options)
 
     active_output_path = None
-    worker_arguments = [
-        sys.executable,
-        os.path.abspath(__file__),
-        "--supervised-worker",
-    ]
     if options.checkpoint_dir:
         checkpoint_directory = Path(options.checkpoint_dir).expanduser().resolve()
         active_output_path = checkpoint_directory / (
             f".{options.stage}.active-{os.getpid()}-{secrets.token_hex(8)}.log"
         )
-        worker_arguments.extend(["--active-output", str(active_output_path)])
-    worker_arguments.extend(arguments)
-    natural_drain_arguments = (
-        ["--natural-drain-seconds", str(options.natural_drain_seconds)]
-        if options.natural_drain_seconds is not None
-        else []
+    worker_arguments = checkpoint_worker_arguments(arguments, active_output_path)
+    deadline_arguments = deadline_controller_arguments(
+        options, worker_arguments
     )
-    deadline_arguments = [
-        sys.executable,
-        os.path.abspath(DEADLINE_RUNNER),
-        "--seconds",
-        str(options.seconds),
-        *natural_drain_arguments,
-        "--",
-        *worker_arguments,
-    ]
     forwarded_signal: int | None = None
     deadline_process: subprocess.Popen[bytes] | None = None
     previous_handlers: dict[int, signal.Handlers] = {}
@@ -586,14 +684,27 @@ def run(arguments: Sequence[str]) -> int:
 
     for number in forwarded_signals:
         previous_handlers[number] = signal.signal(number, forward_signal)
-    try:
-        deadline_process = subprocess.Popen(deadline_arguments)
+    def run_deadline(arguments_to_run: Sequence[str]) -> int:
+        nonlocal deadline_process
+        deadline_process = subprocess.Popen(arguments_to_run)
         if forwarded_signal is not None:
             try:
                 deadline_process.send_signal(forwarded_signal)
             except ProcessLookupError:
                 pass
-        return_code = deadline_process.wait()
+        return normalized_exit_status(deadline_process.wait())
+
+    try:
+        status = run_deadline(deadline_arguments)
+        if (
+            status == LEAKED_PROCESS_GROUP_EXIT_STATUS
+            and forwarded_signal is None
+            and options.recover_cleaned_success
+            and bool(options.checkpoint_dir)
+        ):
+            status = recover_cleaned_success(
+                options, arguments, active_output_path, run_deadline
+            )
     except FileNotFoundError:
         print(f"control Python was not found: {sys.executable}", file=sys.stderr)
         return 127
@@ -606,7 +717,6 @@ def run(arguments: Sequence[str]) -> int:
     finally:
         for number, handler in previous_handlers.items():
             signal.signal(number, handler)
-    status = normalized_exit_status(return_code)
     if forwarded_signal is not None and status == 0:
         status = 128 + forwarded_signal
     if status == 124 and active_output_path is not None:

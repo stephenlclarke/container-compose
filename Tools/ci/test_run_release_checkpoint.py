@@ -654,6 +654,108 @@ class RunReleaseCheckpointTest(unittest.TestCase):
         self.assertIn("command left live processes after exit", too_short.stderr)
         self.assertEqual(sufficient.returncode, 0, sufficient.stderr)
 
+    def test_cleaned_success_recovery_reuses_without_rerunning_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkpoints = root / "checkpoints"
+            run_log = root / "runs.log"
+            child_program = (
+                "import os, pathlib, time; "
+                f"pathlib.Path({str(run_log)!r}).open('a').write('run\\n'); "
+                "child = os.fork(); "
+                "time.sleep(30) if child == 0 else None; "
+                "os._exit(0)"
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--checkpoint-dir",
+                    str(checkpoints),
+                    "--recover-cleaned-success",
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint",
+                    "tree-a",
+                    "--seconds",
+                    "5",
+                    "--natural-drain-seconds",
+                    "0",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    child_program,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=8,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(run_log.read_text(encoding="utf-8"), "run\n")
+            self.assertIn(
+                "verifying exact release checkpoint after bounded process cleanup",
+                completed.stdout,
+            )
+            self.assertIn(
+                "reusing exact-input release checkpoint", completed.stdout
+            )
+            self.assertIn(
+                "recovered exact release checkpoint after bounded process cleanup",
+                completed.stdout,
+            )
+            self.assertIn(
+                "command left live processes after exit", completed.stderr
+            )
+            success = json.loads(
+                (checkpoints / "compose-ci.success.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            last = json.loads(
+                (checkpoints / "compose-ci.last.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(success["post_exit_cleanup_recovered"])
+            self.assertEqual(
+                success["post_exit_cleanup_recovered_at"],
+                last["post_exit_cleanup_recovered_at"],
+            )
+
+    def test_reuse_only_refuses_to_run_an_uncheckpointed_stage(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            stage_started = root / "stage-started"
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--supervised-worker",
+                    "--reuse-only",
+                    "--checkpoint-dir",
+                    str(root / "checkpoints"),
+                    "--stage",
+                    "compose-ci",
+                    "--fingerprint",
+                    "tree-a",
+                    "--seconds",
+                    "5",
+                    "--",
+                    "/usr/bin/touch",
+                    str(stage_started),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 76, completed.stderr)
+            self.assertFalse(stage_started.exists())
+            self.assertIn(
+                "exact-input release checkpoint is unavailable", completed.stderr
+            )
+
     def test_natural_drain_must_be_finite_and_non_negative(self) -> None:
         for value in ("nan", "inf", "-1"):
             with self.subTest(value=value):
