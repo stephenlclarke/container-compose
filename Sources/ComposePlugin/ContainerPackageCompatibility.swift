@@ -190,7 +190,9 @@ extension ContainerPackageCompatibility {
         expectedContainerRef: String? = nil,
         expectedContainerizationRef: String? = nil,
         stockRuntimeCapabilities: [String] = [],
-        onCompatibleRuntime: @escaping @Sendable (ComposeRuntimeCapabilities) -> Void = { _ in },
+        onCompatibleRuntime: @escaping @Sendable (ComposeRuntimeCapabilities) -> Void = { _ in
+            // Most commands need validation only and consume no capability snapshot.
+        },
         run: ([String]) async throws -> Data = runContainerCommand,
     ) async throws -> String? {
         guard requiresRuntimeCheck(arguments: arguments) else {

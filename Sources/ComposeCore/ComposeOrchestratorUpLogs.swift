@@ -104,14 +104,20 @@ extension ComposeOrchestrator {
     func upLogFollowOperation(_ session: ComposeUpLogSession) -> @Sendable () async throws -> Void {
         let attachments = session.outputAttachments
         return {
-            try await withThrowingTaskGroup(of: Void.self) { group in
-                for attachment in attachments {
-                    group.addTask {
-                        try await attachment.wait()
-                    }
+            try await Self.waitForOutputAttachments(attachments)
+        }
+    }
+
+    private static func waitForOutputAttachments(
+        _ attachments: [ComposeUpOutputAttachment]
+    ) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for attachment in attachments {
+                group.addTask {
+                    try await attachment.wait()
                 }
-                try await group.waitForAll()
             }
+            try await group.waitForAll()
         }
     }
 
@@ -247,7 +253,9 @@ extension ComposeOrchestrator {
                     stdout: true,
                     stderr: true,
                     mode: mode,
-                    onReady: {},
+                    onReady: {
+                        // started is signalled by the distinct onStarted barrier.
+                    },
                     onStarted: { started.ready() },
                     emit: { renderer.append($0) },
                 )

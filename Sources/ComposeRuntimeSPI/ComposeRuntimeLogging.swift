@@ -135,7 +135,9 @@ public extension ComposeRuntimeAttachManaging {
         stdout: Bool,
         stderr: Bool,
         onReady: @escaping @Sendable () -> Void,
-        onStarted: @escaping @Sendable () -> Void = {},
+        onStarted: @escaping @Sendable () -> Void = {
+            // Running-process attachments require no separate start barrier.
+        },
         emit: @escaping @Sendable (ComposeLogRecord) -> Void,
     ) async throws {
         try await attachOutput(
@@ -162,8 +164,12 @@ public extension ComposeRuntimeAttachManaging {
             stdout: stdout,
             stderr: stderr,
             mode: .runningProcess,
-            onReady: {},
-            onStarted: {},
+            onReady: {
+                // This convenience overload does not expose readiness.
+            },
+            onStarted: {
+                // The process is already running for this overload.
+            },
             emit: emit,
         )
     }

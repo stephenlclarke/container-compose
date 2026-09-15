@@ -213,7 +213,9 @@ extension ComposeOrchestrator {
 
     /// Starts a prepared one-off with attached output and waits for exit.
     func followOneOffRunOutputAndWait(containerName: String) async throws -> Int32 {
-        try await followOneOffRunOutputAndWait(containerName: containerName) {}
+        try await followOneOffRunOutputAndWait(containerName: containerName) {
+            // This overload has no work between attachment readiness and start.
+        }
     }
 
     /// Starts an output-only attachment and reports when its descriptors are
@@ -231,7 +233,9 @@ extension ComposeOrchestrator {
                     stdout: true,
                     stderr: true,
                     mode: .beforeStart,
-                    onReady: {},
+                    onReady: {
+                        // started is signalled by the distinct onStarted barrier.
+                    },
                     onStarted: { started.ready() },
                     emit: { emit($0.payload) },
                 )

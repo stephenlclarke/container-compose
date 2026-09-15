@@ -236,18 +236,11 @@ func resolveSourcePath(path string) (resolved string, sourceError error, err err
 	for len(components) > 0 {
 		component := components[0]
 		components = components[1:]
-		switch component {
-		case "", ".":
-			continue
-		case "..":
-			current = filepath.Dir(current)
+		if next, handled := resolveLexicalSourceComponent(current, component); handled {
+			current = next
 			continue
 		}
-		candidate := current
-		if candidate != string(filepath.Separator) {
-			candidate += string(filepath.Separator)
-		}
-		candidate += component
+		candidate := filepath.Join(current, component)
 		info, lstatErr := os.Lstat(candidate)
 		if errors.Is(lstatErr, os.ErrNotExist) {
 			return current, errSourceMissing, nil
@@ -277,6 +270,17 @@ func resolveSourcePath(path string) (resolved string, sourceError error, err err
 		components = append(targetComponents, components...)
 	}
 	return current, nil, nil
+}
+
+func resolveLexicalSourceComponent(current, component string) (string, bool) {
+	switch component {
+	case "", ".":
+		return current, true
+	case "..":
+		return filepath.Dir(current), true
+	default:
+		return current, false
+	}
 }
 
 func pathsOverlap(first, second string) bool {
@@ -390,62 +394,91 @@ func recoverTransaction(destination, transaction, journal string) error {
 	stage := filepath.Join(destination, stagePrefix+transaction)
 	temporary := journal + ".tmp"
 	payload, err := os.ReadFile(journal)
-	switch {
-	case err == nil:
-		var record transactionJournal
-		if decodeErr := json.Unmarshal(payload, &record); decodeErr != nil {
-			return fmt.Errorf("decode initialization journal: %w", decodeErr)
-		}
-		if record.Version != 5 || record.Transaction != transaction ||
-			(record.Phase != journalPhasePrepared && record.Phase != journalPhasePublishing) {
-			return errors.New("initialization journal identity does not match")
-		}
-		seenEntries := make(map[string]struct{}, len(record.Entries))
-		for _, entry := range record.Entries {
-			if !safeTopLevelName(entry.Name) {
-				return errors.New("initialization journal contains an unsafe entry")
-			}
-			if _, duplicate := seenEntries[entry.Name]; duplicate {
-				return errors.New("initialization journal contains a duplicate entry")
-			}
-			seenEntries[entry.Name] = struct{}{}
-			if record.Phase == journalPhasePublishing {
-				if entry.Device == 0 || entry.Inode == 0 || entry.NodeCount == 0 ||
-					!validTreeDigest(entry.TreeDigest) {
-					return errors.New("publishing journal entry has no filesystem identity")
-				}
-			} else if entry.Device != 0 || entry.Inode != 0 || entry.NodeCount != 0 ||
-				entry.TreeDigest != "" {
-				return errors.New("prepared journal entry unexpectedly has a filesystem identity")
-			}
-		}
-		if record.Phase == journalPhasePrepared && record.FinalRoot != nil {
-			return errors.New("prepared journal unexpectedly has final root metadata")
-		}
-		if record.Phase == journalPhasePublishing && record.FinalRoot == nil {
-			return errors.New("publishing journal has no final root metadata")
-		}
-		if err := os.Remove(temporary); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("remove stale initialization journal temporary: %w", err)
-		}
-		if record.Phase == journalPhasePrepared {
-			return recoverPreparedTransaction(destination, stage, journal, record.Root)
-		}
-		return completePublishingTransaction(
-			destination,
-			stage,
-			journal,
-			record.Entries,
-			*record.FinalRoot,
-		)
-	case errors.Is(err, os.ErrNotExist):
-		if _, stageErr := os.Lstat(stage); stageErr == nil {
-			return errors.New("initialization stage exists without its recovery journal")
-		} else if !errors.Is(stageErr, os.ErrNotExist) {
-			return fmt.Errorf("inspect initialization stage: %w", stageErr)
-		}
-	default:
+	if err == nil {
+		return recoverRecordedTransaction(destination, stage, journal, temporary, transaction, payload)
+	}
+	if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("read initialization journal: %w", err)
+	}
+	return recoverWithoutJournal(stage, journal, temporary)
+}
+
+func recoverRecordedTransaction(
+	destination, stage, journal, temporary, transaction string,
+	payload []byte,
+) error {
+	var record transactionJournal
+	if err := json.Unmarshal(payload, &record); err != nil {
+		return fmt.Errorf("decode initialization journal: %w", err)
+	}
+	if err := validateTransactionJournal(record, transaction); err != nil {
+		return err
+	}
+	if err := os.Remove(temporary); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove stale initialization journal temporary: %w", err)
+	}
+	if record.Phase == journalPhasePrepared {
+		return recoverPreparedTransaction(destination, stage, journal, record.Root)
+	}
+	return completePublishingTransaction(
+		destination,
+		stage,
+		journal,
+		record.Entries,
+		*record.FinalRoot,
+	)
+}
+
+func validateTransactionJournal(record transactionJournal, transaction string) error {
+	if record.Version != 5 || record.Transaction != transaction ||
+		(record.Phase != journalPhasePrepared && record.Phase != journalPhasePublishing) {
+		return errors.New("initialization journal identity does not match")
+	}
+	seenEntries := make(map[string]struct{}, len(record.Entries))
+	for _, entry := range record.Entries {
+		if err := validateTransactionJournalEntry(record.Phase, entry, seenEntries); err != nil {
+			return err
+		}
+	}
+	if record.Phase == journalPhasePrepared && record.FinalRoot != nil {
+		return errors.New("prepared journal unexpectedly has final root metadata")
+	}
+	if record.Phase == journalPhasePublishing && record.FinalRoot == nil {
+		return errors.New("publishing journal has no final root metadata")
+	}
+	return nil
+}
+
+func validateTransactionJournalEntry(
+	phase string,
+	entry transactionJournalEntry,
+	seenEntries map[string]struct{},
+) error {
+	if !safeTopLevelName(entry.Name) {
+		return errors.New("initialization journal contains an unsafe entry")
+	}
+	if _, duplicate := seenEntries[entry.Name]; duplicate {
+		return errors.New("initialization journal contains a duplicate entry")
+	}
+	seenEntries[entry.Name] = struct{}{}
+	if phase == journalPhasePublishing {
+		if entry.Device == 0 || entry.Inode == 0 || entry.NodeCount == 0 ||
+			!validTreeDigest(entry.TreeDigest) {
+			return errors.New("publishing journal entry has no filesystem identity")
+		}
+		return nil
+	}
+	if entry.Device != 0 || entry.Inode != 0 || entry.NodeCount != 0 || entry.TreeDigest != "" {
+		return errors.New("prepared journal entry unexpectedly has a filesystem identity")
+	}
+	return nil
+}
+
+func recoverWithoutJournal(stage, journal, temporary string) error {
+	if _, err := os.Lstat(stage); err == nil {
+		return errors.New("initialization stage exists without its recovery journal")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect initialization stage: %w", err)
 	}
 	if err := os.Remove(temporary); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove stale initialization journal temporary: %w", err)

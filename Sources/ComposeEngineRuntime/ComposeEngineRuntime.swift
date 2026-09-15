@@ -297,7 +297,11 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         let fileLock = try await EngineVolumeInitializationFileLock.acquire(
             volumeMountpoint: destination
         )
-        defer { withExtendedLifetime(fileLock) {} }
+        defer {
+            withExtendedLifetime(fileLock) {
+                // Holding the lock object through this scope is the operation.
+            }
+        }
         let pendingTransaction = try EngineVolumeInitializationTransaction.load(
             volumeMountpoint: destination
         )
@@ -387,7 +391,11 @@ extension EngineRuntimeProvider: ComposeRuntimeImageVolumeInitializing {
         let buildLock = try await EngineVolumeInitializationFileLock.acquire(
             path: Self.volumeInitializerBuildLockPath(volumeMountpoint)
         )
-        defer { withExtendedLifetime(buildLock) {} }
+        defer {
+            withExtendedLifetime(buildLock) {
+                // Holding the lock object through this scope is the operation.
+            }
+        }
         for _ in 0 ..< 3 {
             let image = try await inspectImage(sourceImage, platform: platform)
             let input = try volumeInitializerBuildInput(

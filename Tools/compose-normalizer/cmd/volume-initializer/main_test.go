@@ -229,6 +229,29 @@ func TestInitializeRejectsMissingSourceWithoutMutatingDestination(t *testing.T) 
 	}
 }
 
+func TestResolveLexicalSourceComponent(t *testing.T) {
+	t.Parallel()
+	current := filepath.Join(string(filepath.Separator), "workspace", "project")
+	for _, test := range []struct {
+		name      string
+		component string
+		want      string
+		handled   bool
+	}{
+		{name: "empty", component: "", want: current, handled: true},
+		{name: "current directory", component: ".", want: current, handled: true},
+		{name: "parent directory", component: "..", want: filepath.Dir(current), handled: true},
+		{name: "filesystem entry", component: "source", want: current, handled: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, handled := resolveLexicalSourceComponent(current, test.component)
+			if got != test.want || handled != test.handled {
+				t.Fatalf("resolveLexicalSourceComponent(%q, %q) = (%q, %t), want (%q, %t)", current, test.component, got, handled, test.want, test.handled)
+			}
+		})
+	}
+}
+
 func TestInitializeRejectsSymlinkResolvedMountOverlapBeforeRecovery(t *testing.T) {
 	t.Parallel()
 	for _, test := range []string{
@@ -576,6 +599,50 @@ func TestInitializeRejectsStageWithoutRecoveryJournal(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(destination, "current")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("source was published after failed recovery: %v", err)
+	}
+}
+
+func TestRecoverTransactionRejectsUnreadableJournal(t *testing.T) {
+	t.Parallel()
+	destination := t.TempDir()
+	recovery := t.TempDir()
+	journal := filepath.Join(recovery, journalPrefix+testTransactionID)
+	mustMkdir(t, journal, 0o700)
+
+	err := recoverTransaction(destination, testTransactionID, journal)
+	if err == nil || !strings.Contains(err.Error(), "read initialization journal") {
+		t.Fatalf("recoverTransaction error = %v, want journal read failure", err)
+	}
+}
+
+func TestRecoverTransactionRemovesOrphanedTemporaryJournal(t *testing.T) {
+	t.Parallel()
+	destination := t.TempDir()
+	recovery := t.TempDir()
+	journal := filepath.Join(recovery, journalPrefix+testTransactionID)
+	temporary := journal + ".tmp"
+	mustWrite(t, temporary, "orphaned", 0o600)
+
+	if err := recoverTransaction(destination, testTransactionID, journal); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(temporary); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("orphaned temporary journal still exists: %v", err)
+	}
+}
+
+func TestRecoverTransactionReportsTemporaryJournalRemovalFailure(t *testing.T) {
+	t.Parallel()
+	destination := t.TempDir()
+	recovery := t.TempDir()
+	journal := filepath.Join(recovery, journalPrefix+testTransactionID)
+	temporary := journal + ".tmp"
+	mustMkdir(t, temporary, 0o700)
+	mustWrite(t, filepath.Join(temporary, "retained"), "state", 0o600)
+
+	err := recoverTransaction(destination, testTransactionID, journal)
+	if err == nil || !strings.Contains(err.Error(), "remove stale initialization journal temporary") {
+		t.Fatalf("recoverTransaction error = %v, want temporary-journal removal failure", err)
 	}
 }
 
