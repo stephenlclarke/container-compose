@@ -7865,7 +7865,9 @@ main() {
         release_current_stack
       else
         require_release_bootstrap_authority
-        require_xcode_license_acceptance
+        if [[ "${EXECUTE}" == "1" ]]; then
+          require_xcode_license_acceptance
+        fi
         recover_release_host_state_on_startup
         run_isolated_release
       fi

@@ -4,8 +4,8 @@ Unattended maintenance release run [34912847740](https://github.com/stephenlclar
 
 The release bootstrap validated repository authority, storage ownership, signing configuration, and runtime prerequisites, but it did not verify the selected Xcode installation before creating the retained transaction and starting expensive validation. A release host updated to a new Xcode could therefore waste more than half an hour before reporting a one-time host setup requirement.
 
-An executable release must run `xcodebuild -license check` before entering the isolated transaction. Missing Xcode and an unaccepted licence must fail with exit 69 and a clear remediation message. The controller must never accept Apple's agreement automatically and must never open an interactive password or licence prompt.
+An executable release must run `xcodebuild -license check` before entering the isolated transaction. Dry-run planning must remain available without a licensed Xcode because it makes no release mutation. Missing Xcode and an unaccepted licence must fail an executable promotion with exit 69 and a clear remediation message. The controller must never accept Apple's agreement automatically and must never open an interactive password or licence prompt.
 
-Regression coverage must prove the accepted, unaccepted, and missing-tool paths and verify that the check precedes isolated release execution.
+Regression coverage must prove the accepted, unaccepted, and missing-tool paths, verify that the check precedes isolated release execution, and verify that dry-run planning skips the execution-only prerequisite.
 
 Related issue: [#683](https://github.com/stephenlclarke/container-compose/issues/683).

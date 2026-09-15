@@ -8654,6 +8654,12 @@ esac
             self.assertIn("unavailable for unattended release", missing.stderr)
 
         executable_release = self.script[self.script.index("main() {") :]
+        self.assertIn(
+            'if [[ "${EXECUTE}" == "1" ]]; then\n'
+            "          require_xcode_license_acceptance\n"
+            "        fi",
+            executable_release,
+        )
         self.assertLess(
             executable_release.index("require_xcode_license_acceptance"),
             executable_release.index("run_isolated_release"),
