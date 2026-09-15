@@ -8838,7 +8838,8 @@
       "state": "submitted",
       "lastVerified": "2026-09-15",
       "commits": [
-        "cc9a5a41c9f9e17a83b1fdb116b936654b1085dc"
+        "cc9a5a41c9f9e17a83b1fdb116b936654b1085dc",
+        "74bc3eb5c425fa5b0d0a4c3ee84379a03c0d54fa"
       ],
       "documents": [
         {
@@ -8848,9 +8849,13 @@
         {
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-689.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-690.md"
         }
       ],
-      "upstream": "https://github.com/stephenlclarke/container-compose/pull/689"
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/690"
     },
     {
       "id": "process-list-compose-top-process-list",
