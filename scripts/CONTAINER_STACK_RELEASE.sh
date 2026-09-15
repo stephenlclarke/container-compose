@@ -7759,6 +7759,25 @@ require_release_bootstrap_authority() {
   RELEASE_BOOTSTRAP_HEAD="${source_head}"
 }
 
+# Require the selected Xcode installation to be licensed before an executable
+# release creates or resumes an expensive isolated transaction. The release
+# controller must never accept Apple's agreement or prompt for credentials on
+# the user's behalf; it only reports the one-time host remediation.
+require_xcode_license_acceptance() {
+  local xcodebuild
+  xcodebuild="${CONTAINER_STACK_RELEASE_XCODEBUILD:-$(command -v xcodebuild || true)}"
+  if [[ -z "${xcodebuild}" || "${xcodebuild}" != /* || ! -x "${xcodebuild}" ]]; then
+    printf 'selected Xcode is unavailable for unattended release: %s\n' \
+      "${xcodebuild:-missing xcodebuild}" >&2
+    return 69
+  fi
+  if ! "${xcodebuild}" -license check >/dev/null 2>&1; then
+    printf '%s\n' \
+      'selected Xcode license is not accepted; run sudo xcodebuild -license and complete the agreement before retrying' >&2
+    return 69
+  fi
+}
+
 # Run a stable release only inside the exact marker-protected transaction
 # created by the release workspace controller. A failed child is retained for
 # the next invocation; only a completely successful publication is removed.
@@ -7846,6 +7865,9 @@ main() {
         release_current_stack
       else
         require_release_bootstrap_authority
+        if [[ "${EXECUTE}" == "1" ]]; then
+          require_xcode_license_acceptance
+        fi
         recover_release_host_state_on_startup
         run_isolated_release
       fi

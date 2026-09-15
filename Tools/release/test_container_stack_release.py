@@ -8606,6 +8606,65 @@ esac
             )
             self.assertEqual(supported.returncode, 0, supported.stderr)
 
+    def test_xcode_license_preflight_is_non_interactive_and_fails_fast(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            xcodebuild = root / "xcodebuild"
+            invocation = root / "invocation"
+            xcodebuild.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                f"printf '%s\\n' \"$*\" > {shlex.quote(str(invocation))}\n"
+                "exit \"${XCODE_LICENSE_STATUS:-0}\"\n",
+                encoding="utf-8",
+            )
+            xcodebuild.chmod(0o755)
+            setup = (
+                "export CONTAINER_STACK_RELEASE_XCODEBUILD="
+                f"{shlex.quote(str(xcodebuild))}"
+            )
+
+            accepted = self.run_release_function(
+                root,
+                "require_xcode_license_acceptance",
+                shell_setup=setup,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertEqual(invocation.read_text(encoding="utf-8"), "-license check\n")
+
+            unaccepted = self.run_release_function(
+                root,
+                "require_xcode_license_acceptance",
+                shell_setup=setup,
+                environment_overrides={"XCODE_LICENSE_STATUS": "69"},
+            )
+            self.assertEqual(unaccepted.returncode, 69)
+            self.assertIn("license is not accepted", unaccepted.stderr)
+            self.assertNotIn("license accept", unaccepted.stderr)
+
+            missing = self.run_release_function(
+                root,
+                "require_xcode_license_acceptance",
+                shell_setup=(
+                    "export CONTAINER_STACK_RELEASE_XCODEBUILD="
+                    f"{shlex.quote(str(root / 'missing-xcodebuild'))}"
+                ),
+            )
+            self.assertEqual(missing.returncode, 69)
+            self.assertIn("unavailable for unattended release", missing.stderr)
+
+        executable_release = self.script[self.script.index("main() {") :]
+        self.assertIn(
+            'if [[ "${EXECUTE}" == "1" ]]; then\n'
+            "          require_xcode_license_acceptance\n"
+            "        fi",
+            executable_release,
+        )
+        self.assertLess(
+            executable_release.index("require_xcode_license_acceptance"),
+            executable_release.index("run_isolated_release"),
+        )
+
     def test_release_helper_fetches_tags_before_resolving_versions(self) -> None:
         self.assertIn("fetch --prune --tags", self.script)
         self.assertIn("refs/tags/current-*:refs/tags/current-*", self.script)
