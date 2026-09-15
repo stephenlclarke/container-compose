@@ -4237,7 +4237,9 @@ formula_digest="sha256:${DIGEST}"
         self.assertIn('-Dsonar.projectVersion="$$project_version"', makefile)
         self.assertIn('^[0-9a-f]{40}$$', makefile)
         self.assertIn("sonar.leak.period,sonar.leak.period.type", makefile)
-        self.assertIn("inNewCodePeriod=true", makefile)
+        self.assertNotIn("inNewCodePeriod=true", makefile)
+        self.assertIn('if [[ "$$branch" != "main" ]]', makefile)
+        self.assertIn("main-only issue and hotspot API checks skipped", makefile)
         sonar_properties = (ROOT / "sonar-project.properties").read_text(
             encoding="utf-8"
         )

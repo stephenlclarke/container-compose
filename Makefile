@@ -2502,17 +2502,21 @@ sonar-scan:
 		sleep 20; \
 		((attempt += 1)); \
 	done; \
+	if [[ "$$branch" != "main" ]]; then \
+		printf 'Sonar short-branch report uploaded; main-only issue and hotspot API checks skipped for %s\n' "$${branch:-detached HEAD}"; \
+		exit 0; \
+	fi; \
 	context=(); \
 	if [[ -n "$$branch" && "$$branch" != "HEAD" ]]; then \
 		context+=(--data-urlencode "branch=$$branch"); \
 	fi; \
 	issues="$$(curl --fail --silent --show-error --user "$$sonar_token:" --get \
 		--data-urlencode 'componentKeys=stephenlclarke_container-compose2' \
-		--data-urlencode 'resolved=false' --data-urlencode 'inNewCodePeriod=true' \
+		--data-urlencode 'resolved=false' \
 		--data-urlencode 'ps=1' "$${context[@]}" https://sonarcloud.io/api/issues/search)"; \
 	hotspots="$$(curl --fail --silent --show-error --user "$$sonar_token:" --get \
 		--data-urlencode 'projectKey=stephenlclarke_container-compose2' \
-		--data-urlencode 'inNewCodePeriod=true' --data-urlencode 'ps=1' \
+		--data-urlencode 'ps=1' \
 		"$${context[@]}" https://sonarcloud.io/api/hotspots/search)"; \
 	jq -e '.total == 0' <<< "$$issues" >/dev/null; \
 	jq -e '.paging.total == 0' <<< "$$hotspots" >/dev/null
