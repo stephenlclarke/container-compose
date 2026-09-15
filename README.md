@@ -45,6 +45,15 @@ formulae atomically select the newest validated matched Container stack. A
 Current build becomes a semantic release only after the hosted Stable Release
 Gate, including the supported Docker Compose parity suite, succeeds.
 
+The 15 September 2026 source-bearing Current build at `9cea85981894` completed CI,
+documentation, Homebrew, signed prebuilt packaging, notarization, release-asset
+closure, and atomic tap publication. Its latest SonarQube analysis reports
+86.7% aggregate coverage, 0.3% duplicated lines, and zero bugs,
+vulnerabilities, code smells, or security hotspots, with A reliability,
+security, and maintainability ratings. Coverage remains below the repository's
+90% overall objective and is reported as an open quality gap rather than a
+passing parity claim.
+
 The active maintenance candidate retains stopped containers and their log
 histories after foreground `up --abort-on-container-exit`,
 `--abort-on-container-failure`, and `--exit-code-from` completion. Its matched

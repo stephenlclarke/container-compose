@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-09-10",
+  "generatedAt": "2026-09-15",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -49,8 +49,8 @@
       "id": "apple-container-1508",
       "owner": "apple/container",
       "title": "[builder]: enable ssh forwarding for container build",
-      "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "58fc6089ec7abb44c284ebbab724a571e2c767ce"
       ],
@@ -74,7 +74,7 @@
       "owner": "apple/container",
       "title": "Exclude application data directory from backups",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "1bb033af6c8d52b7a434608d8cd28b16f918b597"
       ],
@@ -86,7 +86,7 @@
       "owner": "apple/container",
       "title": "docs: add [machine] section to config.toml reference",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "34556d208809d6cfcd39202eb118a96efc12066a"
       ],
@@ -98,7 +98,7 @@
       "owner": "apple/container",
       "title": "add ID validation to daemon service",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "00223ad3671a8370180a1886bc400ad2b5e7ee06"
       ],
@@ -135,8 +135,8 @@
       "id": "apple-container-1862",
       "owner": "apple/container",
       "title": "fix: reply to unknown XPC routes and make request timeout cancellable",
-      "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "state": "closed",
+      "lastVerified": "2026-09-15",
       "commits": [
         "2999168307d76c30f9f6a11a52834eb892991cfb"
       ],
@@ -174,7 +174,7 @@
       "owner": "apple/container",
       "title": "Fix exec hang and stop timeout",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "36f58fb62efe3ca3fa554cb6a41f5bc966fc58c4"
       ],
@@ -291,7 +291,7 @@
       "owner": "apple/container",
       "title": "Fix cp tar stream support for stdin and stdout",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "7199840b57504963e0f76370a72dfcd74d927eb9"
       ],
@@ -315,7 +315,7 @@
       "owner": "apple/container",
       "title": "Send signal as a string in ClientProcess.kill",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "221fafc24ebd19502f4553e0b5d38c14be3f2b22",
         "26cc778b80ef847ff0fbf75579675981e5982613",
@@ -409,7 +409,7 @@
       "owner": "apple/container",
       "title": "[builder-tests]: add test for meta args parsing",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "f27d3e37cf7c6470b65c8e4a6f6af36fa0b20b68"
       ],
@@ -435,7 +435,7 @@
       "owner": "apple/container",
       "title": "fix(os): close directory watcher descriptors after failed startup",
       "state": "submitted",
-      "lastVerified": "2026-09-05",
+      "lastVerified": "2026-09-15",
       "commits": [
         "6540619ba679e14fbf00a5d99638bb363f26c72f"
       ],
@@ -447,7 +447,7 @@
       "owner": "apple/container",
       "title": "fix(persistence): preserve unloadable container bundles",
       "state": "submitted",
-      "lastVerified": "2026-09-05",
+      "lastVerified": "2026-09-15",
       "commits": [
         "c8b4d767a77fd70e01b11129199222661a0f92c0"
       ],
@@ -459,7 +459,7 @@
       "owner": "apple/container",
       "title": "fix(image): preserve active and infrastructure aliases",
       "state": "submitted",
-      "lastVerified": "2026-09-05",
+      "lastVerified": "2026-09-15",
       "commits": [
         "7df71fcb0e11a0bf9422e05cda35008438e5bf4b"
       ],
@@ -483,7 +483,7 @@
       "owner": "apple/container",
       "title": "fix(k8s): fall back to legacy iptables",
       "state": "submitted",
-      "lastVerified": "2026-09-05",
+      "lastVerified": "2026-09-15",
       "commits": [
         "a496a3abba714baa510704b38339c8565418e07f"
       ],
@@ -495,7 +495,7 @@
       "owner": "apple/container",
       "title": "cli: accept global flags after subcommands",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "9a43fa83941a893c0087f23cdaf8d036f23d6255"
       ],
@@ -719,7 +719,7 @@
       "owner": "apple/container-builder-shim",
       "title": "Emit excluded parent dirs of files re-included by dockerignore negations",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "27784072098425af0d1f1201b5073121de8cb6a1",
         "2f03287827469df80d7afb9ffb35775dc636118b",
@@ -740,7 +740,7 @@
       "owner": "apple/container-builder-shim",
       "title": "[frontend]: resolve meta args",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "134c7381dc3b1a06afe2d2025fab30c597f26bdd"
       ],
@@ -2446,7 +2446,7 @@
       "owner": "apple/containerization",
       "title": "Send a User-Agent header on registry requests",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "34296b5a1b24e42eb821c07da0be80595d68476a"
       ],
@@ -2458,7 +2458,7 @@
       "owner": "apple/containerization",
       "title": "Fix ECR BLOB_UPLOAD_INVALID by forcing new session on push retry",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "c0591b4cf53ea11e214c49c70916c4f6c22a4c07"
       ],
@@ -2510,7 +2510,7 @@
       "owner": "apple/containerization",
       "title": "Add stream-based copyIn/copyOut for tar stream cp support",
       "state": "tracked-upstream",
-      "lastVerified": "2026-08-03",
+      "lastVerified": "2026-09-15",
       "commits": [
         "570a56f74bf79aa3fa383e708d4741043c1e4f6f"
       ],
@@ -3288,8 +3288,8 @@
       "id": "apple-swift-nio-ssl-598",
       "owner": "apple/swift-nio-ssl",
       "title": "Avoid unconditional plaintext read buffer reallocations",
-      "state": "submitted",
-      "lastVerified": "2026-09-05",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "884b18fc96d8feae3ca63a7e662b8ea0eff31235"
       ],
@@ -7034,8 +7034,8 @@
       "id": "container-compose-304",
       "owner": "stephenlclarke/container-compose",
       "title": "Pin lifecycle identity inspection support",
-      "state": "submitted",
-      "lastVerified": "2026-08-22",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "b636d3f9d07de7ef3b4721de17eb47351c2544c1",
         "e76a28de2dcf2c3650871d8e5240d41d6a36cf12",
@@ -7058,8 +7058,8 @@
       "id": "container-compose-309",
       "owner": "stephenlclarke/container-compose",
       "title": "Include lifecycle helper images in config output",
-      "state": "submitted",
-      "lastVerified": "2026-08-23",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "23cf93c4d74e862a37992afcfec2b306a7fb4f7a",
         "f31dc1a14f8f76baac87509ec4c3f6c27262998c",
@@ -7081,8 +7081,8 @@
       "id": "container-compose-314",
       "owner": "stephenlclarke/container-compose",
       "title": "Prevent repeated macOS privacy prompts during runtime validation",
-      "state": "submitted",
-      "lastVerified": "2026-08-24",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "2763f1ccee9c2bd5d4a329543a2eb5a0764abf01",
         "4cbde978971182f9311245f947d4e2924b5e67d8",
@@ -7121,8 +7121,8 @@
       "id": "container-compose-315",
       "owner": "stephenlclarke/container-compose",
       "title": "Add a recoverable Nextflow build and test pipeline",
-      "state": "submitted",
-      "lastVerified": "2026-08-24",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "3fd6d72148465431ba5611c5dd0fe02668ce6e91",
         "4587f306e32b145297acdb739db0b7262d6a54c8",
@@ -7144,8 +7144,8 @@
       "id": "container-compose-322",
       "owner": "stephenlclarke/container-compose",
       "title": "Remove documentation and demo work from the release critical path",
-      "state": "submitted",
-      "lastVerified": "2026-08-24",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "01b1f72e8d74573de91ae743fbad3991e9b550bc",
         "a0f83a1a637af31b9a468b161da2b052f3a3bc5a",
@@ -7172,8 +7172,8 @@
       "id": "container-compose-325",
       "owner": "stephenlclarke/container-compose",
       "title": "Adopt the optimized Container stack",
-      "state": "submitted",
-      "lastVerified": "2026-08-26",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "abf1a9759307d11ab0148043fba192f40bc6c1eb",
         "94b6ea99e5c1dd448bc0599d04a392d68f8ac9bf"
@@ -7194,8 +7194,8 @@
       "id": "container-compose-327",
       "owner": "stephenlclarke/container-compose",
       "title": "Reuse the invocation Container client",
-      "state": "submitted",
-      "lastVerified": "2026-08-27",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "9ff4ae0070738c4ffee56406903ba3f99355184e",
         "6911b08e141f25c496a4c24c7827c6c65a336495"
@@ -7212,8 +7212,8 @@
       "id": "container-compose-342",
       "owner": "stephenlclarke/container-compose",
       "title": "Reuse Container command context",
-      "state": "submitted",
-      "lastVerified": "2026-08-30",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "0200d2759ee81484bd6fb27fda5d2229fe14e740"
       ],
@@ -7229,8 +7229,8 @@
       "id": "container-compose-348",
       "owner": "stephenlclarke/container-compose",
       "title": "Pin the final 0.14.0 Container runtime",
-      "state": "active-draft",
-      "lastVerified": "2026-08-31",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -7244,8 +7244,8 @@
       "id": "container-compose-352",
       "owner": "stephenlclarke/container-compose",
       "title": "Fail fast before expensive release jobs",
-      "state": "active-draft",
-      "lastVerified": "2026-08-31",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -7263,8 +7263,8 @@
       "id": "container-compose-354",
       "owner": "stephenlclarke/container-compose",
       "title": "Recover retained release artifacts",
-      "state": "active-draft",
-      "lastVerified": "2026-08-31",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -7282,8 +7282,8 @@
       "id": "container-compose-356",
       "owner": "stephenlclarke/container-compose",
       "title": "Require published guest authority",
-      "state": "active-draft",
-      "lastVerified": "2026-08-31",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "465dc7e49b92531da049123513b76ed9444bfa12"
       ],
@@ -7303,8 +7303,8 @@
       "id": "container-compose-358",
       "owner": "stephenlclarke/container-compose",
       "title": "Bound Current Demo engine readiness",
-      "state": "active-draft",
-      "lastVerified": "2026-08-31",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "dec369f5d3f04096950eb432e637cf2f00303e7a",
         "54ce64c52033e6f170360d2c3930bb16aaf307ca"
@@ -7329,8 +7329,8 @@
       "id": "container-compose-363",
       "owner": "stephenlclarke/container-compose",
       "title": "Make release validation deterministic",
-      "state": "submitted",
-      "lastVerified": "2026-08-31",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "d4691370576e2642c42572c949e0746e8a9c3a87"
       ],
@@ -7350,8 +7350,8 @@
       "id": "container-compose-380",
       "owner": "stephenlclarke/container-compose",
       "title": "Skip packaging immediately for documentation-only CI",
-      "state": "submitted",
-      "lastVerified": "2026-09-01",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "502aae5a649e9f6f6451eb30a3e9e2f0bb085c8a"
       ],
@@ -7371,8 +7371,8 @@
       "id": "container-compose-382",
       "owner": "stephenlclarke/container-compose",
       "title": "Reserve CodeQL for stable releases",
-      "state": "submitted",
-      "lastVerified": "2026-09-01",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "caea6b4a9e328c8cc81d5690ab788b6e2640eed7"
       ],
@@ -7392,8 +7392,8 @@
       "id": "container-compose-406",
       "owner": "stephenlclarke/container-compose",
       "title": "Stage release VM source mounts locally",
-      "state": "active-draft",
-      "lastVerified": "2026-09-01",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -7411,8 +7411,8 @@
       "id": "container-compose-413",
       "owner": "stephenlclarke/container-compose",
       "title": "Keep release state on internal storage",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -7430,8 +7430,8 @@
       "id": "container-compose-415",
       "owner": "stephenlclarke/container-compose",
       "title": "Fingerprint staged Container checkout content",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -7449,8 +7449,8 @@
       "id": "container-compose-417",
       "owner": "stephenlclarke/container-compose",
       "title": "Preserve Git history for history-sensitive release stages",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "7673294e8979d7cb3554ba3c3bcd3787c6cbc259",
         "df76a83eb1caf9d8bed1b20ace700f53330fdcd5"
@@ -7471,8 +7471,8 @@
       "id": "container-compose-419",
       "owner": "stephenlclarke/container-compose",
       "title": "Isolate persistent release state from the job workspace",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "50031ee49a6570f36181587d773d21af79bfc5cb"
       ],
@@ -7492,8 +7492,8 @@
       "id": "container-compose-421",
       "owner": "stephenlclarke/container-compose",
       "title": "Pin release Xcode and run DocC last",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "7b4e005688cc994fb31d72e733c3e197460945c3",
         "33e8cf5bd8f1d74043fa4d2b977eac6c13c6687c",
@@ -7519,8 +7519,8 @@
       "id": "container-compose-424",
       "owner": "stephenlclarke/container-compose",
       "title": "Keep Keychain validation unattended",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "82e3bf3bb32f8440e60894f8a154474c0ef8a4fe",
         "72ae837a93dc7ef4673512a4277be602323db7a3"
@@ -7541,8 +7541,8 @@
       "id": "container-compose-426",
       "owner": "stephenlclarke/container-compose",
       "title": "Preserve release receipt tuples",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "71635b830dded1133f8a2a180301574fd6e735cc"
       ],
@@ -7562,8 +7562,8 @@
       "id": "container-compose-428",
       "owner": "stephenlclarke/container-compose",
       "title": "Use immutable release controls for stable preflight",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "695be0ce4ff59658d1d7a943f171425ff1f238f5"
       ],
@@ -7583,8 +7583,8 @@
       "id": "container-compose-429",
       "owner": "stephenlclarke/container-compose",
       "title": "Publish the 0.14.1 regression-fix stack",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "9a3f9c1427b449ae3e89bd1721339f44a60f5013",
         "65eb0f862e78fcfb1c204eeafe6615a15acb09ff",
@@ -7608,8 +7608,8 @@
       "id": "container-compose-431",
       "owner": "stephenlclarke/container-compose",
       "title": "Retain exit-controlled services in runtime smoke checks",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "be25d540957fcc97a2ce167c957bc800ee7d9297",
         "702e75e231586def2a723b325440d297bd420df6"
@@ -7630,8 +7630,8 @@
       "id": "container-compose-433",
       "owner": "stephenlclarke/container-compose",
       "title": "Align up-menu parity with retained exit-control containers",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "a35631764d5fd03d10619d1b43dd137d9f358866"
       ],
@@ -7651,8 +7651,8 @@
       "id": "container-compose-435",
       "owner": "stephenlclarke/container-compose",
       "title": "Pin the deterministic Containerization stack",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "3a94dab3cdcaf4942832028304ea96051a341491"
       ],
@@ -7672,8 +7672,8 @@
       "id": "container-compose-437",
       "owner": "stephenlclarke/container-compose",
       "title": "Pin the final reviewed 0.14.1 support stack",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "87ca355e42184a60ea9ed3c7a64f8b91c97109c9",
         "f77f8d2833b54498546c081a0a5d15b4751b62bd"
@@ -7694,8 +7694,8 @@
       "id": "container-compose-441",
       "owner": "stephenlclarke/container-compose",
       "title": "Pin deterministic NBD integration stack for 0.14.1",
-      "state": "active-draft",
-      "lastVerified": "2026-09-02",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "818f5917819a32dac1bc233605c253b4a105e0e0",
         "ecf6da9fd029a52717a574c4aab3ed5257bbeea2"
@@ -7716,8 +7716,8 @@
       "id": "container-compose-443",
       "owner": "stephenlclarke/container-compose",
       "title": "Preserve runner control during Swift coverage builds",
-      "state": "active-draft",
-      "lastVerified": "2026-09-03",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -7743,8 +7743,8 @@
       "id": "container-compose-446",
       "owner": "stephenlclarke/container-compose",
       "title": "Remove undeclared gtimeout dependency from managed Sonar gates",
-      "state": "active-draft",
-      "lastVerified": "2026-09-03",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -7762,8 +7762,8 @@
       "id": "container-compose-448",
       "owner": "stephenlclarke/container-compose",
       "title": "Pin synchronized Container fork for 0.14.1",
-      "state": "active-draft",
-      "lastVerified": "2026-09-03",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "2647090a8af74cf18fae2472342cdb55bab60e45"
       ],
@@ -7783,8 +7783,8 @@
       "id": "container-compose-333",
       "owner": "stephenlclarke/container-compose",
       "title": "Prepare and repair Container Compose 0.14.0",
-      "state": "active-draft",
-      "lastVerified": "2026-08-29",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "c28475a3b553f016c12049d46df997ce6cdd7481",
         "32e1a4f73fd2d5c7f05ffc2b4a9fb27670d17768",
@@ -7815,8 +7815,8 @@
       "id": "container-compose-338",
       "owner": "stephenlclarke/container-compose",
       "title": "Validate parity with uncontended release artifacts",
-      "state": "active-draft",
-      "lastVerified": "2026-08-30",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "9f98055aa8d9c6e6d597b1ead65c855e1cd67266"
       ],
@@ -8282,8 +8282,8 @@
       "id": "container-compose-488",
       "owner": "stephenlclarke/container-compose",
       "title": "Make the recoverable pipeline reliable and efficient",
-      "state": "active-draft",
-      "lastVerified": "2026-09-05",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "bdfd9cef91399332040de31438eb47175859eef5",
         "03a387961ee92bbd985765e70ddab3264bc08c20"
@@ -8304,8 +8304,8 @@
       "id": "container-compose-533",
       "owner": "stephenlclarke/container-compose",
       "title": "chore(release): refresh 0.14.3 upstream authority",
-      "state": "active-draft",
-      "lastVerified": "2026-09-07",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "228897171d71975988ccdc690f1982e7433952af",
         "40ab92d74a02bbd6b7436a50d47c38898a4bc294",
@@ -8328,8 +8328,8 @@
       "id": "container-compose-544",
       "owner": "stephenlclarke/container-compose",
       "title": "chore(release): refresh 0.14.3 Container classification authority",
-      "state": "active-draft",
-      "lastVerified": "2026-09-07",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "09acdc2f1df2d8a15a37e6dbce19dbf94ed2a607",
         "aaacb3ed973f9e47434fc14335f87a4a42a1f2ad"
@@ -8350,8 +8350,8 @@
       "id": "container-compose-557",
       "owner": "stephenlclarke/container-compose",
       "title": "chore(release): refresh corrected builder classification authority",
-      "state": "active-draft",
-      "lastVerified": "2026-09-07",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "25399784a692d5d5933ab3db67d385e0e82b5fad",
         "8538b2e7931f41a831af66dc65381f7acc46cc64",
@@ -8374,8 +8374,8 @@
       "id": "container-compose-571",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): refresh retained sibling mains",
-      "state": "active-draft",
-      "lastVerified": "2026-09-08",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -8393,8 +8393,8 @@
       "id": "container-compose-593",
       "owner": "stephenlclarke/container-compose",
       "title": "[Build] Replace Nextflow with a recoverable native graph",
-      "state": "active-draft",
-      "lastVerified": "2026-09-09",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "89f9f7944b587d805143b6b193796608c2a6d3b7",
         "44f4895d88a7d23cec8b92c695265343fd7b30da"
@@ -8415,8 +8415,8 @@
       "id": "container-compose-595",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(build): complete recoverable stack workflow",
-      "state": "active-draft",
-      "lastVerified": "2026-09-09",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "73b886a8a1d66feae5361f92e0ccee581f28b6ce"
       ],
@@ -8436,8 +8436,8 @@
       "id": "container-compose-621",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): recover stale candidate namespaces",
-      "state": "active-draft",
-      "lastVerified": "2026-09-10",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -8455,8 +8455,8 @@
       "id": "container-compose-624",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): keep stable authority lookup runner-compatible",
-      "state": "active-draft",
-      "lastVerified": "2026-09-10",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -8474,8 +8474,8 @@
       "id": "container-compose-626",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): preserve stable retry control authority",
-      "state": "active-draft",
-      "lastVerified": "2026-09-10",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -8493,8 +8493,8 @@
       "id": "container-compose-629",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(docs): preserve prerelease publication authority",
-      "state": "active-draft",
-      "lastVerified": "2026-09-10",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -8512,8 +8512,8 @@
       "id": "container-compose-633",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(runtime): seed engine-backed image volumes",
-      "state": "active-draft",
-      "lastVerified": "2026-09-11",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "2a0cb533976e93a7fa643a899425c8f7707a728f",
         "ed38ebcc4e0a58006a9e75a59768c9a1713ce46f"
@@ -8534,8 +8534,8 @@
       "id": "container-compose-645",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(bridge): stage transformer output on internal volume",
-      "state": "active-draft",
-      "lastVerified": "2026-09-12",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "12f72fedf468387f6c7e5f951b9223c29aa80446",
         "6f12e30a007c4c1a81c32d5b0b589861e47b980c"
@@ -8556,8 +8556,8 @@
       "id": "container-compose-656",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): make stable promotion unattended",
-      "state": "active-draft",
-      "lastVerified": "2026-09-13",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -8575,8 +8575,8 @@
       "id": "container-compose-658",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): hand off downstream runner work",
-      "state": "active-draft",
-      "lastVerified": "2026-09-13",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -8594,8 +8594,8 @@
       "id": "container-compose-660",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): complete retained authority recovery",
-      "state": "active-draft",
-      "lastVerified": "2026-09-13",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -8613,8 +8613,8 @@
       "id": "container-compose-662",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): target default branch metadata",
-      "state": "active-draft",
-      "lastVerified": "2026-09-13",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -8632,8 +8632,8 @@
       "id": "container-compose-664",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): require public vminit authority",
-      "state": "active-draft",
-      "lastVerified": "2026-09-13",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [],
       "documents": [
         {
@@ -8651,8 +8651,8 @@
       "id": "container-compose-670",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): isolate controller state from tests",
-      "state": "active-draft",
-      "lastVerified": "2026-09-14",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "20867e868920164fea26c6b796d68dc37be43042"
       ],
@@ -8693,8 +8693,8 @@
       "id": "container-compose-674",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): propagate checkpoint descendant drain",
-      "state": "submitted",
-      "lastVerified": "2026-09-14",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "84f963eb5d0982ea645ec5e8c06a970f63926fac",
         "1cc9ae908cd53394c9dcca9abda0d826efdc4449",
@@ -8727,8 +8727,8 @@
       "id": "container-compose-677",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): recover cleaned release checkpoints",
-      "state": "submitted",
-      "lastVerified": "2026-09-14",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "002e35c10897083322e2ea8683d77acd8f8da1e0"
       ],
@@ -8748,8 +8748,8 @@
       "id": "container-compose-679",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): bind signing to temporary keychain",
-      "state": "submitted",
-      "lastVerified": "2026-09-14",
+      "state": "merged",
+      "lastVerified": "2026-09-15",
       "commits": [
         "f858c4f60375ed05ffdd6a95364e9f0e136e64d8"
       ],
@@ -8769,7 +8769,7 @@
       "id": "container-compose-681",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): isolate signing state in policy tests",
-      "state": "submitted",
+      "state": "merged",
       "lastVerified": "2026-09-15",
       "commits": [
         "dd010c76ee1e617cffdc9cfe034957186003cc63"
@@ -8790,7 +8790,7 @@
       "id": "container-compose-683",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): preflight Xcode license readiness",
-      "state": "submitted",
+      "state": "merged",
       "lastVerified": "2026-09-15",
       "commits": [
         "03f7220f6d415b382dcab16dd656c602ab1e7d03"
@@ -8835,11 +8835,13 @@
       "id": "container-compose-688",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): refresh Current stack pins",
-      "state": "submitted",
+      "state": "merged",
       "lastVerified": "2026-09-15",
       "commits": [
         "cc9a5a41c9f9e17a83b1fdb116b936654b1085dc",
-        "74bc3eb5c425fa5b0d0a4c3ee84379a03c0d54fa"
+        "74bc3eb5c425fa5b0d0a4c3ee84379a03c0d54fa",
+        "b24e68366b3869a6a9217fe00d47bd5ece5a65f0",
+        "9cea85981894db683d4222371332ca511268cda3"
       ],
       "documents": [
         {

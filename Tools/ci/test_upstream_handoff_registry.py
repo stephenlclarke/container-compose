@@ -154,6 +154,7 @@ class UpstreamHandoffRegistryTests(unittest.TestCase):
         self.assertEqual(registry.validate_registry(payload, root), [])
         rendered = registry.render_registry(payload)
         self.assertIn("# Upstream Handoff Registry", rendered)
+        self.assertIn("authoritative current lifecycle status", rendered)
         self.assertIn("Demo pull request", rendered)
         self.assertIn(f"/blob/{commit}/", rendered)
 
