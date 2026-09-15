@@ -8863,11 +8863,13 @@
       "id": "container-compose-695",
       "owner": "stephenlclarke/container-compose",
       "title": "chore(deps): refresh current container pin",
-      "state": "active-draft",
+      "state": "merged",
       "lastVerified": "2026-09-15",
       "commits": [
         "a200a1a959609d741a17fb58d10bc2648683b3fe",
-        "2092bcc493e957643d2a4a832941a22fb79b2e05"
+        "2092bcc493e957643d2a4a832941a22fb79b2e05",
+        "213a0695b17073a2f46bf061d2edb88388334ee9",
+        "e0901fdf0f06fe8ce515c03f98ad8f1277d21671"
       ],
       "documents": [
         {
