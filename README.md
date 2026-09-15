@@ -46,7 +46,7 @@ Current build becomes a semantic release only after the hosted Stable Release
 Gate, including the supported Docker Compose parity suite, succeeds.
 
 The 15 September 2026 source-bearing [Current build at
-`7a76b0b889c1`](https://github.com/stephenlclarke/container-compose/releases/tag/current-7a76b0b889c18786090d71638dc3342631491b92)
+`7a76b0b889c1`](https://github.com/stephenlclarke/container-compose/commit/7a76b0b889c18786090d71638dc3342631491b92)
 completed exact-main CI, signed prebuilt packaging, notarization, release-asset
 closure, and atomic tap publication. Its exact SonarQube analysis reports
 86.7% aggregate coverage, 0.3% duplicated lines, 43,119 lines of code, and zero

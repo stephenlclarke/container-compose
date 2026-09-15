@@ -34,12 +34,12 @@ must select the same exact release before automation treats that transaction as
 complete. Candidate revisions do not describe stable artifacts until the
 stable release gate succeeds and publishes a semantic version.
 
-The latest published Current candidate is
-[`current-7a76b0b889c18786090d71638dc3342631491b92`](https://github.com/stephenlclarke/container-compose/releases/tag/current-7a76b0b889c18786090d71638dc3342631491b92).
-Its exact-main CI, signed prebuilt, notarization, exact-asset closure, and atomic
-tap publication completed on 15 September 2026. Current is a moving prerelease
-lane; it does not change the stable 0.15.1 contract or the stable-release-bound
-DocC site.
+The [Current release feed](https://github.com/stephenlclarke/container-compose/releases)
+records `current-7a76b0b889c18786090d71638dc3342631491b92` as the candidate published
+on 15 September 2026. Its exact-main CI, signed prebuilt, notarization,
+exact-asset closure, and atomic tap publication completed successfully. Current
+is a moving prerelease lane; it does not change the stable 0.15.1 contract or
+the stable-release-bound DocC site.
 
 The candidate additionally carries reviewed runtime corrections for changing
 Kubernetes control-plane addresses, unreadable image entries and build
