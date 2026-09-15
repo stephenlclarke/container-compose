@@ -36,13 +36,16 @@ stable release gate succeeds and publishes a semantic version.
 
 The [Current release feed](https://github.com/stephenlclarke/container-compose/releases)
 contains immutable `current-<full-sha>` candidates, and the paired Current
-formulae select the newest validated exact-main entry. The latest
-source-bearing candidate is `7a76b0b889c18786090d71638dc3342631491b92`,
-published on 15 September 2026; later documentation-only control revisions do
-not supersede its runtime evidence or quality metrics. Its exact-main CI,
-signed prebuilt, notarization, exact-asset closure, and atomic tap publication
-completed successfully. Current is a moving prerelease lane; it does not
-change the stable 0.15.1 contract or the stable-release-bound DocC site.
+formulae select the newest validated exact-main entry. Source-bearing revision
+`7a76b0b889c18786090d71638dc3342631491b92` introduced the runtime changes
+described below and completed exact-main CI, signed prebuilt packaging,
+notarization, release-asset closure, and atomic tap publication on 15 September
+2026. Every later main revision, including a documentation-only revision,
+becomes a separate Current candidate only after its own full runtime, SonarQube,
+packaging, and publication authority succeeds. The feed and formulae therefore
+identify the installable candidate; the source-bearing revision identifies
+where runtime behavior changed. Current does not alter the stable 0.15.1
+contract or the stable-release-bound DocC site.
 
 The candidate additionally carries reviewed runtime corrections for changing
 Kubernetes control-plane addresses, unreadable image entries and build
