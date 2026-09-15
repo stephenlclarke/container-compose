@@ -29,4 +29,10 @@ production-build defect. The Current manifest must now advance its Container
 pin to the resulting protected-main commit
 `ef78345f59fdb913b3abce6ac0445616955c4e55` before publication is retried.
 
+The follow-up merged in pull request 690. Prebuilt Binaries run
+[34968418462](https://github.com/stephenlclarke/container-compose/actions/runs/34968418462)
+then completed successfully, published the immutable
+[`current-9cea85981894db683d4222371332ca511268cda3`](https://github.com/stephenlclarke/container-compose/releases/tag/current-9cea85981894db683d4222371332ca511268cda3)
+release, and advanced both matched Homebrew Current formulae atomically.
+
 Related issue: [#688](https://github.com/stephenlclarke/container-compose/issues/688).

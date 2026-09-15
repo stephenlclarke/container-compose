@@ -45,6 +45,15 @@ formulae atomically select the newest validated matched Container stack. A
 Current build becomes a semantic release only after the hosted Stable Release
 Gate, including the supported Docker Compose parity suite, succeeds.
 
+The 15 September 2026 source-bearing Current build at `9cea85981894` completed CI,
+documentation, Homebrew, signed prebuilt packaging, notarization, release-asset
+closure, and atomic tap publication. Its latest SonarQube analysis reports
+86.7% aggregate coverage, 0.3% duplicated lines, and zero bugs,
+vulnerabilities, code smells, or security hotspots, with A reliability,
+security, and maintainability ratings. Coverage remains below the repository's
+90% overall objective and is reported as an open quality gap rather than a
+passing parity claim.
+
 The active maintenance candidate retains stopped containers and their log
 histories after foreground `up --abort-on-container-exit`,
 `--abort-on-container-failure`, and `--exit-code-from` completion. Its matched
@@ -134,10 +143,10 @@ in the stable baseline and current candidate. Planned compatibility work is kept
 > 🤬 **This project is a maintenance nightmare.** 🤬
 >
 > <!-- upstream-metrics:start -->
-> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 15 September 2026 snapshot, the three support forks are **1272 commits ahead of Apple upstream**:
+> What started as a 'fun' implementation due to a real need for Compose functionality on `apple/container` has turned into a beast. `container-compose` cannot be maintained in isolation: it depends on runtime and build capabilities not yet available in Apple releases, plus local fixes for upstream defects. Keeping it working means carrying and continuously refreshing a matched four-repository stack. At the 15 September 2026 snapshot, the three support forks are **1274 commits ahead of Apple upstream**:
 >
 > - [`containerization`](https://github.com/stephenlclarke/containerization): **0 behind, 335 ahead** at [`4c95face0670`](https://github.com/stephenlclarke/containerization/commit/4c95face06701be6572c92db34ca1864329c7b69).
-> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 865 ahead** at [`ef78345f59fd`](https://github.com/stephenlclarke/container/commit/ef78345f59fdb913b3abce6ac0445616955c4e55).
+> - [`container`](https://github.com/stephenlclarke/container): **0 behind, 867 ahead** at [`272aeed9c70f`](https://github.com/stephenlclarke/container/commit/272aeed9c70f79ddf69eb5826afdc96d8be4e3a7).
 > - [`container-builder-shim`](https://github.com/stephenlclarke/container-builder-shim): **0 behind, 72 ahead** at [`016040197215`](https://github.com/stephenlclarke/container-builder-shim/commit/016040197215684db474181b444767eb58797cfa).
 > - [`container-compose`](https://github.com/stephenlclarke/container-compose): the integration repository's current `main` branch, with no Apple repository to compare against.
 >
