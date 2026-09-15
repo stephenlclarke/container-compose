@@ -40,16 +40,19 @@ formulae select the newest validated exact-main entry. Source-bearing revision
 `7a76b0b889c18786090d71638dc3342631491b92` introduced the runtime changes
 described below and completed exact-main CI, signed prebuilt packaging,
 notarization, release-asset closure, and atomic tap publication on 15 September
-2026. Each latest, non-superseded main revision, including a documentation-only
-revision, is eligible to become a separate Current candidate only while its
-pinned Container, Containerization, and builder-shim revisions still match
-their sibling repositories' `main` branches and after its own full runtime,
-SonarQube, packaging, and publication authority succeeds. An overlapping
-revision is skipped if Compose `main` or one of those sibling heads advances
-before publication. The feed and formulae therefore identify the installable
-candidate; the source-bearing revision identifies where runtime behavior
-changed. Current does not alter the stable 0.15.1 contract or the
-stable-release-bound DocC site.
+2026. Each main revision, including a documentation-only revision, is eligible
+to become a separate Current candidate only while its pinned Container,
+Containerization, and builder-shim revisions still match their sibling
+repositories' `main` branches and after its own full runtime, SonarQube,
+packaging, and publication authority succeeds. Freshness is checked before
+package and tap preparation, then the exact published closure is checked again
+after publication. A revision already superseded at the first check is skipped.
+If Compose `main` or a sibling head advances during the final publication
+window, the closure check fails visibly and the later exact-main run replaces
+the temporarily installable candidate with the newest coherent stack. The feed
+and formulae therefore identify the installable candidate; the source-bearing
+revision identifies where runtime behavior changed. Current does not alter the
+stable 0.15.1 contract or the stable-release-bound DocC site.
 
 The candidate additionally carries reviewed runtime corrections for changing
 Kubernetes control-plane addresses, unreadable image entries and build
