@@ -8860,6 +8860,28 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/690"
     },
     {
+      "id": "container-compose-695",
+      "owner": "stephenlclarke/container-compose",
+      "title": "chore(deps): refresh current container pin",
+      "state": "active-draft",
+      "lastVerified": "2026-09-15",
+      "commits": [
+        "a200a1a959609d741a17fb58d10bc2648683b3fe",
+        "2092bcc493e957643d2a4a832941a22fb79b2e05"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-695.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-695.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/695"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
