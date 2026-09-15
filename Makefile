@@ -2476,9 +2476,14 @@ sonar-scan:
 		<<< "$$settings" >/dev/null
 	sonar_token="$${SONAR_TOKEN:-$${SONAR_TOKEN_PERSONAL:-}}"; \
 	branch="$${SONAR_BRANCH:-$$(git branch --show-current 2>/dev/null || true)}"; \
-	project_version="$${SONAR_PROJECT_VERSION:-$$(git rev-parse --verify HEAD 2>/dev/null || true)}"; \
+	head_version="$$(git rev-parse --verify HEAD 2>/dev/null || true)"; \
+	project_version="$${SONAR_PROJECT_VERSION:-$$head_version}"; \
 	if [[ ! "$$project_version" =~ ^[0-9a-f]{40}$$ ]]; then \
 		printf 'SONAR_PROJECT_VERSION must be the exact lowercase 40-character commit SHA, got %s\n' "$${project_version:-missing}" >&2; \
+		exit 2; \
+	fi; \
+	if [[ "$$project_version" != "$$head_version" ]]; then \
+		printf 'SONAR_PROJECT_VERSION must match the checked-out HEAD %s, got %s\n' "$$head_version" "$$project_version" >&2; \
 		exit 2; \
 	fi; \
 	attempt=1; \
@@ -2516,6 +2521,7 @@ sonar-scan:
 		--data-urlencode 'ps=1' "$${context[@]}" https://sonarcloud.io/api/issues/search)"; \
 	hotspots="$$(curl --fail --silent --show-error --user "$$sonar_token:" --get \
 		--data-urlencode 'projectKey=stephenlclarke_container-compose2' \
+		--data-urlencode 'status=TO_REVIEW' \
 		--data-urlencode 'ps=1' \
 		"$${context[@]}" https://sonarcloud.io/api/hotspots/search)"; \
 	jq -e '.total == 0' <<< "$$issues" >/dev/null; \
