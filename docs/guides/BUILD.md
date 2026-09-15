@@ -436,7 +436,7 @@ their live engines. The release helper no longer accepts
 
 There are two package lanes, with no manual asset copying:
 
-- Every successful runtime-affecting CI run that originates from a push to `main` publishes one immutable, content-addressed `current-<full-sha>` GitHub prerelease named **Current build**, then atomically updates the opt-in `container-current` / `container-compose-current` Homebrew pair to select it. Documentation, workflow-control, and other changes classified outside runtime validation do not rebuild or republish the unchanged product. A commit superseded before promotion is skipped so the subsequent successful runtime run publishes the newest eligible `main` head.
+- Every latest, non-superseded push to `main`, including documentation and workflow-control changes, runs full runtime validation and is eligible to publish one immutable, content-addressed `current-<full-sha>` GitHub prerelease named **Current build**. Publication requires exact-revision CI and SonarQube authority, rebuilds the package for that repository revision, and atomically updates the opt-in `container-current` / `container-compose-current` Homebrew pair. A commit superseded before promotion is skipped so the subsequent successful run publishes the newest eligible `main` head.
 - A semantic release is an immutable `x.y.z` tag and becomes Homebrew's default `container` / `container-compose` pair.
 
 Each generated `current-<full-sha>` tag is an unsigned lightweight identity
