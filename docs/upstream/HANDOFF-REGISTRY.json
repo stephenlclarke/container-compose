@@ -8835,7 +8835,7 @@
       "id": "container-compose-688",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(release): refresh Current stack pins",
-      "state": "submitted",
+      "state": "active-draft",
       "lastVerified": "2026-09-15",
       "commits": [
         "cc9a5a41c9f9e17a83b1fdb116b936654b1085dc"
@@ -8848,6 +8848,10 @@
         {
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-689.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-current-stack-capture-pin.md"
         }
       ],
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/689"
