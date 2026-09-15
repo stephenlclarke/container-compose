@@ -165,15 +165,7 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
 extension EngineRuntimeProvider: ComposeRuntimeExecManaging {
     public func execAttached(request: ContainerAttachedExecRequest) async throws -> Int32 {
         let arguments = try await nativeExecArguments(
-            id: request.id,
-            command: request.command,
-            environment: request.environment,
-            user: request.user,
-            workingDirectory: request.workingDirectory,
-            privileged: request.privileged,
-            interactive: request.interactive,
-            tty: request.tty,
-            detached: false
+            NativeExecOptions(attached: request)
         )
         let result = try await runner.run(
             containerBinary,
@@ -190,15 +182,7 @@ extension EngineRuntimeProvider: ComposeRuntimeExecManaging {
         emit: @escaping @Sendable (String) -> Void
     ) async throws {
         let arguments = try await nativeExecArguments(
-            id: request.id,
-            command: request.command,
-            environment: request.environment,
-            user: request.user,
-            workingDirectory: request.workingDirectory,
-            privileged: request.privileged,
-            interactive: false,
-            tty: false,
-            detached: true
+            NativeExecOptions(detached: request)
         )
         let result = try await runner.run(containerBinary, arguments)
         guard result.succeeded else {
@@ -211,55 +195,84 @@ extension EngineRuntimeProvider: ComposeRuntimeExecManaging {
         emit(request.id)
     }
 
-    // swiftlint:disable:next function_parameter_count
     private func nativeExecArguments(
-        id: String,
-        command: [String],
-        environment: [String],
-        user: String?,
-        workingDirectory: String?,
-        privileged: Bool,
-        interactive: Bool,
-        tty: Bool,
-        detached: Bool
+        _ options: NativeExecOptions
     ) async throws -> [String] {
-        guard !command.isEmpty else {
+        guard !options.command.isEmpty else {
             throw ComposeError.invalidProject("exec requires a command")
         }
-        guard !privileged else {
+        guard !options.privileged else {
             throw ComposeError.unsupported("privileged exec is not supported by stock Apple container")
         }
         let container: EngineContainerIdentity = try await request(
             .get,
-            "/v1.53/containers/\(escaped(id))/json"
+            "/v1.53/containers/\(escaped(options.id))/json"
         )
         let nativeID = container.name.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !nativeID.isEmpty else {
-            throw ComposeError.invalidProject("Engine container '\(id)' has no Apple container name")
+            throw ComposeError.invalidProject("Engine container '\(options.id)' has no Apple container name")
         }
 
         var arguments = ["exec"]
-        if detached {
+        if options.detached {
             arguments.append("--detach")
         }
-        for value in environment {
+        for value in options.environment {
             arguments.append(contentsOf: ["--env", value])
         }
-        if let user, !user.isEmpty {
+        if let user = options.user, !user.isEmpty {
             arguments.append(contentsOf: ["--user", user])
         }
-        if let workingDirectory, !workingDirectory.isEmpty {
+        if let workingDirectory = options.workingDirectory,
+           !workingDirectory.isEmpty
+        {
             arguments.append(contentsOf: ["--workdir", workingDirectory])
         }
-        if interactive, !detached {
+        if options.interactive, !options.detached {
             arguments.append("--interactive")
         }
-        if tty, !detached {
+        if options.tty, !options.detached {
             arguments.append("--tty")
         }
         arguments.append(nativeID)
-        arguments.append(contentsOf: command)
+        arguments.append(contentsOf: options.command)
         return arguments
+    }
+}
+
+private struct NativeExecOptions {
+    let id: String
+    let command: [String]
+    let environment: [String]
+    let user: String?
+    let workingDirectory: String?
+    let privileged: Bool
+    let interactive: Bool
+    let tty: Bool
+    let detached: Bool
+
+    init(attached request: ContainerAttachedExecRequest) {
+        id = request.id
+        command = request.command
+        environment = request.environment
+        user = request.user
+        workingDirectory = request.workingDirectory
+        privileged = request.privileged
+        interactive = request.interactive
+        tty = request.tty
+        detached = false
+    }
+
+    init(detached request: ContainerDetachedExecRequest) {
+        id = request.id
+        command = request.command
+        environment = request.environment
+        user = request.user
+        workingDirectory = request.workingDirectory
+        privileged = request.privileged
+        interactive = false
+        tty = false
+        detached = true
     }
 }
 
