@@ -2,14 +2,14 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Implementation underway. The current 0.14.2 candidate stack includes lossless IPAM modelling, network-scoped DNS/aliases, bridge mapping, IPv6-only networking, allocation ranges, gateway and auxiliary reservations, runtime DNS, persisted endpoint behavior for the supported vmnet lane, and an explicit shared-VM built-in bridge lane. Custom network/IPAM providers, IPv6 range/auxiliary behavior, durable multiple-pool/provider reconciliation, namespace joins, shared-VM custom Compose networks, and comparable-performance evidence remain. |
+| Status | Implementation underway. The retained 0.14.2 design checkpoint introduced lossless IPAM modelling, network-scoped DNS/aliases, bridge mapping, IPv6-only networking, allocation ranges, gateway and auxiliary reservations, runtime DNS, persisted endpoint behavior for the supported vmnet lane, and an explicit shared-VM built-in bridge lane; these remain in stable 0.15.1. Custom network/IPAM providers, IPv6 range/auxiliary behavior, durable multiple-pool/provider reconciliation, namespace joins, shared-VM custom Compose networks, and comparable-performance evidence remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, the shared Engine API, devcontainer, and the common Engine Linux sandbox |
 | Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
 | 0.14.2 candidate Container revision | `a252482bbacbd15742845764893585131e2c4825` |
 | 0.14.2 candidate Containerization revision | `b404e03bb914904107a6a9305ba1f0e44c79a59c` |
 | Design date | 31 July 2026 |
-| Last documentation review | 5 September 2026 against the 0.14.2 Current candidate and STATUS evidence |
+| Last documentation review | 15 September 2026 against stable 0.15.1 and current STATUS evidence; exact 0.14.2 checkpoint pins are retained below |
 
 ## Goal
 

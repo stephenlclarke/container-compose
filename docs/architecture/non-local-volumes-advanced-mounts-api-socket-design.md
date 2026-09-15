@@ -2,7 +2,7 @@
 
 | Item | Value |
 | --- | --- |
-| Status | Design complete; implementation in progress—the current 0.14.2 candidate stack provides the neutral Engine API, public gateway, logs/inspect/info/hijack/WebSocket/resize, discovery, unauthenticated image pull/tag/delete, and an `Implemented` Docker `VolumeCreate` route through Container's native authority. The route has focused public-socket Docker CLI proof but not a normal-graph full-service/guest fingerprint. Devcontainer now consumes the coherent Engine API and fork package graph; enhanced-authority cutover, registry credentials, push/build sessions, full route closure, socket grants, full volume providers, advanced mounts, complete external-client proof, and `use_api_socket` remain. |
+| Status | Design complete; implementation in progress. Stable 0.15.1 retains the neutral Engine API, public gateway, logs/inspect/info/hijack/WebSocket/resize, discovery, unauthenticated image pull/tag/delete, and the `Implemented` Docker `VolumeCreate` route recorded at the 0.14.2 design checkpoint. The route has focused public-socket Docker CLI proof but not a normal-graph full-service/guest fingerprint. Devcontainer consumes the coherent Engine API and fork package graph; enhanced-authority cutover, registry credentials, push/build sessions, full route closure, socket grants, full volume providers, advanced mounts, complete external-client proof, and `use_api_socket` remain. |
 | Scope | `container-compose`, the matched `container` and `containerization` forks, first-class `devcontainer`, the runtime-neutral `container-engine-api`, and the common Engine Linux sandbox |
 | Compatibility target | Docker Compose 5.4.0 with Docker Engine 29.2.1 API 1.53 on macOS. Retained 5.3.1 citations below identify original source or evidence checkpoints. |
 | Evidence host | arm64 Mac17,9, macOS 26.5.2, Colima Docker context |
@@ -11,7 +11,7 @@
 | Matched Engine API checkpoint | Image-mutation routes and neutral contract `4949e743675f00ec102f7acacdb4e990409e383f`; volume-create route `987f05119c0fd6cc8e17c707ffd0c94fbd7d997e` |
 | Original devcontainer evidence | `b31e80b2b9c09ecc73bb3badf9cd5cf16550a538`; implementation extraction requires a clean reviewed accepted head |
 | Design date | 31 July 2026 |
-| Last documentation review | 4 September 2026 against the 0.14.2 Current candidate and current devcontainer graph |
+| Last documentation review | 15 September 2026 against stable 0.15.1, current STATUS evidence, and the current devcontainer graph; exact 0.14.2 checkpoint pins are retained below |
 
 ## Goal
 
