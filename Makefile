@@ -2467,12 +2467,23 @@ sonar-scan:
 	if [[ -z "$$sonar_token" ]]; then \
 		printf 'SONAR_TOKEN or SONAR_TOKEN_PERSONAL is required for make sonar\n' >&2; \
 		exit 2; \
-	fi
+	fi; \
+	settings="$$(curl --fail --silent --show-error --user "$$sonar_token:" --get \
+		--data-urlencode 'component=stephenlclarke_container-compose2' \
+		--data-urlencode 'keys=sonar.leak.period,sonar.leak.period.type' \
+		https://sonarcloud.io/api/settings/values)"; \
+	jq -e '[.settings[] | select(.key == "sonar.leak.period" or .key == "sonar.leak.period.type") | .value] | length == 2 and all(. == "previous_version")' \
+		<<< "$$settings" >/dev/null
 	sonar_token="$${SONAR_TOKEN:-$${SONAR_TOKEN_PERSONAL:-}}"; \
 	branch="$${SONAR_BRANCH:-$$(git branch --show-current 2>/dev/null || true)}"; \
+	project_version="$${SONAR_PROJECT_VERSION:-$$(git rev-parse --verify HEAD 2>/dev/null || true)}"; \
+	if [[ ! "$$project_version" =~ ^[0-9a-f]{40}$$ ]]; then \
+		printf 'SONAR_PROJECT_VERSION must be the exact lowercase 40-character commit SHA, got %s\n' "$${project_version:-missing}" >&2; \
+		exit 2; \
+	fi; \
 	attempt=1; \
 	max_attempts="$(SONAR_SCAN_ATTEMPTS)"; \
-	scanner_args=(-Dsonar.qualitygate.wait="$(SONAR_QUALITYGATE_WAIT)"); \
+	scanner_args=(-Dsonar.projectVersion="$$project_version" -Dsonar.qualitygate.wait="$(SONAR_QUALITYGATE_WAIT)"); \
 	if [[ -n "$$branch" && "$$branch" != "HEAD" ]]; then \
 		scanner_args=(-Dsonar.branch.name="$$branch" "$${scanner_args[@]}"); \
 	fi; \
@@ -2482,7 +2493,7 @@ sonar-scan:
 		status="$$?"; \
 		set -e; \
 		if [[ "$$status" -eq 0 ]]; then \
-			exit 0; \
+			break; \
 		fi; \
 		if (( attempt >= max_attempts )); then \
 			exit "$$status"; \
@@ -2490,7 +2501,21 @@ sonar-scan:
 		printf 'Sonar scanner failed with exit %s; retrying %s/%s after 20 seconds...\n' "$$status" "$$((attempt + 1))" "$$max_attempts" >&2; \
 		sleep 20; \
 		((attempt += 1)); \
-	done
+	done; \
+	context=(); \
+	if [[ -n "$$branch" && "$$branch" != "HEAD" ]]; then \
+		context+=(--data-urlencode "branch=$$branch"); \
+	fi; \
+	issues="$$(curl --fail --silent --show-error --user "$$sonar_token:" --get \
+		--data-urlencode 'componentKeys=stephenlclarke_container-compose2' \
+		--data-urlencode 'resolved=false' --data-urlencode 'inNewCodePeriod=true' \
+		--data-urlencode 'ps=1' "$${context[@]}" https://sonarcloud.io/api/issues/search)"; \
+	hotspots="$$(curl --fail --silent --show-error --user "$$sonar_token:" --get \
+		--data-urlencode 'projectKey=stephenlclarke_container-compose2' \
+		--data-urlencode 'inNewCodePeriod=true' --data-urlencode 'ps=1' \
+		"$${context[@]}" https://sonarcloud.io/api/hotspots/search)"; \
+	jq -e '.total == 0' <<< "$$issues" >/dev/null; \
+	jq -e '.paging.total == 0' <<< "$$hotspots" >/dev/null
 
 package: package-release
 
