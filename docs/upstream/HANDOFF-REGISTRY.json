@@ -434,7 +434,7 @@
       "id": "apple-container-2126",
       "owner": "apple/container",
       "title": "fix(os): close directory watcher descriptors after failed startup",
-      "state": "merged",
+      "state": "submitted",
       "lastVerified": "2026-09-05",
       "commits": [
         "6540619ba679e14fbf00a5d99638bb363f26c72f"
@@ -8811,7 +8811,7 @@
       "id": "container-compose-685",
       "owner": "stephenlclarke/container-compose",
       "title": "fix(quality): clear SonarQube maintainability findings",
-      "state": "submitted",
+      "state": "merged",
       "lastVerified": "2026-09-15",
       "commits": [
         "c262e67c723c95f2ad28241c616e260fb12eb82c",
