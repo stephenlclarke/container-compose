@@ -8808,6 +8808,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/684"
     },
     {
+      "id": "container-compose-685",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(quality): clear SonarQube maintainability findings",
+      "state": "submitted",
+      "lastVerified": "2026-09-15",
+      "commits": [
+        "c262e67c723c95f2ad28241c616e260fb12eb82c"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-685.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-686.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/686"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
