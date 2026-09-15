@@ -8832,6 +8832,24 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/686"
     },
     {
+      "id": "container-compose-688",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(release): refresh Current stack pins",
+      "state": "active-draft",
+      "lastVerified": "2026-09-15",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-688.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-current-stack-pins.md"
+        }
+      ]
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
