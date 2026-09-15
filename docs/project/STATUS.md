@@ -33,7 +33,7 @@ complete. Candidate revisions do not describe stable artifacts until the
 stable release gate succeeds and publishes a semantic version.
 
 The latest published Current candidate is
-[`current-9cea85981894db683d4222371332ca511268cda3`](https://github.com/stephenlclarke/container-compose/releases/tag/current-9cea85981894db683d4222371332ca511268cda3).
+[`current-9cea85981894db683d4222371332ca511268cda3`](https://github.com/stephenlclarke/container-compose/releases).
 Its CI, documentation, Homebrew, signed prebuilt, notarization, exact-asset
 closure, and atomic tap publication completed on 15 September 2026. Current is
 a moving prerelease lane; it does not change the stable 0.15.1 contract.
