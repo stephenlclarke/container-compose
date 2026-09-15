@@ -309,8 +309,10 @@ struct ContainerPackageCompatibilityTests {
       arguments: ["up"],
       lane: "main",
       runtimeProfile: .enhanced,
-      expectedContainerRef: "matched-container",
-      expectedContainerizationRef: "matched-containerization",
+      expectedRevisions: .init(
+        container: "matched-container",
+        containerization: "matched-containerization"
+      ),
       onCompatibleRuntime: { selection.replace(with: $0) },
       run: { arguments in
         if arguments == ["system", "version", "--format", "json"] {
@@ -561,8 +563,10 @@ struct ContainerSystemServiceReadinessTests {
         arguments: ["up"],
         lane: "main",
         runtimeProfile: .enhanced,
-        expectedContainerRef: "matched-container",
-        expectedContainerizationRef: "matched-containerization",
+        expectedRevisions: .init(
+          container: "matched-container",
+          containerization: "matched-containerization"
+        ),
         run: { arguments in
           calls.append(arguments)
           if arguments == ["system", "status"] {
@@ -595,8 +599,10 @@ struct ContainerSystemServiceReadinessTests {
       arguments: ["up"],
       lane: "main",
       runtimeProfile: .enhanced,
-      expectedContainerRef: "matched-container",
-      expectedContainerizationRef: "matched-containerization",
+      expectedRevisions: .init(
+        container: "matched-container",
+        containerization: "matched-containerization"
+      ),
       run: { arguments in
         calls.append(arguments)
         if arguments == ["system", "status"] {
@@ -631,8 +637,10 @@ struct ContainerSystemServiceReadinessTests {
         arguments: ["up"],
         lane: "main",
         runtimeProfile: .enhanced,
-        expectedContainerRef: "matched-container",
-        expectedContainerizationRef: "matched-containerization",
+        expectedRevisions: .init(
+          container: "matched-container",
+          containerization: "matched-containerization"
+        ),
         run: { arguments in
           if arguments == ["system", "status"] {
             throw CancellationError()

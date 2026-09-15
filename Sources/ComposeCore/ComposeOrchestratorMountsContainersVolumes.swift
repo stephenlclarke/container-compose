@@ -21,6 +21,31 @@
 #endif
 import Foundation
 
+struct ComposeContainerProgressRunOptions: Sendable {
+    let quiet: Bool
+    let check: Bool
+    let emitOutput: Bool
+    let inheritedIO: Bool
+    let replaceProcess: Bool
+    let logging: ComposeLogConfiguration?
+
+    init(
+        quiet: Bool = false,
+        check: Bool = true,
+        emitOutput: Bool = true,
+        inheritedIO: Bool = false,
+        replaceProcess: Bool = false,
+        logging: ComposeLogConfiguration? = nil,
+    ) {
+        self.quiet = quiet
+        self.check = check
+        self.emitOutput = emitOutput
+        self.inheritedIO = inheritedIO
+        self.replaceProcess = replaceProcess
+        self.logging = logging
+    }
+}
+
 extension ComposeOrchestrator {
     /// Appends a Compose mount in the form accepted by `container run`.
     func appendMount(_ mount: ComposeMount, context: MountRenderContext, args: inout [String]) throws {
@@ -787,34 +812,33 @@ extension ComposeOrchestrator {
     func runContainerWithProgress(
         _ arguments: [String],
         message: String,
-        quiet: Bool = false,
-        check: Bool = true,
-        emitOutput: Bool = true,
-        inheritedIO: Bool = false,
-        replaceProcess: Bool = false,
-        logging: ComposeLogConfiguration? = nil,
+        options runOptions: ComposeContainerProgressRunOptions = .init(),
     ) async throws -> CommandResult {
-        guard !inheritedIO, !replaceProcess else {
-            if !quiet {
+        guard !runOptions.inheritedIO, !runOptions.replaceProcess else {
+            if !runOptions.quiet {
                 options.progress.handoff(message)
             }
             return try await runContainer(
                 arguments,
-                check: check,
-                emitOutput: emitOutput,
-                inheritedIO: inheritedIO,
-                replaceProcess: replaceProcess,
-                logging: logging,
+                check: runOptions.check,
+                emitOutput: runOptions.emitOutput,
+                inheritedIO: runOptions.inheritedIO,
+                replaceProcess: runOptions.replaceProcess,
+                logging: runOptions.logging,
             )
         }
-        return try await progressActivity(message, quiet: quiet, emitsExternalOutput: emitOutput) {
+        return try await progressActivity(
+            message,
+            quiet: runOptions.quiet,
+            emitsExternalOutput: runOptions.emitOutput,
+        ) {
             try await runContainer(
                 arguments,
-                check: check,
-                emitOutput: emitOutput,
-                inheritedIO: inheritedIO,
-                replaceProcess: replaceProcess,
-                logging: logging,
+                check: runOptions.check,
+                emitOutput: runOptions.emitOutput,
+                inheritedIO: runOptions.inheritedIO,
+                replaceProcess: runOptions.replaceProcess,
+                logging: runOptions.logging,
             )
         }
     }

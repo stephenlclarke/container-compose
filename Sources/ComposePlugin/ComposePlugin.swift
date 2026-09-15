@@ -451,8 +451,10 @@ struct ComposePluginMain {
             if let failure = try await ContainerPackageCompatibility.compatibilityFailure(
                 arguments: rewritten,
                 lane: composeBuildInfo.lane,
-                expectedContainerRef: composeBuildInfo.containerRef,
-                expectedContainerizationRef: composeBuildInfo.containerizationRef,
+                expectedRevisions: .init(
+                    container: composeBuildInfo.containerRef,
+                    containerization: composeBuildInfo.containerizationRef,
+                ),
                 stockRuntimeCapabilities: ContainerPackageCompatibility.runtimeCapabilityOverlay(),
                 onCompatibleRuntime: { installedRuntimeCapabilities.replace(with: $0) },
             ) {

@@ -4233,6 +4233,19 @@ formula_digest="sha256:${DIGEST}"
         self.assertIn('GH_TOKEN: ${{ github.token }}', sonar)
         self.assertIn('SONAR_QUALITYGATE_WAIT: "true"', sonar)
         self.assertIn("make sonar-scan", sonar)
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        self.assertIn('-Dsonar.projectVersion="$$project_version"', makefile)
+        self.assertIn('^[0-9a-f]{40}$$', makefile)
+        self.assertIn('project_version" != "$$head_version', makefile)
+        self.assertIn("sonar.leak.period,sonar.leak.period.type", makefile)
+        self.assertNotIn("inNewCodePeriod=true", makefile)
+        self.assertIn('if [[ "$$branch" != "main" ]]', makefile)
+        self.assertIn("main-only issue and hotspot API checks skipped", makefile)
+        self.assertIn("'status=TO_REVIEW'", makefile)
+        sonar_properties = (ROOT / "sonar-project.properties").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("sonar.projectVersion=", sonar_properties)
         self.assertIn('if [[ "${GITHUB_REF_TYPE}" == "tag" ]]', sonar)
         self.assertIn('release_version="${GITHUB_REF_NAME#v}"', sonar)
         self.assertIn(

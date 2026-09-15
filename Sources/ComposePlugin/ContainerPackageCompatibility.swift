@@ -76,6 +76,16 @@ enum ContainerPackageCompatibility {
         case stock
     }
 
+    struct ExpectedRuntimeRevisions: Sendable {
+        let container: String?
+        let containerization: String?
+
+        init(container: String? = nil, containerization: String? = nil) {
+            self.container = container
+            self.containerization = containerization
+        }
+    }
+
     static let installGuideURLEnvironmentKey = "CONTAINER_COMPOSE_INSTALL_GUIDE_URL"
     static let containerExecutableEnvironmentKey = "CONTAINER_COMPOSE_CONTAINER"
     static let envExecutableEnvironmentKey = "CONTAINER_COMPOSE_ENV_EXECUTABLE"
@@ -187,10 +197,11 @@ extension ContainerPackageCompatibility {
         arguments: [String],
         lane: String,
         runtimeProfile requestedRuntimeProfile: RuntimeProfile? = nil,
-        expectedContainerRef: String? = nil,
-        expectedContainerizationRef: String? = nil,
+        expectedRevisions: ExpectedRuntimeRevisions = .init(),
         stockRuntimeCapabilities: [String] = [],
-        onCompatibleRuntime: @escaping @Sendable (ComposeRuntimeCapabilities) -> Void = { _ in },
+        onCompatibleRuntime: @escaping @Sendable (ComposeRuntimeCapabilities) -> Void = { _ in
+            // Most commands need validation only and consume no capability snapshot.
+        },
         run: ([String]) async throws -> Data = runContainerCommand,
     ) async throws -> String? {
         guard requiresRuntimeCheck(arguments: arguments) else {
@@ -205,8 +216,8 @@ extension ContainerPackageCompatibility {
                 components: components,
                 lane: lane,
                 runtimeProfile: runtimeProfile,
-                expectedContainerRef: expectedContainerRef,
-                expectedContainerizationRef: expectedContainerizationRef,
+                expectedContainerRef: expectedRevisions.container,
+                expectedContainerizationRef: expectedRevisions.containerization,
             ) {
                 return failure
             }

@@ -590,10 +590,12 @@ public extension ComposeOrchestrator {
             try await runContainerWithProgress(
                 arguments,
                 message: "Running \(serviceName)",
-                quiet: run.quiet,
-                inheritedIO: inheritedIO,
-                replaceProcess: inheritedIO,
-                logging: logging,
+                options: ComposeContainerProgressRunOptions(
+                    quiet: run.quiet,
+                    inheritedIO: inheritedIO,
+                    replaceProcess: inheritedIO,
+                    logging: logging,
+                ),
             )
         } catch let error as ComposeError {
             guard case let .commandFailed(_, status, _) = error else {

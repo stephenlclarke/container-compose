@@ -791,6 +791,11 @@ Local scans do not wait for the quality gate by default. Set `SONAR_QUALITYGATE_
 
 The current SonarCloud organization plan accepts short-branch reports but rejects short-branch metric, issue, and quality-gate API reads. A local branch scan can therefore prove report processing and scanner warnings through its compute-engine task, but the hosted pull-request check remains the final branch gate authority. Do not describe the polling rejection as an analyzer failure or infer a passed gate from a successful upload.
 
+`make sonar-scan` therefore skips issue and hotspot API reads for short branches.
+The authoritative `main` invocation waits for the quality gate and rejects every
+unresolved issue or hotspot in the full repository, not only findings inside the
+current previous-version period.
+
 Main-branch CI keeps the scanner's three-attempt fail-closed policy and gives the step enough time for all three 300-second quality-gate waits, scanner work, and retry delays. The enclosing runtime-validation job separately covers its 45-minute coverage gate, 10-minute CLI smoke, 25-minute Sonar budget, and dependency/setup overhead. A reachable SonarCloud service therefore still blocks CI when every attempt fails, without either workflow timeout killing a valid later attempt.
 
 ## Maintenance
