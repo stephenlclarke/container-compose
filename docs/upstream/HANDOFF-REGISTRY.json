@@ -434,7 +434,7 @@
       "id": "apple-container-2126",
       "owner": "apple/container",
       "title": "fix(os): close directory watcher descriptors after failed startup",
-      "state": "submitted",
+      "state": "merged",
       "lastVerified": "2026-09-05",
       "commits": [
         "6540619ba679e14fbf00a5d99638bb363f26c72f"
@@ -8815,7 +8815,9 @@
       "lastVerified": "2026-09-15",
       "commits": [
         "c262e67c723c95f2ad28241c616e260fb12eb82c",
-        "d81d833f93e527e4e36404870a6fa0aabba70537"
+        "d81d833f93e527e4e36404870a6fa0aabba70537",
+        "8c37d6ff7bb0390496d7d8bdccb3ebaf0bb8e8f3",
+        "1881b34a9155956fcdcb4ab9b40adc7063dc5303"
       ],
       "documents": [
         {
