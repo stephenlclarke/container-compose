@@ -21,9 +21,11 @@ The immutable stable quality snapshot reports 86.7% aggregate coverage, 0.3%
 duplicated lines, 43,027 lines of code, 40 code smells, 10 hours 18 minutes of
 technical debt, zero bugs or vulnerabilities, and A reliability, security, and
 maintainability ratings. Those figures describe the release tag, not current
-`main`. As of 15 September 2026, live `main` remains at 86.7% coverage and 0.3%
-duplication but has zero code smells and zero technical debt after the later
-quality cleanup. Coverage remains below the repository's 90% objective.
+`main`. As of 15 September 2026, exact revision
+`7a76b0b889c18786090d71638dc3342631491b92` remains at 86.7% coverage, 0.3%
+duplication, and 43,119 lines of code, with zero bugs, vulnerabilities, code
+smells, security hotspots, or technical debt after the later quality cleanup.
+Coverage remains below the repository's 90% objective.
 
 Stable and Current Homebrew artifacts are Developer ID signed, checksummed,
 attested, and bound to their matched runtime stacks. Current candidates use an
@@ -33,10 +35,11 @@ complete. Candidate revisions do not describe stable artifacts until the
 stable release gate succeeds and publishes a semantic version.
 
 The latest published Current candidate is
-[`current-9cea85981894db683d4222371332ca511268cda3`](https://github.com/stephenlclarke/container-compose/releases).
-Its CI, documentation, Homebrew, signed prebuilt, notarization, exact-asset
-closure, and atomic tap publication completed on 15 September 2026. Current is
-a moving prerelease lane; it does not change the stable 0.15.1 contract.
+[`current-7a76b0b889c18786090d71638dc3342631491b92`](https://github.com/stephenlclarke/container-compose/releases/tag/current-7a76b0b889c18786090d71638dc3342631491b92).
+Its exact-main CI, signed prebuilt, notarization, exact-asset closure, and atomic
+tap publication completed on 15 September 2026. Current is a moving prerelease
+lane; it does not change the stable 0.15.1 contract or the stable-release-bound
+DocC site.
 
 The candidate additionally carries reviewed runtime corrections for changing
 Kubernetes control-plane addresses, unreadable image entries and build
