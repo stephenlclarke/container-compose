@@ -10,11 +10,11 @@ The recoverable Container-family build graph had a safe manual transient cleanup
 - Preserve exact pins, promoted artifacts, timings, and all retained release evidence.
 - Retain human-readable and machine-readable cleanup receipts.
 - Add deterministic safety and failure-path regressions.
-- Add a scheduled/manual GitHub workflow that deletes only unchanged, unprotected exact heads of aged merged pull requests after a fresh race check.
+- Add a scheduled/manual GitHub workflow that deletes only unchanged, unprotected exact heads of aged merged pull requests after a fresh race check and an atomic expected-SHA lease.
 - Preserve and report default, protected, upstream-handoff, release, archive, active, changed, and ambiguous branches.
 
 ## Acceptance boundary
 
-Cleanup must never claim an unmarked root, follow a symbolic link, cross into retained storage, or run beside an active build. GitHub deletion must revalidate the exact SHA, absence of an open pull request, and exact merged-pull-request proof immediately before changing the ref. Tags, releases, issues, workflow runs, Actions caches, artifacts, and unrelated local worktrees are outside the deletion boundary.
+Cleanup must never claim an unmarked root, follow a symbolic link, cross into retained storage, or run beside an active build. GitHub deletion must revalidate the exact SHA, absence of an open pull request, and exact merged-pull-request proof immediately before changing the ref, then atomically require that same SHA at the server. Tags, releases, issues, workflow runs, Actions caches, artifacts, and unrelated local worktrees are outside the deletion boundary.
 
 Tracked by [issue #702](https://github.com/stephenlclarke/container-compose/issues/702).

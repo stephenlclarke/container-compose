@@ -21,6 +21,7 @@ import importlib.util
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -150,8 +151,11 @@ class GitHubHygieneTests(unittest.TestCase):
             ) -> hygiene.PullRequest:
                 return pull_request()
 
-            def delete_branch(self, _repository: str, branch: str) -> None:
+            def delete_branch(
+                self, _repository: str, branch: str, _expected_sha: str
+            ) -> bool:
                 self.deleted.append(branch)
+                return True
 
         client = Client()
         decision = hygiene.Decision(
@@ -224,6 +228,37 @@ class GitHubHygieneTests(unittest.TestCase):
             decision,
         )
 
+    def test_apply_preserves_branch_when_atomic_delete_loses_lease(self) -> None:
+        class Client:
+            def branch(self, _repository: str, name: str) -> hygiene.Branch:
+                return hygiene.Branch(name, "a" * 40, False)
+
+            def pull_requests(
+                self, _repository: str, _branch: str, *, state: str
+            ) -> list[hygiene.PullRequest]:
+                return []
+
+            def pull_request(
+                self, _repository: str, _number: int
+            ) -> hygiene.PullRequest:
+                return pull_request()
+
+            def delete_branch(
+                self, _repository: str, _branch: str, _expected_sha: str
+            ) -> bool:
+                return False
+
+        decision = hygiene.Decision(
+            "feature", "a" * 40, "candidate", "proved", 12
+        )
+
+        result = hygiene.revalidate_and_delete(
+            Client(), REPOSITORY, DEFAULT_BRANCH, decision
+        )
+
+        self.assertEqual(result.disposition, "preserved")
+        self.assertIn("atomic deletion", result.reason)
+
     def test_parse_pull_request_handles_missing_repository_and_timestamp(self) -> None:
         payload = {
             "number": "7",
@@ -248,6 +283,8 @@ class GitHubHygieneTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(hygiene.HygieneError, "invalid GitHub API URL"):
             hygiene.GitHubClient("token", "file:///tmp/github")
+        with self.assertRaisesRegex(hygiene.HygieneError, "invalid GitHub server URL"):
+            hygiene.GitHubClient("token", server_url="file:///tmp/github")
 
     def test_client_request_accepts_json_and_no_content(self) -> None:
         class Response(io.BytesIO):
@@ -374,7 +411,6 @@ class GitHubHygieneTests(unittest.TestCase):
                     object(),
                 ),
                 (pull_payload, object()),
-                (None, object()),
             ]
         )
         client.paginated = mock.Mock(
@@ -398,17 +434,50 @@ class GitHubHygieneTests(unittest.TestCase):
         )
         self.assertEqual(client.branch(REPOSITORY, "feature/one").name, "feature/one")
         self.assertEqual(client.pull_request(REPOSITORY, 12).number, 12)
-        client.delete_branch(REPOSITORY, "feature/one")
 
         self.assertIn("head=example%3Afeature%2Fone", client.paginated.call_args_list[1].args[0])
         self.assertEqual(
             client.request.call_args_list[1].args[1],
             "/repos/example/project/branches/feature%2Fone",
         )
-        self.assertEqual(
-            client.request.call_args_list[3].args[1],
-            "/repos/example/project/git/refs/heads/feature%2Fone",
+
+    def test_conditional_delete_uses_atomic_force_with_lease(self) -> None:
+        client = hygiene.GitHubClient("secret")
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with mock.patch.object(hygiene.subprocess, "run", return_value=completed) as run:
+            self.assertTrue(client.delete_branch(REPOSITORY, "feature/one", "a" * 40))
+
+        command = run.call_args.args[0]
+        environment = run.call_args.kwargs["env"]
+        self.assertIn(
+            f"--force-with-lease=refs/heads/feature/one:{'a' * 40}",
+            command,
         )
+        self.assertEqual(command[-1], ":refs/heads/feature/one")
+        self.assertNotIn("secret", " ".join(command))
+        self.assertEqual(environment["REPOSITORY_HYGIENE_TOKEN"], "secret")
+
+    def test_conditional_delete_preserves_changed_head_and_reports_other_failures(
+        self,
+    ) -> None:
+        client = hygiene.GitHubClient("secret")
+        failed = subprocess.CompletedProcess([], 1, "", "rejected")
+        with mock.patch.object(hygiene.subprocess, "run", return_value=failed):
+            client.branch = mock.Mock(
+                return_value=hygiene.Branch("feature", "b" * 40, False)
+            )
+            self.assertFalse(client.delete_branch(REPOSITORY, "feature", "a" * 40))
+
+            client.branch = mock.Mock(
+                return_value=hygiene.Branch("feature", "a" * 40, False)
+            )
+            with self.assertRaisesRegex(hygiene.HygieneError, "rejected"):
+                client.delete_branch(REPOSITORY, "feature", "a" * 40)
+
+        with self.assertRaisesRegex(hygiene.HygieneError, "invalid GitHub repository"):
+            client.delete_branch("invalid", "feature", "a" * 40)
+        with self.assertRaisesRegex(hygiene.HygieneError, "invalid expected branch SHA"):
+            client.delete_branch(REPOSITORY, "feature", "invalid")
 
     def test_client_rejects_invalid_repository_payload(self) -> None:
         client = hygiene.GitHubClient("secret")
@@ -432,7 +501,7 @@ class GitHubHygieneTests(unittest.TestCase):
 
     def test_main_writes_dry_run_reports_and_apply_deletes(self) -> None:
         class Client:
-            def __init__(self, _token: str, _api_url: str) -> None:
+            def __init__(self, *_arguments: str) -> None:
                 self.deleted: list[str] = []
 
             def repository(self, _repository: str) -> dict[str, object]:
@@ -454,8 +523,11 @@ class GitHubHygieneTests(unittest.TestCase):
             ) -> hygiene.PullRequest:
                 return pull_request()
 
-            def delete_branch(self, _repository: str, branch: str) -> None:
+            def delete_branch(
+                self, _repository: str, branch: str, _expected_sha: str
+            ) -> bool:
                 self.deleted.append(branch)
+                return True
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

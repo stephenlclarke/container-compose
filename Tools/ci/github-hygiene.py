@@ -22,7 +22,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -33,6 +36,8 @@ from typing import Any
 
 
 RETAINED_PREFIXES = ("upstream/", "release/", "release-", "archive/")
+REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
 class HygieneError(RuntimeError):
@@ -95,7 +100,12 @@ def parse_pull_request(payload: dict[str, Any]) -> PullRequest:
 
 
 class GitHubClient:
-    def __init__(self, token: str, api_url: str = "https://api.github.com") -> None:
+    def __init__(
+        self,
+        token: str,
+        api_url: str = "https://api.github.com",
+        server_url: str = "https://github.com",
+    ) -> None:
         if not token:
             raise HygieneError("GITHUB_TOKEN is required")
         parsed = urllib.parse.urlparse(api_url.rstrip("/"))
@@ -111,6 +121,16 @@ class GitHubClient:
         self.api_origin = f"{parsed.scheme}://{parsed.netloc}"
         self.api_base_path = parsed.path.rstrip("/")
         self.api_url = f"{self.api_origin}{self.api_base_path}"
+        server = urllib.parse.urlparse(server_url.rstrip("/"))
+        if (
+            server.scheme not in ("http", "https")
+            or not server.netloc
+            or server.params
+            or server.query
+            or server.fragment
+        ):
+            raise HygieneError(f"invalid GitHub server URL: {server_url}")
+        self.server_url = server_url.rstrip("/")
 
     def request(
         self,
@@ -218,13 +238,58 @@ class GitHubClient:
         payload, _ = self.request("GET", f"/repos/{repository}/pulls/{number}")
         return parse_pull_request(payload)
 
-    def delete_branch(self, repository: str, branch: str) -> None:
-        encoded = urllib.parse.quote(branch, safe="")
-        self.request(
-            "DELETE",
-            f"/repos/{repository}/git/refs/heads/{encoded}",
-            expected=(204,),
-        )
+    def delete_branch(self, repository: str, branch: str, expected_sha: str) -> bool:
+        """Atomically delete one branch only while its remote SHA is unchanged."""
+        if REPOSITORY_PATTERN.fullmatch(repository) is None:
+            raise HygieneError(f"invalid GitHub repository: {repository}")
+        if SHA_PATTERN.fullmatch(expected_sha) is None:
+            raise HygieneError(f"invalid expected branch SHA: {expected_sha}")
+        reference = f"refs/heads/{branch}"
+        remote = f"{self.server_url}/{repository}.git"
+        with tempfile.TemporaryDirectory() as directory:
+            askpass = Path(directory) / "askpass"
+            askpass.write_text(
+                "#!/bin/sh\n"
+                "case \"$1\" in\n"
+                "  *Username*) printf '%s\\n' x-access-token ;;\n"
+                "  *Password*) printf '%s\\n' \"$REPOSITORY_HYGIENE_TOKEN\" ;;\n"
+                "  *) exit 1 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            askpass.chmod(0o700)
+            environment = {
+                "GIT_ASKPASS": str(askpass),
+                "GIT_CONFIG_GLOBAL": "/dev/null",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_TERMINAL_PROMPT": "0",
+                "HOME": directory,
+                "LC_ALL": "C",
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "REPOSITORY_HYGIENE_TOKEN": self.token,
+            }
+            completed = subprocess.run(
+                [
+                    "git",
+                    "push",
+                    f"--force-with-lease={reference}:{expected_sha}",
+                    remote,
+                    f":{reference}",
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+                env=environment,
+            )
+        if completed.returncode == 0:
+            return True
+        refreshed = self.branch(repository, branch)
+        if refreshed.sha != expected_sha:
+            return False
+        detail = completed.stderr.strip() or "git push failed"
+        raise HygieneError(f"conditional branch deletion failed: {detail}")
 
 
 def exact_merged_pull_request(
@@ -325,7 +390,12 @@ def revalidate_and_delete(
             disposition="preserved",
             reason="merged pull-request proof changed",
         )
-    client.delete_branch(repository, decision.branch)
+    if not client.delete_branch(repository, decision.branch, decision.sha):
+        return replace(
+            decision,
+            disposition="preserved",
+            reason="branch changed during atomic deletion",
+        )
     return replace(decision, disposition="deleted")
 
 
@@ -380,6 +450,7 @@ def main(arguments: list[str] | None = None) -> int:
         client = GitHubClient(
             os.environ.get("GITHUB_TOKEN", ""),
             os.environ.get("GITHUB_API_URL", "https://api.github.com"),
+            os.environ.get("GITHUB_SERVER_URL", "https://github.com"),
         )
         repository_data = client.repository(options.repository)
         default_branch = options.default_branch or str(repository_data["default_branch"])
