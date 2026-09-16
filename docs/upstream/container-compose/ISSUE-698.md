@@ -22,4 +22,4 @@ The release controller owns this isolated transaction and requires the exact can
 - Required pull-request checks pass on the exact reviewed head.
 - The unattended stable-release workflow resumes the retained transaction and publishes 0.15.2.
 
-Implementation: pull request to be assigned.
+Implementation: [pull request 699](https://github.com/stephenlclarke/container-compose/pull/699).
