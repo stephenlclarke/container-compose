@@ -32,6 +32,7 @@ from unittest import mock
 
 
 MODULE_PATH = Path(__file__).with_name("github-hygiene.py")
+WORKFLOW_PATH = MODULE_PATH.parents[2] / ".github/workflows/repository-hygiene.yml"
 SPEC = importlib.util.spec_from_file_location("github_hygiene", MODULE_PATH)
 assert SPEC is not None and SPEC.loader is not None
 hygiene = importlib.util.module_from_spec(SPEC)
@@ -66,6 +67,19 @@ def pull_request(
 
 
 class GitHubHygieneTests(unittest.TestCase):
+    def test_workflow_resolves_current_default_before_checkout(self) -> None:
+        workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+        resolve = workflow.index("- name: Resolve current default branch")
+        checkout = workflow.index("- name: Checkout current default branch")
+
+        self.assertLess(resolve, checkout)
+        self.assertIn(
+            "ref: ${{ steps.repository.outputs.default_branch }}", workflow
+        )
+        self.assertIn(
+            "DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}", workflow
+        )
+
     def classify(
         self,
         branch: hygiene.Branch,
