@@ -8,9 +8,9 @@ they contain an explicit closure section; every retired document links to an imm
 
 Last verified: 2026-09-15
 
-Entries: 449. Document snapshots: 792. Current supporting documents: 186.
+Entries: 450. Document snapshots: 794. Current supporting documents: 188.
 
-States: `active-draft` 1, `archived` 304, `closed` 23, `merged` 77, `submitted` 4, `tracked-upstream` 13, `unsubmitted` 27.
+States: `active-draft` 1, `archived` 304, `closed` 23, `merged` 77, `submitted` 4, `tracked-upstream` 13, `unsubmitted` 28.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -76,6 +76,7 @@ States: `active-draft` 1, `archived` 304, `closed` 23, `merged` 77, `submitted` 
 | `apple/container` | Pull request: expose the generic Linux guest CPU-set resource | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-cpu-set.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-cpu-set.md) |
 | `apple/container` | Pull request: carry a Linux CPU-share weight to the runtime | `archived` | `d5e6c22d48cf`, `d1f3aee65f3f`, `0c80ec848da7`, `f4af7bc8e18d`, `4b567a52b626` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-cpu-shares.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-cpu-shares.md) |
 | `apple/container` | Pull request: cover CPU-share cgroup-v2 projection | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-cpu-shares-cgroup-weight.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-cpu-shares-cgroup-weight.md) |
+| `apple/container` | Fix large custom CNI manifest application | `unsubmitted` | `5f2e4ebd65dc`, `e2afa3f0c7a6` | [Issue details](apple-container/ISSUE-custom-cni-standard-input.md); [PR details](apple-container/PR-custom-cni-standard-input.md) |
 | `apple/container` | Pull request: add Linux device cgroup rule runtime data | `archived` | `670aa7613051`, `df62b48377b7` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-device-cgroup-rules.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-device-cgroup-rules.md) |
 | `apple/container` | Pull request: add Linux device mapping runtime data | `archived` | `87baba1ab1bd`, `149a1f5dc9a6` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-device-mappings.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-device-mappings.md) |
 | `apple/container` | Pull Request: size resources outside service locks | `unsubmitted` | `b15ac4aaf1ad`, `c7d05f1e3396` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/ISSUE-disk-usage-lock-scope.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/apple-container/PR-disk-usage-lock-scope.md) |

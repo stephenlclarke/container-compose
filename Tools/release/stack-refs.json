@@ -1,7 +1,7 @@
 {
   "components": {
     "container": {
-      "ref": "e54e1681eb713f6a9bce28afcc6877c67d5ba29a",
+      "ref": "84bb6e0a37176fe45927f5c6f785041c3f75f11f",
       "repository": "stephenlclarke/container"
     },
     "container-builder-shim": {

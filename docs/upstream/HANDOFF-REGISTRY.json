@@ -1144,6 +1144,27 @@
       ]
     },
     {
+      "id": "apple-container-custom-cni-standard-input",
+      "owner": "apple/container",
+      "title": "Fix large custom CNI manifest application",
+      "state": "unsubmitted",
+      "lastVerified": "2026-09-16",
+      "commits": [
+        "5f2e4ebd65dcf1bfad9d43cf450ba796e4b67443",
+        "e2afa3f0c7a61647bb12dafdb94a9a087da24bb5"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/apple-container/ISSUE-custom-cni-standard-input.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/apple-container/PR-custom-cni-standard-input.md"
+        }
+      ]
+    },
+    {
       "id": "apple-container-device-cgroup-rules",
       "owner": "apple/container",
       "title": "Pull request: add Linux device cgroup rule runtime data",

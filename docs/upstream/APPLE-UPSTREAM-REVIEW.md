@@ -2,7 +2,7 @@
 
 This is the current disposition of Apple work that affects the supported Container stack. Re-check GitHub before changing an Apple-backed component because issue, review, and merge state can change independently.
 
-All Stephen-authored Apple pull-request states were queried 5 September 2026. Every open branch was rebased on its current upstream `main`, focused-tested, signature-checked, pushed to the existing pull request, and given a refresh evidence comment. Fetched support-fork baselines and fork classifications were last refreshed 30 July 2026; the tables below keep that older baseline date explicit instead of presenting it as a fresh fetch.
+All Stephen-authored Apple pull-request states were queried 16 September 2026. Six Container pull requests remain open: five are mergeable and awaiting review, while one conflicts with current Apple `main`. The SwiftNIO SSL optimization was merged by Apple on 7 September. Fetched support-fork baselines and fork classifications were refreshed on 16 September; the exact current graph is recorded below.
 
 ## 0.14.0 Optimization Pull-Request Provenance
 
@@ -24,9 +24,9 @@ support-fork pull requests:
 The stock Apple repositories contain reviewed `upstream/pr-*` candidate
 branches for portions of this work, but a branch is not an upstream PR and no
 GitHub URL is invented for it. [apple/swift-nio-ssl#598](https://github.com/apple/swift-nio-ssl/pull/598)
-is a genuine open performance submission, but its head is not an ancestor of
-the exact SwiftNIO SSL revision used by the 0.14.0 stack, so it is not evidence
-for this release and is excluded from the list above.
+was later merged on 7 September 2026. Its submitted head was not an ancestor
+of the exact SwiftNIO SSL revision used by the historical 0.14.0 stack, so it
+remains excluded from that release's provenance list above.
 
 ## Scope
 
@@ -43,36 +43,40 @@ fork `main`. The left/right counts are from `git rev-list
 
 | Repository | Apple `main` | Fork `main` | Apple-only | Fork-only |
 | --- | --- | --- | ---: | ---: |
-| `container` | `6e65319fe476ffe8db8ddaf828a537ed36fe2859` | `8657c4b8685865c8889b0171d953342fc9f427a7` | 0 | 338 |
-| `containerization` | `ff44a5b683c80fceab875dba8a20ed24d7648c07` | `971fc7e5e27467ebd6227e1ae54f3e5c23de87b4` | 0 | 135 |
-| `container-builder-shim` | `267b5ab98e1d7db7d98af98bdc90578bf5fd3192` | `61832d4ca91715180a84dec0eab091170174c43c` | 0 | 34 |
+| `container` | `57f0b9392bbee1998e6c7f3f25db222fe1dcdd12` | `84bb6e0a37176fe45927f5c6f785041c3f75f11f` | 0 | 894 |
+| `containerization` | `b44e17e1a4c135bc0168e615bf6a8e3798d070c0` | `4c95face06701be6572c92db34ca1864329c7b69` | 0 | 335 |
+| `container-builder-shim` | `5dc4286e5adbeb7dac189b22b7d5aab336942fe2` | `016040197215684db474181b444767eb58797cfa` | 0 | 72 |
 
 The supported default branches contain their complete fetched Apple histories.
-Their 440 patch-unique non-merge commits are classified in
-[Fork Commit Classifications](FORK-COMMIT-CLASSIFICATIONS.md): 299 in
-`container`, 112 in `containerization`, and 29 in
+Their 1,046 patch-unique non-merge commits are classified in
+[Fork Commit Classifications](FORK-COMMIT-CLASSIFICATIONS.md): 732 in
+`container`, 257 in `containerization`, and 57 in
 `container-builder-shim`. The fork-only counts above include merge commits and
 are not a count of changes ready for Apple.
 
 Compose currently pins the separately validated development heads
-`container` `2a79b4553a342e33411666a88ad20ccd2ce46551`,
-`containerization` `77f06d4c44341e04241941072fb69e2b85a6f5c1`,
+`container` `84bb6e0a37176fe45927f5c6f785041c3f75f11f`,
+`containerization` `4c95face06701be6572c92db34ca1864329c7b69`,
 and `container-builder-shim`
-`61832d4ca91715180a84dec0eab091170174c43c`. The Container pin contains the
-current fetched Apple head. The Containerization pin also contains the current
-fetched Apple head and retains the separately reviewed guest-DNS proxy work.
+`016040197215684db474181b444767eb58797cfa`. The Container pin contains its
+current fetched Apple head. The reviewed `84bb6e0a3717` merge advances it
+through Apple custom-CNI support and snapshots validated custom manifests before
+provisioning. The
+Containerization pin contains the current fetched Apple head and retains the
+separately reviewed guest-DNS proxy work.
 
 ## Submitted Stephen-Authored Apple Pull Requests
 
 ### Open
 
-Five Stephen-authored pull requests remain open and await Apple maintainer review. GitHub reports every refreshed branch as mergeable; each is blocked only because Apple review and fork-workflow approval are still required.
+Six Stephen-authored pull requests remain open and await Apple maintainer review. GitHub reports #2127, #2128, #2130, #2241, and #2242 as mergeable and still requiring review. #2126 conflicts with current Apple `main` and needs a fresh rebase before it can merge.
 
-- [apple/container#2126](https://github.com/apple/container/pull/2126) is at signed head `6540619ba679e14fbf00a5d99638bb363f26c72f` on Apple `main` `eee7ad097079cc3b02d5309ec10160143f2d0c6a`. The focused `DirectoryWatcherTest` suite passes 5/5 and `git diff --check` passes.
-- [apple/container#2127](https://github.com/apple/container/pull/2127) is at signed head `c8b4d767a77fd70e01b11129199222661a0f92c0` on the same Apple `main`. The focused `ContainerLoadAtBootTests` suite passes 2/2 and `git diff --check` passes.
-- [apple/container#2128](https://github.com/apple/container/pull/2128) is at signed head `7df71fcb0e11a0bf9422e05cda35008438e5bf4b` on the same Apple `main`. The focused `ImagePruneTests` and `UtilityTests` suites pass 14/14 and `git diff --check` passes.
-- [apple/container#2130](https://github.com/apple/container/pull/2130) is at signed head `a496a3abba714baa510704b38339c8565418e07f` on the same Apple `main`. The focused `K8sNodePreparationTests` suite passes 2/2 and `git diff --check` passes.
-- [apple/swift-nio-ssl#598](https://github.com/apple/swift-nio-ssl/pull/598) is at signed head `884b18fc96d8feae3ca63a7e662b8ea0eff31235` on Apple `main` `03827c1a9fdb2b6b00a4e93ede8861520263af8c`. The focused `NIOSSLIntegrationTest.testPlaintextReadBufferCanHoldTwoRecords` regression passes 1/1 and `git diff --check` passes.
+- [apple/container#2126](https://github.com/apple/container/pull/2126) is at signed head `6540619ba679e14fbf00a5d99638bb363f26c72f`. Its last focused `DirectoryWatcherTest` suite passed 5/5, but GitHub now reports the branch as conflicting with current Apple `main`.
+- [apple/container#2127](https://github.com/apple/container/pull/2127) is at signed head `c8b4d767a77fd70e01b11129199222661a0f92c0` and GitHub reports it as mergeable. The focused `ContainerLoadAtBootTests` suite passes 2/2 and `git diff --check` passes.
+- [apple/container#2128](https://github.com/apple/container/pull/2128) is at signed head `7df71fcb0e11a0bf9422e05cda35008438e5bf4b` and GitHub reports it as mergeable. The focused `ImagePruneTests` and `UtilityTests` suites pass 14/14 and `git diff --check` passes.
+- [apple/container#2130](https://github.com/apple/container/pull/2130) is at signed head `a496a3abba714baa510704b38339c8565418e07f` and GitHub reports it as mergeable. The focused `K8sNodePreparationTests` suite passes 2/2 and `git diff --check` passes.
+- [apple/container#2241](https://github.com/apple/container/pull/2241) is at signed head `a2b98baa53fbf383fddf84528e23f5e3ba86ad15` and GitHub reports it as mergeable. It rejects unknown XPC peer error codes instead of treating them as successful replies.
+- [apple/container#2242](https://github.com/apple/container/pull/2242) is at signed head `0ae2b890bec4bd886d0b12878e58bff38c10d3e3` and GitHub reports it as mergeable. It avoids inheriting global resolver search domains in Container DNS configuration.
 
 No Stephen-authored pull request has been submitted to `apple/container-builder-shim`.
 
@@ -80,6 +84,7 @@ No Stephen-authored pull request has been submitted to `apple/container-builder-
 
 | Pull request | Final state | Disposition |
 | --- | --- | --- |
+| [apple/swift-nio-ssl#598](https://github.com/apple/swift-nio-ssl/pull/598) | Merged 7 September 2026 | Apple merged the plaintext read-buffer allocation optimization at final head `9b0b204e3ae0`; enhanced Compose now consumes Apple's merged implementation rather than a fork-only port. |
 | [apple/container#2129](https://github.com/apple/container/pull/2129) | Closed 31 August 2026 without merge | The resolver-search correction remains recoverable at exact head `6404f2a1096942fcd04bada6856a87de7e788198`; it is not an open Apple submission. |
 | [apple/containerization#823](https://github.com/apple/containerization/pull/823) | Closed 5 August 2026 without merge | The deferred-directory-attribute safety correction remains recoverable at its submitted head; it is not an open Apple submission. |
 | [apple/containerization#821](https://github.com/apple/containerization/pull/821) | Closed 5 August 2026 without merge | The ownership-order permission correction remains recoverable at its submitted head; it is not an open Apple submission. |
@@ -275,6 +280,7 @@ validation before the local handoff is complete.
 | [apple/container#1941](https://github.com/apple/container/issues/1941) | The supported fork ports the content-identical signal-name correction from [apple/container#1997](https://github.com/apple/container/pull/1997) in `bb2438c`, with regression coverage in `26cc778` and handoff details in [PR-1997.md](apple-container/PR-1997.md). Drop the port when Apple merges an equivalent fix. |
 | [apple/container#1967](https://github.com/apple/container/issues/1967) | [apple/container#2000](https://github.com/apple/container/pull/2000) closed 28 July 2026 without merge. The supported `LogFileOutput` already retains complete records across backward-read chunks; explicit 3 KB and multi-record tests in `26cc778` cover the reported behaviour. |
 | [apple/container#2009](https://github.com/apple/container/issues/2009) | The supported init-process reattach path writes persistent sinks first and removes failed clients through `AttachableOutput`; `26cc778` proves later persistent writes continue. Apple main still needs its own reviewed fix. |
+| [apple/container#2254](https://github.com/apple/container/pull/2254) | Custom-CNI support is present in the synchronized Container fork while retaining the fork's control-plane endpoint and CoreDNS resolver corrections. Fork corrections through reviewed head `cbfe2d13198f` supply large manifests through `kubectl` standard input, snapshot validated input before provisioning, and add direct orchestration, cleanup, race, and failure coverage; see [ISSUE-custom-cni-standard-input.md](apple-container/ISSUE-custom-cni-standard-input.md) and [PR-custom-cni-standard-input.md](apple-container/PR-custom-cni-standard-input.md). |
 | [apple/containerization#798](https://github.com/apple/containerization/pull/798) | Merged upstream. Its SwiftPM manifest correction is included in the current Apple baseline, so it no longer needs fork-side review or a local port. |
 | [apple/container#2021](https://github.com/apple/container/issues/2021) | Host disk-space retention after deleting guest files is owned by the macOS Virtualization.framework virtio-fs implementation and is released when the container stops. The supported stack must not add a divergent copy, remount, or guest-filesystem workaround for an Apple OS primitive. Track the upstream platform resolution. |
 | [apple/container#2022](https://github.com/apple/container/issues/2022) | The reported long-line `logs -n` correctness case passes on the installed supported runtime with a 2,001-byte first record and exact final three records. The four reported hot-path inefficiencies reproduce in the fork and are corrected as independent signed commits: glob cache `abab498f` plus Unicode-semantics correction `4436afe`, hashed context membership `41e31f7`, concurrent stats `600fde2`, and off-lock disk sizing `b15ac4a`. Review follow-up `c7d05f1` keeps active-volume accounting consistent with the sizing snapshot. Matching issue/PR handoffs are linked above. |
