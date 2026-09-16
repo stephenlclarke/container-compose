@@ -368,6 +368,16 @@ exec "$@"
         )
         self.assertFalse((self.retained / ".container-family-retained-root").exists())
 
+    def test_unlocked_preflight_does_not_create_cleanup_targets(self) -> None:
+        result = self.run_full_build("stack-preflight")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(
+            (self.transient / ".container-family-transient-root").is_file()
+        )
+        self.assertFalse((self.transient / "scratch").exists())
+        self.assertFalse((self.transient / "process-tmp").exists())
+
     def test_retry_reuses_successful_upstream_pins_after_failure(self) -> None:
         self.fail_marker.write_text("fail once\n", encoding="utf-8")
         failed = self.run_build()

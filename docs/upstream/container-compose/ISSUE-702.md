@@ -15,6 +15,6 @@ The recoverable Container-family build graph had a safe manual transient cleanup
 
 ## Acceptance boundary
 
-Cleanup must never claim an unmarked root, follow a symbolic link, cross into retained storage, or run beside an active build. GitHub deletion must revalidate the exact SHA, absence of an open pull request, and exact merged-pull-request proof immediately before changing the ref, then atomically require that same SHA at the server. Tags, releases, issues, workflow runs, Actions caches, artifacts, and unrelated local worktrees are outside the deletion boundary.
+Cleanup must never claim an unmarked root, follow a symbolic link, cross into retained storage, create a cleanup target before acquiring the build lock, or run beside an active build. GitHub deletion must revalidate the exact SHA, absence of an open pull request, and exact merged-pull-request proof immediately before changing the ref, then atomically require that same SHA at the server and restore the exact head if a new or reopened pull request became active during deletion. Tags, releases, issues, workflow runs, Actions caches, artifacts, and unrelated local worktrees are outside the deletion boundary.
 
 Tracked by [issue #702](https://github.com/stephenlclarke/container-compose/issues/702).

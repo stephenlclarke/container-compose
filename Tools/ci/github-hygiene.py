@@ -67,6 +67,7 @@ class PullRequest:
     head_repository: str
     base_ref: str
     merged_at: datetime | None
+    state: str = "closed"
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,7 @@ def parse_pull_request(payload: dict[str, Any]) -> PullRequest:
         head_repository=str(head_repository.get("full_name") or ""),
         base_ref=str(payload["base"]["ref"]),
         merged_at=parse_timestamp(payload.get("merged_at")),
+        state=str(payload.get("state") or "closed"),
     )
 
 
@@ -434,6 +436,12 @@ def revalidate_and_delete(
     pull_requests_before = client.pull_requests(
         repository, decision.branch, state="all"
     )
+    if any(pull_request.state == "open" for pull_request in pull_requests_before):
+        return replace(
+            decision,
+            disposition="preserved",
+            reason="pull request opened during hygiene revalidation",
+        )
     pull_request = client.pull_request(repository, decision.pull_request)
     if exact_merged_pull_request(
         branch, [pull_request], repository, default_branch
@@ -460,14 +468,18 @@ def revalidate_and_delete(
         repository, decision.branch, state="all"
     )
     known_pull_requests = {
-        pull_request.number for pull_request in pull_requests_before
+        pull_request.number: pull_request for pull_request in pull_requests_before
     }
-    new_pull_requests = [
+    activated_pull_requests = [
         pull_request
         for pull_request in pull_requests_after
         if pull_request.number not in known_pull_requests
+        or (
+            pull_request.state == "open"
+            and known_pull_requests[pull_request.number].state != "open"
+        )
     ]
-    if new_pull_requests:
+    if activated_pull_requests:
         restoration = client.restore_branch(
             repository, decision.branch, decision.sha
         )

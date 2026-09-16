@@ -52,8 +52,17 @@ def pull_request(
     repository: str = REPOSITORY,
     base: str = DEFAULT_BRANCH,
     merged_at: datetime | None = NOW - timedelta(days=8),
+    state: str | None = None,
 ) -> hygiene.PullRequest:
-    return hygiene.PullRequest(number, branch, sha, repository, base, merged_at)
+    return hygiene.PullRequest(
+        number,
+        branch,
+        sha,
+        repository,
+        base,
+        merged_at,
+        state or ("closed" if merged_at is not None else "open"),
+    )
 
 
 class GitHubHygieneTests(unittest.TestCase):
@@ -365,18 +374,84 @@ class GitHubHygieneTests(unittest.TestCase):
         self.assertEqual(changed.disposition, "preserved")
         self.assertIn("changed", changed.reason)
 
+    def test_apply_restores_branch_when_existing_pr_reopens_during_delete(self) -> None:
+        class Client:
+            def __init__(self) -> None:
+                self.all_queries = 0
+
+            def branch(self, _repository: str, name: str) -> hygiene.Branch:
+                return hygiene.Branch(name, "a" * 40, False)
+
+            def pull_requests(
+                self, _repository: str, _branch: str, *, state: str
+            ) -> list[hygiene.PullRequest]:
+                if state == "open":
+                    return []
+                self.all_queries += 1
+                pr_state = "closed" if self.all_queries == 1 else "open"
+                return [pull_request(number=88, merged_at=None, state=pr_state)]
+
+            def pull_request(
+                self, _repository: str, _number: int
+            ) -> hygiene.PullRequest:
+                return pull_request()
+
+            def delete_branch(
+                self, _repository: str, _branch: str, _expected_sha: str
+            ) -> str:
+                return "deleted"
+
+            def restore_branch(
+                self, _repository: str, _branch: str, _expected_sha: str
+            ) -> str:
+                return "restored"
+
+        decision = hygiene.Decision(
+            "feature", "a" * 40, "candidate", "proved", 12
+        )
+
+        result = hygiene.revalidate_and_delete(
+            Client(), REPOSITORY, DEFAULT_BRANCH, decision
+        )
+
+        self.assertEqual(result.disposition, "preserved")
+        self.assertIn("restored", result.reason)
+
+    def test_apply_preserves_pr_opened_during_all_pr_snapshot(self) -> None:
+        class Client:
+            def branch(self, _repository: str, name: str) -> hygiene.Branch:
+                return hygiene.Branch(name, "a" * 40, False)
+
+            def pull_requests(
+                self, _repository: str, _branch: str, *, state: str
+            ) -> list[hygiene.PullRequest]:
+                return [] if state == "open" else [pull_request(merged_at=None)]
+
+        decision = hygiene.Decision(
+            "feature", "a" * 40, "candidate", "proved", 12
+        )
+
+        result = hygiene.revalidate_and_delete(
+            Client(), REPOSITORY, DEFAULT_BRANCH, decision
+        )
+
+        self.assertEqual(result.disposition, "preserved")
+        self.assertIn("revalidation", result.reason)
+
     def test_parse_pull_request_handles_missing_repository_and_timestamp(self) -> None:
         payload = {
             "number": "7",
             "head": {"ref": "feature", "sha": "a" * 40, "repo": None},
             "base": {"ref": "main"},
             "merged_at": "2026-09-01T10:20:30Z",
+            "state": "closed",
         }
 
         parsed = hygiene.parse_pull_request(payload)
 
         self.assertEqual(parsed.number, 7)
         self.assertEqual(parsed.head_repository, "")
+        self.assertEqual(parsed.state, "closed")
         self.assertEqual(parsed.merged_at, datetime(2026, 9, 1, 10, 20, 30, tzinfo=UTC))
         self.assertIsNone(hygiene.parse_timestamp(None))
 

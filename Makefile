@@ -454,8 +454,6 @@ stack-state-init:
 		--retained-path "$(STACK_PIN_DIR)" --retained-path "$(STACK_PIN_INDEX)" \
 		--retained-path "$(STACK_ARTIFACT_ROOT)" --retained-path "$(STACK_TIMING_ROOT)" \
 		--retained-path "$(STACK_LOCK_ROOT)" --retained-path "$(STACK_HYGIENE_ROOT)" \
-		--transient-path "$(STACK_SCRATCH_ROOT)" \
-		--transient-path "$(STACK_PROCESS_TEMP_ROOT)" \
 		$(if $(filter 1,$(STACK_REQUIRE_SEPARATE_FILESYSTEMS)),--require-separate-filesystems,)
 
 stack-preflight: stack-state-init
