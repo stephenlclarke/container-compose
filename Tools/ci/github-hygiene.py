@@ -32,7 +32,7 @@ import urllib.request
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 RETAINED_PREFIXES = ("upstream/", "release/", "release-", "archive/")
@@ -410,6 +410,7 @@ def revalidate_and_delete(
     repository: str,
     default_branch: str,
     decision: Decision,
+    record_mutation: Callable[[Decision], None] | None = None,
 ) -> Decision:
     if decision.disposition != "candidate" or decision.pull_request is None:
         return decision
@@ -463,6 +464,14 @@ def revalidate_and_delete(
             decision,
             disposition="reconciled",
             reason="branch was deleted concurrently",
+        )
+    if record_mutation is not None:
+        record_mutation(
+            replace(
+                decision,
+                disposition="deleted",
+                reason="atomic deletion completed; reconciliation pending",
+            )
         )
     try:
         pull_requests_after = client.pull_requests(
@@ -612,7 +621,17 @@ def main(arguments: list[str] | None = None) -> int:
             os.environ.get("GITHUB_SERVER_URL", "https://github.com"),
         )
         repository_data = client.repository(options.repository)
-        default_branch = options.default_branch or str(repository_data["default_branch"])
+        authoritative_default_branch = str(repository_data["default_branch"])
+        if (
+            options.default_branch is not None
+            and options.default_branch != authoritative_default_branch
+        ):
+            raise HygieneError(
+                "supplied default branch is stale: expected "
+                f"{options.default_branch}, repository reports "
+                f"{authoritative_default_branch}"
+            )
+        default_branch = authoritative_default_branch
         now = datetime.now(UTC)
         for branch in client.branches(options.repository):
             open_pull_requests = client.pull_requests(
@@ -630,11 +649,19 @@ def main(arguments: list[str] | None = None) -> int:
                 now=now,
                 grace=timedelta(days=options.grace_days),
             )
-            if options.apply:
-                decision = revalidate_and_delete(
-                    client, options.repository, default_branch, decision
-                )
             decisions.append(decision)
+            if options.apply:
+                decision_index = len(decisions) - 1
+                decision = revalidate_and_delete(
+                    client,
+                    options.repository,
+                    default_branch,
+                    decision,
+                    lambda mutation, index=decision_index: decisions.__setitem__(
+                        index, mutation
+                    ),
+                )
+                decisions[decision_index] = decision
         markdown = write_reports(
             repository=options.repository,
             default_branch=default_branch,

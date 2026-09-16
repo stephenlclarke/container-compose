@@ -933,6 +933,102 @@ class GitHubHygieneTests(unittest.TestCase):
             self.assertEqual(payload["error"], "fixture later-branch failure")
             self.assertIn("Status: `failed`", report.read_text(encoding="utf-8"))
 
+    def test_main_journals_deletion_before_reconciliation_failure(self) -> None:
+        class Client:
+            def __init__(self, *_arguments: str) -> None:
+                self.all_queries = 0
+
+            def repository(self, _repository: str) -> dict[str, object]:
+                return {"default_branch": "main"}
+
+            def branches(self, _repository: str) -> list[hygiene.Branch]:
+                return [hygiene.Branch("feature", "a" * 40, False)]
+
+            def pull_requests(
+                self, _repository: str, _branch: str, *, state: str
+            ) -> list[hygiene.PullRequest]:
+                if state == "open":
+                    return []
+                if state == "closed":
+                    return [pull_request()]
+                self.all_queries += 1
+                if self.all_queries == 1:
+                    return [pull_request()]
+                raise hygiene.HygieneError("post-delete unavailable")
+
+            def branch(self, _repository: str, name: str) -> hygiene.Branch:
+                return hygiene.Branch(name, "a" * 40, False)
+
+            def pull_request(
+                self, _repository: str, _number: int
+            ) -> hygiene.PullRequest:
+                return pull_request()
+
+            def delete_branch(
+                self, _repository: str, _branch: str, _expected_sha: str
+            ) -> str:
+                return "deleted"
+
+            def restore_branch(
+                self, _repository: str, _branch: str, _expected_sha: str
+            ) -> str:
+                raise hygiene.HygieneError("restoration unavailable")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            machine = root / "report.json"
+            arguments = [
+                "--repository",
+                REPOSITORY,
+                "--apply",
+                "--report",
+                str(root / "report.md"),
+                "--json-output",
+                str(machine),
+            ]
+            with mock.patch.object(hygiene, "GitHubClient", return_value=Client()):
+                with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "token"}):
+                    self.assertEqual(hygiene.main(arguments), 2)
+
+            payload = json.loads(machine.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "failed")
+            self.assertEqual(payload["branches"][0]["disposition"], "deleted")
+            self.assertIn("reconciliation pending", payload["branches"][0]["reason"])
+            self.assertEqual(payload["error"], "restoration unavailable")
+
+    def test_main_rejects_stale_supplied_default_branch(self) -> None:
+        class Client:
+            def __init__(self, *_arguments: str) -> None:
+                pass
+
+            def repository(self, _repository: str) -> dict[str, object]:
+                return {"default_branch": "trunk"}
+
+            def branches(self, _repository: str) -> list[hygiene.Branch]:
+                raise AssertionError("stale default branch must stop before listing")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            machine = root / "report.json"
+            arguments = [
+                "--repository",
+                REPOSITORY,
+                "--default-branch",
+                "main",
+                "--report",
+                str(root / "report.md"),
+                "--json-output",
+                str(machine),
+            ]
+            with mock.patch.object(hygiene, "GitHubClient", return_value=Client()):
+                with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "token"}):
+                    self.assertEqual(hygiene.main(arguments), 2)
+
+            payload = json.loads(machine.read_text(encoding="utf-8"))
+            self.assertEqual(payload["status"], "failed")
+            self.assertIn("stale", payload["error"])
+            self.assertEqual(payload["branches"], [])
+
     def test_main_rejects_bad_grace_and_reports_client_error(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
