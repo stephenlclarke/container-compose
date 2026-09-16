@@ -48,6 +48,10 @@ class GitHubNotFoundError(HygieneError):
     """A freshly queried GitHub resource no longer exists."""
 
 
+class GitHubConflictError(HygieneError):
+    """A conditional GitHub mutation conflicted with newer repository state."""
+
+
 @dataclass(frozen=True)
 class Branch:
     name: str
@@ -142,13 +146,19 @@ class GitHubClient:
         endpoint: str,
         *,
         expected: tuple[int, ...] = (200,),
+        json_body: dict[str, Any] | None = None,
     ) -> tuple[Any, urllib.response.addinfourl]:
+        data = None
+        if json_body is not None:
+            data = json.dumps(json_body, separators=(",", ":")).encode("utf-8")
         request = urllib.request.Request(
             f"{self.api_url}{endpoint}",
             method=method,
+            data=data,
             headers={
                 "Accept": "application/vnd.github+json",
                 "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
                 "User-Agent": "container-compose-repository-hygiene",
                 "X-GitHub-Api-Version": "2022-11-28",
             },
@@ -157,7 +167,11 @@ class GitHubClient:
             response = urllib.request.urlopen(request, timeout=30)
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
-            error_type = GitHubNotFoundError if error.code == 404 else HygieneError
+            error_type = {
+                404: GitHubNotFoundError,
+                409: GitHubConflictError,
+                422: GitHubConflictError,
+            }.get(error.code, HygieneError)
             raise error_type(
                 f"GitHub {method} {endpoint} failed with {error.code}: {detail}"
             ) from error
@@ -299,6 +313,27 @@ class GitHubClient:
         detail = completed.stderr.strip() or "git push failed"
         raise HygieneError(f"conditional branch deletion failed: {detail}")
 
+    def restore_branch(self, repository: str, branch: str, expected_sha: str) -> str:
+        """Create an absent branch at the deleted SHA without replacing newer work."""
+        if REPOSITORY_PATTERN.fullmatch(repository) is None:
+            raise HygieneError(f"invalid GitHub repository: {repository}")
+        if SHA_PATTERN.fullmatch(expected_sha) is None:
+            raise HygieneError(f"invalid expected branch SHA: {expected_sha}")
+        try:
+            self.request(
+                "POST",
+                f"/repos/{repository}/git/refs",
+                expected=(201,),
+                json_body={"ref": f"refs/heads/{branch}", "sha": expected_sha},
+            )
+            return "restored"
+        except GitHubConflictError as conflict:
+            try:
+                refreshed = self.branch(repository, branch)
+            except GitHubNotFoundError:
+                raise conflict
+            return "present" if refreshed.sha == expected_sha else "changed"
+
 
 def exact_merged_pull_request(
     branch: Branch,
@@ -396,6 +431,9 @@ def revalidate_and_delete(
             disposition="preserved",
             reason="pull request opened during hygiene run",
         )
+    pull_requests_before = client.pull_requests(
+        repository, decision.branch, state="all"
+    )
     pull_request = client.pull_request(repository, decision.pull_request)
     if exact_merged_pull_request(
         branch, [pull_request], repository, default_branch
@@ -417,6 +455,32 @@ def revalidate_and_delete(
             decision,
             disposition="reconciled",
             reason="branch was deleted concurrently",
+        )
+    pull_requests_after = client.pull_requests(
+        repository, decision.branch, state="all"
+    )
+    known_pull_requests = {
+        pull_request.number for pull_request in pull_requests_before
+    }
+    new_pull_requests = [
+        pull_request
+        for pull_request in pull_requests_after
+        if pull_request.number not in known_pull_requests
+    ]
+    if new_pull_requests:
+        restoration = client.restore_branch(
+            repository, decision.branch, decision.sha
+        )
+        if restoration == "changed":
+            return replace(
+                decision,
+                disposition="preserved",
+                reason="branch changed while reconciling new pull-request activity",
+            )
+        return replace(
+            decision,
+            disposition="preserved",
+            reason="branch restored after pull request opened during atomic deletion",
         )
     return replace(decision, disposition="deleted")
 

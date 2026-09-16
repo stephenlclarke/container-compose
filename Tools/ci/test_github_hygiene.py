@@ -143,7 +143,6 @@ class GitHubHygieneTests(unittest.TestCase):
             def pull_requests(
                 self, _repository: str, _branch: str, *, state: str
             ) -> list[hygiene.PullRequest]:
-                self.assert_state = state
                 return []
 
             def pull_request(
@@ -156,6 +155,11 @@ class GitHubHygieneTests(unittest.TestCase):
             ) -> str:
                 self.deleted.append(branch)
                 return "deleted"
+
+            def restore_branch(
+                self, _repository: str, _branch: str, _expected_sha: str
+            ) -> str:
+                raise AssertionError("restore was not expected")
 
         client = Client()
         decision = hygiene.Decision(
@@ -199,8 +203,11 @@ class GitHubHygieneTests(unittest.TestCase):
             def pull_requests(
                 self, _repository: str, _branch: str, *, state: str
             ) -> list[hygiene.PullRequest]:
-                self.state = state
-                return [pull_request(merged_at=None)] if self.opened else []
+                return (
+                    [pull_request(merged_at=None)]
+                    if self.opened and state == "open"
+                    else []
+                )
 
             def pull_request(
                 self, _repository: str, _number: int
@@ -306,6 +313,58 @@ class GitHubHygieneTests(unittest.TestCase):
         self.assertEqual(result.disposition, "reconciled")
         self.assertIn("concurrently", result.reason)
 
+    def test_apply_restores_branch_when_pr_opens_during_atomic_delete(self) -> None:
+        class Client:
+            def __init__(self, restoration: str) -> None:
+                self.all_queries = 0
+                self.restoration = restoration
+                self.restored: list[tuple[str, str]] = []
+
+            def branch(self, _repository: str, name: str) -> hygiene.Branch:
+                return hygiene.Branch(name, "a" * 40, False)
+
+            def pull_requests(
+                self, _repository: str, _branch: str, *, state: str
+            ) -> list[hygiene.PullRequest]:
+                if state == "open":
+                    return []
+                self.all_queries += 1
+                return [] if self.all_queries == 1 else [pull_request(number=99)]
+
+            def pull_request(
+                self, _repository: str, _number: int
+            ) -> hygiene.PullRequest:
+                return pull_request()
+
+            def delete_branch(
+                self, _repository: str, _branch: str, _expected_sha: str
+            ) -> str:
+                return "deleted"
+
+            def restore_branch(
+                self, _repository: str, branch: str, expected_sha: str
+            ) -> str:
+                self.restored.append((branch, expected_sha))
+                return self.restoration
+
+        decision = hygiene.Decision(
+            "feature", "a" * 40, "candidate", "proved", 12
+        )
+
+        restored_client = Client("restored")
+        restored = hygiene.revalidate_and_delete(
+            restored_client, REPOSITORY, DEFAULT_BRANCH, decision
+        )
+        changed = hygiene.revalidate_and_delete(
+            Client("changed"), REPOSITORY, DEFAULT_BRANCH, decision
+        )
+
+        self.assertEqual(restored.disposition, "preserved")
+        self.assertIn("restored", restored.reason)
+        self.assertEqual(restored_client.restored, [("feature", "a" * 40)])
+        self.assertEqual(changed.disposition, "preserved")
+        self.assertIn("changed", changed.reason)
+
     def test_parse_pull_request_handles_missing_repository_and_timestamp(self) -> None:
         payload = {
             "number": "7",
@@ -340,18 +399,28 @@ class GitHubHygieneTests(unittest.TestCase):
                 self.status = status
                 self.headers: dict[str, str] = {}
 
-        responses = [Response(b'{"ok": true}', 200), Response(b"", 204)]
+        responses = [
+            Response(b'{"ok": true}', 200),
+            Response(b"", 204),
+            Response(b'{"created": true}', 201),
+        ]
         with mock.patch.object(
             hygiene.urllib.request, "urlopen", side_effect=responses
         ) as opened:
             client = hygiene.GitHubClient("secret")
             payload, _ = client.request("GET", "/value")
             no_content, _ = client.request("DELETE", "/value", expected=(204,))
+            created, _ = client.request(
+                "POST", "/value", expected=(201,), json_body={"value": "safe"}
+            )
 
         self.assertEqual(payload, {"ok": True})
         self.assertIsNone(no_content)
+        self.assertEqual(created, {"created": True})
         request = opened.call_args_list[0].args[0]
         self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+        post_request = opened.call_args_list[2].args[0]
+        self.assertEqual(post_request.data, b'{"value":"safe"}')
 
     def test_client_request_reports_http_and_unexpected_status(self) -> None:
         http_error = urllib.error.HTTPError(
@@ -379,6 +448,19 @@ class GitHubHygieneTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(hygiene.GitHubNotFoundError, "404: gone"):
                 hygiene.GitHubClient("secret").request("GET", "/value")
+
+        conflict = urllib.error.HTTPError(
+            "https://api.github.com/value",
+            422,
+            "conflict",
+            {},
+            io.BytesIO(b"exists"),
+        )
+        with mock.patch.object(
+            hygiene.urllib.request, "urlopen", side_effect=conflict
+        ):
+            with self.assertRaisesRegex(hygiene.GitHubConflictError, "422: exists"):
+                hygiene.GitHubClient("secret").request("POST", "/value")
 
         response = io.BytesIO(b"unexpected")
         response.status = 201
@@ -552,6 +634,44 @@ class GitHubHygieneTests(unittest.TestCase):
             client.delete_branch("invalid", "feature", "a" * 40)
         with self.assertRaisesRegex(hygiene.HygieneError, "invalid expected branch SHA"):
             client.delete_branch(REPOSITORY, "feature", "invalid")
+
+    def test_restore_branch_creates_only_an_absent_reference(self) -> None:
+        client = hygiene.GitHubClient("secret")
+        client.request = mock.Mock(
+            return_value=({"ref": "refs/heads/feature"}, object())
+        )
+
+        self.assertEqual(
+            client.restore_branch(REPOSITORY, "feature", "a" * 40),
+            "restored",
+        )
+        self.assertEqual(
+            client.request.call_args.args[:2],
+            ("POST", "/repos/example/project/git/refs"),
+        )
+        self.assertEqual(
+            client.request.call_args.kwargs["json_body"],
+            {"ref": "refs/heads/feature", "sha": "a" * 40},
+        )
+
+        client.request = mock.Mock(side_effect=hygiene.GitHubConflictError("exists"))
+        client.branch = mock.Mock(
+            return_value=hygiene.Branch("feature", "a" * 40, False)
+        )
+        self.assertEqual(
+            client.restore_branch(REPOSITORY, "feature", "a" * 40),
+            "present",
+        )
+        client.branch = mock.Mock(
+            return_value=hygiene.Branch("feature", "b" * 40, False)
+        )
+        self.assertEqual(
+            client.restore_branch(REPOSITORY, "feature", "a" * 40),
+            "changed",
+        )
+        client.branch = mock.Mock(side_effect=hygiene.GitHubNotFoundError("gone"))
+        with self.assertRaisesRegex(hygiene.GitHubConflictError, "exists"):
+            client.restore_branch(REPOSITORY, "feature", "a" * 40)
 
     def test_client_rejects_invalid_repository_payload(self) -> None:
         client = hygiene.GitHubClient("secret")

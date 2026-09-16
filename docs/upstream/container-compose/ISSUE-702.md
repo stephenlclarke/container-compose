@@ -10,7 +10,7 @@ The recoverable Container-family build graph had a safe manual transient cleanup
 - Preserve exact pins, promoted artifacts, timings, and all retained release evidence.
 - Retain human-readable and machine-readable cleanup receipts.
 - Add deterministic safety and failure-path regressions.
-- Add a scheduled/manual GitHub workflow that deletes only unchanged, unprotected exact heads of aged merged pull requests after a fresh race check and an atomic expected-SHA lease.
+- Add a scheduled/manual GitHub workflow that deletes only unchanged, unprotected exact heads of aged merged pull requests after a fresh race check and an atomic expected-SHA lease, then restores the exact head without overwriting newer work if a pull request became active during deletion.
 - Preserve and report default, protected, upstream-handoff, release, archive, active, changed, and ambiguous branches.
 
 ## Acceptance boundary
