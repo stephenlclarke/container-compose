@@ -8978,6 +8978,24 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/703"
     },
     {
+      "id": "container-compose-704",
+      "owner": "stephenlclarke/container-compose",
+      "title": "chore(deps): pin Container debug-symbol packaging fix",
+      "state": "active-draft",
+      "lastVerified": "2026-09-16",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-704.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-705.md"
+        }
+      ]
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",
