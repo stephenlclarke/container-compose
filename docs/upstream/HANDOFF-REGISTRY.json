@@ -8983,7 +8983,9 @@
       "title": "chore(deps): pin Container debug-symbol packaging fix",
       "state": "active-draft",
       "lastVerified": "2026-09-16",
-      "commits": [],
+      "commits": [
+        "bf33aea51f1acf381ea46f72e8ef0676b7c10b21"
+      ],
       "documents": [
         {
           "kind": "issue",
