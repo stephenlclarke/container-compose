@@ -20,10 +20,10 @@ git log --cherry-pick --right-only --no-merges \
 
 | Repository | Apple `main` | Stephen `main` | Apple-only | Fork-only | Classified non-merge commits |
 | --- | --- | --- | ---: | ---: | ---: |
-| `container` | `57f0b9392bbee1998e6c7f3f25db222fe1dcdd12` | `84bb6e0a37176fe45927f5c6f785041c3f75f11f` | 0 | 894 | 732 |
-| `containerization` | `b44e17e1a4c135bc0168e615bf6a8e3798d070c0` | `4c95face06701be6572c92db34ca1864329c7b69` | 0 | 335 | 257 |
+| `container` | `57f0b9392bbee1998e6c7f3f25db222fe1dcdd12` | `2b4255631681e8e41cdc243f8f61c40348e18cc1` | 0 | 896 | 733 |
+| `containerization` | `b44e17e1a4c135bc0168e615bf6a8e3798d070c0` | `51bf8a10e2036861f87ccdf2fd881a8726c534d2` | 0 | 337 | 258 |
 | `container-builder-shim` | `5dc4286e5adbeb7dac189b22b7d5aab336942fe2` | `016040197215684db474181b444767eb58797cfa` | 0 | 72 | 57 |
-| **Total** | | | **0** | **1301** | **1046** |
+| **Total** | | | **0** | **1305** | **1048** |
 
 The graph-ahead count includes merge commits. The classification count excludes
 merges and patch-equivalent commits so the registry covers semantic fork work.
@@ -32,7 +32,7 @@ merges and patch-equivalent commits so the registry covers semantic fork work.
 
 | Classification | Commits | Disposition |
 | --- | ---: | --- |
-| `support-maintenance` | 790 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
+| `support-maintenance` | 792 | Retain independent bug fixes, tests, CI, release engineering, dependency pins, documentation, and review corrections. Split generally useful fixes during FORK-105. |
 | `generic-runtime-primitive` | 231 | Retain typed VM, guest, archive, network, process, storage, resource, logging, Engine API, and BuildKit capabilities below Compose. Keep Apple-shaped handoffs and independently reviewable upstream slices. |
 | `temporary-upstream-port` | 21 | Retain only until the named Apple PR lands or an equivalent change is verified. Published duplicate history is not rewritten. Remove remaining source duplication through normal follow-up commits. |
 | `rejected-compose-policy` | 4 | Remove runtime config, secret, and Keychain storage added solely for Compose. Their supported behaviour now belongs to the Compose provider. |
@@ -383,16 +383,17 @@ runtime primitive, temporary port, or rejected Compose-policy disposition
 changed.
 
 The 16 September 2026 release refresh advances Apple Container through
-`57f0b9392bbe`, Container through `84bb6e0a3717`, Containerization through
-`4c95face0670`, and the builder shim through `016040197215`. Apple custom-CNI
+`57f0b9392bbe`, Container through `2b4255631681`, Containerization through
+`51bf8a10e203`, and the builder shim through `016040197215`. Apple custom-CNI
 support is upstream history after the reviewed synchronization merge. The fork
 retains its control-plane endpoint and CoreDNS resolver corrections and streams
 large CNI manifests through standard input instead of placing their contents in
-the process argument vector. The 58 newly classified fork-only commits cover
+the process argument vector. The 60 newly classified fork-only commits cover
 quality and SonarQube gates, documentation and badge corrections, dependency
 pins, release capture, CNI input safety, exact input-validation coverage,
-blank-line coverage normalization, and split SwiftPM coverage reporting; all
-are support maintenance. The bootstrap dependency grouping resolves the final
+blank-line coverage normalization, split SwiftPM coverage reporting, and the
+exact downstream runtime pin; all are support maintenance. The bootstrap
+dependency grouping resolves the final
 SonarQube finding without hiding the Apple-compatible networking inputs. The
 custom manifest is opened without following a final symlink, verified as a
 regular file, and snapshotted before provisioning so later source replacement
