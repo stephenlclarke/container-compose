@@ -43,27 +43,27 @@ fork `main`. The left/right counts are from `git rev-list
 
 | Repository | Apple `main` | Fork `main` | Apple-only | Fork-only |
 | --- | --- | --- | ---: | ---: |
-| `container` | `57f0b9392bbee1998e6c7f3f25db222fe1dcdd12` | `84bb6e0a37176fe45927f5c6f785041c3f75f11f` | 0 | 894 |
-| `containerization` | `b44e17e1a4c135bc0168e615bf6a8e3798d070c0` | `4c95face06701be6572c92db34ca1864329c7b69` | 0 | 335 |
+| `container` | `57f0b9392bbee1998e6c7f3f25db222fe1dcdd12` | `2b4255631681e8e41cdc243f8f61c40348e18cc1` | 0 | 896 |
+| `containerization` | `b44e17e1a4c135bc0168e615bf6a8e3798d070c0` | `51bf8a10e2036861f87ccdf2fd881a8726c534d2` | 0 | 337 |
 | `container-builder-shim` | `5dc4286e5adbeb7dac189b22b7d5aab336942fe2` | `016040197215684db474181b444767eb58797cfa` | 0 | 72 |
 
 The supported default branches contain their complete fetched Apple histories.
-Their 1,046 patch-unique non-merge commits are classified in
-[Fork Commit Classifications](FORK-COMMIT-CLASSIFICATIONS.md): 732 in
-`container`, 257 in `containerization`, and 57 in
+Their 1,048 patch-unique non-merge commits are classified in
+[Fork Commit Classifications](FORK-COMMIT-CLASSIFICATIONS.md): 733 in
+`container`, 258 in `containerization`, and 57 in
 `container-builder-shim`. The fork-only counts above include merge commits and
 are not a count of changes ready for Apple.
 
 Compose currently pins the separately validated development heads
-`container` `84bb6e0a37176fe45927f5c6f785041c3f75f11f`,
-`containerization` `4c95face06701be6572c92db34ca1864329c7b69`,
+`container` `2b4255631681e8e41cdc243f8f61c40348e18cc1`,
+`containerization` `51bf8a10e2036861f87ccdf2fd881a8726c534d2`,
 and `container-builder-shim`
 `016040197215684db474181b444767eb58797cfa`. The Container pin contains its
-current fetched Apple head. The reviewed `84bb6e0a3717` merge advances it
-through Apple custom-CNI support and snapshots validated custom manifests before
-provisioning. The
-Containerization pin contains the current fetched Apple head and retains the
-separately reviewed guest-DNS proxy work.
+current fetched Apple head, Apple custom-CNI support, safe custom-manifest
+snapshots, and the exact coverage-compatible Containerization dependency. The
+Containerization pin contains the current fetched Apple head, the separately
+reviewed guest-DNS proxy work, and split SwiftPM coverage generation required
+by Xcode 27 and Swift 6.4.
 
 ## Submitted Stephen-Authored Apple Pull Requests
 

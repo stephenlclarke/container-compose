@@ -8926,6 +8926,27 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/699"
     },
     {
+      "id": "container-compose-700",
+      "owner": "stephenlclarke/container-compose",
+      "title": "chore(deps): pin coverage-compatible runtime stack",
+      "state": "submitted",
+      "lastVerified": "2026-09-16",
+      "commits": [
+        "acbfe84ad47762b276cee791c17067d4889bc317"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-700.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-701.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/701"
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",

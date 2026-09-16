@@ -8,9 +8,9 @@ they contain an explicit closure section; every retired document links to an imm
 
 Last verified: 2026-09-15
 
-Entries: 451. Document snapshots: 796. Current supporting documents: 190.
+Entries: 452. Document snapshots: 798. Current supporting documents: 192.
 
-States: `active-draft` 1, `archived` 304, `closed` 23, `merged` 77, `submitted` 5, `tracked-upstream` 13, `unsubmitted` 28.
+States: `active-draft` 1, `archived` 304, `closed` 23, `merged` 77, `submitted` 6, `tracked-upstream` 13, `unsubmitted` 28.
 
 | Owner | Capability or pull request | State | Referenced commits | Documents |
 | --- | --- | --- | --- | --- |
@@ -281,6 +281,7 @@ States: `active-draft` 1, `archived` 304, `closed` 23, `merged` 77, `submitted` 
 | `stephenlclarke/container-compose` | [fix(release): refresh Current stack pins](https://github.com/stephenlclarke/container-compose/pull/690) | `merged` | `cc9a5a41c9f9`, `74bc3eb5c425`, `b24e68366b38`, `9cea85981894` | [Issue details](container-compose/ISSUE-688.md); [PR details](container-compose/PR-689.md); [PR details](container-compose/PR-690.md) |
 | `stephenlclarke/container-compose` | [chore(deps): refresh current container pin](https://github.com/stephenlclarke/container-compose/pull/695) | `merged` | `a200a1a95960`, `2092bcc493e9`, `213a0695b170`, `e0901fdf0f06` | [Issue details](container-compose/ISSUE-695.md); [PR details](container-compose/PR-695.md) |
 | `stephenlclarke/container-compose` | [fix(release): recover retained sibling branches](https://github.com/stephenlclarke/container-compose/pull/699) | `submitted` | `5cb8ec19fd6a` | [Issue details](container-compose/ISSUE-698.md); [PR details](container-compose/PR-699.md) |
+| `stephenlclarke/container-compose` | [chore(deps): pin coverage-compatible runtime stack](https://github.com/stephenlclarke/container-compose/pull/701) | `submitted` | `acbfe84ad477` | [Issue details](container-compose/ISSUE-700.md); [PR details](container-compose/PR-701.md) |
 | `stephenlclarke/container-compose` | Isolate deterministic anonymous volume identities | `archived` | None recorded | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-anonymous-volume-identity.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-anonymous-volume-identity.md) |
 | `stephenlclarke/container-compose` | Support bind create_host_path policy | `archived` | `12c6ed0b8a1e` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-create-host-path.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-create-host-path.md) |
 | `stephenlclarke/container-compose` | Support bind propagation mount options | `archived` | `5fbe9f0937d8` | [Issue archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/ISSUE-bind-propagation.md); [PR archive](https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/container-compose/PR-bind-propagation.md) |
