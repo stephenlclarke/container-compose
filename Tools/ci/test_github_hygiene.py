@@ -866,9 +866,72 @@ class GitHubHygieneTests(unittest.TestCase):
 
             payload = json.loads(machine.read_text(encoding="utf-8"))
             self.assertEqual(payload["mode"], "apply")
+            self.assertEqual(payload["status"], "success")
             self.assertEqual(payload["branches"][0]["disposition"], "deleted")
             self.assertEqual(client.deleted, ["feature"])
             self.assertIn("GitHub repository hygiene report", report.read_text())
+
+    def test_main_retains_partial_report_when_later_branch_fails(self) -> None:
+        class Client:
+            def __init__(self, *_arguments: str) -> None:
+                self.deleted: list[str] = []
+
+            def repository(self, _repository: str) -> dict[str, object]:
+                return {"default_branch": "main", "delete_branch_on_merge": True}
+
+            def branches(self, _repository: str) -> list[hygiene.Branch]:
+                return [
+                    hygiene.Branch("first", "a" * 40, False),
+                    hygiene.Branch("second", "b" * 40, False),
+                ]
+
+            def pull_requests(
+                self, _repository: str, branch: str, *, state: str
+            ) -> list[hygiene.PullRequest]:
+                if branch == "second":
+                    raise hygiene.HygieneError("fixture later-branch failure")
+                if state == "open":
+                    return []
+                return [pull_request(branch="first")]
+
+            def branch(self, _repository: str, name: str) -> hygiene.Branch:
+                return hygiene.Branch(name, "a" * 40, False)
+
+            def pull_request(
+                self, _repository: str, _number: int
+            ) -> hygiene.PullRequest:
+                return pull_request(branch="first")
+
+            def delete_branch(
+                self, _repository: str, branch: str, _expected_sha: str
+            ) -> str:
+                self.deleted.append(branch)
+                return "deleted"
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            report = root / "report.md"
+            machine = root / "report.json"
+            client = Client("token")
+            arguments = [
+                "--repository",
+                REPOSITORY,
+                "--apply",
+                "--report",
+                str(report),
+                "--json-output",
+                str(machine),
+            ]
+            with mock.patch.object(hygiene, "GitHubClient", return_value=client):
+                with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "token"}):
+                    self.assertEqual(hygiene.main(arguments), 2)
+
+            payload = json.loads(machine.read_text(encoding="utf-8"))
+            self.assertEqual(client.deleted, ["first"])
+            self.assertEqual(payload["status"], "failed")
+            self.assertEqual(payload["branches"][0]["disposition"], "deleted")
+            self.assertEqual(payload["error"], "fixture later-branch failure")
+            self.assertIn("Status: `failed`", report.read_text(encoding="utf-8"))
 
     def test_main_rejects_bad_grace_and_reports_client_error(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

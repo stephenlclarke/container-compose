@@ -515,6 +515,7 @@ def render_markdown(
     apply: bool,
     delete_branch_on_merge: bool,
     decisions: list[Decision],
+    error: str | None = None,
 ) -> str:
     lines = [
         "# GitHub repository hygiene report",
@@ -522,13 +523,21 @@ def render_markdown(
         f"- Repository: `{repository}`",
         f"- Default branch: `{default_branch}`",
         f"- Mode: `{'apply' if apply else 'dry-run'}`",
+        f"- Status: `{'failed' if error else 'success'}`",
         "- GitHub delete-on-merge setting: "
         f"`{'enabled' if delete_branch_on_merge else 'disabled'}`",
         f"- Generated: `{datetime.now(UTC).isoformat()}`",
-        "",
-        "| Disposition | Branch | Pull request | SHA | Reason |",
-        "| --- | --- | --- | --- | --- |",
     ]
+    if error:
+        escaped_error = error.replace("`", "\\`")
+        lines.append(f"- Error: `{escaped_error}`")
+    lines.extend(
+        (
+            "",
+            "| Disposition | Branch | Pull request | SHA | Reason |",
+            "| --- | --- | --- | --- | --- |",
+        )
+    )
     for decision in decisions:
         pull_request = f"#{decision.pull_request}" if decision.pull_request else "—"
         fields = [
@@ -551,11 +560,51 @@ def write_atomic(path: Path, contents: str) -> None:
     temporary.replace(path)
 
 
+def write_reports(
+    *,
+    repository: str,
+    default_branch: str,
+    apply: bool,
+    delete_branch_on_merge: bool,
+    decisions: list[Decision],
+    report_path: Path,
+    json_path: Path,
+    error: str | None = None,
+) -> str:
+    """Persist complete or partial repository decisions atomically."""
+    markdown = render_markdown(
+        repository,
+        default_branch,
+        apply,
+        delete_branch_on_merge,
+        decisions,
+        error,
+    )
+    payload = {
+        "schema": 1,
+        "repository": repository,
+        "defaultBranch": default_branch,
+        "mode": "apply" if apply else "dry-run",
+        "status": "failed" if error else "success",
+        "generatedAt": datetime.now(UTC).isoformat(),
+        "deleteBranchOnMerge": delete_branch_on_merge,
+        "branches": [asdict(decision) for decision in decisions],
+    }
+    if error:
+        payload["error"] = error
+    write_atomic(report_path, markdown)
+    write_atomic(json_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    return markdown
+
+
 def main(arguments: list[str] | None = None) -> int:
     options = parse_args(arguments)
     if options.grace_days < 1:
         print("github-hygiene: grace period must be at least one day", file=sys.stderr)
         return 2
+    repository_data: dict[str, Any] = {}
+    default_branch = options.default_branch or "unknown"
+    decisions: list[Decision] = []
     try:
         client = GitHubClient(
             os.environ.get("GITHUB_TOKEN", ""),
@@ -565,7 +614,6 @@ def main(arguments: list[str] | None = None) -> int:
         repository_data = client.repository(options.repository)
         default_branch = options.default_branch or str(repository_data["default_branch"])
         now = datetime.now(UTC)
-        decisions: list[Decision] = []
         for branch in client.branches(options.repository):
             open_pull_requests = client.pull_requests(
                 options.repository, branch.name, state="open"
@@ -587,30 +635,38 @@ def main(arguments: list[str] | None = None) -> int:
                     client, options.repository, default_branch, decision
                 )
             decisions.append(decision)
-        markdown = render_markdown(
-            options.repository,
-            default_branch,
-            options.apply,
-            bool(repository_data.get("delete_branch_on_merge")),
-            decisions,
-        )
-        payload = {
-            "schema": 1,
-            "repository": options.repository,
-            "defaultBranch": default_branch,
-            "mode": "apply" if options.apply else "dry-run",
-            "generatedAt": datetime.now(UTC).isoformat(),
-            "deleteBranchOnMerge": bool(repository_data.get("delete_branch_on_merge")),
-            "branches": [asdict(decision) for decision in decisions],
-        }
-        write_atomic(options.report, markdown)
-        write_atomic(
-            options.json_output,
-            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        markdown = write_reports(
+            repository=options.repository,
+            default_branch=default_branch,
+            apply=options.apply,
+            delete_branch_on_merge=bool(
+                repository_data.get("delete_branch_on_merge")
+            ),
+            decisions=decisions,
+            report_path=options.report,
+            json_path=options.json_output,
         )
         print(markdown, end="")
         return 0
     except (HygieneError, KeyError, OSError, UnicodeError, ValueError) as error:
+        try:
+            write_reports(
+                repository=options.repository,
+                default_branch=default_branch,
+                apply=options.apply,
+                delete_branch_on_merge=bool(
+                    repository_data.get("delete_branch_on_merge")
+                ),
+                decisions=decisions,
+                report_path=options.report,
+                json_path=options.json_output,
+                error=str(error),
+            )
+        except (OSError, UnicodeError) as report_error:
+            print(
+                f"github-hygiene: could not persist failure report: {report_error}",
+                file=sys.stderr,
+            )
         print(f"github-hygiene: {error}", file=sys.stderr)
         return 2
 
