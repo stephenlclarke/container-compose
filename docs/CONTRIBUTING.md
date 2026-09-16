@@ -118,6 +118,10 @@ candidate has been accounted for. The forced fallback is only appropriate after
 the pull request is confirmed merged or deliberately superseded and the audit
 shows no unique patches.
 
+The weekly `Repository Hygiene` workflow applies the same fail-closed principle to GitHub branches. It fetches the current default branch from the repository API and rejects any stale workflow-event expectation. It removes only an unchanged, unprotected branch that is the exact recorded head of a pull request merged into that branch at least seven days earlier, after rechecking that no pull request has opened and the SHA and merge proof are unchanged. The final deletion uses Git's atomic `--force-with-lease` comparison against that SHA, so a concurrent push preserves the branch. Pre-delete and post-delete pull-request snapshots restore the exact deleted head with create-only semantics if a new or previously closed pull request became active during the deletion window; an unavailable post-delete snapshot also restores conservatively, and restoration never replaces newer work. It reports and preserves all other branches. Successful and partially failed runs both retain their completed decisions and terminal status; each deletion is provisionally journaled before fallible reconciliation. Local worktrees remain outside that workflow and must still be closed out with `make worktree-audit` and the explicit commands above.
+
+The recoverable stack build automatically removes allowlisted marker-owned transient compiler and process state before and after each build while holding the stack lock. Never put user data below `STACK_TRANSIENT_ROOT`; use the retained store only through the build tools. Inspect the retained Markdown and JSON receipts below `STACK_RETAINED_ROOT/hygiene`, or use `make stack-transient-clean-plan` before an explicit `make stack-transient-clean`.
+
 ## Conventional Commits
 
 Use Conventional Commits for commit messages and pull request titles:

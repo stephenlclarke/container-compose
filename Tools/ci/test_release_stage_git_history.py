@@ -98,8 +98,10 @@ class RecoverableStackBuildPolicyTests(unittest.TestCase):
         self.assertEqual(contracts.count("--controller-section"), 4)
         self.assertNotIn("--controller \"$(abspath Makefile)\"", contracts)
 
-    def test_individual_stack_stages_reject_unlocked_execution(self) -> None:
-        self.assertEqual(MAKEFILE.count("\n\t$(STACK_REQUIRE_LOCK)\n"), 5)
+    def test_transaction_and_stack_stages_reject_unlocked_execution(self) -> None:
+        self.assertEqual(MAKEFILE.count("\n\t$(STACK_REQUIRE_LOCK)\n"), 6)
+        transaction = make_target("stack-build-transaction", "stack-build-locked")
+        self.assertIn("$(STACK_REQUIRE_LOCK)", transaction)
         self.assertIn("stack stage requires the stack-build lock", MAKEFILE)
 
     def test_every_source_build_publishes_a_verified_atomic_pin(self) -> None:

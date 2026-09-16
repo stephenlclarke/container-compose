@@ -1,0 +1,717 @@
+#!/usr/bin/env python3
+##===----------------------------------------------------------------------===##
+## Copyright © 2026 container-compose project authors.
+##
+## Licensed under the Apache License, Version 2.0 (the "License");
+## you may not use this file except in compliance with the License.
+## You may obtain a copy of the License at
+##
+##   https://www.apache.org/licenses/LICENSE-2.0
+##
+## Unless required by applicable law or agreed to in writing, software
+## distributed under the License is distributed on an "AS IS" BASIS,
+## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+## See the License for the specific language governing permissions and
+## limitations under the License.
+##===----------------------------------------------------------------------===##
+
+"""Report GitHub repository hygiene and remove only proven merged PR branches."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any, Callable
+
+
+RETAINED_PREFIXES = ("upstream/", "release/", "release-", "archive/")
+REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+
+
+class HygieneError(RuntimeError):
+    """GitHub hygiene could not be proved or completed safely."""
+
+
+class GitHubNotFoundError(HygieneError):
+    """A freshly queried GitHub resource no longer exists."""
+
+
+class GitHubConflictError(HygieneError):
+    """A conditional GitHub mutation conflicted with newer repository state."""
+
+
+@dataclass(frozen=True)
+class Branch:
+    name: str
+    sha: str
+    protected: bool
+
+
+@dataclass(frozen=True)
+class PullRequest:
+    number: int
+    head_ref: str
+    head_sha: str
+    head_repository: str
+    base_ref: str
+    merged_at: datetime | None
+    state: str = "closed"
+
+
+@dataclass(frozen=True)
+class Decision:
+    branch: str
+    sha: str
+    disposition: str
+    reason: str
+    pull_request: int | None = None
+
+
+def parse_args(arguments: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repository", required=True, help="owner/name")
+    parser.add_argument("--default-branch")
+    parser.add_argument("--grace-days", type=int, default=7)
+    parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--json-output", type=Path, required=True)
+    return parser.parse_args(arguments)
+
+
+def parse_timestamp(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def parse_pull_request(payload: dict[str, Any]) -> PullRequest:
+    head_repository = payload.get("head", {}).get("repo") or {}
+    return PullRequest(
+        number=int(payload["number"]),
+        head_ref=str(payload["head"]["ref"]),
+        head_sha=str(payload["head"]["sha"]),
+        head_repository=str(head_repository.get("full_name") or ""),
+        base_ref=str(payload["base"]["ref"]),
+        merged_at=parse_timestamp(payload.get("merged_at")),
+        state=str(payload.get("state") or "closed"),
+    )
+
+
+class GitHubClient:
+    def __init__(
+        self,
+        token: str,
+        api_url: str = "https://api.github.com",
+        server_url: str = "https://github.com",
+    ) -> None:
+        if not token:
+            raise HygieneError("GITHUB_TOKEN is required")
+        parsed = urllib.parse.urlparse(api_url.rstrip("/"))
+        if (
+            parsed.scheme not in ("http", "https")
+            or not parsed.netloc
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise HygieneError(f"invalid GitHub API URL: {api_url}")
+        self.token = token
+        self.api_origin = f"{parsed.scheme}://{parsed.netloc}"
+        self.api_base_path = parsed.path.rstrip("/")
+        self.api_url = f"{self.api_origin}{self.api_base_path}"
+        server = urllib.parse.urlparse(server_url.rstrip("/"))
+        if (
+            server.scheme not in ("http", "https")
+            or not server.netloc
+            or server.params
+            or server.query
+            or server.fragment
+        ):
+            raise HygieneError(f"invalid GitHub server URL: {server_url}")
+        self.server_url = server_url.rstrip("/")
+
+    def request(
+        self,
+        method: str,
+        endpoint: str,
+        *,
+        expected: tuple[int, ...] = (200,),
+        json_body: dict[str, Any] | None = None,
+    ) -> tuple[Any, urllib.response.addinfourl]:
+        data = None
+        if json_body is not None:
+            data = json.dumps(json_body, separators=(",", ":")).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.api_url}{endpoint}",
+            method=method,
+            data=data,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
+                "User-Agent": "container-compose-repository-hygiene",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        try:
+            response = urllib.request.urlopen(request, timeout=30)
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")
+            error_type = {
+                404: GitHubNotFoundError,
+                409: GitHubConflictError,
+                422: GitHubConflictError,
+            }.get(error.code, HygieneError)
+            raise error_type(
+                f"GitHub {method} {endpoint} failed with {error.code}: {detail}"
+            ) from error
+        if response.status not in expected:
+            raise HygieneError(
+                f"GitHub {method} {endpoint} returned unexpected status {response.status}"
+            )
+        payload = None if response.status == 204 else json.load(response)
+        return payload, response
+
+    def paginated(self, endpoint: str) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        current: str | None = endpoint
+        while current is not None:
+            payload, response = self.request("GET", current)
+            if not isinstance(payload, list):
+                raise HygieneError(f"GitHub pagination returned a non-list for {current}")
+            results.extend(payload)
+            current = None
+            for item in response.headers.get("Link", "").split(","):
+                if 'rel="next"' not in item:
+                    continue
+                target = item.split(";", 1)[0].strip().strip("<>")
+                parsed = urllib.parse.urlparse(target)
+                if f"{parsed.scheme}://{parsed.netloc}" != self.api_origin:
+                    raise HygieneError("GitHub pagination escaped the configured API origin")
+                if self.api_base_path:
+                    prefix = f"{self.api_base_path}/"
+                    if not parsed.path.startswith(prefix):
+                        raise HygieneError(
+                            "GitHub pagination escaped the configured API base path"
+                        )
+                    endpoint = parsed.path[len(self.api_base_path) :]
+                else:
+                    endpoint = parsed.path
+                current = endpoint + (f"?{parsed.query}" if parsed.query else "")
+                break
+        return results
+
+    def repository(self, repository: str) -> dict[str, Any]:
+        payload, _ = self.request("GET", f"/repos/{repository}")
+        if not isinstance(payload, dict):
+            raise HygieneError("GitHub repository response is invalid")
+        return payload
+
+    def branches(self, repository: str) -> list[Branch]:
+        payload = self.paginated(f"/repos/{repository}/branches?per_page=100")
+        return [
+            Branch(
+                name=str(item["name"]),
+                sha=str(item["commit"]["sha"]),
+                protected=bool(item["protected"]),
+            )
+            for item in payload
+        ]
+
+    def pull_requests(
+        self, repository: str, branch: str, *, state: str
+    ) -> list[PullRequest]:
+        owner = repository.split("/", 1)[0]
+        query = urllib.parse.urlencode(
+            {
+                "state": state,
+                "head": f"{owner}:{branch}",
+                "sort": "updated",
+                "direction": "desc",
+                "per_page": "100",
+            }
+        )
+        payload = self.paginated(f"/repos/{repository}/pulls?{query}")
+        return [parse_pull_request(item) for item in payload]
+
+    def branch(self, repository: str, branch: str) -> Branch:
+        encoded = urllib.parse.quote(branch, safe="")
+        payload, _ = self.request("GET", f"/repos/{repository}/branches/{encoded}")
+        return Branch(
+            name=str(payload["name"]),
+            sha=str(payload["commit"]["sha"]),
+            protected=bool(payload["protected"]),
+        )
+
+    def pull_request(self, repository: str, number: int) -> PullRequest:
+        payload, _ = self.request("GET", f"/repos/{repository}/pulls/{number}")
+        return parse_pull_request(payload)
+
+    def delete_branch(self, repository: str, branch: str, expected_sha: str) -> str:
+        """Atomically delete one branch only while its remote SHA is unchanged."""
+        if REPOSITORY_PATTERN.fullmatch(repository) is None:
+            raise HygieneError(f"invalid GitHub repository: {repository}")
+        if SHA_PATTERN.fullmatch(expected_sha) is None:
+            raise HygieneError(f"invalid expected branch SHA: {expected_sha}")
+        reference = f"refs/heads/{branch}"
+        remote = f"{self.server_url}/{repository}.git"
+        with tempfile.TemporaryDirectory() as directory:
+            askpass = Path(directory) / "askpass"
+            askpass.write_text(
+                "#!/bin/sh\n"
+                "case \"$1\" in\n"
+                "  *Username*) printf '%s\\n' x-access-token ;;\n"
+                "  *Password*) printf '%s\\n' \"$REPOSITORY_HYGIENE_TOKEN\" ;;\n"
+                "  *) exit 1 ;;\n"
+                "esac\n",
+                encoding="utf-8",
+            )
+            askpass.chmod(0o700)
+            environment = {
+                "GIT_ASKPASS": str(askpass),
+                "GIT_CONFIG_GLOBAL": "/dev/null",
+                "GIT_CONFIG_NOSYSTEM": "1",
+                "GIT_TERMINAL_PROMPT": "0",
+                "HOME": directory,
+                "LC_ALL": "C",
+                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                "REPOSITORY_HYGIENE_TOKEN": self.token,
+            }
+            completed = subprocess.run(
+                [
+                    "git",
+                    "push",
+                    f"--force-with-lease={reference}:{expected_sha}",
+                    remote,
+                    f":{reference}",
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+                env=environment,
+            )
+        if completed.returncode == 0:
+            return "deleted"
+        try:
+            refreshed = self.branch(repository, branch)
+        except GitHubNotFoundError:
+            return "absent"
+        if refreshed.sha != expected_sha:
+            return "changed"
+        detail = completed.stderr.strip() or "git push failed"
+        raise HygieneError(f"conditional branch deletion failed: {detail}")
+
+    def restore_branch(self, repository: str, branch: str, expected_sha: str) -> str:
+        """Create an absent branch at the deleted SHA without replacing newer work."""
+        if REPOSITORY_PATTERN.fullmatch(repository) is None:
+            raise HygieneError(f"invalid GitHub repository: {repository}")
+        if SHA_PATTERN.fullmatch(expected_sha) is None:
+            raise HygieneError(f"invalid expected branch SHA: {expected_sha}")
+        try:
+            self.request(
+                "POST",
+                f"/repos/{repository}/git/refs",
+                expected=(201,),
+                json_body={"ref": f"refs/heads/{branch}", "sha": expected_sha},
+            )
+            return "restored"
+        except GitHubConflictError as conflict:
+            try:
+                refreshed = self.branch(repository, branch)
+            except GitHubNotFoundError:
+                raise conflict
+            return "present" if refreshed.sha == expected_sha else "changed"
+
+
+def exact_merged_pull_request(
+    branch: Branch,
+    pull_requests: list[PullRequest],
+    repository: str,
+    default_branch: str,
+) -> PullRequest | None:
+    matches = [
+        pull_request
+        for pull_request in pull_requests
+        if pull_request.merged_at is not None
+        and pull_request.head_ref == branch.name
+        and pull_request.head_sha == branch.sha
+        and pull_request.head_repository == repository
+        and pull_request.base_ref == default_branch
+    ]
+    return max(
+        matches,
+        key=lambda item: item.merged_at or datetime.min.replace(tzinfo=UTC),
+        default=None,
+    )
+
+
+def classify_branch(
+    branch: Branch,
+    *,
+    repository: str,
+    default_branch: str,
+    open_pull_requests: list[PullRequest],
+    closed_pull_requests: list[PullRequest],
+    now: datetime,
+    grace: timedelta,
+) -> Decision:
+    if branch.name == default_branch:
+        return Decision(branch.name, branch.sha, "retained", "default branch")
+    if branch.protected:
+        return Decision(branch.name, branch.sha, "retained", "protected branch")
+    if branch.name.startswith(RETAINED_PREFIXES):
+        return Decision(branch.name, branch.sha, "retained", "retained branch class")
+    if open_pull_requests:
+        return Decision(branch.name, branch.sha, "active", "open pull request")
+    merged = exact_merged_pull_request(
+        branch, closed_pull_requests, repository, default_branch
+    )
+    if merged is None:
+        return Decision(
+            branch.name,
+            branch.sha,
+            "review",
+            "no exact merged pull-request proof",
+        )
+    assert merged.merged_at is not None
+    if now - merged.merged_at < grace:
+        return Decision(
+            branch.name,
+            branch.sha,
+            "grace",
+            f"merged pull request #{merged.number} is inside the grace period",
+            merged.number,
+        )
+    return Decision(
+        branch.name,
+        branch.sha,
+        "candidate",
+        f"exact head of merged pull request #{merged.number}",
+        merged.number,
+    )
+
+
+def revalidate_and_delete(
+    client: GitHubClient,
+    repository: str,
+    default_branch: str,
+    decision: Decision,
+    record_mutation: Callable[[Decision], None] | None = None,
+    resolve_default_branch: Callable[[], str] | None = None,
+) -> Decision:
+    if decision.disposition != "candidate" or decision.pull_request is None:
+        return decision
+    try:
+        branch = client.branch(repository, decision.branch)
+    except GitHubNotFoundError:
+        return replace(
+            decision,
+            disposition="reconciled",
+            reason="branch was already deleted",
+        )
+    if branch.sha != decision.sha or branch.protected:
+        return replace(
+            decision,
+            disposition="preserved",
+            reason="branch changed during hygiene run",
+        )
+    if client.pull_requests(repository, decision.branch, state="open"):
+        return replace(
+            decision,
+            disposition="preserved",
+            reason="pull request opened during hygiene run",
+        )
+    pull_requests_before = client.pull_requests(
+        repository, decision.branch, state="all"
+    )
+    if any(pull_request.state == "open" for pull_request in pull_requests_before):
+        return replace(
+            decision,
+            disposition="preserved",
+            reason="pull request opened during hygiene revalidation",
+        )
+    pull_request = client.pull_request(repository, decision.pull_request)
+    if exact_merged_pull_request(
+        branch, [pull_request], repository, default_branch
+    ) is None:
+        return replace(
+            decision,
+            disposition="preserved",
+            reason="merged pull-request proof changed",
+        )
+    current_default_branch = (
+        default_branch
+        if resolve_default_branch is None
+        else resolve_default_branch()
+    )
+    if current_default_branch != default_branch:
+        return replace(
+            decision,
+            disposition="preserved",
+            reason="default branch changed during hygiene run",
+        )
+    deletion = client.delete_branch(repository, decision.branch, decision.sha)
+    if deletion == "changed":
+        return replace(
+            decision,
+            disposition="preserved",
+            reason="branch changed during atomic deletion",
+        )
+    if deletion == "absent":
+        return replace(
+            decision,
+            disposition="reconciled",
+            reason="branch was deleted concurrently",
+        )
+    if record_mutation is not None:
+        record_mutation(
+            replace(
+                decision,
+                disposition="deleted",
+                reason="atomic deletion completed; reconciliation pending",
+            )
+        )
+    try:
+        pull_requests_after = client.pull_requests(
+            repository, decision.branch, state="all"
+        )
+    except (HygieneError, KeyError, OSError, UnicodeError, ValueError):
+        restoration = client.restore_branch(
+            repository, decision.branch, decision.sha
+        )
+        reason = (
+            "branch changed while restoring after unavailable pull-request "
+            "reconciliation"
+            if restoration == "changed"
+            else "branch restored after unavailable pull-request reconciliation"
+        )
+        return replace(decision, disposition="preserved", reason=reason)
+    known_pull_requests = {
+        pull_request.number: pull_request for pull_request in pull_requests_before
+    }
+    activated_pull_requests = [
+        pull_request
+        for pull_request in pull_requests_after
+        if pull_request.number not in known_pull_requests
+        or (
+            pull_request.state == "open"
+            and known_pull_requests[pull_request.number].state != "open"
+        )
+    ]
+    if activated_pull_requests:
+        restoration = client.restore_branch(
+            repository, decision.branch, decision.sha
+        )
+        if restoration == "changed":
+            return replace(
+                decision,
+                disposition="preserved",
+                reason="branch changed while reconciling new pull-request activity",
+            )
+        return replace(
+            decision,
+            disposition="preserved",
+            reason="branch restored after pull request opened during atomic deletion",
+        )
+    return replace(decision, disposition="deleted")
+
+
+def render_markdown(
+    repository: str,
+    default_branch: str,
+    apply: bool,
+    delete_branch_on_merge: bool,
+    decisions: list[Decision],
+    error: str | None = None,
+) -> str:
+    lines = [
+        "# GitHub repository hygiene report",
+        "",
+        f"- Repository: `{repository}`",
+        f"- Default branch: `{default_branch}`",
+        f"- Mode: `{'apply' if apply else 'dry-run'}`",
+        f"- Status: `{'failed' if error else 'success'}`",
+        "- GitHub delete-on-merge setting: "
+        f"`{'enabled' if delete_branch_on_merge else 'disabled'}`",
+        f"- Generated: `{datetime.now(UTC).isoformat()}`",
+    ]
+    if error:
+        escaped_error = error.replace("`", "\\`")
+        lines.append(f"- Error: `{escaped_error}`")
+    lines.extend(
+        (
+            "",
+            "| Disposition | Branch | Pull request | SHA | Reason |",
+            "| --- | --- | --- | --- | --- |",
+        )
+    )
+    for decision in decisions:
+        pull_request = f"#{decision.pull_request}" if decision.pull_request else "—"
+        fields = [
+            decision.disposition,
+            decision.branch,
+            pull_request,
+            decision.sha,
+            decision.reason,
+        ]
+        lines.append(
+            "| " + " | ".join(value.replace("|", "\\|") for value in fields) + " |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def write_atomic(path: Path, contents: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(contents, encoding="utf-8")
+    temporary.replace(path)
+
+
+def write_reports(
+    *,
+    repository: str,
+    default_branch: str,
+    apply: bool,
+    delete_branch_on_merge: bool,
+    decisions: list[Decision],
+    report_path: Path,
+    json_path: Path,
+    error: str | None = None,
+) -> str:
+    """Persist complete or partial repository decisions atomically."""
+    markdown = render_markdown(
+        repository,
+        default_branch,
+        apply,
+        delete_branch_on_merge,
+        decisions,
+        error,
+    )
+    payload = {
+        "schema": 1,
+        "repository": repository,
+        "defaultBranch": default_branch,
+        "mode": "apply" if apply else "dry-run",
+        "status": "failed" if error else "success",
+        "generatedAt": datetime.now(UTC).isoformat(),
+        "deleteBranchOnMerge": delete_branch_on_merge,
+        "branches": [asdict(decision) for decision in decisions],
+    }
+    if error:
+        payload["error"] = error
+    write_atomic(report_path, markdown)
+    write_atomic(json_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    return markdown
+
+
+def main(arguments: list[str] | None = None) -> int:
+    options = parse_args(arguments)
+    if options.grace_days < 1:
+        print("github-hygiene: grace period must be at least one day", file=sys.stderr)
+        return 2
+    repository_data: dict[str, Any] = {}
+    default_branch = options.default_branch or "unknown"
+    decisions: list[Decision] = []
+    try:
+        client = GitHubClient(
+            os.environ.get("GITHUB_TOKEN", ""),
+            os.environ.get("GITHUB_API_URL", "https://api.github.com"),
+            os.environ.get("GITHUB_SERVER_URL", "https://github.com"),
+        )
+        repository_data = client.repository(options.repository)
+        authoritative_default_branch = str(repository_data["default_branch"])
+        if (
+            options.default_branch is not None
+            and options.default_branch != authoritative_default_branch
+        ):
+            raise HygieneError(
+                "supplied default branch is stale: expected "
+                f"{options.default_branch}, repository reports "
+                f"{authoritative_default_branch}"
+            )
+        default_branch = authoritative_default_branch
+        now = datetime.now(UTC)
+        for branch in client.branches(options.repository):
+            open_pull_requests = client.pull_requests(
+                options.repository, branch.name, state="open"
+            )
+            closed_pull_requests = client.pull_requests(
+                options.repository, branch.name, state="closed"
+            )
+            decision = classify_branch(
+                branch,
+                repository=options.repository,
+                default_branch=default_branch,
+                open_pull_requests=open_pull_requests,
+                closed_pull_requests=closed_pull_requests,
+                now=now,
+                grace=timedelta(days=options.grace_days),
+            )
+            decisions.append(decision)
+            if options.apply:
+                decision_index = len(decisions) - 1
+                decision = revalidate_and_delete(
+                    client,
+                    options.repository,
+                    default_branch,
+                    decision,
+                    lambda mutation, index=decision_index: decisions.__setitem__(
+                        index, mutation
+                    ),
+                    lambda: str(
+                        client.repository(options.repository)["default_branch"]
+                    ),
+                )
+                decisions[decision_index] = decision
+        markdown = write_reports(
+            repository=options.repository,
+            default_branch=default_branch,
+            apply=options.apply,
+            delete_branch_on_merge=bool(
+                repository_data.get("delete_branch_on_merge")
+            ),
+            decisions=decisions,
+            report_path=options.report,
+            json_path=options.json_output,
+        )
+        print(markdown, end="")
+        return 0
+    except (HygieneError, KeyError, OSError, UnicodeError, ValueError) as error:
+        try:
+            write_reports(
+                repository=options.repository,
+                default_branch=default_branch,
+                apply=options.apply,
+                delete_branch_on_merge=bool(
+                    repository_data.get("delete_branch_on_merge")
+                ),
+                decisions=decisions,
+                report_path=options.report,
+                json_path=options.json_output,
+                error=str(error),
+            )
+        except (OSError, UnicodeError) as report_error:
+            print(
+                f"github-hygiene: could not persist failure report: {report_error}",
+                file=sys.stderr,
+            )
+        print(f"github-hygiene: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

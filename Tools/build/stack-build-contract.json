@@ -3,6 +3,7 @@
   "controllers": [
     "Make stack targets",
     "Tools/build/stack-pin.py",
+    "Tools/build/stack-transient-clean.py",
     "Tools/ci/run-command-with-deadline.py",
     "Tools/ci/run-with-local-swift-stack.py"
   ],
@@ -10,10 +11,11 @@
     "bounded native build stages",
     "durable per-operation and end-to-end timing evidence",
     "durable external SwiftPM scratch paths",
+    "lock-owned live transient initialization and marker-protected cleanup",
     "exact transitive source and artifact pins",
     "parallel independent roots",
     "verified final bundle"
   ],
-  "revision": 3,
+  "revision": 7,
   "schema": 1
 }

@@ -18,6 +18,10 @@ The reliability follow-up is tracked by [issue #488](https://github.com/stephenl
 
 ## Changes in this iteration
 
+### 16 September hygiene follow-up
+
+The current native recoverable graph now treats residue and repository hygiene as build-system contracts. Unlocked preflight establishes ownership and the retained lock/evidence paths without creating cleanup targets. A locked preflight then removes only allowlisted direct children of the marker-owned external transient root, and an always-run postflight repeats the operation after success, failure, cancellation, or a handled signal. Empty live scratch roots are recreated under that lock before the next command, while exact pins, content-addressed artifacts, timing logs, and cleanup receipts remain internal and retained. Human and JSON receipts make every successful or partially failed removal auditable. The scheduled GitHub hygiene workflow separately uses the API-authoritative current default branch and removes only unchanged, unprotected heads proved to belong to pull requests merged at least seven days earlier; it revalidates the SHA, open-pull-request state, and merge proof immediately before deletion, journals deletion before fallible reconciliation, restores an exact head with create-only semantics if new or reopened pull-request activity begins during deletion or the post-delete snapshot is unavailable, and retains completed decisions even if current or later branch processing fails.
+
 The recoverable Nextflow stack graph previously used 12 isolated functional
 stages. It now uses eight. Each stage still receives an immutable source
 snapshot and keeps a durable receipt, but related build and test commands for
@@ -182,10 +186,7 @@ graph with later refinements.
   the 0.14 release. A later iteration should use trace CPU, memory-pressure, and
   duration evidence to determine whether one small Swift stage can safely run
   beside one large Swift stage.
-- Failure cleanup is marker-protected, but stale Swift build products outside
-  the Nextflow task roots are not centrally inventoried. A preflight should
-  distinguish reusable content-addressed caches from incompatible products and
-  quarantine only the latter, recording the producer and reason.
+- The native graph's external scratch and process-temporary residue is now centrally inventoried and removed at locked preflight and always-run postflight boundaries. Reusable content-addressed products remain in the separately marked internal retained store, and every cleanup has a human and JSON receipt.
 - The ordinary Compose workflow builds the Go normalizer during `ci` and again
   through `package-release`. Packaging should consume the already validated
   normalizer rather than rebuild it.
