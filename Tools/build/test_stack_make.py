@@ -35,6 +35,7 @@ PIN_TOOL = REPOSITORY_ROOT / "Tools/build/stack-pin.py"
 ARTIFACT_TOOL = REPOSITORY_ROOT / "Tools/build/stack-artifact.py"
 DEADLINE_TOOL = REPOSITORY_ROOT / "Tools/ci/run-command-with-deadline.py"
 STORAGE_TOOL = REPOSITORY_ROOT / "Tools/build/stack-storage.py"
+TRANSIENT_CLEAN_TOOL = REPOSITORY_ROOT / "Tools/build/stack-transient-clean.py"
 
 
 class StackMakeRecoveryTests(unittest.TestCase):
@@ -46,6 +47,7 @@ class StackMakeRecoveryTests(unittest.TestCase):
         self.transient = self.root / "external-transient"
         self.log = self.root / "build.log"
         self.fail_marker = self.root / "fail-container"
+        self.pause_marker = self.root / "pause-build"
         self.containerization = self.create_repository("containerization")
         self.engine = self.create_repository("container-engine-api")
         self.container = self.create_repository("container")
@@ -71,7 +73,15 @@ class StackMakeRecoveryTests(unittest.TestCase):
         (self.compose / "Tools/compose-normalizer/go.mod").write_text(
             "module example.invalid/fixture\n", encoding="utf-8"
         )
-        self.git(self.compose, "add", "Makefile", "Package.resolved", "config.toml", "docs", "Tools")
+        self.git(
+            self.compose,
+            "add",
+            "Makefile",
+            "Package.resolved",
+            "config.toml",
+            "docs",
+            "Tools",
+        )
         self.git(self.compose, "commit", "-q", "-m", "test: add lockfile")
         self.swift = self.root / "fake-swift"
         self.swift.write_text(
@@ -100,6 +110,12 @@ if ((show)); then
   exit 0
 fi
 printf 'build:%s\n' "${product}" >> "${STACK_TEST_LOG}"
+if [[ "${product}" == cctl && -n "${STACK_TEST_PAUSE:-}" && -f "${STACK_TEST_PAUSE}" ]]; then
+  mkdir -p "${scratch}/timeout-residue"
+  printf 'discard\n' > "${scratch}/timeout-residue/output"
+  touch "${STACK_TEST_PAUSE}.started"
+  sleep 30
+fi
 if [[ "${product}" == container && -f "${STACK_TEST_FAIL}" ]]; then
   mv "${STACK_TEST_FAIL}" "${STACK_TEST_FAIL}.consumed"
   exit 19
@@ -199,6 +215,7 @@ exec "$@"
                 f"STACK_ARTIFACT_TOOL={ARTIFACT_TOOL}",
                 f"STACK_DEADLINE_TOOL={DEADLINE_TOOL}",
                 f"STACK_STORAGE_TOOL={STORAGE_TOOL}",
+                f"STACK_TRANSIENT_CLEAN_TOOL={TRANSIENT_CLEAN_TOOL}",
                 "STACK_REQUIRED_TRANSIENT_VOLUME=",
                 f"STACK_SWIFT={self.swift}",
                 f"STACK_SWIFT_CONTRACT={'a' * 64}",
@@ -217,13 +234,14 @@ exec "$@"
         )
 
     def run_full_build(
-        self, target: str = "stack-build"
+        self, target: str = "stack-build", *overrides: str
     ) -> subprocess.CompletedProcess[str]:
         environment = os.environ.copy()
         environment.update(
             {
                 "STACK_TEST_FAIL": str(self.fail_marker),
                 "STACK_TEST_LOG": str(self.log),
+                "STACK_TEST_PAUSE": str(self.pause_marker),
             }
         )
         return subprocess.run(
@@ -239,6 +257,7 @@ exec "$@"
                 f"STACK_ARTIFACT_TOOL={ARTIFACT_TOOL}",
                 f"STACK_DEADLINE_TOOL={DEADLINE_TOOL}",
                 f"STACK_STORAGE_TOOL={STORAGE_TOOL}",
+                f"STACK_TRANSIENT_CLEAN_TOOL={TRANSIENT_CLEAN_TOOL}",
                 "STACK_REQUIRED_TRANSIENT_VOLUME=",
                 f"STACK_SWIFT_STACK_TOOL={self.stack_wrapper}",
                 f"STACK_SWIFT={self.swift}",
@@ -258,6 +277,7 @@ exec "$@"
                 f"CONTAINER_ENGINE_API_STACK_REPO={self.engine}",
                 f"CONTAINER_STACK_REPO={self.container}",
                 f"CONTAINER_BUILDER_SHIM_STACK_REPO={self.builder}",
+                *overrides,
             ],
             cwd=self.compose,
             env=environment,
@@ -265,6 +285,21 @@ exec "$@"
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+        )
+
+    def test_deadline_cleanup_removes_interrupted_build_residue(self) -> None:
+        self.pause_marker.write_text("pause\n", encoding="utf-8")
+
+        interrupted = self.run_full_build("stack-build", "STACK_BUILD_TIMEOUT_SECONDS=1")
+
+        self.assertNotEqual(interrupted.returncode, 0)
+        self.assertTrue((self.pause_marker.parent / "pause-build.started").is_file())
+        self.assertEqual(list((self.transient / "scratch").iterdir()), [])
+        self.assertEqual(list((self.transient / "process-tmp").iterdir()), [])
+        receipts = sorted((self.retained / "hygiene").glob("*.json"))
+        self.assertEqual(
+            [json.loads(path.read_text(encoding="utf-8"))["phase"] for path in receipts],
+            ["postflight", "preflight"],
         )
 
     def logged_builds(self) -> list[str]:
@@ -349,6 +384,14 @@ exec "$@"
         self.assertTrue((pin_root / "container-builder-shim.json").is_file())
         self.assertFalse((pin_root / "container.json").exists())
         self.assertFalse((pin_root / "container-compose.json").exists())
+        self.assertEqual(list((self.transient / "scratch").iterdir()), [])
+        self.assertEqual(list((self.transient / "process-tmp").iterdir()), [])
+        failed_cleanup = sorted((self.retained / "hygiene").glob("*.json"))
+        self.assertEqual(len(failed_cleanup), 2)
+        self.assertEqual(
+            {json.loads(path.read_text(encoding="utf-8"))["phase"] for path in failed_cleanup},
+            {"preflight", "postflight"},
+        )
 
         resumed = self.run_full_build()
 
@@ -468,6 +511,17 @@ exec "$@"
         self.assertIn("container-build", labels)
         self.assertIn("compose-build", labels)
         self.assertTrue(all(record["duration_seconds"] >= 0 for record in records))
+        cleanup_receipts = sorted((self.retained / "hygiene").glob("*.json"))
+        self.assertEqual(len(cleanup_receipts), 4)
+        self.assertEqual(
+            Counter(
+                json.loads(path.read_text(encoding="utf-8"))["phase"]
+                for path in cleanup_receipts
+            ),
+            Counter({"preflight": 2, "postflight": 2}),
+        )
+        self.assertEqual(list((self.transient / "scratch").iterdir()), [])
+        self.assertEqual(list((self.transient / "process-tmp").iterdir()), [])
 
         for transient_product in self.transient.glob("scratch/**/*"):
             if transient_product.is_file():

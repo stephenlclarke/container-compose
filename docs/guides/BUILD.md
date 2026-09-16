@@ -90,6 +90,8 @@ compatibility.
 | `make go-build` | Static, trimmed release `compose-normalizer`. |
 | `make stack-build` | Explicit form of the default recoverable full-stack build. |
 | `make stack-status` | Verify every retained source, dependency, and artifact pin plus the final bundle. |
+| `make stack-transient-clean-plan` | Report marker-owned disposable build state without changing it. |
+| `make stack-transient-clean` | Acquire the build lock, remove only allowlisted marker-owned transient state, recreate empty live scratch directories, and retain cleanup receipts. |
 | `make package` | Release plugin archive and relocatable checksum sidecar. |
 
 Run the plugin directly from source with:
@@ -169,6 +171,10 @@ artifacts reusable. The timing log records the end-to-end duration plus each
 native compiler and bin-path operation, including failures. Compare a clean
 run, the immediate no-op rerun, and a fail-once recovery using these durable
 records rather than terminal timestamps.
+
+Every full stack build performs locked transient cleanup immediately before native work and through an always-run postflight trap. This covers successful, failed, cancelled, and handled-signal exits without weakening recovery: exact pins, promoted artifacts, timing logs, and cleanup receipts remain under the internal retained root, while `attempts`, `builds`, `downloads`, `scratch`, `process-tmp`, and legacy `tmp` entries are the only removable external names. Cleanup refuses an unmarked, indirect, or concurrently active root. Its Markdown and JSON receipts are retained under `$(STACK_RETAINED_ROOT)/hygiene`.
+
+Remote branch cleanup is separate from build storage. `.github/workflows/repository-hygiene.yml` runs weekly or on demand and deletes only unchanged, unprotected branch heads with an exact pull request merged into the default branch at least seven days earlier. It rechecks the SHA, open pull requests, and merge proof immediately before deletion. Default, protected, `upstream/`, `release/`, legacy `release-`, `archive/`, active, changed, and ambiguous branches are retained. The workflow never deletes tags, releases, issues, Actions evidence, caches, or workflow runs, and it retains a Markdown/JSON decision report for every run.
 
 Stable packages, their checksum sidecars, the signed release-authority bundle,
 and each verified DocC site archive are likewise promoted into

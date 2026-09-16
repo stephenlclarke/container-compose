@@ -8947,6 +8947,24 @@
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/701"
     },
     {
+      "id": "container-compose-build-residue-hygiene",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Pull request: automate build residue and repository hygiene",
+      "state": "active-draft",
+      "lastVerified": "2026-09-16",
+      "commits": [],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-702.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-build-residue-hygiene.md"
+        }
+      ]
+    },
+    {
       "id": "process-list-compose-top-process-list",
       "owner": "stephenlclarke/container-compose",
       "title": "Pull request: support Docker-shaped `container compose top`",

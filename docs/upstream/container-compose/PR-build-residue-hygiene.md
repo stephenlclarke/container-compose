@@ -1,0 +1,21 @@
+# Pull request: automate build residue and repository hygiene
+
+## Change
+
+This pull request makes transient residue removal part of the native recoverable build transaction and adds scheduled GitHub branch hygiene. The build lock now encloses a marker-validated preflight cleanup and an always-run postflight cleanup. Both phases retain Markdown and JSON receipts beside the existing timing evidence. The GitHub workflow deletes only an unchanged, unprotected exact head of a pull request merged into the default branch after a seven-day grace period, with a fresh pre-delete race check.
+
+## Scope boundary
+
+The build cleanup removes only the allowlisted `attempts`, `builds`, `downloads`, `scratch`, `process-tmp`, and legacy `tmp` children of the exact marker-owned transient root. It preserves source checkouts, build pins, content-addressed artifacts, timings, release transactions, evidence, and unrelated paths. GitHub hygiene preserves the default branch, protected branches, `upstream/`, `release/`, legacy `release-`, and `archive/` branches, open-pull-request branches, changed heads, and every branch without exact merged-pull-request proof. It does not delete tags, releases, issues, workflow runs, caches, or artifacts.
+
+## Validation
+
+- focused transient cleanup plan/apply, marker, symlink-race, process-temporary, receipt, and root-recreation tests
+- complete fake five-repository recoverable graph with fail-once recovery and preflight/postflight receipt checks
+- GitHub branch classification and pre-delete revalidation unit tests
+- Python syntax and full build/CI tool suites
+- Actions workflow lint
+- Markdown lint and `git diff --check`
+- exact-head pull-request checks and final automated review
+
+Closes [#702](https://github.com/stephenlclarke/container-compose/issues/702).

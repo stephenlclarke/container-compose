@@ -1,0 +1,82 @@
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
+name: Repository Hygiene
+
+on:
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Delete only exact, unchanged heads of aged merged pull requests"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: repository-hygiene-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  github:
+    name: Reconcile GitHub Branches
+    # Branch state and deletion are GitHub-hosted authorities and do not need
+    # access to the local Container runtime or self-hosted release credentials.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Reconcile exact merged pull-request branches
+        env:
+          APPLY: ${{ github.event_name == 'schedule' || inputs.apply }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          arguments=(
+            --repository "${GITHUB_REPOSITORY}"
+            --default-branch "${DEFAULT_BRANCH}"
+            --grace-days 7
+            --report "${RUNNER_TEMP}/repository-hygiene.md"
+            --json-output "${RUNNER_TEMP}/repository-hygiene.json"
+          )
+          if [[ "${APPLY}" == "true" ]]; then
+            arguments+=(--apply)
+          fi
+          python3 Tools/ci/github-hygiene.py "${arguments[@]}"
+          cat "${RUNNER_TEMP}/repository-hygiene.md" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Retain hygiene report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: repository-hygiene-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/repository-hygiene.md
+            ${{ runner.temp }}/repository-hygiene.json
+          if-no-files-found: error
+          retention-days: 90

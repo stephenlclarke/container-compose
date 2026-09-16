@@ -23,9 +23,10 @@ its dependencies have published and verified exact build pins.
 ```mermaid
 flowchart LR
   preflight[Fail-fast preflight] --> lock[Single non-blocking lock]
-  lock --> cz[containerization<br/>SwiftPM]
-  lock --> api[container-engine-api<br/>SwiftPM]
-  lock --> shim[container-builder-shim<br/>Go]
+  lock --> cleanBefore[Marker-protected<br/>residue preflight]
+  cleanBefore --> cz[containerization<br/>SwiftPM]
+  cleanBefore --> api[container-engine-api<br/>SwiftPM]
+  cleanBefore --> shim[container-builder-shim<br/>Go]
   cz --> container[container<br/>SwiftPM]
   api --> container
   container --> compose[container-compose<br/>SwiftPM]
@@ -36,6 +37,7 @@ flowchart LR
   shim --> bundle
   container --> bundle
   compose --> bundle
+  bundle --> cleanAfter[Always-run marker-protected<br/>residue postflight]
 ```
 
 Mutable work defaults to `/Volumes/SSD/cf/build`. Completed products, pins,
@@ -54,6 +56,8 @@ cleanup. Every full invocation records concurrency-safe JSONL timing evidence
 under `timings/`. The log includes the end-to-end `stack-total` duration and
 the duration and exit status of each native build and bin-path query. This
 makes clean, resumed, and warm no-op runs directly comparable.
+
+The same build lock encloses residue reconciliation. Before compilation, the controller removes only allowlisted direct children of the exact marker-owned transient root and recreates empty `scratch` and `process-tmp` directories. An always-run exit trap repeats that cleanup after success, failure, cancellation, or a handled signal. Cleanup never touches the internal retained store, source checkouts, an unmarked root, or a path reached through a symbolic link. Human-readable and JSON receipts for both phases are retained below `$(STACK_RETAINED_ROOT)/hygiene`. `make stack-transient-clean-plan` reports the same allowlist without changing it; `make stack-transient-clean` performs the locked cleanup explicitly.
 
 The first real cold and recovered runs are recorded in
 [Recoverable build workflow timings](../reviews/CONTAINER-FAMILY-BUILD-WORKFLOW-TIMINGS-2026-09-09.md).
@@ -105,6 +109,20 @@ rebuilt only when its verified input changed. If final bundle publication was
 interrupted, component pins are reused and only the bundle is republished. A
 live previous invocation makes the lock fail immediately.
 
+## Repository Hygiene
+
+Local build residue and remote GitHub state use separate authorities. The native build transaction owns only marker-protected transient data. Local topic branches and worktrees remain governed by `make worktree-audit`: the audit reports active, integrated, and unique-patch branches but never guesses that unrelated local work is disposable.
+
+The scheduled and manually dispatchable `Repository Hygiene` GitHub workflow handles remote branches. It automatically deletes a branch only when all of these conditions are freshly true:
+
+- the branch is neither the default branch nor protected;
+- it is outside the retained `upstream/`, `release/`, legacy `release-`, and `archive/` classes;
+- it has no open pull request;
+- its unchanged exact SHA is the recorded head of a pull request merged into the default branch; and
+- the merge is at least seven days old.
+
+Immediately before deletion the workflow fetches the branch, open-pull-request state, and merged pull request again. A changed SHA, new pull request, changed merge proof, API error, or ambiguous branch is preserved and reported. The workflow never deletes tags, releases, issues, Actions caches, workflow runs, artifacts, protected branches, or branches with no exact merged-pull-request proof. Every run publishes JSON and Markdown evidence for 90 days.
+
 ## Test Workflow
 
 Development keeps feedback proportional to the change. Release-only work does
@@ -126,7 +144,7 @@ flowchart TD
 `make stack-self-test` executes the complete five-repository graph with fake
 native builders. It proves fail-once recovery, transitive invalidation,
 parallel-root reuse, external Compose scratch storage, final bundle
-publication, and timing evidence. `Tools/build/test_stack_pin.py` separately
+publication, always-run preflight/postflight residue cleanup, and timing evidence. `Tools/build/test_stack_pin.py` separately
 covers receipt and artifact integrity, including real macOS SDK metadata in the
 Swift build contract.
 
