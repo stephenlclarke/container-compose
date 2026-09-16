@@ -121,7 +121,7 @@ The scheduled and manually dispatchable `Repository Hygiene` GitHub workflow han
 - its unchanged exact SHA is the recorded head of a pull request merged into the default branch; and
 - the merge is at least seven days old.
 
-Immediately before deletion the workflow fetches the branch, open-pull-request state, and merged pull request again, then submits deletion through Git's server-side `--force-with-lease` comparison against the same SHA. A concurrent push, changed SHA, new pull request, changed merge proof, API error, or ambiguous branch is preserved and reported. The workflow never deletes tags, releases, issues, Actions caches, workflow runs, artifacts, protected branches, or branches with no exact merged-pull-request proof. Every run publishes JSON and Markdown evidence for 90 days.
+Immediately before deletion the workflow fetches the branch, open-pull-request state, and merged pull request again, then submits deletion through Git's server-side `--force-with-lease` comparison against the same SHA. A concurrent push, changed SHA, new pull request, changed merge proof, API error, or ambiguous branch is preserved and reported; a branch concurrently deleted by another actor is reported as already reconciled. The workflow never deletes tags, releases, issues, Actions caches, workflow runs, artifacts, protected branches, or branches with no exact merged-pull-request proof. Every run publishes JSON and Markdown evidence for 90 days.
 
 ## Test Workflow
 

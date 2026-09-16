@@ -153,9 +153,9 @@ class GitHubHygieneTests(unittest.TestCase):
 
             def delete_branch(
                 self, _repository: str, branch: str, _expected_sha: str
-            ) -> bool:
+            ) -> str:
                 self.deleted.append(branch)
-                return True
+                return "deleted"
 
         client = Client()
         decision = hygiene.Decision(
@@ -245,8 +245,8 @@ class GitHubHygieneTests(unittest.TestCase):
 
             def delete_branch(
                 self, _repository: str, _branch: str, _expected_sha: str
-            ) -> bool:
-                return False
+            ) -> str:
+                return "changed"
 
         decision = hygiene.Decision(
             "feature", "a" * 40, "candidate", "proved", 12
@@ -258,6 +258,53 @@ class GitHubHygieneTests(unittest.TestCase):
 
         self.assertEqual(result.disposition, "preserved")
         self.assertIn("atomic deletion", result.reason)
+
+    def test_apply_reconciles_branch_deleted_before_fresh_fetch(self) -> None:
+        class Client:
+            def branch(self, _repository: str, _name: str) -> hygiene.Branch:
+                raise hygiene.GitHubNotFoundError("gone")
+
+        decision = hygiene.Decision(
+            "feature", "a" * 40, "candidate", "proved", 12
+        )
+
+        result = hygiene.revalidate_and_delete(
+            Client(), REPOSITORY, DEFAULT_BRANCH, decision
+        )
+
+        self.assertEqual(result.disposition, "reconciled")
+        self.assertIn("already deleted", result.reason)
+
+    def test_apply_reconciles_branch_deleted_during_atomic_delete(self) -> None:
+        class Client:
+            def branch(self, _repository: str, name: str) -> hygiene.Branch:
+                return hygiene.Branch(name, "a" * 40, False)
+
+            def pull_requests(
+                self, _repository: str, _branch: str, *, state: str
+            ) -> list[hygiene.PullRequest]:
+                return []
+
+            def pull_request(
+                self, _repository: str, _number: int
+            ) -> hygiene.PullRequest:
+                return pull_request()
+
+            def delete_branch(
+                self, _repository: str, _branch: str, _expected_sha: str
+            ) -> str:
+                return "absent"
+
+        decision = hygiene.Decision(
+            "feature", "a" * 40, "candidate", "proved", 12
+        )
+
+        result = hygiene.revalidate_and_delete(
+            Client(), REPOSITORY, DEFAULT_BRANCH, decision
+        )
+
+        self.assertEqual(result.disposition, "reconciled")
+        self.assertIn("concurrently", result.reason)
 
     def test_parse_pull_request_handles_missing_repository_and_timestamp(self) -> None:
         payload = {
@@ -318,6 +365,19 @@ class GitHubHygieneTests(unittest.TestCase):
             hygiene.urllib.request, "urlopen", side_effect=http_error
         ):
             with self.assertRaisesRegex(hygiene.HygieneError, "403: denied"):
+                hygiene.GitHubClient("secret").request("GET", "/value")
+
+        not_found = urllib.error.HTTPError(
+            "https://api.github.com/value",
+            404,
+            "not found",
+            {},
+            io.BytesIO(b"gone"),
+        )
+        with mock.patch.object(
+            hygiene.urllib.request, "urlopen", side_effect=not_found
+        ):
+            with self.assertRaisesRegex(hygiene.GitHubNotFoundError, "404: gone"):
                 hygiene.GitHubClient("secret").request("GET", "/value")
 
         response = io.BytesIO(b"unexpected")
@@ -445,7 +505,10 @@ class GitHubHygieneTests(unittest.TestCase):
         client = hygiene.GitHubClient("secret")
         completed = subprocess.CompletedProcess([], 0, "", "")
         with mock.patch.object(hygiene.subprocess, "run", return_value=completed) as run:
-            self.assertTrue(client.delete_branch(REPOSITORY, "feature/one", "a" * 40))
+            self.assertEqual(
+                client.delete_branch(REPOSITORY, "feature/one", "a" * 40),
+                "deleted",
+            )
 
         command = run.call_args.args[0]
         environment = run.call_args.kwargs["env"]
@@ -466,7 +529,18 @@ class GitHubHygieneTests(unittest.TestCase):
             client.branch = mock.Mock(
                 return_value=hygiene.Branch("feature", "b" * 40, False)
             )
-            self.assertFalse(client.delete_branch(REPOSITORY, "feature", "a" * 40))
+            self.assertEqual(
+                client.delete_branch(REPOSITORY, "feature", "a" * 40),
+                "changed",
+            )
+
+            client.branch = mock.Mock(
+                side_effect=hygiene.GitHubNotFoundError("gone")
+            )
+            self.assertEqual(
+                client.delete_branch(REPOSITORY, "feature", "a" * 40),
+                "absent",
+            )
 
             client.branch = mock.Mock(
                 return_value=hygiene.Branch("feature", "a" * 40, False)
@@ -525,9 +599,9 @@ class GitHubHygieneTests(unittest.TestCase):
 
             def delete_branch(
                 self, _repository: str, branch: str, _expected_sha: str
-            ) -> bool:
+            ) -> str:
                 self.deleted.append(branch)
-                return True
+                return "deleted"
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

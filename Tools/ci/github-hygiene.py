@@ -44,6 +44,10 @@ class HygieneError(RuntimeError):
     """GitHub hygiene could not be proved or completed safely."""
 
 
+class GitHubNotFoundError(HygieneError):
+    """A freshly queried GitHub resource no longer exists."""
+
+
 @dataclass(frozen=True)
 class Branch:
     name: str
@@ -153,7 +157,8 @@ class GitHubClient:
             response = urllib.request.urlopen(request, timeout=30)
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
-            raise HygieneError(
+            error_type = GitHubNotFoundError if error.code == 404 else HygieneError
+            raise error_type(
                 f"GitHub {method} {endpoint} failed with {error.code}: {detail}"
             ) from error
         if response.status not in expected:
@@ -238,7 +243,7 @@ class GitHubClient:
         payload, _ = self.request("GET", f"/repos/{repository}/pulls/{number}")
         return parse_pull_request(payload)
 
-    def delete_branch(self, repository: str, branch: str, expected_sha: str) -> bool:
+    def delete_branch(self, repository: str, branch: str, expected_sha: str) -> str:
         """Atomically delete one branch only while its remote SHA is unchanged."""
         if REPOSITORY_PATTERN.fullmatch(repository) is None:
             raise HygieneError(f"invalid GitHub repository: {repository}")
@@ -284,10 +289,13 @@ class GitHubClient:
                 env=environment,
             )
         if completed.returncode == 0:
-            return True
-        refreshed = self.branch(repository, branch)
+            return "deleted"
+        try:
+            refreshed = self.branch(repository, branch)
+        except GitHubNotFoundError:
+            return "absent"
         if refreshed.sha != expected_sha:
-            return False
+            return "changed"
         detail = completed.stderr.strip() or "git push failed"
         raise HygieneError(f"conditional branch deletion failed: {detail}")
 
@@ -368,7 +376,14 @@ def revalidate_and_delete(
 ) -> Decision:
     if decision.disposition != "candidate" or decision.pull_request is None:
         return decision
-    branch = client.branch(repository, decision.branch)
+    try:
+        branch = client.branch(repository, decision.branch)
+    except GitHubNotFoundError:
+        return replace(
+            decision,
+            disposition="reconciled",
+            reason="branch was already deleted",
+        )
     if branch.sha != decision.sha or branch.protected:
         return replace(
             decision,
@@ -390,11 +405,18 @@ def revalidate_and_delete(
             disposition="preserved",
             reason="merged pull-request proof changed",
         )
-    if not client.delete_branch(repository, decision.branch, decision.sha):
+    deletion = client.delete_branch(repository, decision.branch, decision.sha)
+    if deletion == "changed":
         return replace(
             decision,
             disposition="preserved",
             reason="branch changed during atomic deletion",
+        )
+    if deletion == "absent":
+        return replace(
+            decision,
+            disposition="reconciled",
+            reason="branch was deleted concurrently",
         )
     return replace(decision, disposition="deleted")
 
