@@ -411,6 +411,7 @@ def revalidate_and_delete(
     default_branch: str,
     decision: Decision,
     record_mutation: Callable[[Decision], None] | None = None,
+    resolve_default_branch: Callable[[], str] | None = None,
 ) -> Decision:
     if decision.disposition != "candidate" or decision.pull_request is None:
         return decision
@@ -451,6 +452,17 @@ def revalidate_and_delete(
             decision,
             disposition="preserved",
             reason="merged pull-request proof changed",
+        )
+    current_default_branch = (
+        default_branch
+        if resolve_default_branch is None
+        else resolve_default_branch()
+    )
+    if current_default_branch != default_branch:
+        return replace(
+            decision,
+            disposition="preserved",
+            reason="default branch changed during hygiene run",
         )
     deletion = client.delete_branch(repository, decision.branch, decision.sha)
     if deletion == "changed":
@@ -659,6 +671,9 @@ def main(arguments: list[str] | None = None) -> int:
                     decision,
                     lambda mutation, index=decision_index: decisions.__setitem__(
                         index, mutation
+                    ),
+                    lambda: str(
+                        client.repository(options.repository)["default_branch"]
                     ),
                 )
                 decisions[decision_index] = decision
