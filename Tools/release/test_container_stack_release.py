@@ -3041,6 +3041,14 @@ github_cli() {{
             )
 
             retained_builder = root / "container-builder-shim"
+            self.git(retained_builder, "switch", "--detach")
+            detached = self.run_release_function(
+                root, "require_current_stack_matches_sibling_mains"
+            )
+            self.assertNotEqual(detached.returncode, 0)
+            self.assertIn("has a detached HEAD", detached.stderr)
+            self.git(retained_builder, "switch", "main")
+
             dirty_marker = retained_builder / "dirty"
             dirty_marker.write_text("uncommitted\n", encoding="utf-8")
             dirty = self.run_release_function(
