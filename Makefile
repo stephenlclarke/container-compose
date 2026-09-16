@@ -233,6 +233,8 @@ STACK_SWIFT_STACK_TOOL := $(abspath Tools/ci/run-with-local-swift-stack.py)
 STACK_CONFIGURATION ?= debug
 STACK_BUILD_STAGE_TIMEOUT_SECONDS ?= 3600
 STACK_BUILD_TIMEOUT_SECONDS ?= 14400
+STACK_BUILD_TERMINATION_GRACE_SECONDS ?= 10
+STACK_CLEANUP_TIMEOUT_SECONDS ?= 120
 STACK_LOCK_TOOL ?= /usr/bin/lockf
 STACK_TIMING_ROOT := $(STACK_RETAINED_ROOT)/timings
 STACK_TIMING_LOG ?= $(STACK_TIMING_ROOT)/direct-stage.jsonl
@@ -551,11 +553,7 @@ stack-build: stack-preflight
 	operation_id="$$(date -u +%Y%m%dT%H%M%SZ)-$$$$"; \
 	timing_log="$(STACK_TIMING_ROOT)/$$operation_id.jsonl"; \
 	set +e; \
-	TMPDIR="$(STACK_PROCESS_TEMP_ROOT)" TMP="$(STACK_PROCESS_TEMP_ROOT)" \
-	TEMP="$(STACK_PROCESS_TEMP_ROOT)" GOTMPDIR="$(STACK_PROCESS_TEMP_ROOT)" \
-	"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" --seconds "$(STACK_BUILD_TIMEOUT_SECONDS)" \
-		--timing-log "$$timing_log" --timing-label stack-total -- \
-		"$(STACK_LOCK_TOOL)" -t 0 "$(STACK_LOCK_ROOT)/stack-build.lock" \
+	"$(STACK_LOCK_TOOL)" -t 0 "$(STACK_LOCK_ROOT)/stack-build.lock" \
 		$(MAKE) --no-print-directory stack-build-transaction STACK_LOCK_HELD=1 \
 			STACK_RETAINED_ROOT="$(STACK_RETAINED_ROOT)" STACK_TRANSIENT_ROOT="$(STACK_TRANSIENT_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)" \
 			STACK_SWIFT_CONTRACT="$$swift_contract" STACK_GO_CONTRACT="$$go_contract" \
@@ -574,7 +572,10 @@ stack-build-transaction:
 		original_status=$$?; \
 		trap - EXIT HUP INT QUIT TERM; \
 		set +e; \
-		"$(PYTHON)" "$(STACK_TRANSIENT_CLEAN_TOOL)" \
+		"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" \
+			--seconds "$(STACK_CLEANUP_TIMEOUT_SECONDS)" \
+			--ignore-parent-signals -- \
+			"$(PYTHON)" "$(STACK_TRANSIENT_CLEAN_TOOL)" \
 			--root "$(STACK_TRANSIENT_ROOT)" --execute \
 			--recreate scratch --recreate process-tmp --phase postflight \
 			--report "$(STACK_HYGIENE_ROOT)/$$operation_id-postflight.md" \
@@ -588,15 +589,27 @@ stack-build-transaction:
 	trap 'exit 130' INT; \
 	trap 'exit 131' QUIT; \
 	trap 'exit 143' TERM; \
-	"$(PYTHON)" "$(STACK_TRANSIENT_CLEAN_TOOL)" \
+	"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" \
+		--seconds "$(STACK_CLEANUP_TIMEOUT_SECONDS)" -- \
+		"$(PYTHON)" "$(STACK_TRANSIENT_CLEAN_TOOL)" \
 		--root "$(STACK_TRANSIENT_ROOT)" --execute \
 		--recreate scratch --recreate process-tmp --phase preflight \
 		--report "$(STACK_HYGIENE_ROOT)/$$operation_id-preflight.md" \
 		--json-output "$(STACK_HYGIENE_ROOT)/$$operation_id-preflight.json"; \
-	$(MAKE) --no-print-directory stack-build-locked STACK_LOCK_HELD=1 \
+	set +e; \
+	TMPDIR="$(STACK_PROCESS_TEMP_ROOT)" TMP="$(STACK_PROCESS_TEMP_ROOT)" \
+	TEMP="$(STACK_PROCESS_TEMP_ROOT)" GOTMPDIR="$(STACK_PROCESS_TEMP_ROOT)" \
+	"$(PYTHON)" "$(STACK_DEADLINE_TOOL)" \
+		--seconds "$(STACK_BUILD_TIMEOUT_SECONDS)" \
+		--grace-seconds "$(STACK_BUILD_TERMINATION_GRACE_SECONDS)" \
+		--timing-log "$(STACK_TIMING_LOG)" --timing-label stack-total -- \
+		$(MAKE) --no-print-directory stack-build-locked STACK_LOCK_HELD=1 \
 		STACK_RETAINED_ROOT="$(STACK_RETAINED_ROOT)" STACK_TRANSIENT_ROOT="$(STACK_TRANSIENT_ROOT)" STACK_SOURCE_ROOT="$(STACK_SOURCE_ROOT)" \
 		STACK_SWIFT_CONTRACT="$(STACK_SWIFT_CONTRACT)" STACK_GO_CONTRACT="$(STACK_GO_CONTRACT)" \
-		STACK_COMPOSE_CONTRACT="$(STACK_COMPOSE_CONTRACT)" STACK_TIMING_LOG="$(STACK_TIMING_LOG)"
+		STACK_COMPOSE_CONTRACT="$(STACK_COMPOSE_CONTRACT)" STACK_TIMING_LOG="$(STACK_TIMING_LOG)"; \
+	build_status=$$?; \
+	set -e; \
+	exit "$$build_status"
 
 stack-build-locked:
 	@[[ "$(STACK_LOCK_HELD)" == 1 ]] || { printf 'stack-build-locked requires the stack-build lock\n' >&2; exit 2; }

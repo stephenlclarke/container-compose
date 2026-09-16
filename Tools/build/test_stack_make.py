@@ -48,6 +48,7 @@ class StackMakeRecoveryTests(unittest.TestCase):
         self.log = self.root / "build.log"
         self.fail_marker = self.root / "fail-container"
         self.pause_marker = self.root / "pause-build"
+        self.cleanup_pause_marker = self.root / "pause-cleanup"
         self.containerization = self.create_repository("containerization")
         self.engine = self.create_repository("container-engine-api")
         self.container = self.create_repository("container")
@@ -162,6 +163,29 @@ os.execvp(sys.argv[separator + 1], sys.argv[separator + 1:])
             encoding="utf-8",
         )
         self.stack_wrapper.chmod(0o755)
+        self.cleaner = self.root / "fake-stack-transient-clean.py"
+        self.cleaner.write_text(
+            f"""#!/usr/bin/env python3
+import os
+import subprocess
+import sys
+import time
+
+arguments = sys.argv[1:]
+phase = arguments[arguments.index("--phase") + 1] if "--phase" in arguments else ""
+pause = os.environ.get("STACK_TEST_CLEAN_PAUSE", "")
+if phase == "postflight" and pause and os.path.isfile(pause):
+    time.sleep(0.5)
+raise SystemExit(
+    subprocess.run(
+        [sys.executable, {str(TRANSIENT_CLEAN_TOOL)!r}, *arguments],
+        check=False,
+    ).returncode
+)
+""",
+            encoding="utf-8",
+        )
+        self.cleaner.chmod(0o755)
         self.lock = self.root / "fake-lockf"
         self.lock.write_text(
             """#!/bin/bash
@@ -200,6 +224,7 @@ exec "$@"
             {
                 "STACK_TEST_FAIL": str(self.fail_marker),
                 "STACK_TEST_LOG": str(self.log),
+                "STACK_TEST_CLEAN_PAUSE": str(self.cleanup_pause_marker),
             }
         )
         return subprocess.run(
@@ -215,7 +240,7 @@ exec "$@"
                 f"STACK_ARTIFACT_TOOL={ARTIFACT_TOOL}",
                 f"STACK_DEADLINE_TOOL={DEADLINE_TOOL}",
                 f"STACK_STORAGE_TOOL={STORAGE_TOOL}",
-                f"STACK_TRANSIENT_CLEAN_TOOL={TRANSIENT_CLEAN_TOOL}",
+                f"STACK_TRANSIENT_CLEAN_TOOL={self.cleaner}",
                 "STACK_REQUIRED_TRANSIENT_VOLUME=",
                 f"STACK_SWIFT={self.swift}",
                 f"STACK_SWIFT_CONTRACT={'a' * 64}",
@@ -242,6 +267,7 @@ exec "$@"
                 "STACK_TEST_FAIL": str(self.fail_marker),
                 "STACK_TEST_LOG": str(self.log),
                 "STACK_TEST_PAUSE": str(self.pause_marker),
+                "STACK_TEST_CLEAN_PAUSE": str(self.cleanup_pause_marker),
             }
         )
         return subprocess.run(
@@ -257,7 +283,7 @@ exec "$@"
                 f"STACK_ARTIFACT_TOOL={ARTIFACT_TOOL}",
                 f"STACK_DEADLINE_TOOL={DEADLINE_TOOL}",
                 f"STACK_STORAGE_TOOL={STORAGE_TOOL}",
-                f"STACK_TRANSIENT_CLEAN_TOOL={TRANSIENT_CLEAN_TOOL}",
+                f"STACK_TRANSIENT_CLEAN_TOOL={self.cleaner}",
                 "STACK_REQUIRED_TRANSIENT_VOLUME=",
                 f"STACK_SWIFT_STACK_TOOL={self.stack_wrapper}",
                 f"STACK_SWIFT={self.swift}",
@@ -289,8 +315,14 @@ exec "$@"
 
     def test_deadline_cleanup_removes_interrupted_build_residue(self) -> None:
         self.pause_marker.write_text("pause\n", encoding="utf-8")
+        self.cleanup_pause_marker.write_text("pause\n", encoding="utf-8")
 
-        interrupted = self.run_full_build("stack-build", "STACK_BUILD_TIMEOUT_SECONDS=1")
+        interrupted = self.run_full_build(
+            "stack-build",
+            "STACK_BUILD_TIMEOUT_SECONDS=1",
+            "STACK_BUILD_TERMINATION_GRACE_SECONDS=0.1",
+            "STACK_CLEANUP_TIMEOUT_SECONDS=5",
+        )
 
         self.assertNotEqual(interrupted.returncode, 0)
         self.assertTrue((self.pause_marker.parent / "pause-build.started").is_file())

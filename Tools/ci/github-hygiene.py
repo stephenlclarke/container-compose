@@ -98,8 +98,19 @@ class GitHubClient:
     def __init__(self, token: str, api_url: str = "https://api.github.com") -> None:
         if not token:
             raise HygieneError("GITHUB_TOKEN is required")
+        parsed = urllib.parse.urlparse(api_url.rstrip("/"))
+        if (
+            parsed.scheme not in ("http", "https")
+            or not parsed.netloc
+            or parsed.params
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise HygieneError(f"invalid GitHub API URL: {api_url}")
         self.token = token
-        self.api_url = api_url.rstrip("/")
+        self.api_origin = f"{parsed.scheme}://{parsed.netloc}"
+        self.api_base_path = parsed.path.rstrip("/")
+        self.api_url = f"{self.api_origin}{self.api_base_path}"
 
     def request(
         self,
@@ -146,9 +157,18 @@ class GitHubClient:
                     continue
                 target = item.split(";", 1)[0].strip().strip("<>")
                 parsed = urllib.parse.urlparse(target)
-                if f"{parsed.scheme}://{parsed.netloc}" != self.api_url:
+                if f"{parsed.scheme}://{parsed.netloc}" != self.api_origin:
                     raise HygieneError("GitHub pagination escaped the configured API origin")
-                current = parsed.path + (f"?{parsed.query}" if parsed.query else "")
+                if self.api_base_path:
+                    prefix = f"{self.api_base_path}/"
+                    if not parsed.path.startswith(prefix):
+                        raise HygieneError(
+                            "GitHub pagination escaped the configured API base path"
+                        )
+                    endpoint = parsed.path[len(self.api_base_path) :]
+                else:
+                    endpoint = parsed.path
+                current = endpoint + (f"?{parsed.query}" if parsed.query else "")
                 break
         return results
 

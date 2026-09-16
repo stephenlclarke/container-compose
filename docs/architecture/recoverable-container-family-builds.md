@@ -57,7 +57,7 @@ under `timings/`. The log includes the end-to-end `stack-total` duration and
 the duration and exit status of each native build and bin-path query. This
 makes clean, resumed, and warm no-op runs directly comparable.
 
-The same build lock encloses residue reconciliation. Before compilation, the controller removes only allowlisted direct children of the exact marker-owned transient root and recreates empty `scratch` and `process-tmp` directories. An always-run exit trap repeats that cleanup after success, failure, cancellation, or a handled signal. Cleanup never touches the internal retained store, source checkouts, an unmarked root, or a path reached through a symbolic link. Human-readable and JSON receipts for both phases are retained below `$(STACK_RETAINED_ROOT)/hygiene`. `make stack-transient-clean-plan` reports the same allowlist without changing it; `make stack-transient-clean` performs the locked cleanup explicitly.
+The same build lock encloses residue reconciliation. Before compilation, the controller removes only allowlisted direct children of the exact marker-owned transient root and recreates empty `scratch` and `process-tmp` directories. The native build then runs in its bounded supervised process session. After that session has drained, an always-run outer exit trap performs postflight cleanup under a separate 120-second deadline, so expiration of the build deadline cannot kill its own cleanup. The trap covers success, failure, cancellation, and handled signals. Cleanup never touches the internal retained store, source checkouts, an unmarked root, or a path reached through a symbolic link. Human-readable and JSON receipts for both phases are retained below `$(STACK_RETAINED_ROOT)/hygiene`. `make stack-transient-clean-plan` reports the same allowlist without changing it; `make stack-transient-clean` performs the locked cleanup explicitly.
 
 The first real cold and recovered runs are recorded in
 [Recoverable build workflow timings](../reviews/CONTAINER-FAMILY-BUILD-WORKFLOW-TIMINGS-2026-09-09.md).
@@ -144,7 +144,7 @@ flowchart TD
 `make stack-self-test` executes the complete five-repository graph with fake
 native builders. It proves fail-once recovery, transitive invalidation,
 parallel-root reuse, external Compose scratch storage, final bundle
-publication, always-run preflight/postflight residue cleanup, and timing evidence. `Tools/build/test_stack_pin.py` separately
+publication, deadline interruption with a deliberately slower independent postflight, always-run preflight/postflight residue cleanup, and timing evidence. `Tools/build/test_stack_pin.py` separately
 covers receipt and artifact integrity, including real macOS SDK metadata in the
 Swift build contract.
 

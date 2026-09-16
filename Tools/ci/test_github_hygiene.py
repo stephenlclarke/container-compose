@@ -246,6 +246,8 @@ class GitHubHygieneTests(unittest.TestCase):
             hygiene.GitHubClient("token", "https://example.invalid/").api_url,
             "https://example.invalid",
         )
+        with self.assertRaisesRegex(hygiene.HygieneError, "invalid GitHub API URL"):
+            hygiene.GitHubClient("token", "file:///tmp/github")
 
     def test_client_request_accepts_json_and_no_content(self) -> None:
         class Response(io.BytesIO):
@@ -316,6 +318,36 @@ class GitHubHygieneTests(unittest.TestCase):
 
         client.request = mock.Mock(return_value=({}, Response()))
         with self.assertRaisesRegex(hygiene.HygieneError, "non-list"):
+            client.paginated("/items")
+
+    def test_client_pagination_preserves_enterprise_api_base_path(self) -> None:
+        class Response:
+            def __init__(self, link: str = "") -> None:
+                self.headers = {"Link": link}
+
+        client = hygiene.GitHubClient("secret", "https://github.example/api/v3")
+        client.request = mock.Mock(
+            side_effect=[
+                (
+                    [{"page": 1}],
+                    Response(
+                        '<https://github.example/api/v3/items?page=2>; rel="next"'
+                    ),
+                ),
+                ([{"page": 2}], Response()),
+            ]
+        )
+
+        self.assertEqual(client.paginated("/items?page=1"), [{"page": 1}, {"page": 2}])
+        self.assertEqual(client.request.call_args_list[1].args[1], "/items?page=2")
+
+        client.request = mock.Mock(
+            return_value=(
+                [],
+                Response('<https://github.example/not-api/items>; rel="next"'),
+            )
+        )
+        with self.assertRaisesRegex(hygiene.HygieneError, "base path"):
             client.paginated("/items")
 
     def test_client_resource_methods_parse_and_encode(self) -> None:
