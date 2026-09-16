@@ -194,8 +194,47 @@ class StackTransientCleanTests(unittest.TestCase):
         self.assertIn("Phase: `postflight`", report.read_text(encoding="utf-8"))
         payload = json.loads(machine.read_text(encoding="utf-8"))
         self.assertEqual(payload["mode"], "apply")
+        self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["entries"][0]["disposition"], "removed")
         self.assertTrue((self.retained / "compose").is_file())
+
+    def test_partial_cleanup_failure_retains_completed_dispositions(self) -> None:
+        attempts = self.root / "attempts"
+        attempts.mkdir()
+        (attempts / "discard").write_text("discard", encoding="utf-8")
+        report = self.retained / "hygiene" / "partial.md"
+        machine = self.retained / "hygiene" / "partial.json"
+        original_remove = MODULE.remove_tree
+
+        def fail_after_first_removal(path: Path) -> None:
+            if path.name == "scratch":
+                raise OSError("fixture removal failure")
+            original_remove(path)
+
+        with mock.patch.object(
+            MODULE, "remove_tree", side_effect=fail_after_first_removal
+        ):
+            result = self.invoke(
+                "--execute",
+                "--phase",
+                "postflight",
+                "--report",
+                str(report),
+                "--json-output",
+                str(machine),
+            )
+
+        self.assertEqual(result, 2)
+        self.assertFalse(attempts.exists())
+        self.assertTrue((self.root / "scratch").exists())
+        payload = json.loads(machine.read_text(encoding="utf-8"))
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(payload["error"], "fixture removal failure")
+        self.assertEqual(
+            payload["entries"],
+            [{"disposition": "removed", "path": str(attempts)}],
+        )
+        self.assertIn("Status: `failed`", report.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

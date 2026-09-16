@@ -417,6 +417,54 @@ class GitHubHygieneTests(unittest.TestCase):
         self.assertEqual(result.disposition, "preserved")
         self.assertIn("restored", result.reason)
 
+    def test_apply_restores_when_post_delete_reconciliation_is_unavailable(self) -> None:
+        class Client:
+            def __init__(self) -> None:
+                self.all_queries = 0
+                self.restored = False
+
+            def branch(self, _repository: str, name: str) -> hygiene.Branch:
+                return hygiene.Branch(name, "a" * 40, False)
+
+            def pull_requests(
+                self, _repository: str, _branch: str, *, state: str
+            ) -> list[hygiene.PullRequest]:
+                if state == "open":
+                    return []
+                self.all_queries += 1
+                if self.all_queries == 1:
+                    return []
+                raise hygiene.HygieneError("temporary API failure")
+
+            def pull_request(
+                self, _repository: str, _number: int
+            ) -> hygiene.PullRequest:
+                return pull_request()
+
+            def delete_branch(
+                self, _repository: str, _branch: str, _expected_sha: str
+            ) -> str:
+                return "deleted"
+
+            def restore_branch(
+                self, _repository: str, _branch: str, _expected_sha: str
+            ) -> str:
+                self.restored = True
+                return "restored"
+
+        decision = hygiene.Decision(
+            "feature", "a" * 40, "candidate", "proved", 12
+        )
+        client = Client()
+
+        result = hygiene.revalidate_and_delete(
+            client, REPOSITORY, DEFAULT_BRANCH, decision
+        )
+
+        self.assertEqual(result.disposition, "preserved")
+        self.assertIn("unavailable", result.reason)
+        self.assertTrue(client.restored)
+
     def test_apply_preserves_pr_opened_during_all_pr_snapshot(self) -> None:
         class Client:
             def branch(self, _repository: str, name: str) -> hygiene.Branch:

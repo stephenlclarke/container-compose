@@ -464,9 +464,21 @@ def revalidate_and_delete(
             disposition="reconciled",
             reason="branch was deleted concurrently",
         )
-    pull_requests_after = client.pull_requests(
-        repository, decision.branch, state="all"
-    )
+    try:
+        pull_requests_after = client.pull_requests(
+            repository, decision.branch, state="all"
+        )
+    except (HygieneError, KeyError, OSError, UnicodeError, ValueError):
+        restoration = client.restore_branch(
+            repository, decision.branch, decision.sha
+        )
+        reason = (
+            "branch changed while restoring after unavailable pull-request "
+            "reconciliation"
+            if restoration == "changed"
+            else "branch restored after unavailable pull-request reconciliation"
+        )
+        return replace(decision, disposition="preserved", reason=reason)
     known_pull_requests = {
         pull_request.number: pull_request for pull_request in pull_requests_before
     }
