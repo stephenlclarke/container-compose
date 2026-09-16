@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-09-14",
+  "reviewedAt": "2026-09-16",
   "repositories": {
     "container": {
-      "upstreamHead": "55437109add247406b07644f9662f03ded52a5e7",
-      "forkHead": "14257435e40367d60ac3904f4f67ca35d1c29fe5",
+      "upstreamHead": "57f0b9392bbee1998e6c7f3f25db222fe1dcdd12",
+      "forkHead": "84bb6e0a37176fe45927f5c6f785041c3f75f11f",
       "slices": [
         {
           "id": "container-support-maintenance",
@@ -531,7 +531,43 @@
             "69318c93dec01ba73402f1912ff82702cc06d4bf",
             "9ed11e69dab7a27c68822e51444e922f4bdf78ef",
             "4c9ea36dfb997c4cd72c6e9858f26af3dc031fca",
-            "14257435e40367d60ac3904f4f67ca35d1c29fe5"
+            "14257435e40367d60ac3904f4f67ca35d1c29fe5",
+            "162c327ae4d472d5ca028e2bb2a28fa49d8f8710",
+            "4357775c041861aa37920c642e759c4c248a40eb",
+            "61e43a20bb16fb0b924b81ca5b80e65335e2fb48",
+            "9dbe22bb52b9a1d49f424cac6ff7a0f4b45dd637",
+            "bcd7835afa5ceda3533d400868045af321108aed",
+            "4e8e8a8ab9510861ffba822648d1768004e591b8",
+            "cea4275c6906dae7dc157f424d67514e02240da7",
+            "3847658cece5b1f63d700dabefcac24fe5b677fb",
+            "ff55251a5db23ffa2b5dc9e52c4c9991f11d870b",
+            "0c647fb1693f84c17fce8467a993ee1e1ac38c2f",
+            "faff0d11cf60c700971db928e91e36d0cc2f26e0",
+            "d35d1014e59285f0058a7fab1b25a2380845ce44",
+            "dc3869eceabdfa0f43199acacc4ff0c924123a3e",
+            "fb982a1893fad5522f1e0c26921270058eceb8a3",
+            "3532b85f657c6a0da8d61d57f140304883986991",
+            "f228194bc336f86d87cc679921dcfa6002209373",
+            "f8631e9ee69afbadac6b6c2bf544ba8e70640ff9",
+            "65cba1e3584c3cd0024f1119a412c5000ce7795e",
+            "04225d0e1b846e2e5d1c10fde33adb40c157343a",
+            "a598f934c8b29fa9e33b03fb95fa5c1ac147276d",
+            "2a9331473592454bad8046bd1687d1a3b7657c7f",
+            "5f2e4ebd65dcf1bfad9d43cf450ba796e4b67443",
+            "e2afa3f0c7a61647bb12dafdb94a9a087da24bb5",
+            "e402eb0c9bdc413dd66781f6cde6f01e369c66b2",
+            "4384dba86f8e0776614968da2cc1fae072db3f47",
+            "6f3d1b5113fefcb80f4a943f17d55bd691294a35",
+            "b22d8c0b1788ee7e887986cc94315b9a635eb820",
+            "5c1d03e3ec377907be15903175749ab89fba8e03",
+            "0848f9908524fbc74bace04c3f046eb3ac5d76e2",
+            "89cdff4f497b4e04585b9ee4f5000a24c37c1e52",
+            "50aac53cddb4d92d206523ba8ad5e73b6e64dc42",
+            "9d350669af721867d13fae7b69d5d8a29edeeaf0",
+            "0efbfa7522a5ab9d54d961e79dc7e5ad5a64b1e6",
+            "c6640df5e0f87e205a33879fdc9fee432338c24d",
+            "62dc9e1bf4767dd869b00ad0d8892b0cd4ea2462",
+            "cbfe2d13198f1bb243316e573cd2870f633328ef"
           ]
         },
         {
@@ -778,7 +814,7 @@
     },
     "containerization": {
       "upstreamHead": "b44e17e1a4c135bc0168e615bf6a8e3798d070c0",
-      "forkHead": "aa6b0bdeef888b52afaf290cc7ac1909c3ac6fe5",
+      "forkHead": "4c95face06701be6572c92db34ca1864329c7b69",
       "slices": [
         {
           "id": "containerization-support-maintenance",
@@ -963,7 +999,18 @@
             "c54205ecd77ee443af9994f5edc5a1f5d3bd2e92",
             "79d5eb1ec231dc571c9c05875940e72b942fb32e",
             "e22a06bad6e223533d48a3320ec26ea3dd6e45f3",
-            "aa6b0bdeef888b52afaf290cc7ac1909c3ac6fe5"
+            "aa6b0bdeef888b52afaf290cc7ac1909c3ac6fe5",
+            "6424659af3b7d590cbf2054eeeb384bfef5061f6",
+            "27117a6281533f2018a27399846cd37a1b647a22",
+            "4ced91cd5e1f054c2c91267203666fa21e468f54",
+            "9aed0c7838b2540917b4fa1ff4e91b7c96cfbcea",
+            "3779c86deccdc6bc2130b2e535f10a5f74bcc3e1",
+            "efacec4dd7b98289549297b1686fdc7b952d6cae",
+            "65b9599bd6660be3cc82fcd1e55700b3ed4dc0e9",
+            "e9598b83d8c1dc258d1170bac56970c10ad64118",
+            "a3a743231139545909c6e5573d02d2ed75ae1475",
+            "9482e180879ee1dc10f7d6908b71073abd7b9c49",
+            "4c95face06701be6572c92db34ca1864329c7b69"
           ]
         },
         {
@@ -1138,7 +1185,7 @@
     },
     "container-builder-shim": {
       "upstreamHead": "5dc4286e5adbeb7dac189b22b7d5aab336942fe2",
-      "forkHead": "5373d9b4363c6e536dc6401199da269c7045abf9",
+      "forkHead": "016040197215684db474181b444767eb58797cfa",
       "slices": [
         {
           "id": "container-builder-shim-support-maintenance",
@@ -1182,7 +1229,18 @@
             "711d64048d01c181b8c29cf9acb782da9491290b",
             "3b0e23c02f035a4b7825a124c4d95c36c3c9019f",
             "8538b2e7931f41a831af66dc65381f7acc46cc64",
-            "fa0fd18588cec322e35d4bda1bc1c0375d66380d"
+            "fa0fd18588cec322e35d4bda1bc1c0375d66380d",
+            "8d5d9f11df430dd73d25220db22646272b189add",
+            "980d8833f2095a7fa9d632c965787c087a0b438a",
+            "ed46f077ba5dba07fc862dead833908862babe44",
+            "90fd020065e27a74a08de2db555e46b1c9f097e6",
+            "ee504a9a761658aeee53ae9059d09c425c212f50",
+            "48fc3ee5a0341d0d462650fd58e260ce27ecb683",
+            "12b762c2fe3acaf1a48c31d78943cb05cc79d2c7",
+            "4d45ab21f018ad5615991d221efb28137c9e6e66",
+            "4d8fb7948b72ef4f3f3e06feda2a61f63165eaa5",
+            "e8370750c65154e9ffb7ad160a14f07a135f9224",
+            "016040197215684db474181b444767eb58797cfa"
           ]
         },
         {
