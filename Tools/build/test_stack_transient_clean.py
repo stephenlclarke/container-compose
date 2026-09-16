@@ -97,6 +97,22 @@ class StackTransientCleanTests(unittest.TestCase):
         self.assertFalse((self.root / "tmp").exists())
         self.assertTrue((outside / "keep").exists())
 
+    def test_dangling_live_root_symlink_is_removed_before_recreation(self) -> None:
+        MODULE.remove_tree(self.root / "scratch")
+        scratch = self.root / "scratch"
+        scratch.symlink_to(self.retained / "missing", target_is_directory=True)
+        self.assertFalse(scratch.exists())
+        self.assertTrue(scratch.is_symlink())
+
+        self.assertEqual(
+            self.invoke("--execute", "--recreate", "scratch"),
+            0,
+        )
+
+        self.assertTrue(scratch.is_dir())
+        self.assertFalse(scratch.is_symlink())
+        self.assertEqual(list(scratch.iterdir()), [])
+
     def test_wrong_marker_refuses_cleanup(self) -> None:
         (self.root / MODULE.MARKER).write_text("wrong\n", encoding="utf-8")
         self.assertEqual(self.invoke("--execute"), 2)

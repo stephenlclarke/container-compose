@@ -99,7 +99,15 @@ def remove_tree(path: Path) -> None:
 
 def targets(root: Path) -> list[Path]:
     resolved = validate_root(root)
-    return [resolved / name for name in REMOVABLE if (resolved / name).exists()]
+    selected: list[Path] = []
+    for name in REMOVABLE:
+        candidate = resolved / name
+        try:
+            candidate.lstat()
+        except FileNotFoundError:
+            continue
+        selected.append(candidate)
+    return selected
 
 
 def recreate_directories(root: Path, names: list[str]) -> None:
