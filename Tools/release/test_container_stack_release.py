@@ -3006,6 +3006,15 @@ github_cli() {{
                     self.git(root / component, "rev-parse", "main"), reference
                 )
 
+            retained_container = root / "container"
+            retained_head = self.git(retained_container, "rev-parse", "HEAD")
+            self.git(
+                retained_container,
+                "switch",
+                "--create",
+                "sync/retained-candidate",
+            )
+
             completed = self.run_release_function(
                 root, "require_current_stack_matches_sibling_mains"
             )
@@ -3019,6 +3028,17 @@ github_cli() {{
                 self.assertEqual(
                     self.git(root / component, "rev-parse", "main"), reference
                 )
+            self.assertEqual(
+                self.git(retained_container, "branch", "--show-current"), "main"
+            )
+            self.assertEqual(
+                self.git(
+                    retained_container,
+                    "rev-parse",
+                    "sync/retained-candidate",
+                ),
+                retained_head,
+            )
 
             retained_builder = root / "container-builder-shim"
             dirty_marker = retained_builder / "dirty"
@@ -3027,7 +3047,7 @@ github_cli() {{
                 root, "require_current_stack_matches_sibling_mains"
             )
             self.assertNotEqual(dirty.returncode, 0)
-            self.assertIn("is not a clean main branch", dirty.stderr)
+            self.assertIn("is not clean", dirty.stderr)
             dirty_marker.unlink()
 
             self.git(retained_builder, "config", "user.name", "Release Test")

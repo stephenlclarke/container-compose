@@ -732,9 +732,8 @@ refresh_release_sibling_main() {
   local component="$1" path remote remote_ref local_ref
   path="$(repo_path "${component}")"
   remote="$(push_remote "${component}")"
-  if [[ "$(git -C "${path}" branch --show-current)" != "main" ]] ||
-    [[ -n "$(git -C "${path}" status --short)" ]]; then
-    printf 'retained %s checkout is not a clean main branch\n' "${component}" >&2
+  if [[ -n "$(git -C "${path}" status --short)" ]]; then
+    printf 'retained %s checkout is not clean\n' "${component}" >&2
     return 1
   fi
 
@@ -744,6 +743,13 @@ refresh_release_sibling_main() {
     printf 'cannot resolve freshly fetched canonical main for %s\n' \
       "${component}" >&2
     return 1
+  fi
+  if [[ "$(git -C "${path}" branch --show-current)" != "main" ]]; then
+    if git -C "${path}" show-ref --verify --quiet refs/heads/main; then
+      run git -C "${path}" switch main
+    else
+      run git -C "${path}" switch --create main --track "${remote}/main"
+    fi
   fi
   local_ref="$(git -C "${path}" rev-parse main)"
   if [[ "${local_ref}" == "${remote_ref}" ]]; then
