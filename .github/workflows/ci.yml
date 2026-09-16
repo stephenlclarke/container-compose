@@ -189,6 +189,15 @@ jobs:
       - name: Install Markdown lint
         run: npm install --global markdownlint-cli@0.48.0
 
+      - name: Install actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          actionlint_bin="${RUNNER_TEMP}/actionlint-bin"
+          mkdir -p "${actionlint_bin}"
+          GOBIN="${actionlint_bin}" go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          printf '%s\n' "${actionlint_bin}" >> "${GITHUB_PATH}"
+
       - name: Cache local repo tools
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
