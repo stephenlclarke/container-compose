@@ -1,0 +1,101 @@
+# Copyright 2026 container-compose project authors. SPDX-License-Identifier: Apache-2.0
+load("@build_bazel_rules_swift//swift:swift_binary.bzl", "swift_binary")
+load("@build_bazel_rules_swift//swift:swift_library.bzl", "swift_library")
+load("@build_bazel_rules_swift//swift:swift_test.bzl", "swift_test")
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "stock_runtime",
+    define_values = {"runtime_profile": "stock"},
+)
+
+SWIFT_COPTS = ["-swift-version", "6", "-warnings-as-errors", "-package-name", "container_compose"]
+RUNTIME_COPTS = SWIFT_COPTS + select({
+    ":stock_runtime": [],
+    "//conditions:default": ["-DCONTAINER_COMPOSE_ENHANCED_RUNTIME"],
+})
+
+swift_library(
+    name = "ComposeRuntimeSPI",
+    srcs = glob(["Sources/ComposeRuntimeSPI/*.swift"]),
+    module_name = "ComposeRuntimeSPI",
+    copts = SWIFT_COPTS,
+)
+
+swift_library(
+    name = "ComposeCore",
+    srcs = glob(["Sources/ComposeCore/*.swift"]),
+    module_name = "ComposeCore",
+    copts = SWIFT_COPTS,
+    deps = [":ComposeRuntimeSPI"],
+)
+
+swift_library(
+    name = "ComposeEngineRuntime",
+    srcs = glob(["Sources/ComposeEngineRuntime/*.swift"]),
+    module_name = "ComposeEngineRuntime",
+    copts = SWIFT_COPTS,
+    deps = [
+        ":ComposeCore",
+        ":ComposeRuntimeSPI",
+        "@swiftpkg_container_engine_api//:ContainerEngineWire",
+        "@swiftpkg_container_engine_api//:ContainerUnixHTTPClient",
+    ],
+    target_compatible_with = select({":stock_runtime": [], "//conditions:default": ["@platforms//:incompatible"]}),
+)
+
+swift_library(
+    name = "ComposeContainerRuntime",
+    srcs = glob(["Sources/ComposeContainerRuntime/*.swift"]),
+    module_name = "ComposeContainerRuntime",
+    copts = RUNTIME_COPTS,
+    deps = [
+        ":ComposeCore",
+        ":ComposeRuntimeSPI",
+        "@swiftpkg_swift_argument_parser//:ArgumentParser",
+        "@swiftpkg_container//:ContainerAPIClient",
+        "@swiftpkg_container//:ContainerCommands",
+        "@swiftpkg_container//:ContainerPersistence",
+        "@swiftpkg_container//:ContainerResource",
+        "@swiftpkg_containerization//:Containerization",
+        "@swiftpkg_containerization//:ContainerizationArchive",
+        "@swiftpkg_containerization//:ContainerizationEXT4",
+        "@swiftpkg_containerization//:ContainerizationExtras",
+        "@swiftpkg_containerization//:ContainerizationOCI",
+        "@swiftpkg_swift_log//:Logging",
+    ],
+    target_compatible_with = select({":stock_runtime": ["@platforms//:incompatible"], "//conditions:default": []}),
+)
+
+# The executable and CLI tests must share the same compiled entry-point module.
+swift_library(
+    name = "ComposePlugin",
+    srcs = glob(["Sources/ComposePlugin/*.swift"]),
+    module_name = "ComposePlugin",
+    copts = RUNTIME_COPTS + ["-parse-as-library", "-Xfrontend", "-entry-point-function-name", "-Xfrontend", "ComposePlugin_main"],
+    deps = [
+        ":ComposeCore",
+        "@swiftpkg_swift_argument_parser//:ArgumentParser",
+        "@swiftpkg_container//:ContainerAPIClient",
+        "@swiftpkg_container//:ContainerBuild",
+        "@swiftpkg_container//:ContainerCommands",
+        "@swiftpkg_container//:ContainerLog",
+        "@swiftpkg_container//:ContainerResource",
+    ] + select({":stock_runtime": [":ComposeEngineRuntime"], "//conditions:default": [":ComposeContainerRuntime"]}),
+)
+
+swift_binary(
+    name = "compose",
+    linkopts = ["-Wl,-alias,_ComposePlugin_main,_main", "-Wl,-u,_ComposePlugin_main"],
+    deps = [":ComposePlugin"],
+)
+
+alias(name = "product", actual = ":compose")
+
+swift_test(
+    name = "ComposeRuntimeSPITests",
+    srcs = glob(["Tests/ComposeRuntimeSPITests/*.swift"]),
+    copts = SWIFT_COPTS,
+    deps = [":ComposeRuntimeSPI"],
+)

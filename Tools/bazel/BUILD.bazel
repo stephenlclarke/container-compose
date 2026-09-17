@@ -1,0 +1,19 @@
+# Copyright 2026 container-compose project authors. SPDX-License-Identifier: Apache-2.0
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+exports_files(["rules-swift-sandbox-output.patch"])
+
+sh_binary(
+    name = "ssd_test_runner",
+    srcs = ["ssd-test-runner.sh"],
+    visibility = ["//visibility:public"],
+)
+
+sh_test(
+    name = "cli_smoke",
+    srcs = ["tests/cli-smoke.sh"],
+    args = ["$(location //:compose)"],
+    data = ["//:compose"],
+    size = "small",
+)

@@ -1,0 +1,114 @@
+{
+  "build_timing.py": {
+    "mode": 420,
+    "sha256": "dc183914988b840fb0635691e1dd5182c63867b0782494655b70a11541c53ae1"
+  },
+  "candidate_archive.py": {
+    "mode": 420,
+    "sha256": "412f8bf87af1c61671c9761b7819a84c389049390ae00d5028b67eafc825712d"
+  },
+  "check_evidence.py": {
+    "mode": 420,
+    "sha256": "d1e710046c008e177fc409b2df5c5dde336e30fa67a06d665346630e97e2f4b1"
+  },
+  "coverage_report.py": {
+    "mode": 420,
+    "sha256": "6767a8491a16de2c6288c8b063eee0ed827190a2a5c91fcf854c809bf6c42830"
+  },
+  "hygiene.py": {
+    "mode": 420,
+    "sha256": "38c699aa5b76340ccc33b2def016e9e172ce0008b9b4fd7742d2ad9277cc0aa2"
+  },
+  "input_identity.py": {
+    "mode": 420,
+    "sha256": "53a98f9d088769065686282621fdfa20b3ba3f9bd6541e3f2fc579954f8f115e"
+  },
+  "oci_image_layout.py": {
+    "mode": 420,
+    "sha256": "a97ff5f88f5049a704f316922fd2626614830f2beb2d319ee458571744caa9d6"
+  },
+  "prepare_candidate.py": {
+    "mode": 420,
+    "sha256": "9584aba572ba66faf7222512643ef5657dbb73e2555aca1b4a835d4fb89461c8"
+  },
+  "prepare_docker_cli.py": {
+    "mode": 420,
+    "sha256": "811557cf993ebaa3499c71537eb85a30781bbbcc0bd0bfe1e790fcbf91bd16a0"
+  },
+  "prepare_guest_images.py": {
+    "mode": 420,
+    "sha256": "abac7804eaedb91af275f6e8e63ee5e26f8f122965a2c24eb54e360acee12d52"
+  },
+  "prepare_releases.py": {
+    "mode": 420,
+    "sha256": "2833c7120fba8c0d6aae563e7dc272abb670657c28f3e3bb25ed783219db622d"
+  },
+  "release_inputs.py": {
+    "mode": 420,
+    "sha256": "5629bc928a564532834153308eb6628bc5ea043f9869e9c01f8c0011719b542d"
+  },
+  "retain_evidence.py": {
+    "mode": 420,
+    "sha256": "8565dfcf0ef7fbd749a6bfd940cf98f9aa937993ae87c375a4c3bfaecfd2b663"
+  },
+  "run.sh": {
+    "mode": 493,
+    "sha256": "e524e00c6190d1c3c627daef754aa73402825b21e5a928d81fab87e2535e9df2"
+  },
+  "ssd-test-runner.sh": {
+    "mode": 493,
+    "sha256": "0a0587d48b85eb5d4d090b2ac8155fa5cfd3ef8eb13eef549688da0a80618789"
+  },
+  "test_build_timing.py": {
+    "mode": 420,
+    "sha256": "19b6cc3e2ff7027091069347d15e4b85891588384975652b22d98975762093e6"
+  },
+  "test_candidate_archive.py": {
+    "mode": 420,
+    "sha256": "391844c9c0a94c1df9f678073093fbf097ee593853fc3379d403c96067f83509"
+  },
+  "test_coverage_report.py": {
+    "mode": 420,
+    "sha256": "71a3a139afb718354d2bc3f6dad46a85290b99de9d8644bc2908fe1ebdf739a8"
+  },
+  "test_evidence.py": {
+    "mode": 420,
+    "sha256": "c4a03a9f3251ef488fd5d77312cb4a0a35c67ab090beb268f2049a9accd500e8"
+  },
+  "test_hygiene.py": {
+    "mode": 420,
+    "sha256": "e46bdc7671a9dcab7d2e152694625b54d6bc5ef2865d258fcf21cc62d2c847fc"
+  },
+  "test_input_identity.py": {
+    "mode": 420,
+    "sha256": "83f1ef0cee71bcf715e1b10ae25093b2b8419aa72cc228e8682c567776d541cf"
+  },
+  "test_launcher.py": {
+    "mode": 420,
+    "sha256": "5002a403a7d14858ab5b77c48fe2ed6bbae192e7cfc87acd40bc1eeae932841a"
+  },
+  "test_prepare_candidate.py": {
+    "mode": 420,
+    "sha256": "0e2c224ddce95518e2bb4aed38f95b767193652f85a692dcc9801f6c79849c0c"
+  },
+  "test_prepare_docker_cli.py": {
+    "mode": 420,
+    "sha256": "ec0705d6133b05e7bdf15aafd7b617b37e29865f4cbb523fb15d9f972e1934c0"
+  },
+  "test_prepare_guest_images.py": {
+    "mode": 420,
+    "sha256": "e78d35d90b955c6a381d483266408f8c2e8a5ff0dd35a89b4f7abc8142561b5f"
+  },
+  "test_prepare_releases.py": {
+    "mode": 420,
+    "sha256": "44e9524136eb2d86edcecba5161caa6b217e8809310aa5a75dae91b8211b633e"
+  },
+  "test_release_inputs.py": {
+    "mode": 420,
+    "sha256": "eef4b7ca8b3c6db1c4c357028709c7ad01732316f00d039905b5418550fcbdb7"
+  },
+  "test_retention.py": {
+    "mode": 420,
+    "sha256": "eef9f60d477b05f956bef07b3090d1f97a93da50f58297686ab48e289dd765f0"
+  }
+}

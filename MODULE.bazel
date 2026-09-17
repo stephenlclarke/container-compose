@@ -1,0 +1,37 @@
+# Copyright 2026 devcontainer project authors. SPDX-License-Identifier: Apache-2.0
+module(name = "container_compose")
+
+bazel_dep(name = "rules_swift", version = "3.6.1", repo_name = "build_bazel_rules_swift")
+bazel_dep(name = "apple_support", version = "1.24.2")
+bazel_dep(name = "rules_cc", version = "0.2.14")
+bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "rules_swift_package_manager", version = "1.23.0")
+bazel_dep(name = "rules_license", version = "1.0.0")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "rules_apple", version = "4.3.3", repo_name = "build_bazel_rules_apple")
+
+swift_deps = use_extension("//Tools/bazel:dependencies.bzl", "dependencies")
+swift_deps.lockfiles(
+    enhanced = "//:Package.resolved",
+    stock = "//:Package.stock.resolved",
+)
+use_repo(
+    swift_deps,
+    "swiftpkg_container",
+    "swiftpkg_containerization",
+    "swiftpkg_container_engine_api",
+    "swiftpkg_swift_argument_parser",
+    "swiftpkg_swift_collections",
+    "swiftpkg_swift_docc_plugin",
+    "swiftpkg_swift_log",
+    "swiftpkg_swift_nio",
+)
+
+# macOS Foundation createFile can use a volume-level replacement directory,
+# which is outside Bazel's sandbox when outputs live on the external SSD.
+single_version_override(
+    module_name = "rules_swift",
+    version = "3.6.1",
+    patches = ["//Tools/bazel:rules-swift-sandbox-output.patch"],
+    patch_strip = 1,
+)
