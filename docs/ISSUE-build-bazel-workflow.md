@@ -10,7 +10,7 @@ Internal implementation improvement. Package.swift and the existing stock/enhanc
 
 ## Acceptance
 
-Coverage must include actual native CLI execution without silently relabelling it as unit-only proof. The additive `unit-cli` inventory requires all existing unit targets plus twelve CLI component cases, each emitting a private nonempty LLVM profile. Unit-only evidence stays distinct; exact inventory identity is required by the quality gate. Host/guest integration remains separately unqualified.
+Coverage must include actual native CLI execution without silently relabelling it as unit-only proof. The additive `unit-cli` inventory requires all existing unit targets plus the twelve-case CLI component suite, with every native CLI invocation emitting a private nonempty LLVM profile. Two cases test Python process cleanup and do not launch Compose. Unit-only evidence stays distinct; exact inventory identity is required by the quality gate. Host/guest integration remains separately unqualified.
 
 Native Swift and Go compilation, all unit/integration/parity suites, meaningful coverage, explicit storage and resource ownership, unchanged-input cache reuse, recoverable signed packaging/publication and current docs must pass before production cutover. Reference parity uses downloaded releases, never rebuilt substitutes. Quiet paired benchmark evidence and installation-first demos remain required.
 
