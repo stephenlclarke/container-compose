@@ -40,7 +40,7 @@ let containerDependency: Package.Dependency = {
     return enhancedRuntime
         ? .package(
             url: "https://github.com/stephenlclarke/container.git",
-            revision: "1b68690e99e86c8dc4425ff7fe4dd8270308a068",
+            revision: "000a77c6b6ad8505e5742fae4c518a9a5b3a7dfb",
         )
         : .package(url: "https://github.com/apple/container.git", exact: "1.4.1")
 }()
@@ -54,7 +54,7 @@ let containerizationDependency: Package.Dependency = {
     return enhancedRuntime
         ? .package(
             url: "https://github.com/stephenlclarke/containerization.git",
-            revision: "ea5ff3b97bd1a12c4054f262ce9fbb7207e6f443",
+            revision: "a13f5d347ac0723714d68e6f7802019673d04d97",
         )
         : .package(url: "https://github.com/apple/containerization.git", exact: "0.45.0")
 }()
