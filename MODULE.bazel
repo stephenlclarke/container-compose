@@ -32,6 +32,7 @@ use_repo(
     "com_github_opencontainers_image_spec",
     "com_github_sirupsen_logrus",
     "in_yaml_go_yaml_v4",
+    "io_opentelemetry_go_otel_sdk",
     "org_golang_x_sys",
 )
 

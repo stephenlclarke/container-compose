@@ -177,7 +177,7 @@
     },
     {
       "module": "github.com/go-logr/logr",
-      "version": "v1.4.3",
+      "version": "v1.4.4",
       "repo": "com_github_go_logr_logr",
       "notices": [
         "LICENSE"
@@ -361,7 +361,7 @@
     },
     {
       "module": "go.opentelemetry.io/otel",
-      "version": "v1.44.0",
+      "version": "v1.45.0",
       "repo": "io_opentelemetry_go_otel",
       "notices": [
         "LICENSE"
@@ -369,7 +369,7 @@
     },
     {
       "module": "go.opentelemetry.io/otel/metric",
-      "version": "v1.44.0",
+      "version": "v1.45.0",
       "repo": "io_opentelemetry_go_otel_metric",
       "notices": [
         "LICENSE"
@@ -377,7 +377,7 @@
     },
     {
       "module": "go.opentelemetry.io/otel/sdk",
-      "version": "v1.44.0",
+      "version": "v1.45.0",
       "repo": "io_opentelemetry_go_otel_sdk",
       "notices": [
         "LICENSE"
@@ -385,7 +385,7 @@
     },
     {
       "module": "go.opentelemetry.io/otel/trace",
-      "version": "v1.44.0",
+      "version": "v1.45.0",
       "repo": "io_opentelemetry_go_otel_trace",
       "notices": [
         "LICENSE"

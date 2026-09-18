@@ -143,3 +143,20 @@ After adding notices, enhanced packaging/smoke checks pass at `8a42abf0-c68f-4c7
 When upgrading Go dependencies, update `licenses/inventory.json` and the corresponding metadata patch/module binding together after inspecting the new source notices. The validator refuses stale versions or missing texts. Complete Swift/vendor inventory review remains open: current validation requires the selected Container/Containerization texts, but does not claim that every nested third-party component's legal obligations have been audited. In particular, separate NOTICE references to embedded BoringSSL still need their pinned upstream licence closure. Do not change `licenseClosureComplete` merely because text collection passes.
 
 Remaining cutover gates include closing coverage gaps and sanitizers/leaks, complete dependency licence closure, signed candidate admission/reuse, downloaded-release integration/parity, fault recovery, CI authority and stable publication. Existing workflows remain available until the complete replacement is qualified.
+
+### OpenTelemetry diagnostic redaction
+
+The candidate updates the normalizer's OpenTelemetry `otel`, `metric`, `sdk` and `trace` modules from 1.44.0 to 1.45.0 and aligns the required `go-logr/logr` module at 1.4.4. [GHSA-8wmf-6v46-5gfg](https://github.com/advisories/GHSA-8wmf-6v46-5gfg) describes conditional exposure of exporter endpoint configuration through verbose internal diagnostic logging; the default logger does not emit those messages. This is dependency hardening, not evidence that this project disclosed user credentials. [Upstream 1.45.0](https://github.com/open-telemetry/opentelemetry-go/releases/tag/v1.45.0) supplies the fix. The Go toolchain stays at 1.26.3.
+
+The regression uses a fictional exported endpoint field and checks both batch and simple span processors: marshalled diagnostics must omit configuration while retaining exporter type identity. It opens no network connection and changes no global logger. The SDK is a direct test dependency; production imports are unchanged. Module sums were checked through the official Go checksum database, and licence inventory/overlays move with their module versions. Generated package notices contain the updated module identities. Nested-vendor licence closure and distribution readiness remain false.
+
+| Retained invocation | Evidence |
+| --- | --- |
+| `48b18657-06c4-49e6-9078-47c5b54aad2f` | Expected red: the regression fails for both processors against the old matched dependency pins; 4.097 seconds. |
+| `b6b6c2c9-8756-4580-ada6-739850317df1` | Patched pins: six Go race targets pass, 308 XML cases including subtests; seven package-unit cases also pass. 6.351 seconds, with unchanged targets reused. |
+| `eaf39c95-b6d7-4c1d-8c55-54340c404180` | Enhanced optimized archive: both actual archive/CLI/bundled-parser smoke cases pass; 65.401 seconds build/test. |
+| `20822660-93a9-4a3f-86fc-248e6626ff46` | Stock optimized archive: both smoke cases pass; 16.565 seconds build/test. |
+
+The initial invocation `79a6cc7d-5dd5-475c-bd23-714de26a3cbc` supplied the nonexistent `go-race` configuration and was rejected before tests. Its incomplete event stream cannot be sealed as normal evidence; raw diagnostics are retained internally as `diagnostics/run.eCW5kw`. The supported native flag is `--@rules_go//go/config:race=true`, already used by `make -f Tools/bazel/Makefile test-go-race`. The preliminary patched run `ecde17e6-f864-446a-af4e-df10a6f20f19` predates the new regression and is not its proof.
+
+All timings above are development observations, not quiet paired benchmarks. No installed runtime or service changed. Dependabot alert 28 is not closed by this draft branch; default-branch promotion and a qualified stable release remain required. README installation, CLI help, compatibility tables, examples, DocC and stable status remain unchanged because this checkpoint alters no public interface or released capability.

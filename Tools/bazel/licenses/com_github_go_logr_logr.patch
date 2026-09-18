@@ -10,21 +10,21 @@ diff --git a/BUILD.bazel b/BUILD.bazel
 +package_info(
 +    name = "gazelle_generated_package_info",
 +    package_name = "github.com/go-logr/logr",
-+    package_version = "1.4.3",
++    package_version = "1.4.4",
 +    package_url = "https://github.com/go-logr/logr",
-+    purl = "pkg:golang/github.com/go-logr/logr@v1.4.3",
++    purl = "pkg:golang/github.com/go-logr/logr@v1.4.4",
 +    visibility = ["//visibility:public"],
 +)
 +package_metadata(
 +    name = "package_metadata",
-+    purl = "pkg:golang/github.com/go-logr/logr@v1.4.3",
++    purl = "pkg:golang/github.com/go-logr/logr@v1.4.4",
 +    visibility = ["//visibility:public"],
 +)
 +license(
 +    name = "cf_notice_0",
 +    license_text = "LICENSE",
 +    package_name = "github.com/go-logr/logr",
-+    package_version = "v1.4.3",
++    package_version = "v1.4.4",
 +    package_url = "https://github.com/go-logr/logr",
 +)
 +

@@ -10,21 +10,21 @@ diff --git a/BUILD.bazel b/BUILD.bazel
 +package_info(
 +    name = "gazelle_generated_package_info",
 +    package_name = "go.opentelemetry.io/otel/trace",
-+    package_version = "1.44.0",
++    package_version = "1.45.0",
 +    package_url = "https://go.opentelemetry.io/otel/trace",
-+    purl = "pkg:golang/go.opentelemetry.io/otel/trace@v1.44.0",
++    purl = "pkg:golang/go.opentelemetry.io/otel/trace@v1.45.0",
 +    visibility = ["//visibility:public"],
 +)
 +package_metadata(
 +    name = "package_metadata",
-+    purl = "pkg:golang/go.opentelemetry.io/otel/trace@v1.44.0",
++    purl = "pkg:golang/go.opentelemetry.io/otel/trace@v1.45.0",
 +    visibility = ["//visibility:public"],
 +)
 +license(
 +    name = "cf_notice_0",
 +    license_text = "LICENSE",
 +    package_name = "go.opentelemetry.io/otel/trace",
-+    package_version = "v1.44.0",
++    package_version = "v1.45.0",
 +    package_url = "https://go.opentelemetry.io/otel/trace",
 +)
 +
