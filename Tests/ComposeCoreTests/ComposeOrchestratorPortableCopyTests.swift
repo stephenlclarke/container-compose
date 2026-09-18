@@ -36,7 +36,10 @@ extension ComposeOrchestratorTests {
         )
 
         try await orchestrator.copy(project: project, arguments: ["api:/tmp/report.txt", "./report.txt"])
-        try await orchestrator.copy(project: project, arguments: ["./seed.sql", "db:/docker-entrypoint-initdb.d/seed.sql"])
+        try await orchestrator.copy(
+            project: project,
+            arguments: ["./seed.sql", "db:/docker-entrypoint-initdb.d/seed.sql"]
+        )
         try await orchestrator.copy(project: project, arguments: ["api:/tmp/report.txt", "db:/restore/report.txt"])
         try await orchestrator.copy(project: project, arguments: ["./local:file.txt", "db:/restore/local.txt"])
         try await orchestrator.copy(project: project, arguments: ["api:etc/os-release", "./os-release"])
@@ -47,7 +50,12 @@ extension ComposeOrchestratorTests {
         #expect(await copier.requests == [
             .from(id: "demo-api-1", source: "/tmp/report.txt", destination: "./report.txt"),
             .into(id: "custom-db", source: "./seed.sql", destination: "/docker-entrypoint-initdb.d/seed.sql"),
-            .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "custom-db", destination: "/restore/report.txt"),
+            .between(
+                sourceID: "demo-api-1",
+                source: "/tmp/report.txt",
+                destinationID: "custom-db",
+                destination: "/restore/report.txt"
+            ),
             .into(id: "custom-db", source: "./local:file.txt", destination: "/restore/local.txt"),
             .from(id: "demo-api-1", source: "/etc/os-release", destination: "./os-release"),
             .into(id: "custom-db", source: "./seed.sql", destination: "/tmp/seed.sql"),
@@ -153,28 +161,7 @@ extension ComposeOrchestratorTests {
     func cpAllReplaysStdinArchiveBytesIntoEverySelectedContainer() async throws {
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
-        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
-            ComposeContainerSummary(
-                id: "demo-api-1",
-                status: "running",
-                labels: [
-                    composeProjectLabel: "demo",
-                    composeServiceLabel: "api",
-                    composeOneOffLabel: "false",
-                    composeConfigHashLabel: "api-hash",
-                ]
-            ),
-            ComposeContainerSummary(
-                id: "demo-api-run-first",
-                status: "stopped",
-                labels: [
-                    composeProjectLabel: "demo",
-                    composeServiceLabel: "api",
-                    composeOneOffLabel: "true",
-                    composeConfigHashLabel: "api-hash",
-                ]
-            ),
-        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: stdinCopyContainers())
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -344,7 +331,12 @@ extension ComposeOrchestratorTests {
         #expect(await copier.requests == [
             .from(id: "demo-api-1", source: "/tmp/report-link", destination: "./report.txt"),
             .into(id: "demo-db-1", source: "./seed-link", destination: "/tmp/seed.sql"),
-            .between(sourceID: "demo-api-1", source: "/tmp/report-link", destinationID: "demo-db-1", destination: "/tmp/report.txt"),
+            .between(
+                sourceID: "demo-api-1",
+                source: "/tmp/report-link",
+                destinationID: "demo-db-1",
+                destination: "/tmp/report.txt"
+            ),
         ])
         #expect(await copier.options == [
             ContainerCopyTransferOptions(followSymlink: true),
@@ -392,7 +384,12 @@ extension ComposeOrchestratorTests {
         #expect(await copier.requests == [
             .from(id: "demo-api-1", source: "/tmp/report.txt", destination: "./report.txt"),
             .into(id: "demo-db-1", source: "./seed.sql", destination: "/tmp/seed.sql"),
-            .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "demo-db-1", destination: "/tmp/report.txt"),
+            .between(
+                sourceID: "demo-api-1",
+                source: "/tmp/report.txt",
+                destinationID: "demo-db-1",
+                destination: "/tmp/report.txt"
+            ),
         ])
         #expect(await copier.options == [
             ContainerCopyTransferOptions(preserveOwnership: true),
@@ -420,7 +417,12 @@ extension ComposeOrchestratorTests {
 
         #expect(runner.commands.isEmpty)
         #expect(await copier.requests == [
-            .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "demo-worker-1", destination: "/var/lib/report.txt"),
+            .between(
+                sourceID: "demo-api-1",
+                source: "/tmp/report.txt",
+                destinationID: "demo-worker-1",
+                destination: "/var/lib/report.txt"
+            ),
         ])
     }
 
@@ -495,42 +497,7 @@ extension ComposeOrchestratorTests {
     func cpAllIncludesOneOffContainersWhenCopyingIntoAService() async throws {
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
-        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
-            ComposeContainerSummary(
-                id: String(repeating: "e", count: 64),
-                name: "renamed-api-run-first",
-                bundleKey: "demo-api-run-first",
-                status: "stopped",
-                labels: [
-                    composeProjectLabel: "demo",
-                    composeServiceLabel: "api",
-                    composeOneOffLabel: "true",
-                    composeConfigHashLabel: "api-hash",
-                ]
-            ),
-            ComposeContainerSummary(
-                id: String(repeating: "f", count: 64),
-                name: "renamed-api",
-                bundleKey: "demo-api-1",
-                status: "running",
-                labels: [
-                    composeProjectLabel: "demo",
-                    composeServiceLabel: "api",
-                    composeOneOffLabel: "false",
-                    composeConfigHashLabel: "api-hash",
-                ]
-            ),
-            ComposeContainerSummary(
-                id: "demo-worker-run-first",
-                status: "stopped",
-                labels: [
-                    composeProjectLabel: "demo",
-                    composeServiceLabel: "worker",
-                    composeOneOffLabel: "true",
-                    composeConfigHashLabel: "worker-hash",
-                ]
-            ),
-        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: oneOffCopyContainers())
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -703,38 +670,7 @@ extension ComposeOrchestratorTests {
     func cpAllStagesServiceToServiceCopiesIntoEveryDestinationContainer() async throws {
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
-        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
-            ComposeContainerSummary(
-                id: "demo-api-1",
-                status: "running",
-                labels: [
-                    composeProjectLabel: "demo",
-                    composeServiceLabel: "api",
-                    composeOneOffLabel: "false",
-                    composeConfigHashLabel: "api-hash",
-                ]
-            ),
-            ComposeContainerSummary(
-                id: "demo-worker-1",
-                status: "running",
-                labels: [
-                    composeProjectLabel: "demo",
-                    composeServiceLabel: "worker",
-                    composeOneOffLabel: "false",
-                    composeConfigHashLabel: "worker-hash",
-                ]
-            ),
-            ComposeContainerSummary(
-                id: "demo-worker-run-first",
-                status: "stopped",
-                labels: [
-                    composeProjectLabel: "demo",
-                    composeServiceLabel: "worker",
-                    composeOneOffLabel: "true",
-                    composeConfigHashLabel: "worker-hash",
-                ]
-            ),
-        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: serviceCopyContainers())
         let project = ComposeProject(
             name: "demo",
             services: [
@@ -758,8 +694,120 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
         #expect(await discoveryManager.listRequests == [true, true])
         #expect(await copier.requests == [
-            .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "demo-worker-1", destination: "/tmp/report.txt"),
-            .between(sourceID: "demo-api-1", source: "/tmp/report.txt", destinationID: "demo-worker-run-first", destination: "/tmp/report.txt"),
+            .between(
+                sourceID: "demo-api-1",
+                source: "/tmp/report.txt",
+                destinationID: "demo-worker-1",
+                destination: "/tmp/report.txt"
+            ),
+            .between(
+                sourceID: "demo-api-1",
+                source: "/tmp/report.txt",
+                destinationID: "demo-worker-run-first",
+                destination: "/tmp/report.txt"
+            ),
         ])
     }
+}
+
+private func stdinCopyContainers() -> [ComposeContainerSummary] {
+    [
+        ComposeContainerSummary(
+            id: "demo-api-1",
+            status: "running",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+                composeOneOffLabel: "false",
+                composeConfigHashLabel: "api-hash",
+            ]
+        ),
+        ComposeContainerSummary(
+            id: "demo-api-run-first",
+            status: "stopped",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+                composeOneOffLabel: "true",
+                composeConfigHashLabel: "api-hash",
+            ]
+        ),
+
+    ]
+}
+
+private func oneOffCopyContainers() -> [ComposeContainerSummary] {
+    [
+        ComposeContainerSummary(
+            id: String(repeating: "e", count: 64),
+            name: "renamed-api-run-first",
+            bundleKey: "demo-api-run-first",
+            status: "stopped",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+                composeOneOffLabel: "true",
+                composeConfigHashLabel: "api-hash",
+            ]
+        ),
+        ComposeContainerSummary(
+            id: String(repeating: "f", count: 64),
+            name: "renamed-api",
+            bundleKey: "demo-api-1",
+            status: "running",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+                composeOneOffLabel: "false",
+                composeConfigHashLabel: "api-hash",
+            ]
+        ),
+        ComposeContainerSummary(
+            id: "demo-worker-run-first",
+            status: "stopped",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "worker",
+                composeOneOffLabel: "true",
+                composeConfigHashLabel: "worker-hash",
+            ]
+        ),
+
+    ]
+}
+
+private func serviceCopyContainers() -> [ComposeContainerSummary] {
+    [
+        ComposeContainerSummary(
+            id: "demo-api-1",
+            status: "running",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+                composeOneOffLabel: "false",
+                composeConfigHashLabel: "api-hash",
+            ]
+        ),
+        ComposeContainerSummary(
+            id: "demo-worker-1",
+            status: "running",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "worker",
+                composeOneOffLabel: "false",
+                composeConfigHashLabel: "worker-hash",
+            ]
+        ),
+        ComposeContainerSummary(
+            id: "demo-worker-run-first",
+            status: "stopped",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "worker",
+                composeOneOffLabel: "true",
+                composeConfigHashLabel: "worker-hash",
+            ]
+        ),
+
+    ]
 }

@@ -197,14 +197,7 @@ extension ComposeOrchestratorTests {
 
     @Test("commit resolves effective Compose healthchecks for image config")
     func commitResolvesEffectiveHealthchecksForImageConfig() throws {
-        let inherited = ComposeImageHealthCheck(
-            test: ["CMD-SHELL", "curl --fail http://localhost/health"],
-            intervalInNanoseconds: 15_000_000_000,
-            timeoutInNanoseconds: 5_000_000_000,
-            startPeriodInNanoseconds: 2_000_000_000,
-            startIntervalInNanoseconds: 1_000_000_000,
-            retries: 4
-        )
+        let inherited = inheritedCommitHealthCheck()
         let orchestrator = ComposeOrchestrator(runner: RecordingRunner())
 
         let inheritedResult = try orchestrator.commitImageHealthCheck(
@@ -329,21 +322,7 @@ extension ComposeOrchestratorTests {
     @Test("port prints runtime published bindings")
     func portPrintsRuntimePublishedBindings() async throws {
         let emitted = MessageRecorder()
-        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
-            ComposeContainerSummary(
-                id: "demo-api-1",
-                status: "running",
-                labels: [
-                    composeProjectLabel: "demo",
-                    composeServiceLabel: "api",
-                ],
-                publishedPorts: [
-                    ComposeContainerPublishedPort(hostAddress: "0.0.0.0", hostPort: 8080, containerPort: 80, protocolName: "tcp"),
-                    ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 8443, containerPort: 443, protocolName: "tcp"),
-                    ComposeContainerPublishedPort(hostAddress: "0.0.0.0", hostPort: 5353, containerPort: 53, protocolName: "udp"),
-                ]
-            ),
-        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: publishedPortContainers())
         let orchestrator = ComposeOrchestrator(
             options: ComposeExecutionOptions(emit: { emitted.append($0) }),
             discoveryManager: discoveryManager
@@ -361,9 +340,27 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
-        try await orchestrator.port(project: project, serviceName: "api", privatePort: "443", protocolName: "tcp", index: 1)
-        try await orchestrator.port(project: project, serviceName: "api", privatePort: "53/udp", protocolName: "udp", index: 1)
+        try await orchestrator.port(
+            project: project,
+            serviceName: "api",
+            privatePort: "80",
+            protocolName: "tcp",
+            index: 1
+        )
+        try await orchestrator.port(
+            project: project,
+            serviceName: "api",
+            privatePort: "443",
+            protocolName: "tcp",
+            index: 1
+        )
+        try await orchestrator.port(
+            project: project,
+            serviceName: "api",
+            privatePort: "53/udp",
+            protocolName: "udp",
+            index: 1
+        )
 
         #expect(emitted.messages == [
             "0.0.0.0:8080",
@@ -391,7 +388,13 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
+        try await orchestrator.port(
+            project: project,
+            serviceName: "api",
+            privatePort: "80",
+            protocolName: "tcp",
+            index: 1
+        )
 
         #expect(emitted.messages == ["0.0.0.0:49160"])
         #expect(ports.requests == [HostPortAllocationRequest(hostAddress: nil, protocolName: "tcp")])
@@ -400,19 +403,7 @@ extension ComposeOrchestratorTests {
     @Test("port resolves explicit ranges from runtime published ports")
     func portResolvesExplicitRangesFromRuntimePublishedPorts() async throws {
         let emitted = MessageRecorder()
-        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
-            ComposeContainerSummary(
-                id: "demo-api-1",
-                status: "running",
-                labels: [
-                    composeProjectLabel: "demo",
-                    composeServiceLabel: "api",
-                ],
-                publishedPorts: [
-                    ComposeContainerPublishedPort(hostAddress: "0.0.0.0", hostPort: 8080, containerPort: 80, protocolName: "tcp", count: 3),
-                ]
-            ),
-        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: rangePortContainers())
         let orchestrator = ComposeOrchestrator(
             options: ComposeExecutionOptions(emit: { emitted.append($0) }),
             discoveryManager: discoveryManager
@@ -426,9 +417,27 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 1)
-        try await orchestrator.port(project: project, serviceName: "api", privatePort: "81", protocolName: "tcp", index: 1)
-        try await orchestrator.port(project: project, serviceName: "api", privatePort: "82", protocolName: "tcp", index: 1)
+        try await orchestrator.port(
+            project: project,
+            serviceName: "api",
+            privatePort: "80",
+            protocolName: "tcp",
+            index: 1
+        )
+        try await orchestrator.port(
+            project: project,
+            serviceName: "api",
+            privatePort: "81",
+            protocolName: "tcp",
+            index: 1
+        )
+        try await orchestrator.port(
+            project: project,
+            serviceName: "api",
+            privatePort: "82",
+            protocolName: "tcp",
+            index: 1
+        )
 
         #expect(emitted.messages == ["0.0.0.0:8080", "0.0.0.0:8081", "0.0.0.0:8082"])
         #expect(await discoveryManager.getRequests == ["demo-api-1", "demo-api-1", "demo-api-1"])
@@ -448,7 +457,12 @@ extension ComposeOrchestratorTests {
                     composeConfigHashLabel: "api-hash",
                 ],
                 publishedPorts: [
-                    ComposeContainerPublishedPort(hostAddress: "127.0.0.1", hostPort: 9080, containerPort: 80, protocolName: "tcp"),
+                    ComposeContainerPublishedPort(
+                        hostAddress: "127.0.0.1",
+                        hostPort: 9080,
+                        containerPort: 80,
+                        protocolName: "tcp"
+                    ),
                 ]
             ),
         ])
@@ -465,7 +479,13 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 2)
+        try await orchestrator.port(
+            project: project,
+            serviceName: "api",
+            privatePort: "80",
+            protocolName: "tcp",
+            index: 2
+        )
 
         #expect(emitted.messages == ["127.0.0.1:9080"])
         #expect(await discoveryManager.listRequests == [true])
@@ -489,7 +509,13 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.port(project: project, serviceName: "api", privatePort: "81", protocolName: "tcp", index: 1)
+        try await orchestrator.port(
+            project: project,
+            serviceName: "api",
+            privatePort: "81",
+            protocolName: "tcp",
+            index: 1
+        )
 
         #expect(emitted.messages == ["127.0.0.1:8081"])
         #expect(await discoveryManager.getRequests.isEmpty)
@@ -513,7 +539,13 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 2)
+        try await orchestrator.port(
+            project: project,
+            serviceName: "api",
+            privatePort: "80",
+            protocolName: "tcp",
+            index: 2
+        )
 
         #expect(emitted.messages == ["127.0.0.1:8081"])
         #expect(await discoveryManager.getRequests.isEmpty)
@@ -521,19 +553,7 @@ extension ComposeOrchestratorTests {
 
     @Test("port validates lookup options")
     func portValidatesLookupOptions() async throws {
-        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
-            ComposeContainerSummary(
-                id: "demo-api-1",
-                status: "running",
-                labels: [
-                    composeProjectLabel: "demo",
-                    composeServiceLabel: "api",
-                ],
-                publishedPorts: [
-                    ComposeContainerPublishedPort(hostAddress: "0.0.0.0", hostPort: 8080, containerPort: 80, protocolName: "tcp"),
-                ]
-            ),
-        ])
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: validationPortContainers())
         let orchestrator = ComposeOrchestrator(discoveryManager: discoveryManager)
         let project = ComposeProject(
             name: "demo",
@@ -544,31 +564,124 @@ extension ComposeOrchestratorTests {
             ]
         )
 
-        do {
-            try await orchestrator.port(project: project, serviceName: "api", privatePort: "80", protocolName: "tcp", index: 0)
-            Issue.record("Expected invalid index error")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("container index must be greater than zero"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
+        await #expect(throws: ComposeError.invalidProject("container index must be greater than zero")) {
+            try await orchestrator.port(
+                project: project,
+                serviceName: "api",
+                privatePort: "80",
+                protocolName: "tcp",
+                index: 0
+            )
         }
 
-        do {
-            try await orchestrator.port(project: project, serviceName: "api", privatePort: "80/udp", protocolName: "tcp", index: 1)
-            Issue.record("Expected protocol conflict")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("port protocol 'udp' conflicts with --protocol tcp"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
+        await #expect(throws: ComposeError.invalidProject("port protocol 'udp' conflicts with --protocol tcp")) {
+            try await orchestrator.port(
+                project: project,
+                serviceName: "api",
+                privatePort: "80/udp",
+                protocolName: "tcp",
+                index: 1
+            )
         }
 
-        do {
-            try await orchestrator.port(project: project, serviceName: "api", privatePort: "81", protocolName: "tcp", index: 1)
-            Issue.record("Expected missing port error")
-        } catch let error as ComposeError {
-            #expect(error == .invalidProject("service 'api' does not publish target port 81/tcp"))
-        } catch {
-            Issue.record("Unexpected error: \(error)")
+        await #expect(throws: ComposeError.invalidProject("service 'api' does not publish target port 81/tcp")) {
+            try await orchestrator.port(
+                project: project,
+                serviceName: "api",
+                privatePort: "81",
+                protocolName: "tcp",
+                index: 1
+            )
         }
     }
+}
+
+private func inheritedCommitHealthCheck() -> ComposeImageHealthCheck {
+    ComposeImageHealthCheck(
+        test: ["CMD-SHELL", "curl --fail http://localhost/health"],
+        intervalInNanoseconds: 15_000_000_000,
+        timeoutInNanoseconds: 5_000_000_000,
+        startPeriodInNanoseconds: 2_000_000_000,
+        startIntervalInNanoseconds: 1_000_000_000,
+        retries: 4
+    )
+}
+
+private func publishedPortContainers() -> [ComposeContainerSummary] {
+    [
+        ComposeContainerSummary(
+            id: "demo-api-1",
+            status: "running",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+            ],
+            publishedPorts: [
+                ComposeContainerPublishedPort(
+                    hostAddress: "0.0.0.0",
+                    hostPort: 8080,
+                    containerPort: 80,
+                    protocolName: "tcp"
+                ),
+                ComposeContainerPublishedPort(
+                    hostAddress: "127.0.0.1",
+                    hostPort: 8443,
+                    containerPort: 443,
+                    protocolName: "tcp"
+                ),
+                ComposeContainerPublishedPort(
+                    hostAddress: "0.0.0.0",
+                    hostPort: 5353,
+                    containerPort: 53,
+                    protocolName: "udp"
+                ),
+            ]
+        ),
+
+    ]
+}
+
+private func rangePortContainers() -> [ComposeContainerSummary] {
+    [
+        ComposeContainerSummary(
+            id: "demo-api-1",
+            status: "running",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+            ],
+            publishedPorts: [
+                ComposeContainerPublishedPort(
+                    hostAddress: "0.0.0.0",
+                    hostPort: 8080,
+                    containerPort: 80,
+                    protocolName: "tcp",
+                    count: 3
+                ),
+            ]
+        ),
+
+    ]
+}
+
+private func validationPortContainers() -> [ComposeContainerSummary] {
+    [
+        ComposeContainerSummary(
+            id: "demo-api-1",
+            status: "running",
+            labels: [
+                composeProjectLabel: "demo",
+                composeServiceLabel: "api",
+            ],
+            publishedPorts: [
+                ComposeContainerPublishedPort(
+                    hostAddress: "0.0.0.0",
+                    hostPort: 8080,
+                    containerPort: 80,
+                    protocolName: "tcp"
+                ),
+            ]
+        ),
+
+    ]
 }
