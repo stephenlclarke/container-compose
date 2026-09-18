@@ -40,7 +40,24 @@ Native help smoke checks pass in enhanced (`5d52852c-ee61-4bc1-a83f-23c4abf4e31a
 
 ## Unit and filesystem migration
 
-`test-unit` selects the explicit `unit_stock` or `unit_enhanced` suite, matching the package's provider-conditional test modules. Both include all six Go test targets, focused private-storage regressions and runtime-neutral Core tests. Stock now runs 1,056 existing Core cases without importing either concrete provider; enhanced retains all 1,246 Core cases and provider fixtures. The explicit five-file provider-coupled inventory is identical in Bazel and Package.swift, so new neutral suites run in both profiles by default. Concrete lifecycle/event/discovery/archive assertions in mixed suites use the explicit enhanced-profile flag, never `canImport` (cached modules can remain discoverable across a profile switch). The remaining 190 enhanced Core cases still require provider separation or equivalent stock-provider proof. The opt-in live `ComposeRuntimeTests` suite is not silently counted as a unit pass; its runtime-lease adapter remains unfinished.
+`test-unit` selects the explicit `unit_stock` or `unit_enhanced` suite, matching the package's provider-conditional test modules. Both include all six Go test targets, focused private-storage regressions and runtime-neutral Core tests. Stock now runs 1,057 Core cases without importing either concrete provider; enhanced runs 1,247 Core cases and provider fixtures, including the new process-diagnostics check. The explicit five-file provider-coupled inventory is identical in Bazel and Package.swift, so new neutral suites run in both profiles by default. Concrete lifecycle/event/discovery/archive assertions in mixed suites use the explicit enhanced-profile flag, never `canImport` (cached modules can remain discoverable across a profile switch). The remaining 190 enhanced Core cases still require provider separation or equivalent stock-provider proof. The opt-in live `ComposeRuntimeTests` suite is not silently counted as a unit pass; its runtime-lease adapter remains unfinished.
+
+### Cancellation diagnostic evidence
+
+The retained stock GitHub failure at `ac6ef809` (`35299032455`, job `105458020296`) took 2.543 seconds against the existing strict two-second cancellation bound. Its cause remains unresolved. Passing subsequent runs do not supersede that failure or qualify it as fixed.
+
+An internal, optional per-run observer now records scheduling, SIGTERM, escalation, leader reaping, pipe drainage and continuation completion. Production callers leave it unset; no queue, signal, grace period, process ownership or completion condition changes. The four existing cancellation tests retain their error type, two-second limit and parent/descendant PID-absence checks. Their retained test output includes JSON phase offsets in monotonic nanoseconds and the caller's `awaitReturned` duration. Negative offsets mean the phase preceded cancellation. Diagnostics are rendered after the measured operation; they contain no command, environment, process output or PID payloads.
+
+The final source passes all 1,057 stock Core tests in 38 suites (`2762b313-1df7-46e0-8311-e3c2b80ceaea`, 39.277 seconds build/test) and all 1,247 enhanced Core tests in 40 suites (`471cfacf-96c2-4a54-a41d-73233c41d4dc`, 70.349 seconds build/test). Strict touched-file Swift formatting/lint and independent final source review pass. Both invocations retain raw phase JSON in the `ComposeCoreTests` test log. The measured cancellation totals were:
+
+| I/O mode | Stock milliseconds | Enhanced milliseconds |
+| --- | ---: | ---: |
+| Captured, no input | 294.025 | 346.170 |
+| Captured, input | 353.041 | 287.422 |
+| Captured stdout, inherited stdin/stderr | 312.141 | 350.627 |
+| Inherited | 311.904 | 330.492 |
+
+These are instrumented diagnostic observations, not quiet paired benchmarks, performance comparisons or a fix for the historical timeout. The intended next evidence is a failing phase trace: delay before escalation implicates scheduling; delay after reaping can be separated into stream drainage, process-group waiting and caller resumption. No timing waiver or retry-to-green policy was introduced. Public CLI behavior, README installation commands and DocC usage remain unchanged.
 
 Swift test fixtures explicitly use the runner's canonical SSD directory; undeclared Bazel scratch fails closed. The processed resource bundle preserves SwiftPM's flattened fixture names. CLI tests declare their real executable, and parser tests declare the native Go executable instead of rebuilding it using `go run`. Fallback-launcher tests inject their selection environment without changing concurrent tests' process environment. Go test targets enable verbose events so their retained XML contains actual passing cases, not an empty success report.
 

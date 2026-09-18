@@ -910,8 +910,9 @@ private func assertCancellationKillsChild(io: CommandIO) async throws {
 
     let pidFile = directory.appendingPathComponent("child.pid")
     let descendantPIDFile = directory.appendingPathComponent("descendant.pid")
+    let trace = ProcessCancellationTrace()
     let task = Task {
-        try await ProcessRunner().run(
+        try await ProcessRunner(observe: trace.record).run(
             "/bin/sh",
             [
                 "-c",
@@ -940,20 +941,25 @@ private func assertCancellationKillsChild(io: CommandIO) async throws {
     task.cancel()
     task.cancel()
 
-    var observedCancellation = false
+    let observedCancellation = await observeCancellation(task, io: io)
+    let cancellationElapsed = clock.now - cancellationStarted
+    #expect(observedCancellation)
+    try trace.expectCancellation(since: cancellationStarted, elapsed: cancellationElapsed, io: io)
+    expectProcessDoesNotExist(processIdentifier)
+    expectProcessDoesNotExist(descendantProcessIdentifier)
+}
+
+/// Preserve unexpected errors while measuring cancellation independently of diagnostics.
+private func observeCancellation(_ task: Task<CommandResult, Error>, io: CommandIO) async -> Bool {
     do {
         _ = try await task.value
         Issue.record("Expected cancellation for \(io)")
     } catch is CancellationError {
-        observedCancellation = true
+        return true
     } catch {
         Issue.record("Expected CancellationError for \(io), received \(error)")
     }
-
-    #expect(observedCancellation)
-    #expect(clock.now - cancellationStarted < .seconds(2))
-    expectProcessDoesNotExist(processIdentifier)
-    expectProcessDoesNotExist(descendantProcessIdentifier)
+    return false
 }
 
 /// Requires a previously owned PID to be absent after command completion.

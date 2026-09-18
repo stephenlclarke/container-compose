@@ -72,6 +72,23 @@ private typealias ProcessStartObserver = @Sendable (
     @escaping @Sendable () -> Void,
 ) -> Void
 
+/// Payload-free lifecycle phases for internal cancellation diagnostics.
+enum ProcessRunPhase: String, Sendable {
+    case waitStarted
+    case processReaped
+    case stdoutDrainStarted
+    case stderrDrainStarted
+    case stdoutDrained
+    case stderrDrained
+    case cancellationRequested
+    case termSent
+    case escalationStarted
+    case terminationWaitFinished
+    case completionResumed
+}
+
+typealias ProcessRunObserver = @Sendable (ProcessRunPhase) -> Void
+
 /// Returns the signal that stopped a child, or nil for a terminal wait status.
 func processStoppedSignal(_ waitStatus: Int32) -> Int32? {
     guard waitStatus & 0xFF == 0x7F else {
@@ -304,6 +321,7 @@ public extension CommandRunning {
 public struct ProcessRunner: CommandRunning {
     private static let isStateless = true
     private let processDidStart: ProcessStartObserver
+    private var observer: ProcessRunObserver?
 
     public init() {
         processDidStart = { _ in
@@ -318,6 +336,12 @@ public struct ProcessRunner: CommandRunning {
         ) -> Void,
     ) {
         self.processDidStart = processDidStart
+    }
+
+    /// Installs diagnostics only for the caller's command, never globally.
+    init(observe: @escaping ProcessRunObserver) {
+        self.init()
+        observer = observe
     }
 
     /// Executes a command with either captured or inherited process streams.
@@ -391,7 +415,7 @@ public struct ProcessRunner: CommandRunning {
         workingDirectory: URL?,
         environment: [String: String]?,
     ) async throws -> CommandResult {
-        let state = ProcessRunState(capturesStdout: true, capturesStderr: false)
+        let state = ProcessRunState(capturesStdout: true, capturesStderr: false, observer: observer)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let stdout = Pipe()
@@ -445,6 +469,7 @@ public struct ProcessRunner: CommandRunning {
             capturesStdout: true,
             capturesStderr: true,
             maximumOutputBytes: options.maximumOutputBytes,
+            observer: observer,
         )
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -496,7 +521,7 @@ public struct ProcessRunner: CommandRunning {
         workingDirectory: URL?,
         environment: [String: String]?,
     ) async throws -> CommandResult {
-        let state = ProcessRunState(capturesStdout: false, capturesStderr: false)
+        let state = ProcessRunState(capturesStdout: false, capturesStderr: false, observer: observer)
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 let prepared = prepareProcessCommand(
@@ -584,6 +609,7 @@ private final class ProcessRunState: @unchecked Sendable {
     private var escalation: DispatchWorkItem?
     private var jobControlProcessGroup: pid_t?
     private let maximumOutputBytes: Int?
+    private let observer: ProcessRunObserver?
     private var ownedProcessGroup: pid_t?
     private var stdout = Data()
     private var stdoutOmittedByteCount = 0
@@ -599,8 +625,10 @@ private final class ProcessRunState: @unchecked Sendable {
         capturesStdout: Bool,
         capturesStderr: Bool,
         maximumOutputBytes: Int? = nil,
+        observer: ProcessRunObserver? = nil,
     ) {
         self.maximumOutputBytes = maximumOutputBytes
+        self.observer = observer
         stdoutFinished = !capturesStdout
         stderrFinished = !capturesStderr
     }
@@ -651,6 +679,7 @@ private final class ProcessRunState: @unchecked Sendable {
     func waitForExit(_ command: ComposeProcessCommand) {
         let processIdentifier = command.pid
         DispatchQueue.global(qos: .utility).async {
+            self.observer?(.waitStarted)
             while true {
                 var waitStatus = Int32()
                 let result = waitpid(processIdentifier, &waitStatus, WUNTRACED)
@@ -662,6 +691,7 @@ private final class ProcessRunState: @unchecked Sendable {
                         )
                         continue
                     }
+                    self.observer?(.processReaped)
                     self.completeProcess(status: processTerminationStatus(waitStatus))
                     return
                 }
@@ -682,6 +712,7 @@ private final class ProcessRunState: @unchecked Sendable {
         // Drain pipes while the process is running. Waiting until termination
         // can deadlock when a child writes more than the pipe buffer.
         DispatchQueue.global(qos: .utility).async {
+            self.observer?(stream == .stdout ? .stdoutDrainStarted : .stderrDrainStarted)
             var output = CapturedProcessOutput()
             while true {
                 let chunk = handle.readData(ofLength: 64 * 1024)
@@ -699,6 +730,7 @@ private final class ProcessRunState: @unchecked Sendable {
                     output.data.append(chunk)
                 }
             }
+            self.observer?(stream == .stdout ? .stdoutDrained : .stderrDrained)
             self.complete(stream: stream, output: output)
         }
     }
@@ -777,6 +809,7 @@ private extension ProcessRunState {
         terminationWorkItem = processGroup.flatMap(beginTerminationLocked)
         completion = completedResultLocked()
         lock.unlock()
+        observer?(.cancellationRequested)
         resume(completion)
 
         if let processGroup, let terminationWorkItem {
@@ -865,6 +898,7 @@ private extension ProcessRunState {
         escalation: DispatchWorkItem,
     ) {
         _ = kill(-processGroup, SIGTERM)
+        observer?(.termSent)
         DispatchQueue.global(qos: .utility).asyncAfter(
             deadline: .now() + Self.terminationGracePeriod,
             execute: escalation,
@@ -873,6 +907,7 @@ private extension ProcessRunState {
 
     /// Sends SIGKILL and waits until the owned group no longer exists.
     private func forceTerminate(_ processGroup: pid_t) {
+        observer?(.escalationStarted)
         _ = kill(-processGroup, SIGKILL)
         for _ in 0 ..< 100 {
             errno = 0
@@ -881,6 +916,7 @@ private extension ProcessRunState {
             }
             usleep(10000)
         }
+        observer?(.terminationWaitFinished)
 
         let completion: Completion?
         lock.lock()
@@ -902,6 +938,7 @@ private extension ProcessRunState {
     /// Resumes a terminal process result outside the state lock.
     private func resume(_ completion: Completion?) {
         if let completion {
+            observer?(.completionResumed)
             completion.continuation.resume(with: completion.result)
         }
     }
