@@ -14,7 +14,7 @@
       "repository": "stephenlclarke/container-builder-shim"
     },
     "containerization": {
-      "ref": "51bf8a10e2036861f87ccdf2fd881a8726c534d2",
+      "ref": "ea5ff3b97bd1a12c4054f262ce9fbb7207e6f443",
       "repository": "stephenlclarke/containerization"
     }
   },
