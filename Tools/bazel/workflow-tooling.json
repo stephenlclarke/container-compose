@@ -21,7 +21,7 @@
   },
   "input_identity.py": {
     "mode": 420,
-    "sha256": "77be6bfc161be130823f95215af1a73b2868820e349b314bb709d6e47fe1e118"
+    "sha256": "be9a72256d0aaee915b348c13d3a4fb7d37857bfeab1b86190fafb8f53f6410f"
   },
   "oci_image_layout.py": {
     "mode": 420,
@@ -81,7 +81,7 @@
   },
   "test_input_identity.py": {
     "mode": 420,
-    "sha256": "045deb73e3e6999f5b9d0d17818e97df21b109d8559c79ba55969f8bcf840471"
+    "sha256": "4ee77a9a112551fe6508dc51fcdb00ffcbd8957e72c108054d3d9c1ab4b3001e"
   },
   "test_launcher.py": {
     "mode": 420,
