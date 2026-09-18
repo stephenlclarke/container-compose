@@ -196,26 +196,6 @@ func composeTextEventTimestamp(_ value: String) -> String {
     )
 }
 
-func composeService(
-    name: String,
-    image: String? = nil,
-    configure: (inout ComposeService) -> Void = { _ in }
-) -> ComposeService {
-    var service = ComposeService(name: name, image: image)
-    configure(&service)
-    return service
-}
-
-func composeProject(
-    name: String,
-    services: [String: ComposeService],
-    configure: (inout ComposeProject) -> Void = { _ in }
-) -> ComposeProject {
-    var project = ComposeProject(name: name, services: services)
-    configure(&project)
-    return project
-}
-
 func orchestratorReadOnlyVolumeSource(target: String, in arguments: [String]) -> String? {
     let suffix = ":\(target):ro"
     for index in arguments.indices where arguments[index] == "--volume" {
@@ -3953,23 +3933,6 @@ actor DelayedBuildRunner: CommandRunning {
         storedCommands.append(arguments)
         activeOperations -= 1
         return .success
-    }
-}
-
-final class DataRecorder: @unchecked Sendable {
-    private let lock = NSLock()
-    private var storage: [Data] = []
-
-    var data: [Data] {
-        lock.lock()
-        defer { lock.unlock() }
-        return storage
-    }
-
-    func append(_ data: Data) {
-        lock.lock()
-        defer { lock.unlock() }
-        storage.append(data)
     }
 }
 

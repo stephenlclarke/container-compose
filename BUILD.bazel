@@ -157,9 +157,31 @@ fixture_bundle(
 filegroup(name = "ComposeCoreFixtureAccessor", testonly = True, srcs = [":ComposeCoreFixtures"], output_group = "accessor")
 filegroup(name = "ComposeCoreFixtureBundle", testonly = True, srcs = [":ComposeCoreFixtures"], output_group = "bundle")
 
+# These suites still exercise concrete enhanced-provider APIs. Every other
+# Core suite is runtime-neutral and must also execute with stock Apple pins.
+ENHANCED_CORE_TESTS = [
+    "Tests/ComposeCoreTests/ComposeOrchestratorBuildAndImageTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorCopyExportCommitTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorInspectionAndConfigTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorLifecycleTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorLogsWatchAttachTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorResourceTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorRunTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorRuntimeAdapterTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorUpAndCreateTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorValidationTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorTestSupport.swift",
+    "Tests/ComposeCoreTests/ComposeAPISocketTests.swift",
+    "Tests/ComposeCoreTests/ExternalConfigOrchestratorTests.swift",
+]
+
 swift_test(
     name = "ComposeCoreTests",
-    srcs = glob(["Tests/ComposeCoreTests/*.swift"], exclude = ["Tests/ComposeCoreTests/ComposeTemporaryFilesTests.swift"]) + [":ComposeCoreFixtureAccessor"],
+    srcs = glob(["Tests/ComposeCoreTests/*.swift"], exclude = ["Tests/ComposeCoreTests/ComposeTemporaryFilesTests.swift"] + ENHANCED_CORE_TESTS) + [":ComposeCoreFixtureAccessor"] + select({
+        ":stock_runtime": [],
+        "//conditions:default": ENHANCED_CORE_TESTS,
+    }),
     copts = SWIFT_COPTS,
     data = [
         ":ComposeCoreFixtureBundle",
@@ -170,13 +192,15 @@ swift_test(
         "//Tools/compose-normalizer:compose-normalizer",
     ],
     env = {"COMPOSE_NORMALIZER_RUNFILE": "$(rootpath //Tools/compose-normalizer:compose-normalizer)"},
-    deps = [
-        ":ComposeCore", ":ComposeContainerRuntime", ":ComposeTestStorage",
-        "@swiftpkg_container//:ContainerResource",
-        "@swiftpkg_containerization//:ContainerizationArchive",
-        "@swiftpkg_containerization//:ContainerizationExtras",
-    ],
-    target_compatible_with = select({":stock_runtime": ["@platforms//:incompatible"], "//conditions:default": []}),
+    deps = [":ComposeCore", ":ComposeTestStorage"] + select({
+        ":stock_runtime": [],
+        "//conditions:default": [
+            ":ComposeContainerRuntime",
+            "@swiftpkg_container//:ContainerResource",
+            "@swiftpkg_containerization//:ContainerizationArchive",
+            "@swiftpkg_containerization//:ContainerizationExtras",
+        ],
+    }),
     timeout = "long",
 )
 
@@ -195,7 +219,7 @@ swift_test(
 
 test_suite(
     name = "unit_stock",
-    tests = [":ComposeRuntimeSPITests", ":ComposePluginTests", ":ComposeEngineRuntimeTests", ":ComposeTemporaryFilesTests", ":unit_go"],
+    tests = [":ComposeRuntimeSPITests", ":ComposePluginTests", ":ComposeCoreTests", ":ComposeEngineRuntimeTests", ":ComposeTemporaryFilesTests", ":unit_go"],
 )
 
 test_suite(

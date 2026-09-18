@@ -17,10 +17,13 @@
         "//Tools/compose-normalizer/cmd/volume-initializer:volume-initializer_test": 61,
         "//Tools/compose-normalizer/cmd/volume-initializer:permission_bits_test": 1,
         "//:ComposePluginTests": 92,
+        "//:ComposeCoreTests": 284,
         "//:ComposeEngineRuntimeTests": 25
       },
       "required_sources": [
         "Sources/ComposeCore/ComposeTemporaryFiles.swift",
+        "Sources/ComposeCore/ComposeNormalizer.swift",
+        "Sources/ComposeCore/ProcessRunner.swift",
         "Sources/ComposePlugin/ComposePlugin.swift",
         "Sources/ComposeRuntimeSPI/ComposeRuntimeCapabilities.swift",
         "Tools/compose-normalizer/main.go",
@@ -59,4 +62,3 @@
     }
   }
 }
-

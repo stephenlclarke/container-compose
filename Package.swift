@@ -70,6 +70,25 @@ let pluginRuntimeDependencies: [Target.Dependency] = enhancedRuntime
     ? ["ComposeContainerRuntime"]
     : ["ComposeEngineRuntime"]
 
+/// Keep the explicit provider-coupled inventory aligned with BUILD.bazel.
+/// New runtime-neutral Core suites run in both profiles by default.
+let enhancedCoreTestSources = [
+    "ComposeOrchestratorBuildAndImageTests.swift",
+    "ComposeOrchestratorCopyExportCommitTests.swift",
+    "ComposeOrchestratorInspectionAndConfigTests.swift",
+    "ComposeOrchestratorLifecycleTests.swift",
+    "ComposeOrchestratorLogsWatchAttachTests.swift",
+    "ComposeOrchestratorResourceTests.swift",
+    "ComposeOrchestratorRunTests.swift",
+    "ComposeOrchestratorRuntimeAdapterTests.swift",
+    "ComposeOrchestratorTests.swift",
+    "ComposeOrchestratorUpAndCreateTests.swift",
+    "ComposeOrchestratorValidationTests.swift",
+    "ComposeOrchestratorTestSupport.swift",
+    "ComposeAPISocketTests.swift",
+    "ExternalConfigOrchestratorTests.swift",
+]
+
 let runtimeTargets: [Target] = enhancedRuntime
     ? [
         .target(
@@ -91,21 +110,6 @@ let runtimeTargets: [Target] = enhancedRuntime
             ],
             path: "Sources/ComposeContainerRuntime",
             swiftSettings: runtimeSwiftSettings,
-        ),
-        .testTarget(
-            name: "ComposeCoreTests",
-            dependencies: [
-                "ComposeTestStorage",
-                "ComposeCore",
-                "ComposeContainerRuntime",
-                .product(name: "ContainerResource", package: "container"),
-                .product(name: "ContainerizationArchive", package: "containerization"),
-                .product(name: "ContainerizationExtras", package: "containerization"),
-            ],
-            path: "Tests/ComposeCoreTests",
-            resources: [
-                .process("Fixtures"),
-            ],
         ),
         .testTarget(
             name: "ComposeContainerRuntimeTests",
@@ -200,6 +204,18 @@ let package = Package(
                 "ComposeRuntimeSPI",
             ],
             path: "Tests/ComposeRuntimeSPITests",
+        ),
+        .testTarget(
+            name: "ComposeCoreTests",
+            dependencies: ["ComposeTestStorage", "ComposeCore"] + (enhancedRuntime ? [
+                "ComposeContainerRuntime",
+                .product(name: "ContainerResource", package: "container"),
+                .product(name: "ContainerizationArchive", package: "containerization"),
+                .product(name: "ContainerizationExtras", package: "containerization"),
+            ] : []),
+            path: "Tests/ComposeCoreTests",
+            exclude: enhancedRuntime ? [] : enhancedCoreTestSources,
+            resources: [.process("Fixtures")],
         ),
         .testTarget(
             name: "ComposePluginTests",
