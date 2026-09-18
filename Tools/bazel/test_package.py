@@ -177,6 +177,7 @@ class PackageTests(unittest.TestCase):
         licenses = self.root / "licenses.json"
         licenses.write_text(json.dumps([{"licenses": entries}]))
         self.manifest["licenses"] = str(licenses)
+        self.vendor_fixture()
         sdk = self.root / "sdk"
         sdk.mkdir(exist_ok=True)
         self.manifest["sdk_notices"] = []
@@ -186,6 +187,29 @@ class PackageTests(unittest.TestCase):
             self.manifest["sdk_notices"].append(str(path))
         return entries
 
+    def vendor_fixture(self) -> None:
+        rows = {}
+        resolved = Path(self.manifest["resolved"])
+        lock = json.loads(resolved.read_text())
+        lock["pins"] = [pin for pin in lock["pins"] if pin["identity"] not in {"swift-crypto", "swift-nio-ssl"}]
+        self.manifest["vendor_notices"] = []
+        for identity, package_revision, revision in (("swift-crypto", "e" * 40, "1" * 40),
+                                                       ("swift-nio-ssl", "f" * 40, "2" * 40)):
+            repository = f"https://github.com/apple/{identity}.git"
+            path = self.root / f"boringssl-{revision}.txt"
+            path.write_text(identity + " vendored notice\n")
+            self.manifest["vendor_notices"].append(str(path))
+            rows[identity] = {"repository": repository, "packageRevisions": [package_revision],
+                              "vendor": "BoringSSL", "revision": revision, "license": path.name,
+                              "sourceURL": f"https://raw.githubusercontent.com/google/boringssl/{revision}/LICENSE",
+                              "sha256": sha256(path)}
+            lock["pins"].append({"identity": identity, "kind": "remoteSourceControl", "location": repository,
+                                 "state": {"revision": package_revision}})
+        resolved.write_text(json.dumps(lock))
+        inventory = self.root / "vendor.json"
+        inventory.write_text(json.dumps({"schemaVersion": 1, "packages": rows}))
+        self.manifest["vendor_inventory"] = str(inventory)
+
     def test_notices_cover_locked_modules_and_sdk_deterministically(self) -> None:
         entries = self.notice_fixture()
         text, evidence = dependency_notices(self.manifest)
@@ -194,7 +218,10 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Go SDK 1.26.3/PATENTS", text)
         self.assertNotIn(str(self.root), text)
         self.assertEqual(evidence["dependencyNoticesSHA256"], hashlib.sha256(text.encode()).hexdigest())
-        self.assertEqual((evidence["goNoticeModules"], evidence["swiftNoticePackages"], evidence["noticeTexts"]), (1, 2, 6))
+        self.assertEqual((evidence["goNoticeModules"], evidence["swiftNoticePackages"], evidence["noticeTexts"]), (1, 2, 8))
+        self.assertEqual([row["package"] for row in evidence["vendoredNotices"]], ["swift-crypto", "swift-nio-ssl"])
+        self.assertEqual(evidence["vendoredNotices"][0]["packageRevision"], "e" * 40)
+        self.assertIn("Swift/swift_crypto/BoringSSL@" + "1" * 40 + "/LICENSE", text)
         Path(self.manifest["licenses"]).write_text(json.dumps([{"licenses": list(reversed(entries)) + entries}]))
         self.assertEqual(dependency_notices(self.manifest), (text, evidence))
 
@@ -229,6 +256,49 @@ class PackageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             dependency_notices(self.manifest)
 
+    def test_vendor_notices_reject_changed_missing_or_ambiguous_package(self) -> None:
+        self.notice_fixture()
+        resolved = Path(self.manifest["resolved"])
+        original = json.loads(resolved.read_text())
+        pin = original["pins"][-1]
+        alternatives = [original["pins"][:-1], original["pins"] + [pin],
+                        original["pins"][:-1] + [{**pin, "location": "https://example.invalid/other.git"}],
+                        original["pins"][:-1] + [{**pin, "state": {"revision": "0" * 40}}]]
+        for pins in alternatives:
+            resolved.write_text(json.dumps({**original, "pins": pins}))
+            with self.subTest(pins=pins), self.assertRaisesRegex(ValueError, "revision requires review"):
+                dependency_notices(self.manifest)
+
+    def test_vendor_notices_reject_missing_duplicate_or_modified_text(self) -> None:
+        self.notice_fixture()
+        files = self.manifest["vendor_notices"]
+        for invalid in (files[:1], files + files[:1]):
+            self.manifest["vendor_notices"] = invalid
+            with self.assertRaisesRegex(ValueError, "notice inputs"):
+                dependency_notices(self.manifest)
+        self.manifest["vendor_notices"] = files
+        for invalid in ("", "altered licence\n"):
+            Path(files[0]).write_text(invalid)
+            with self.assertRaisesRegex(ValueError, "reviewed upstream text"):
+                dependency_notices(self.manifest)
+
+    def test_vendor_notices_reject_stale_provenance_and_inventory(self) -> None:
+        self.notice_fixture()
+        path = Path(self.manifest["vendor_inventory"])
+        original = json.loads(path.read_text())
+        invalid_rows = [dict(original, schemaVersion=0), {**original, "packages": {}},
+                        *[{**original, "packages": {**original["packages"], "swift-crypto":
+                           {**original["packages"]["swift-crypto"], key: value}}}
+                          for key, value in (("vendor", "other"), ("revision", "latest"),
+                                             ("packageRevisions", "e" * 40), ("packageRevisions", []),
+                                             ("packageRevisions", ["e" * 40, "e" * 40]),
+                                             ("packageRevisions", ["latest"]), ("packageRevisions", [None]),
+                                             ("sourceURL", "https://example.invalid/LICENSE"))]]
+        for invalid in invalid_rows:
+            path.write_text(json.dumps(invalid))
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "vendored notice"):
+                dependency_notices(self.manifest)
+
 
 class ArchiveTests(unittest.TestCase):
     def test_layout_modes_and_product_hashes(self) -> None:
@@ -253,6 +323,12 @@ class ArchiveTests(unittest.TestCase):
             self.assertIn(b"Swift/swift_crypto/NOTICE.txt", notices)
             self.assertIn(b"Swift/swift_nio_ssl/NOTICE.txt", notices)
             self.assertIn(b"Go SDK 1.26.3/PATENTS", notices)
+            self.assertEqual({row["package"] for row in identity["vendoredNotices"]}, {"swift-crypto", "swift-nio-ssl"})
+            for row in identity["vendoredNotices"]:
+                label = "Swift/" + row["package"].replace("-", "_") + "/BoringSSL@" + row["vendorRevision"] + "/LICENSE"
+                self.assertIn(label.encode(), notices)
+                self.assertEqual(len(row["licenseSHA256"]), 64)
+            self.assertFalse(identity["licenseClosureComplete"])
             for entry in files:
                 self.assertTrue(entry.isfile())
                 self.assertEqual((entry.uid, entry.gid, entry.mtime), (0, 0, 946684800))

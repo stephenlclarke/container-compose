@@ -29,12 +29,15 @@ def _metadata_impl(ctx):
         "licenses": licenses.path,
         "go_inventory": ctx.file.go_inventory.path,
         "sdk_notices": [file.path for file in ctx.files.sdk_notices],
+        "vendor_inventory": ctx.file.vendor_inventory.path,
+        "vendor_notices": [file.path for file in ctx.files.vendor_notices],
     }))
     ctx.actions.run(
         executable = "/usr/bin/python3",
         arguments = [ctx.file._tool.path, "metadata", manifest.path, info.path, identity.path, ctx.file._build_info.path, notices.path],
         inputs = [manifest, ctx.file.makefile, ctx.file.resolved, ctx.file.go_mod, ctx.file.go_sum,
-                  ctx.file.capabilities, ctx.file._tool, ctx.file._build_info, licenses, ctx.file.go_inventory] + binaries + license_files + ctx.files.sdk_notices,
+                  ctx.file.capabilities, ctx.file._tool, ctx.file._build_info, licenses, ctx.file.go_inventory,
+                  ctx.file.vendor_inventory] + binaries + license_files + ctx.files.sdk_notices + ctx.files.vendor_notices,
         outputs = [info, identity, notices],
         mnemonic = "ComposePackageIdentity",
         env = {"PYTHONDONTWRITEBYTECODE": "1"},
@@ -47,6 +50,8 @@ _metadata = rule(
         "binaries": attr.label_list(aspects = [gather_licenses_info], mandatory = True),
         "go_inventory": attr.label(allow_single_file = True, mandatory = True),
         "sdk_notices": attr.label_list(allow_files = True, mandatory = True),
+        "vendor_inventory": attr.label(allow_single_file = True, mandatory = True),
+        "vendor_notices": attr.label_list(allow_files = True, mandatory = True),
         "makefile": attr.label(allow_single_file = True, mandatory = True),
         "resolved": attr.label(allow_single_file = True, mandatory = True),
         "go_mod": attr.label(allow_single_file = True, mandatory = True),
@@ -95,6 +100,11 @@ def compose_candidate(name, profile, resolved):
         profile = profile,
         go_inventory = "//Tools/bazel:licenses/inventory.json",
         sdk_notices = ["@main___download_0//:LICENSE", "@main___download_0//:PATENTS"],
+        vendor_inventory = "//Tools/bazel:licenses/vendored.json",
+        vendor_notices = [
+            "//Tools/bazel:licenses/boringssl-0226f30467f540a3f62ef48d453f93927da199b6.txt",
+            "//Tools/bazel:licenses/boringssl-817ab07ebb53da35afea409ab9328f578492832d.txt",
+        ],
     )
     native.filegroup(name = name + "_identity", srcs = [":" + name + "_metadata"], output_group = "identity")
     groups = []

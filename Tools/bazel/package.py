@@ -180,6 +180,45 @@ def source_notices(manifest: dict, required: dict[str, str]) -> tuple[dict, dict
     return texts, found, swift
 
 
+def vendored_notices(manifest: dict) -> tuple[dict, list[dict]]:
+    """Bind reviewed vendor texts to immutable containing-package revisions."""
+    inventory = json.loads(Path(manifest["vendor_inventory"]).read_text())
+    rows = inventory["packages"]
+    if inventory.get("schemaVersion") != 1 or set(rows) != {"swift-crypto", "swift-nio-ssl"}:
+        raise ValueError("Invalid vendored notice inventory")
+    pins = json.loads(Path(manifest["resolved"]).read_text())["pins"]
+    sources = {Path(path).name: Path(path) for path in manifest["vendor_notices"]}
+    expected = {row["license"] for row in rows.values()}
+    if len(sources) != len(manifest["vendor_notices"]) or set(sources) != expected:
+        raise ValueError("Missing or unexpected vendored notice inputs")
+    texts, evidence = {}, []
+    for identity, row in sorted(rows.items()):
+        revisions = row["packageRevisions"]
+        if (not isinstance(revisions, list) or not revisions or
+                any(not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None for value in revisions) or
+                len(set(revisions)) != len(revisions)):
+            raise ValueError("Invalid vendored notice package revisions")
+        selected = [pin for pin in pins if pin["identity"] == identity]
+        if (len(selected) != 1 or selected[0]["kind"] != "remoteSourceControl" or
+                selected[0]["location"] != row["repository"] or
+                selected[0]["state"]["revision"] not in revisions):
+            raise ValueError("Vendored notice package revision requires review")
+        revision = row["revision"]
+        if (row["vendor"] != "BoringSSL" or re.fullmatch(r"[0-9a-f]{40}", revision) is None or
+                row["sourceURL"] != f"https://raw.githubusercontent.com/google/boringssl/{revision}/LICENSE" or
+                row["license"] != f"boringssl-{revision}.txt"):
+            raise ValueError("Invalid vendored notice provenance")
+        path = sources[row["license"]]
+        content = path.read_text()
+        if not content.strip() or sha256(path) != row["sha256"]:
+            raise ValueError("Vendored notice bytes differ from reviewed upstream text")
+        label = "Swift/" + identity.replace("-", "_") + "/BoringSSL@" + revision + "/LICENSE"
+        texts[label] = content
+        evidence.append({"package": identity, "packageRevision": selected[0]["state"]["revision"],
+                         "vendorRevision": revision, "sourceURL": row["sourceURL"], "licenseSHA256": row["sha256"]})
+    return texts, evidence
+
+
 def dependency_notices(manifest: dict) -> tuple[str, dict]:
     """Bundle declared notices; not legal approval or a vendored-source audit."""
     rows, required = go_notice_inventory(manifest)
@@ -190,6 +229,8 @@ def dependency_notices(manifest: dict) -> tuple[str, dict]:
             raise ValueError("Missing or unexpected Go dependency notices")
     if not {"container", "containerization"}.issubset(swift):
         raise ValueError("Missing selected Swift runtime notices")
+    vendor_texts, vendor_evidence = vendored_notices(manifest)
+    texts.update(vendor_texts)
     sdk_version = re.findall(r"^go ([0-9]+\.[0-9]+\.[0-9]+)$", Path(manifest["go_mod"]).read_text(), re.M)
     sdk_files = [Path(path) for path in manifest["sdk_notices"]]
     if len(sdk_version) != 1 or len(sdk_files) != 2 or {path.name for path in sdk_files} != {"LICENSE", "PATENTS"}:
@@ -201,7 +242,8 @@ def dependency_notices(manifest: dict) -> tuple[str, dict]:
         texts["Go SDK " + sdk_version[0] + "/" + path.name] = content
     text = "\n\n".join(label + "\n" + "=" * len(label) + "\n\n" + texts[label] for label in sorted(texts)) + "\n"
     return text, {"dependencyNoticesSHA256": hashlib.sha256(text.encode()).hexdigest(),
-                  "goNoticeModules": len(required), "swiftNoticePackages": len(swift), "noticeTexts": len(texts)}
+                  "goNoticeModules": len(required), "swiftNoticePackages": len(swift), "noticeTexts": len(texts),
+                  "vendoredNotices": vendor_evidence}
 
 
 def write_json(path: Path, value: dict) -> None:
