@@ -219,6 +219,15 @@ def vendored_notices(manifest: dict) -> tuple[dict, list[dict]]:
     return texts, evidence
 
 
+NESTED_SWIFT_NOTICES = frozenset({
+    "Swift/containerization/Sources/ContainerizationArchive/CArchive/COPYING",
+    "Swift/swift_nio/Sources/CNIOLLHTTP/LICENSE",
+    "Swift/swift_protobuf/Sources/protobuf/abseil/LICENSE",
+    "Swift/swift_protobuf/Sources/protobuf/protobuf/LICENSE",
+    "Swift/swift_protobuf/Sources/protobuf/protobuf/third_party/utf8_range/LICENSE",
+})
+
+
 def dependency_notices(manifest: dict) -> tuple[str, dict]:
     """Bundle declared notices; not legal approval or a vendored-source audit."""
     rows, required = go_notice_inventory(manifest)
@@ -229,6 +238,8 @@ def dependency_notices(manifest: dict) -> tuple[str, dict]:
             raise ValueError("Missing or unexpected Go dependency notices")
     if not {"container", "containerization"}.issubset(swift):
         raise ValueError("Missing selected Swift runtime notices")
+    if not NESTED_SWIFT_NOTICES.issubset(texts):
+        raise ValueError("Missing nested Swift source notices")
     vendor_texts, vendor_evidence = vendored_notices(manifest)
     texts.update(vendor_texts)
     sdk_version = re.findall(r"^go ([0-9]+\.[0-9]+\.[0-9]+)$", Path(manifest["go_mod"]).read_text(), re.M)

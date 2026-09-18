@@ -1,7 +1,37 @@
 diff --git a/swiftpkg/internal/repository_files.bzl b/swiftpkg/internal/repository_files.bzl
 --- a/swiftpkg/internal/repository_files.bzl
 +++ b/swiftpkg/internal/repository_files.bzl
-@@ -50,6 +50,18 @@
+@@ -21,2 +21,2 @@
+ def _find_license_files(repository_ctx):
+-    """Retrieves all license files at the root of the package.
++    """Retrieves root and production-source licence/notice files.
+@@ -35,15 +35,19 @@
+         "-L",
+         ".",
+-        # For GNU find, it is important for the global options (e.g. -maxdepth)
+-        # to be specified BEFORE other options like -type. Also, GNU find does
+-        # not support -depth <level>. So, we approximate it by using -mindepth
+-        # and -maxdepth.
+         "-mindepth",
+         "1",
+-        "-maxdepth",
+-        "1",
+         "-type",
+         "f",
++        # Retain nested source notices, excluding top-level Tests, Examples
++        # and Tools directories from the product inventory.
++        "(",
++        "-path",
++        "./Sources/*",
++        "-o",
++        "!",
++        "-path",
++        "./*/*",
++        ")",
+         "(",
+         "-name",
+         "LICENSE",
+@@ -50,6 +54,18 @@
          "-o",
          "-name",
          "LICENSE.*",

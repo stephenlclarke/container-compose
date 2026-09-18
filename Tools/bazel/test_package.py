@@ -30,7 +30,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from package import PRODUCTS, dependency, dependency_notices, metadata, receipt, sha256, validate_binary, write_json
+from package import NESTED_SWIFT_NOTICES, PRODUCTS, dependency, dependency_notices, metadata, receipt, sha256, validate_binary, write_json
 
 WRITER = Path(sys.argv[1])
 if len(sys.argv) == 3 and sys.argv[2] == "unit":
@@ -166,12 +166,16 @@ class PackageTests(unittest.TestCase):
         for name, version, directory, files in [
             ("github.com/compose-spec/compose-go/v2", "v2.14.0", "go_module", ["LICENSE", "NOTICE"]),
             ("", "", "swiftpkg_container", ["LICENSE"]),
-            ("", "", "swiftpkg_containerization", ["LICENSE"]),
+            ("", "", "swiftpkg_containerization", ["LICENSE", "Sources/ContainerizationArchive/CArchive/COPYING"]),
+            ("", "", "swiftpkg_swift_nio", ["LICENSE", "Sources/CNIOLLHTTP/LICENSE"]),
+            ("", "", "swiftpkg_swift_protobuf", ["LICENSE", "Sources/protobuf/abseil/LICENSE",
+              "Sources/protobuf/protobuf/LICENSE", "Sources/protobuf/protobuf/third_party/utf8_range/LICENSE"]),
         ]:
             folder = self.root / directory
             folder.mkdir(exist_ok=True)
             for file in files:
                 path = folder / file
+                path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(directory + " " + file + " source notice\n")
                 entries.append({"package_name": name, "package_version": version, "license_text": str(path)})
         licenses = self.root / "licenses.json"
@@ -218,7 +222,7 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Go SDK 1.26.3/PATENTS", text)
         self.assertNotIn(str(self.root), text)
         self.assertEqual(evidence["dependencyNoticesSHA256"], hashlib.sha256(text.encode()).hexdigest())
-        self.assertEqual((evidence["goNoticeModules"], evidence["swiftNoticePackages"], evidence["noticeTexts"]), (1, 2, 8))
+        self.assertEqual((evidence["goNoticeModules"], evidence["swiftNoticePackages"], evidence["noticeTexts"]), (1, 4, 15))
         self.assertEqual([row["package"] for row in evidence["vendoredNotices"]], ["swift-crypto", "swift-nio-ssl"])
         self.assertEqual(evidence["vendoredNotices"][0]["packageRevision"], "e" * 40)
         self.assertIn("Swift/swift_crypto/BoringSSL@" + "1" * 40 + "/LICENSE", text)
@@ -255,6 +259,17 @@ class PackageTests(unittest.TestCase):
         Path(self.manifest["sdk_notices"][0]).write_text("")
         with self.assertRaises(ValueError):
             dependency_notices(self.manifest)
+
+    def test_notices_reject_missing_nested_source_text(self) -> None:
+        entries = self.notice_fixture()
+        path = Path(self.manifest["licenses"])
+        for label in sorted(NESTED_SWIFT_NOTICES):
+            suffix = "swiftpkg_" + label.removeprefix("Swift/")
+            filtered = [entry for entry in entries if not entry["license_text"].endswith(suffix)]
+            self.assertEqual(len(filtered), len(entries) - 1)
+            path.write_text(json.dumps([{"licenses": filtered}]))
+            with self.subTest(label=label), self.assertRaisesRegex(ValueError, "nested Swift"):
+                dependency_notices(self.manifest)
 
     def test_vendor_notices_reject_changed_missing_or_ambiguous_package(self) -> None:
         self.notice_fixture()
@@ -323,6 +338,8 @@ class ArchiveTests(unittest.TestCase):
             self.assertIn(b"Swift/swift_crypto/NOTICE.txt", notices)
             self.assertIn(b"Swift/swift_nio_ssl/NOTICE.txt", notices)
             self.assertIn(b"Go SDK 1.26.3/PATENTS", notices)
+            for label in NESTED_SWIFT_NOTICES:
+                self.assertIn(label.encode(), notices)
             self.assertEqual({row["package"] for row in identity["vendoredNotices"]}, {"swift-crypto", "swift-nio-ssl"})
             for row in identity["vendoredNotices"]:
                 label = "Swift/" + row["package"].replace("-", "_") + "/BoringSSL@" + row["vendorRevision"] + "/LICENSE"
