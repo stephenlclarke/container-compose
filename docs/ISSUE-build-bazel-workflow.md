@@ -10,6 +10,10 @@ Internal implementation improvement. Package.swift and the existing stock/enhanc
 
 ## Acceptance
 
+Every added fixture must also satisfy the existing licence-header policy. The full Apache-2.0 header replaces the rejected abbreviated header in the help-dispatch test; no source-check exclusion is permitted.
+
+The selected shared launcher must match all 28 byte/mode entries before Bazel starts. Admit the reviewed devcontainer `86834d7` packaging regression through the exact helper lock; source SHA admission alone does not prove cross-repository helper compatibility. No runtime or quality-policy change is required.
+
 Portable test extraction must pass the unchanged source-style gate in addition to executing in both runtime profiles. Hosted run `35334813508` exposed oversized copy/filesystem fixtures; private literal constructors and wrapped calls fix that without changing test data or assertions. Exact-error assertions retain all three port validation failures. Focused native proof and independent review are recorded in PR 708; no product or compatibility claim changes.
 
 Image metadata projection needs deterministic native coverage rather than relying on a running registry or service. Validate platform refusal/fallback, optional fields, healthchecks, image volume declarations and transformer reference handling through the production projection, while keeping live adapter qualification separate and preserving all existing source in the coverage denominator.
