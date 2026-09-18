@@ -24,9 +24,9 @@ export INVOCATION
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
 export ROOT
 
-.PHONY: help check-launcher build test-spi test-cli test-unit test-go coverage coverage-report coverage-check package test-package restore-package
+.PHONY: help check-launcher build test-spi test-cli test-unit test-go test-go-race test-asan test-tsan coverage coverage-report coverage-check package test-package restore-package
 help:
-	@printf 'Set FAMILY_BAZEL_LAUNCHER to the locked family run.sh. Targets: build, test-spi, test-cli, test-unit, test-go, coverage, coverage-report, coverage-check, package, test-package, restore-package. BAZEL_PROFILE=stock|enhanced. Report/check/restore require INVOCATION=retained-id. Packages are unsigned candidates, not releases.\n'
+	@printf 'Set FAMILY_BAZEL_LAUNCHER to the locked family run.sh. Targets: build, test-spi, test-cli, test-unit, test-go, test-go-race, test-asan, test-tsan, coverage, coverage-report, coverage-check, package, test-package, restore-package. BAZEL_PROFILE=stock|enhanced. Sanitizers instrument Swift/C; Go race and live leak checks are separate. Report/check/restore require INVOCATION=retained-id. Packages are unsigned candidates, not releases.\n'
 
 check-launcher:
 	@test -n "$${FAMILY_BAZEL_LAUNCHER:-}" -a -f "$${FAMILY_BAZEL_LAUNCHER:-}" || { printf 'Set FAMILY_BAZEL_LAUNCHER to the reviewed shared launcher.\n' >&2; exit 2; }
@@ -46,6 +46,17 @@ test-unit: check-launcher
 
 test-go: check-launcher
 	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" //:unit_go
+
+test-go-race: check-launcher
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" --@rules_go//go/config:race=true //:unit_go
+
+# The shared runner retains the complete selected-profile inventory and logs.
+# Bazel's Swift/C sanitizer features do not instrument the Go test binaries.
+test-asan: check-launcher
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" --config=asan "//:unit_$$BAZEL_PROFILE"
+
+test-tsan: check-launcher
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" --config=tsan "//:unit_$$BAZEL_PROFILE"
 
 coverage: check-launcher
 	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" coverage --config="$$BAZEL_PROFILE" "//:unit_$$BAZEL_PROFILE"

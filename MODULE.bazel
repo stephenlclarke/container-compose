@@ -120,11 +120,14 @@ single_version_override(
     patch_strip = 1,
 )
 
-# Expose the SDK's own notices; no compiler or standard-library source changes.
+# Expose SDK notices and isolate Clang sanitizers from Go's own runtime modes.
 single_version_override(
     module_name = "rules_go",
     version = "0.60.0",
-    patches = ["//Tools/bazel:licenses/rules-go-sdk-notices.patch"],
+    patches = [
+        "//Tools/bazel:licenses/rules-go-sdk-notices.patch",
+        "//Tools/bazel:rules-go-sanitizer-isolation.patch",
+    ],
     patch_strip = 1,
 )
 
