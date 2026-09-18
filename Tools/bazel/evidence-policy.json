@@ -11,7 +11,7 @@
       "tests": {
         "//:ComposeRuntimeSPITests": 25,
         "//:ComposeTemporaryFilesTests": 8,
-        "//Tools/compose-normalizer:compose-normalizer_test": 120,
+        "//Tools/compose-normalizer:compose-normalizer_test": 123,
         "//Tools/compose-normalizer/oci:oci_test": 19,
         "//Tools/compose-normalizer/remote:remote_test": 90,
         "//Tools/compose-normalizer/transform:transform_test": 14,
@@ -51,7 +51,7 @@
       "tests": {
         "//:ComposeRuntimeSPITests": 25,
         "//:ComposeTemporaryFilesTests": 8,
-        "//Tools/compose-normalizer:compose-normalizer_test": 120,
+        "//Tools/compose-normalizer:compose-normalizer_test": 123,
         "//Tools/compose-normalizer/oci:oci_test": 19,
         "//Tools/compose-normalizer/remote:remote_test": 90,
         "//Tools/compose-normalizer/transform:transform_test": 14,
