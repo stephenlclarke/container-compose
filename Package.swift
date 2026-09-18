@@ -73,19 +73,10 @@ let pluginRuntimeDependencies: [Target.Dependency] = enhancedRuntime
 /// Keep the explicit provider-coupled inventory aligned with BUILD.bazel.
 /// New runtime-neutral Core suites run in both profiles by default.
 let enhancedCoreTestSources = [
-    "ComposeOrchestratorBuildAndImageTests.swift",
     "ComposeOrchestratorCopyExportCommitTests.swift",
-    "ComposeOrchestratorInspectionAndConfigTests.swift",
-    "ComposeOrchestratorLifecycleTests.swift",
-    "ComposeOrchestratorLogsWatchAttachTests.swift",
-    "ComposeOrchestratorResourceTests.swift",
-    "ComposeOrchestratorRunTests.swift",
     "ComposeOrchestratorRuntimeAdapterTests.swift",
-    "ComposeOrchestratorTests.swift",
-    "ComposeOrchestratorUpAndCreateTests.swift",
-    "ComposeOrchestratorValidationTests.swift",
-    "ComposeOrchestratorTestSupport.swift",
-    "ComposeAPISocketTests.swift",
+    "ComposeProviderTestSupport.swift",
+    "ComposeProviderModelTestSupport.swift",
     "ExternalConfigOrchestratorTests.swift",
 ]
 
@@ -207,15 +198,18 @@ let package = Package(
         ),
         .testTarget(
             name: "ComposeCoreTests",
-            dependencies: ["ComposeTestStorage", "ComposeCore"] + (enhancedRuntime ? [
-                "ComposeContainerRuntime",
-                .product(name: "ContainerResource", package: "container"),
+            dependencies: [
+                "ComposeTestStorage", "ComposeCore",
                 .product(name: "ContainerizationArchive", package: "containerization"),
                 .product(name: "ContainerizationExtras", package: "containerization"),
+            ] + (enhancedRuntime ? [
+                "ComposeContainerRuntime",
+                .product(name: "ContainerResource", package: "container"),
             ] : []),
             path: "Tests/ComposeCoreTests",
             exclude: enhancedRuntime ? [] : enhancedCoreTestSources,
             resources: [.process("Fixtures")],
+            swiftSettings: runtimeSwiftSettings,
         ),
         .testTarget(
             name: "ComposePluginTests",

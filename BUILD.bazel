@@ -160,19 +160,10 @@ filegroup(name = "ComposeCoreFixtureBundle", testonly = True, srcs = [":ComposeC
 # These suites still exercise concrete enhanced-provider APIs. Every other
 # Core suite is runtime-neutral and must also execute with stock Apple pins.
 ENHANCED_CORE_TESTS = [
-    "Tests/ComposeCoreTests/ComposeOrchestratorBuildAndImageTests.swift",
     "Tests/ComposeCoreTests/ComposeOrchestratorCopyExportCommitTests.swift",
-    "Tests/ComposeCoreTests/ComposeOrchestratorInspectionAndConfigTests.swift",
-    "Tests/ComposeCoreTests/ComposeOrchestratorLifecycleTests.swift",
-    "Tests/ComposeCoreTests/ComposeOrchestratorLogsWatchAttachTests.swift",
-    "Tests/ComposeCoreTests/ComposeOrchestratorResourceTests.swift",
-    "Tests/ComposeCoreTests/ComposeOrchestratorRunTests.swift",
     "Tests/ComposeCoreTests/ComposeOrchestratorRuntimeAdapterTests.swift",
-    "Tests/ComposeCoreTests/ComposeOrchestratorTests.swift",
-    "Tests/ComposeCoreTests/ComposeOrchestratorUpAndCreateTests.swift",
-    "Tests/ComposeCoreTests/ComposeOrchestratorValidationTests.swift",
-    "Tests/ComposeCoreTests/ComposeOrchestratorTestSupport.swift",
-    "Tests/ComposeCoreTests/ComposeAPISocketTests.swift",
+    "Tests/ComposeCoreTests/ComposeProviderTestSupport.swift",
+    "Tests/ComposeCoreTests/ComposeProviderModelTestSupport.swift",
     "Tests/ComposeCoreTests/ExternalConfigOrchestratorTests.swift",
 ]
 
@@ -182,7 +173,7 @@ swift_test(
         ":stock_runtime": [],
         "//conditions:default": ENHANCED_CORE_TESTS,
     }),
-    copts = SWIFT_COPTS,
+    copts = RUNTIME_COPTS,
     data = [
         ":ComposeCoreFixtureBundle",
         "Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-terminal-session.json",
@@ -192,13 +183,15 @@ swift_test(
         "//Tools/compose-normalizer:compose-normalizer",
     ],
     env = {"COMPOSE_NORMALIZER_RUNFILE": "$(rootpath //Tools/compose-normalizer:compose-normalizer)"},
-    deps = [":ComposeCore", ":ComposeTestStorage"] + select({
+    deps = [
+        ":ComposeCore", ":ComposeTestStorage",
+        "@swiftpkg_containerization//:ContainerizationArchive",
+        "@swiftpkg_containerization//:ContainerizationExtras",
+    ] + select({
         ":stock_runtime": [],
         "//conditions:default": [
             ":ComposeContainerRuntime",
             "@swiftpkg_container//:ContainerResource",
-            "@swiftpkg_containerization//:ContainerizationArchive",
-            "@swiftpkg_containerization//:ContainerizationExtras",
         ],
     }),
     timeout = "long",
