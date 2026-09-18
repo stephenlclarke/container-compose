@@ -180,43 +180,84 @@ def source_notices(manifest: dict, required: dict[str, str]) -> tuple[dict, dict
     return texts, found, swift
 
 
-def vendored_notices(manifest: dict) -> tuple[dict, list[dict]]:
+def reviewed_package(pins: list[dict], identity: str, row: dict) -> dict:
+    """Require exactly one reviewed immutable containing-package source."""
+    revisions = row["packageRevisions"]
+    if (not isinstance(revisions, list) or not revisions or
+            any(not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None for value in revisions) or
+            len(set(revisions)) != len(revisions)):
+        raise ValueError("Invalid vendored notice package revisions")
+    selected = [pin for pin in pins if pin["identity"] == identity]
+    if (len(selected) != 1 or selected[0]["kind"] != "remoteSourceControl" or
+            selected[0]["location"] != row["repository"] or
+            selected[0]["state"]["revision"] not in revisions):
+        raise ValueError("Vendored notice package revision requires review")
+    return selected[0]
+
+
+SOURCE_NOTICES = {
+    "swift-nio-sha1": ("swift-nio", "apple/swift-nio", "Sources/CNIOSHA1/c_nio_sha1.c", [10, 39]),
+    "swift-nio-ushet": ("swift-nio", "18sg/uSHET", "LICENSE", None),
+    "yams-libyaml": ("yams", "yaml/libyaml", "License", None),
+}
+
+
+def reviewed_text(sources: dict, row: dict) -> str:
+    path = sources[row["license"]]
+    content = path.read_text()
+    if not content.strip() or sha256(path) != row["sha256"]:
+        raise ValueError("Vendored notice bytes differ from reviewed upstream text")
+    return content
+
+
+def source_fragments(rows: dict, pins: list[dict], sources: dict) -> tuple[dict, list[dict]]:
+    """Preserve audited source-header/upstream texts, not a whole-vendor audit."""
+    texts, evidence = {}, []
+    for component, (identity, repository, path, lines) in sorted(SOURCE_NOTICES.items()):
+        row = rows[component]
+        pin = reviewed_package(pins, identity, row)
+        revision = row["sourceRevision"]
+        if (not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None or
+                row["sourceURL"] != f"https://raw.githubusercontent.com/{repository}/{revision}/{path}" or
+                row["extractedLines"] != lines or row["license"] != component + ".txt"):
+            raise ValueError("Invalid vendored notice source provenance")
+        if component == "swift-nio-sha1" and revision != pin["state"]["revision"]:
+            raise ValueError("Source-header notice must match the selected package revision")
+        label = "Swift/" + identity.replace("-", "_") + "/Vendored/" + component + "/LICENSE"
+        texts[label] = reviewed_text(sources, row)
+        evidence.append({"component": component, "package": identity, "packageRevision": pin["state"]["revision"],
+                         "sourceRevision": revision, "sourceURL": row["sourceURL"],
+                         "extractedLines": lines, "licenseSHA256": row["sha256"]})
+    return texts, evidence
+
+
+def vendored_notices(manifest: dict) -> tuple[dict, list[dict], list[dict]]:
     """Bind reviewed vendor texts to immutable containing-package revisions."""
     inventory = json.loads(Path(manifest["vendor_inventory"]).read_text())
     rows = inventory["packages"]
-    if inventory.get("schemaVersion") != 1 or set(rows) != {"swift-crypto", "swift-nio-ssl"}:
+    fragments = inventory["sourceFragments"]
+    if (inventory.get("schemaVersion") != 1 or set(rows) != {"swift-crypto", "swift-nio-ssl"} or
+            set(fragments) != set(SOURCE_NOTICES)):
         raise ValueError("Invalid vendored notice inventory")
     pins = json.loads(Path(manifest["resolved"]).read_text())["pins"]
     sources = {Path(path).name: Path(path) for path in manifest["vendor_notices"]}
-    expected = {row["license"] for row in rows.values()}
+    expected = {row["license"] for row in [*rows.values(), *fragments.values()]}
     if len(sources) != len(manifest["vendor_notices"]) or set(sources) != expected:
         raise ValueError("Missing or unexpected vendored notice inputs")
     texts, evidence = {}, []
     for identity, row in sorted(rows.items()):
-        revisions = row["packageRevisions"]
-        if (not isinstance(revisions, list) or not revisions or
-                any(not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{40}", value) is None for value in revisions) or
-                len(set(revisions)) != len(revisions)):
-            raise ValueError("Invalid vendored notice package revisions")
-        selected = [pin for pin in pins if pin["identity"] == identity]
-        if (len(selected) != 1 or selected[0]["kind"] != "remoteSourceControl" or
-                selected[0]["location"] != row["repository"] or
-                selected[0]["state"]["revision"] not in revisions):
-            raise ValueError("Vendored notice package revision requires review")
+        selected = reviewed_package(pins, identity, row)
         revision = row["revision"]
         if (row["vendor"] != "BoringSSL" or re.fullmatch(r"[0-9a-f]{40}", revision) is None or
                 row["sourceURL"] != f"https://raw.githubusercontent.com/google/boringssl/{revision}/LICENSE" or
                 row["license"] != f"boringssl-{revision}.txt"):
             raise ValueError("Invalid vendored notice provenance")
-        path = sources[row["license"]]
-        content = path.read_text()
-        if not content.strip() or sha256(path) != row["sha256"]:
-            raise ValueError("Vendored notice bytes differ from reviewed upstream text")
         label = "Swift/" + identity.replace("-", "_") + "/BoringSSL@" + revision + "/LICENSE"
-        texts[label] = content
-        evidence.append({"package": identity, "packageRevision": selected[0]["state"]["revision"],
+        texts[label] = reviewed_text(sources, row)
+        evidence.append({"package": identity, "packageRevision": selected["state"]["revision"],
                          "vendorRevision": revision, "sourceURL": row["sourceURL"], "licenseSHA256": row["sha256"]})
-    return texts, evidence
+    fragment_texts, fragment_evidence = source_fragments(fragments, pins, sources)
+    return {**texts, **fragment_texts}, evidence, fragment_evidence
 
 
 NESTED_SWIFT_NOTICES = frozenset({
@@ -240,7 +281,7 @@ def dependency_notices(manifest: dict) -> tuple[str, dict]:
         raise ValueError("Missing selected Swift runtime notices")
     if not NESTED_SWIFT_NOTICES.issubset(texts):
         raise ValueError("Missing nested Swift source notices")
-    vendor_texts, vendor_evidence = vendored_notices(manifest)
+    vendor_texts, vendor_evidence, fragment_evidence = vendored_notices(manifest)
     texts.update(vendor_texts)
     sdk_version = re.findall(r"^go ([0-9]+\.[0-9]+\.[0-9]+)$", Path(manifest["go_mod"]).read_text(), re.M)
     sdk_files = [Path(path) for path in manifest["sdk_notices"]]
@@ -254,7 +295,7 @@ def dependency_notices(manifest: dict) -> tuple[str, dict]:
     text = "\n\n".join(label + "\n" + "=" * len(label) + "\n\n" + texts[label] for label in sorted(texts)) + "\n"
     return text, {"dependencyNoticesSHA256": hashlib.sha256(text.encode()).hexdigest(),
                   "goNoticeModules": len(required), "swiftNoticePackages": len(swift), "noticeTexts": len(texts),
-                  "vendoredNotices": vendor_evidence}
+                  "vendoredNotices": vendor_evidence, "sourceNoticeFragments": fragment_evidence}
 
 
 def write_json(path: Path, value: dict) -> None:

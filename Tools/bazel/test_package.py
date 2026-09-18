@@ -30,7 +30,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from package import NESTED_SWIFT_NOTICES, PRODUCTS, dependency, dependency_notices, metadata, receipt, sha256, validate_binary, write_json
+from package import NESTED_SWIFT_NOTICES, PRODUCTS, SOURCE_NOTICES, dependency, dependency_notices, metadata, receipt, sha256, validate_binary, write_json
 
 WRITER = Path(sys.argv[1])
 if len(sys.argv) == 3 and sys.argv[2] == "unit":
@@ -195,7 +195,7 @@ class PackageTests(unittest.TestCase):
         rows = {}
         resolved = Path(self.manifest["resolved"])
         lock = json.loads(resolved.read_text())
-        lock["pins"] = [pin for pin in lock["pins"] if pin["identity"] not in {"swift-crypto", "swift-nio-ssl"}]
+        lock["pins"] = [pin for pin in lock["pins"] if pin["identity"] not in {"swift-crypto", "swift-nio-ssl", "swift-nio", "yams"}]
         self.manifest["vendor_notices"] = []
         for identity, package_revision, revision in (("swift-crypto", "e" * 40, "1" * 40),
                                                        ("swift-nio-ssl", "f" * 40, "2" * 40)):
@@ -209,9 +209,23 @@ class PackageTests(unittest.TestCase):
                               "sha256": sha256(path)}
             lock["pins"].append({"identity": identity, "kind": "remoteSourceControl", "location": repository,
                                  "state": {"revision": package_revision}})
+        fragments = {}
+        package_pins = {"swift-nio": ("https://github.com/apple/swift-nio.git", "3" * 40),
+                        "yams": ("https://github.com/jpsim/Yams.git", "6" * 40)}
+        for identity, (repository, revision) in package_pins.items():
+            lock["pins"].append({"identity": identity, "kind": "remoteSourceControl", "location": repository,
+                                 "state": {"revision": revision}})
+        for component, (identity, source_repo, source_path, lines) in SOURCE_NOTICES.items():
+            path = self.root / (component + ".txt")
+            path.write_text(component + " source notice\n")
+            repository, revision = package_pins[identity]
+            fragments[component] = {"repository": repository, "packageRevisions": [revision],
+                "sourceRevision": revision, "sourceURL": f"https://raw.githubusercontent.com/{source_repo}/{revision}/{source_path}",
+                "extractedLines": lines, "license": path.name, "sha256": sha256(path)}
+            self.manifest["vendor_notices"].append(str(path))
         resolved.write_text(json.dumps(lock))
         inventory = self.root / "vendor.json"
-        inventory.write_text(json.dumps({"schemaVersion": 1, "packages": rows}))
+        inventory.write_text(json.dumps({"schemaVersion": 1, "packages": rows, "sourceFragments": fragments}))
         self.manifest["vendor_inventory"] = str(inventory)
 
     def test_notices_cover_locked_modules_and_sdk_deterministically(self) -> None:
@@ -222,10 +236,12 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Go SDK 1.26.3/PATENTS", text)
         self.assertNotIn(str(self.root), text)
         self.assertEqual(evidence["dependencyNoticesSHA256"], hashlib.sha256(text.encode()).hexdigest())
-        self.assertEqual((evidence["goNoticeModules"], evidence["swiftNoticePackages"], evidence["noticeTexts"]), (1, 4, 15))
+        self.assertEqual((evidence["goNoticeModules"], evidence["swiftNoticePackages"], evidence["noticeTexts"]), (1, 4, 18))
         self.assertEqual([row["package"] for row in evidence["vendoredNotices"]], ["swift-crypto", "swift-nio-ssl"])
         self.assertEqual(evidence["vendoredNotices"][0]["packageRevision"], "e" * 40)
         self.assertIn("Swift/swift_crypto/BoringSSL@" + "1" * 40 + "/LICENSE", text)
+        self.assertEqual({row["component"] for row in evidence["sourceNoticeFragments"]}, set(SOURCE_NOTICES))
+        self.assertEqual(evidence["sourceNoticeFragments"][0]["extractedLines"], [10, 39])
         Path(self.manifest["licenses"]).write_text(json.dumps([{"licenses": list(reversed(entries)) + entries}]))
         self.assertEqual(dependency_notices(self.manifest), (text, evidence))
 
@@ -292,10 +308,42 @@ class PackageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "notice inputs"):
                 dependency_notices(self.manifest)
         self.manifest["vendor_notices"] = files
-        for invalid in ("", "altered licence\n"):
-            Path(files[0]).write_text(invalid)
-            with self.assertRaisesRegex(ValueError, "reviewed upstream text"):
+        for name in files:
+            path = Path(name)
+            original = path.read_text()
+            for invalid in ("", "altered licence\n"):
+                path.write_text(invalid)
+                with self.subTest(name=name, invalid=invalid), self.assertRaisesRegex(ValueError, "reviewed upstream text"):
+                    dependency_notices(self.manifest)
+            path.write_text(original)
+
+    def test_source_fragments_reject_changed_selection_and_provenance(self) -> None:
+        self.notice_fixture()
+        path = Path(self.manifest["vendor_inventory"])
+        original = json.loads(path.read_text())
+        for key, value in (("sourceRevision", "main"), ("sourceURL", "https://example.invalid/notice"),
+                           ("extractedLines", [11, 39]), ("packageRevisions", ["0" * 40])):
+            changed = copy.deepcopy(original)
+            changed["sourceFragments"]["swift-nio-sha1"][key] = value
+            path.write_text(json.dumps(changed))
+            with self.subTest(key=key), self.assertRaises(ValueError):
                 dependency_notices(self.manifest)
+        changed = copy.deepcopy(original)
+        del changed["sourceFragments"]["yams-libyaml"]
+        path.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(ValueError, "inventory"):
+            dependency_notices(self.manifest)
+
+    def test_source_header_revision_matches_selected_package(self) -> None:
+        self.notice_fixture()
+        path = Path(self.manifest["vendor_inventory"])
+        value = json.loads(path.read_text())
+        row = value["sourceFragments"]["swift-nio-sha1"]
+        row["sourceRevision"] = "7" * 40
+        row["sourceURL"] = row["sourceURL"].replace("3" * 40, "7" * 40)
+        path.write_text(json.dumps(value))
+        with self.assertRaisesRegex(ValueError, "selected package revision"):
+            dependency_notices(self.manifest)
 
     def test_vendor_notices_reject_stale_provenance_and_inventory(self) -> None:
         self.notice_fixture()
@@ -346,6 +394,11 @@ class ArchiveTests(unittest.TestCase):
                 self.assertIn(label.encode(), notices)
                 self.assertEqual(len(row["licenseSHA256"]), 64)
             self.assertFalse(identity["licenseClosureComplete"])
+            self.assertEqual({row["component"] for row in identity["sourceNoticeFragments"]}, set(SOURCE_NOTICES))
+            for row in identity["sourceNoticeFragments"]:
+                label = "Swift/" + row["package"].replace("-", "_") + "/Vendored/" + row["component"] + "/LICENSE"
+                self.assertIn(label.encode(), notices)
+                self.assertEqual(len(row["licenseSHA256"]), 64)
             for entry in files:
                 self.assertTrue(entry.isfile())
                 self.assertEqual((entry.uid, entry.gid, entry.mtime), (0, 0, 946684800))

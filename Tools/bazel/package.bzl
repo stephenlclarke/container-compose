@@ -104,6 +104,9 @@ def compose_candidate(name, profile, resolved):
         vendor_notices = [
             "//Tools/bazel:licenses/boringssl-0226f30467f540a3f62ef48d453f93927da199b6.txt",
             "//Tools/bazel:licenses/boringssl-817ab07ebb53da35afea409ab9328f578492832d.txt",
+            "//Tools/bazel:licenses/swift-nio-sha1.txt",
+            "//Tools/bazel:licenses/swift-nio-ushet.txt",
+            "//Tools/bazel:licenses/yams-libyaml.txt",
         ],
     )
     native.filegroup(name = name + "_identity", srcs = [":" + name + "_metadata"], output_group = "identity")
