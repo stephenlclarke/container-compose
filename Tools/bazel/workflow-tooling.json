@@ -97,7 +97,7 @@
   },
   "test_prepare_guest_images.py": {
     "mode": 420,
-    "sha256": "e78d35d90b955c6a381d483266408f8c2e8a5ff0dd35a89b4f7abc8142561b5f"
+    "sha256": "6572343072636227612fd44b8b3f5e1ce831089f70003fe1efe7be2c900d9bb0"
   },
   "test_prepare_releases.py": {
     "mode": 420,
