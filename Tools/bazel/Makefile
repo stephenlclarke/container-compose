@@ -59,7 +59,7 @@ test-tsan: check-launcher
 	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" --config=tsan "//:unit_$$BAZEL_PROFILE"
 
 coverage: check-launcher
-	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" coverage --config="$$BAZEL_PROFILE" "//:unit_$$BAZEL_PROFILE"
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" coverage --config="$$BAZEL_PROFILE" "//:coverage_$$BAZEL_PROFILE"
 
 coverage-report: check-launcher
 	@test -n "$${INVOCATION:-}" || { printf 'Set INVOCATION to a retained clean source coverage run.\n' >&2; exit 2; }
@@ -67,7 +67,7 @@ coverage-report: check-launcher
 
 coverage-check: check-launcher
 	@test -n "$${INVOCATION:-}" || { printf 'Set INVOCATION to a retained clean source coverage run.\n' >&2; exit 2; }
-	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" coverage-report "$$INVOCATION" --minimum-percent 90 --config="$$BAZEL_PROFILE"
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" coverage-report "$$INVOCATION" --minimum-percent 90 --inventory=unit-cli --config="$$BAZEL_PROFILE"
 
 package: check-launcher
 	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" build --config=release --config="$$BAZEL_PROFILE" //:candidate_archive

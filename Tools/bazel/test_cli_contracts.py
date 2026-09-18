@@ -63,6 +63,11 @@ class CLIContracts(unittest.TestCase):
                             "LANG": "en_US.UTF-8", "CONTRACT_VALUE": "literal-value",
                             "CONTAINER_COMPOSE_NORMALIZER": str(NORMALIZER),
                             "CONTAINER_COMPOSE_CONTAINER": str(self.runtime), "CONTAINER_BIN": str(self.runtime)}
+        self.coverage = None
+        if os.environ.get("COVERAGE") == "1":
+            self.coverage = Path(os.environ["COVERAGE_DIR"]).resolve(strict=True)
+            self.assertIn(Path("/Volumes/SSD/cf/bazel"), self.coverage.parents,
+                          "CLI coverage must remain within the enrolled SSD")
 
     def remove_scratch(self):
         if self.cleanup_verified:
@@ -76,9 +81,16 @@ class CLIContracts(unittest.TestCase):
         # File-backed output keeps a broken child from exhausting host memory.
         stdout_path = self.root / f"command-{self.command_index}.stdout"
         stderr_path = self.root / f"command-{self.command_index}.stderr"
+        environment = dict(self.environment)
+        profile_prefix = f"{self.root.name}-{self.command_index}-"
+        if self.coverage is not None:
+            # Only the native profiling destination crosses the clean child
+            # environment. Every invocation must emit its own nonempty profile;
+            # a prior successful command cannot mask missing instrumentation.
+            environment["LLVM_PROFILE_FILE"] = str(self.coverage / (profile_prefix + "%p-%m.profraw"))
         with stdout_path.open("x+b") as stdout, stderr_path.open("x+b") as stderr:
             self.cleanup_verified = False
-            status = run(command, cwd=self.root, env=self.environment, stdout=stdout, stderr=stderr, timeout=30)
+            status = run(command, cwd=self.root, env=environment, stdout=stdout, stderr=stderr, timeout=30)
             self.cleanup_verified = True
             output = []
             for stream in (stdout, stderr):
@@ -86,6 +98,11 @@ class CLIContracts(unittest.TestCase):
                 data = stream.read(1024**2 + 1)
                 self.assertLessEqual(len(data), 1024**2, "CLI diagnostic output exceeds fixture bound")
                 output.append(data.decode("utf-8"))
+        if self.coverage is not None:
+            profiles = list(self.coverage.glob(profile_prefix + "*.profraw"))
+            self.assertTrue(profiles, "Native CLI emitted no coverage profile")
+            self.assertTrue(all(path.is_file() and path.stat().st_size > 0 for path in profiles),
+                            "Native CLI emitted an empty coverage profile")
         self.assertFalse(self.marker.exists(), "A no-runtime contract executed the container command")
         self.assertEqual(status, expected_status, output[1])
         return output[0], output[1]

@@ -221,6 +221,16 @@ test_suite(
 )
 
 test_suite(
+    name = "coverage_stock",
+    tests = [":unit_stock", "//Tools/bazel:cli_contracts"],
+)
+
+test_suite(
+    name = "coverage_enhanced",
+    tests = [":unit_enhanced", "//Tools/bazel:cli_contracts"],
+)
+
+test_suite(
     name = "unit_go",
     tests = [
         "//Tools/compose-normalizer:compose-normalizer_test",

@@ -1,6 +1,7 @@
 {
-  "schema": 1,
+  "schema": 2,
   "scope": "Selected-profile native Swift and Go unit tests; excludes host integration and Linux guest execution",
+  "component_scope": "Selected-profile native Swift and Go unit tests plus native CLI no-runtime components; excludes host integration and Linux guest execution",
   "source_roots": [
     "Sources",
     "Tools/compose-normalizer"
@@ -19,6 +20,9 @@
         "//:ComposePluginTests": 103,
         "//:ComposeCoreTests": 1094,
         "//:ComposeEngineRuntimeTests": 25
+      },
+      "component_tests": {
+        "//Tools/bazel:cli_contracts": 12
       },
       "required_sources": [
         "Sources/ComposeCore/ComposeTemporaryFiles.swift",
@@ -55,6 +59,9 @@
         "//:ComposePluginTests": 102,
         "//:ComposeCoreTests": 1250,
         "//:ComposeContainerRuntimeTests": 31
+      },
+      "component_tests": {
+        "//Tools/bazel:cli_contracts": 12
       },
       "required_sources": [
         "Sources/ComposeCore/ComposeTemporaryFiles.swift",
