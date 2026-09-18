@@ -2,6 +2,7 @@
 load("@build_bazel_rules_swift//swift:swift_binary.bzl", "swift_binary")
 load("@build_bazel_rules_swift//swift:swift_library.bzl", "swift_library")
 load("@build_bazel_rules_swift//swift:swift_test.bzl", "swift_test")
+load("//Tools/bazel:fixture_bundle.bzl", "fixture_bundle")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -91,11 +92,123 @@ swift_binary(
     deps = [":ComposePlugin"],
 )
 
-alias(name = "product", actual = ":compose")
+filegroup(
+    name = "product",
+    srcs = [
+        ":compose",
+        "//Tools/compose-normalizer:compose-normalizer",
+        "//Tools/compose-normalizer/cmd/volume-initializer:compose-volume-initializer-linux-arm64",
+        "//Tools/compose-normalizer/cmd/volume-initializer:compose-volume-initializer-linux-amd64",
+    ],
+)
 
 swift_test(
     name = "ComposeRuntimeSPITests",
     srcs = glob(["Tests/ComposeRuntimeSPITests/*.swift"]),
     copts = SWIFT_COPTS,
-    deps = [":ComposeRuntimeSPI"],
+    deps = [":ComposeRuntimeSPI", ":ComposeTestStorage"],
+)
+
+swift_library(
+    name = "ComposeTestStorage",
+    testonly = True,
+    srcs = ["Tests/ComposeTestStorage/TestStorage.swift"],
+    module_name = "ComposeTestStorage",
+    copts = SWIFT_COPTS,
+)
+
+swift_test(
+    name = "ComposePluginTests",
+    srcs = glob(["Tests/ComposePluginTests/*.swift"]),
+    copts = RUNTIME_COPTS,
+    data = [":compose", "docs/project/STATUS.md"],
+    env = {"COMPOSE_TEST_EXECUTABLE": "$(rootpath :compose)"},
+    deps = [":ComposeCore", ":ComposePlugin", ":ComposeTestStorage"],
+)
+
+swift_test(
+    name = "ComposeEngineRuntimeTests",
+    srcs = glob(["Tests/ComposeEngineRuntimeTests/*.swift"]),
+    copts = SWIFT_COPTS,
+    deps = [
+        ":ComposeEngineRuntime", ":ComposeRuntimeSPI", ":ComposeTestStorage",
+        "@swiftpkg_container_engine_api//:ContainerEngineWire",
+        "@swiftpkg_container_engine_api//:ContainerUnixHTTPServer",
+        "@swiftpkg_swift_log//:Logging",
+    ],
+    target_compatible_with = select({":stock_runtime": [], "//conditions:default": ["@platforms//:incompatible"]}),
+)
+
+fixture_bundle(
+    name = "ComposeCoreFixtures",
+    testonly = True,
+    srcs = glob(["Tests/ComposeCoreTests/Fixtures/**/*"]),
+)
+
+filegroup(name = "ComposeCoreFixtureAccessor", testonly = True, srcs = [":ComposeCoreFixtures"], output_group = "accessor")
+filegroup(name = "ComposeCoreFixtureBundle", testonly = True, srcs = [":ComposeCoreFixtures"], output_group = "bundle")
+
+swift_test(
+    name = "ComposeCoreTests",
+    srcs = glob(["Tests/ComposeCoreTests/*.swift"], exclude = ["Tests/ComposeCoreTests/ComposeTemporaryFilesTests.swift"]) + [":ComposeCoreFixtureAccessor"],
+    copts = SWIFT_COPTS,
+    data = [
+        ":ComposeCoreFixtureBundle",
+        "Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-terminal-session.json",
+        "Package.swift",
+        "examples/logging/compose.yml",
+        "//Tools/compose-normalizer:go.mod",
+        "//Tools/compose-normalizer:compose-normalizer",
+    ],
+    env = {"COMPOSE_NORMALIZER_RUNFILE": "$(rootpath //Tools/compose-normalizer:compose-normalizer)"},
+    deps = [
+        ":ComposeCore", ":ComposeContainerRuntime", ":ComposeTestStorage",
+        "@swiftpkg_container//:ContainerResource",
+        "@swiftpkg_containerization//:ContainerizationArchive",
+        "@swiftpkg_containerization//:ContainerizationExtras",
+    ],
+    target_compatible_with = select({":stock_runtime": ["@platforms//:incompatible"], "//conditions:default": []}),
+    timeout = "long",
+)
+
+swift_test(
+    name = "ComposeContainerRuntimeTests",
+    srcs = glob(["Tests/ComposeContainerRuntimeTests/*.swift"]),
+    copts = SWIFT_COPTS,
+    deps = [
+        ":ComposeContainerRuntime", ":ComposeRuntimeSPI", ":ComposeTestStorage",
+        "@swiftpkg_container//:ContainerResource",
+        "@swiftpkg_containerization//:ContainerizationEXT4",
+        "@swiftpkg_containerization//:ContainerizationOCI",
+    ],
+    target_compatible_with = select({":stock_runtime": ["@platforms//:incompatible"], "//conditions:default": []}),
+)
+
+test_suite(
+    name = "unit_stock",
+    tests = [":ComposeRuntimeSPITests", ":ComposePluginTests", ":ComposeEngineRuntimeTests", ":ComposeTemporaryFilesTests", ":unit_go"],
+)
+
+test_suite(
+    name = "unit_enhanced",
+    tests = [":ComposeRuntimeSPITests", ":ComposePluginTests", ":ComposeCoreTests", ":ComposeContainerRuntimeTests", ":ComposeTemporaryFilesTests", ":unit_go"],
+)
+
+test_suite(
+    name = "unit_go",
+    tests = [
+        "//Tools/compose-normalizer:compose-normalizer_test",
+        "//Tools/compose-normalizer/oci:oci_test",
+        "//Tools/compose-normalizer/remote:remote_test",
+        "//Tools/compose-normalizer/transform:transform_test",
+        "//Tools/compose-normalizer/cmd/volume-initializer:volume-initializer_test",
+        "//Tools/compose-normalizer/cmd/volume-initializer:permission_bits_test",
+    ],
+)
+
+swift_test(
+    name = "ComposeTemporaryFilesTests",
+    srcs = ["Tests/ComposeCoreTests/ComposeTemporaryFilesTests.swift"],
+    copts = SWIFT_COPTS,
+    deps = [":ComposeCore", ":ComposeTestStorage"],
 )

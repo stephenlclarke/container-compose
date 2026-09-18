@@ -16,6 +16,7 @@
 
 import ComposeContainerRuntime
 import ComposeCore
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -266,7 +267,7 @@ private struct EmptyContainerDiscovery: ContainerDiscoveryManaging {
 }
 
 private func temporaryExternalConfigDirectory() throws -> URL {
-    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+    let directory = TestStorage.temporaryDirectory.appendingPathComponent(
         UUID().uuidString,
         isDirectory: true,
     )

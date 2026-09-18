@@ -12,4 +12,4 @@ Internal implementation improvement. Package.swift and the existing stock/enhanc
 
 Native Swift and Go compilation, all unit/integration/parity suites, meaningful coverage, explicit storage and resource ownership, unchanged-input cache reuse, recoverable signed packaging/publication and current docs must pass before production cutover. Reference parity uses downloaded releases, never rebuilt substitutes. Quiet paired benchmark evidence and installation-first demos remain required.
 
-See [the implementation guide](guides/BAZEL.md) and [the PR handoff](PR-build-bazel-workflow.md) for current evidence and incomplete gates. Owner: this active build migration; terminal condition: reviewed complete workflow merge and qualified stable publication, followed by branch/worktree cleanup.
+See [the implementation guide](guides/BAZEL.md) and [the PR handoff](PR-708.md) for current evidence and incomplete gates. Owner: this active build migration; terminal condition: reviewed complete workflow merge and qualified stable publication, followed by branch/worktree cleanup.

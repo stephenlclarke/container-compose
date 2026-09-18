@@ -95,6 +95,7 @@ let runtimeTargets: [Target] = enhancedRuntime
         .testTarget(
             name: "ComposeCoreTests",
             dependencies: [
+                "ComposeTestStorage",
                 "ComposeCore",
                 "ComposeContainerRuntime",
                 .product(name: "ContainerResource", package: "container"),
@@ -109,6 +110,7 @@ let runtimeTargets: [Target] = enhancedRuntime
         .testTarget(
             name: "ComposeContainerRuntimeTests",
             dependencies: [
+                "ComposeTestStorage",
                 "ComposeContainerRuntime",
                 "ComposeRuntimeSPI",
                 .product(name: "ContainerResource", package: "container"),
@@ -132,6 +134,7 @@ let runtimeTargets: [Target] = enhancedRuntime
         .testTarget(
             name: "ComposeEngineRuntimeTests",
             dependencies: [
+                "ComposeTestStorage",
                 "ComposeEngineRuntime",
                 "ComposeRuntimeSPI",
                 .product(name: "ContainerEngineWire", package: "container-engine-api"),
@@ -193,6 +196,7 @@ let package = Package(
         .testTarget(
             name: "ComposeRuntimeSPITests",
             dependencies: [
+                "ComposeTestStorage",
                 "ComposeRuntimeSPI",
             ],
             path: "Tests/ComposeRuntimeSPITests",
@@ -200,6 +204,7 @@ let package = Package(
         .testTarget(
             name: "ComposePluginTests",
             dependencies: [
+                "ComposeTestStorage",
                 "ComposeCore",
                 "ComposePlugin",
             ],
@@ -209,12 +214,17 @@ let package = Package(
         .testTarget(
             name: "ComposeRuntimeTests",
             dependencies: [
+                "ComposeTestStorage",
                 "ComposeCore",
             ],
             path: "Tests/ComposeRuntimeTests",
             resources: [
                 .copy("Fixtures"),
             ],
+        ),
+        .target(
+            name: "ComposeTestStorage",
+            path: "Tests/ComposeTestStorage",
         ),
     ] + runtimeTargets,
 )

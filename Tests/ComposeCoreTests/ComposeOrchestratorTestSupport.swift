@@ -26,6 +26,7 @@ import ContainerResource
 #elseif canImport(Glibc)
     import Glibc
 #endif
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -47,7 +48,7 @@ func localDate(_ value: String, format: String) -> Date {
 }
 
 func bridgeTransformerArchiveData() throws -> Data {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestStorage.temporaryDirectory
         .appendingPathComponent("compose-bridge-archive-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -346,7 +347,7 @@ func composeProjectWithInheritedVolume(target: String) -> ComposeProject {
 }
 
 func temporaryDirectory() throws -> URL {
-    let url = FileManager.default.temporaryDirectory
+    let url = TestStorage.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
@@ -355,7 +356,7 @@ func temporaryDirectory() throws -> URL {
 func archiveWithFile(named name: String, contents: String, in directory: URL) throws -> URL {
     let source = directory.appendingPathComponent("archive-source", isDirectory: true)
     try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
-    try contents.write(to: source.appendingPathComponent(name), atomically: true, encoding: .utf8)
+    try contents.writeFixture(to: source.appendingPathComponent(name), encoding: .utf8)
 
     let archive = directory.appendingPathComponent("payload.tar")
     let writer = try ArchiveWriter(format: .pax, filter: .none, file: archive)
@@ -367,7 +368,7 @@ func archiveWithFile(named name: String, contents: String, in directory: URL) th
 func temporaryExecutable(name: String = "provider") throws -> URL {
     let directory = try temporaryDirectory()
     let executable = directory.appendingPathComponent(name)
-    try "#!/bin/sh\nexit 0\n".write(to: executable, atomically: true, encoding: .utf8)
+    try "#!/bin/sh\nexit 0\n".writeFixture(to: executable, encoding: .utf8)
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
     return executable
 }
@@ -578,7 +579,7 @@ final class BridgeInputInspectingRunner: CommandRunning, @unchecked Sendable {
                     at: file.deletingLastPathComponent(),
                     withIntermediateDirectories: true,
                 )
-                try contents.write(to: file, atomically: true, encoding: .utf8)
+                try contents.writeFixture(to: file, encoding: .utf8)
             }
         }
         if !responses.isEmpty {
@@ -1392,7 +1393,7 @@ func temporaryLogFileHandle(contents: String) throws -> FileHandle {
 }
 
 func temporaryLogFileHandle(data: Data) throws -> FileHandle {
-    let url = FileManager.default.temporaryDirectory
+    let url = TestStorage.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
         .appendingPathExtension("log")
     try data.write(to: url)
@@ -1407,7 +1408,7 @@ final class TemporaryLogFile: @unchecked Sendable {
     let readHandle: FileHandle
 
     init(data: Data = Data()) throws {
-        url = FileManager.default.temporaryDirectory
+        url = TestStorage.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("log")
         try data.write(to: url)
@@ -3572,7 +3573,7 @@ actor FileMutationSleeper {
     func sleep(_: Duration) async throws {
         calls += 1
         if calls == 1 {
-            try contents.write(to: file, atomically: true, encoding: .utf8)
+            try contents.writeFixture(to: file, encoding: .utf8)
             return
         }
         throw CancellationError()
@@ -3838,7 +3839,7 @@ actor RecordingContainerExporter: ContainerExporting {
             guard !FileManager.default.fileExists(atPath: outputURL.path) else {
                 throw ComposeError.invalidProject("export destination already exists: \(output)")
             }
-            try archiveData.write(to: outputURL, options: .atomic)
+            try TestStorage.writeFixture(archiveData, to: outputURL)
         }
     }
 }

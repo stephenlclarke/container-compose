@@ -17,6 +17,7 @@
 @testable import ComposeContainerRuntime
 import ComposeCore
 import ComposeRuntimeSPI
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -31,7 +32,7 @@ struct ContainerFilesystemAdapterTests {
 
     @Test
     func `export staging is private and cleaned after provider failure`() async throws {
-        let sharedRoot = FileManager.default.temporaryDirectory
+        let sharedRoot = TestStorage.temporaryDirectory
             .appendingPathComponent("compose-export-shared-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(
             at: sharedRoot,
@@ -57,7 +58,7 @@ struct ContainerFilesystemAdapterTests {
 
     @Test
     func `export restores private archive permissions before moving output`() async throws {
-        let sharedRoot = FileManager.default.temporaryDirectory
+        let sharedRoot = TestStorage.temporaryDirectory
             .appendingPathComponent("compose-export-shared-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(
             at: sharedRoot,
@@ -142,7 +143,7 @@ struct ContainerFilesystemAdapterTests {
 
     @Test
     func `archive fallback rejects ownership preservation instead of rewriting owners`() async throws {
-        let archive = FileManager.default.temporaryDirectory
+        let archive = TestStorage.temporaryDirectory
             .appendingPathComponent("compose-copy-archive-\(UUID().uuidString).tar")
         try Data("not reached\n".utf8).write(to: archive)
         defer { try? FileManager.default.removeItem(at: archive) }

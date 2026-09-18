@@ -15,13 +15,32 @@
 //===----------------------------------------------------------------------===//
 
 import Foundation
+#if canImport(Darwin)
+    import Darwin
+#else
+    import Glibc
+#endif
 
-package enum ComposeTemporaryFiles {
+/// Temporary storage shared by Compose and its runtime adapters.
+public enum ComposeTemporaryFiles {
+    /// Honor the caller's absolute TMPDIR, including external build storage.
+    public static var defaultDirectory: URL {
+        resolveDirectory(
+            environment: ProcessInfo.processInfo.environment,
+            fallback: FileManager.default.temporaryDirectory
+        )
+    }
+
+    package static func resolveDirectory(environment: [String: String], fallback: URL) -> URL {
+        guard let path = environment["TMPDIR"], path.hasPrefix("/") else { return fallback }
+        return URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+    }
+
     package static let directoryPermissions = 0o700
     package static let filePermissions = 0o600
 
     package static func createDirectory(
-        in parent: URL = FileManager.default.temporaryDirectory,
+        in parent: URL = ComposeTemporaryFiles.defaultDirectory,
         prefix: String = "container-compose-",
     ) throws -> URL {
         let directory = parent.appendingPathComponent("\(prefix)\(UUID().uuidString)", isDirectory: true)
@@ -50,17 +69,16 @@ package enum ComposeTemporaryFiles {
 
     package static func createFile(at file: URL) throws -> FileHandle {
         let fileManager = FileManager.default
-        guard fileManager.createFile(
-            atPath: file.path,
-            contents: nil,
-            attributes: [.posixPermissions: filePermissions],
-        ) else {
-            throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: file.path])
-        }
+        // Create directly in the owned directory. Foundation createFile can
+        // stage through a volume-level replacement area outside the sandbox.
+        let descriptor = open(file.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(filePermissions))
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
         do {
             try setAndVerifyPermissions(filePermissions, type: .typeRegular, at: file)
-            return try FileHandle(forWritingTo: file)
+            return handle
         } catch {
+            try? handle.close()
             try? fileManager.removeItem(at: file)
             throw error
         }
@@ -85,6 +103,28 @@ package enum ComposeTemporaryFiles {
             try? handle.close()
             try? FileManager.default.removeItem(at: file)
             throw error
+        }
+    }
+
+    /// Publish bytes by a same-directory rename, with final permissions set
+    /// before publication. No replacement directory on another path is used.
+    package static func writeAtomically(_ data: Data, to destination: URL, permissions: Int = filePermissions) throws {
+        let staged = destination.deletingLastPathComponent()
+            .appendingPathComponent(".container-compose-\(UUID().uuidString).tmp")
+        let handle = try createFile(at: staged)
+        defer { try? FileManager.default.removeItem(at: staged) }
+        do {
+            try handle.write(contentsOf: data)
+            guard fchmod(handle.fileDescriptor, mode_t(permissions)) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            try handle.close()
+        } catch {
+            try? handle.close()
+            throw error
+        }
+        guard rename(staged.path, destination.path) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
     }
 

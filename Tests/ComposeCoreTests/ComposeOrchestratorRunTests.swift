@@ -26,6 +26,7 @@ import ContainerResource
 #elseif canImport(Glibc)
     import Glibc
 #endif
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -2682,7 +2683,7 @@ extension ComposeOrchestratorTests {
     func runMapsBindPropagationValuesToVolumeOptions() async throws {
         let fileManager = FileManager.default
         for propagation in ["private", "rprivate", "shared", "rshared", "slave", "rslave"] {
-            let directory = fileManager.temporaryDirectory
+            let directory = TestStorage.temporaryDirectory
                 .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             defer {
@@ -2720,7 +2721,7 @@ extension ComposeOrchestratorTests {
     @Test("run rejects unsupported bind propagation values before runtime")
     func runRejectsUnsupportedBindPropagationValuesBeforeRuntime() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -2795,7 +2796,7 @@ extension ComposeOrchestratorTests {
     @Test("run rejects missing bind sources when create host path is disabled")
     func runRejectsMissingBindSourcesWhenCreateHostPathIsDisabled() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {

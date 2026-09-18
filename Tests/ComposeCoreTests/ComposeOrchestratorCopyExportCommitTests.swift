@@ -341,7 +341,7 @@ extension ComposeOrchestratorTests {
             ]
         )
         let archive = tempDirectory.appendingPathComponent("stdout.tar")
-        FileManager.default.createFile(atPath: archive.path, contents: nil)
+        try Data().write(to: archive)
         let output = try FileHandle(forWritingTo: archive)
 
         let options = ComposeExecutionOptions(runtimeHooks: .init(copyOutputArchive: { output }))
@@ -401,7 +401,7 @@ extension ComposeOrchestratorTests {
             try? FileManager.default.removeItem(at: tempDirectory)
         }
         let archive = tempDirectory.appendingPathComponent("stdout.tar")
-        FileManager.default.createFile(atPath: archive.path, contents: nil)
+        try Data().write(to: archive)
         let output = try FileHandle(forWritingTo: archive)
         let options = ComposeExecutionOptions(runtimeHooks: .init(copyOutputArchive: { output }))
 

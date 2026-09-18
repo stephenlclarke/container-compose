@@ -27,6 +27,7 @@ import ContainerResource
 #elseif canImport(Glibc)
     import Glibc
 #endif
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -2037,7 +2038,7 @@ extension ComposeOrchestratorTests {
     @Test("create maps bind propagation to volume options")
     func createMapsBindPropagationToVolumeOptions() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -4036,7 +4037,7 @@ extension ComposeOrchestratorTests {
     @Test("up accepts deploy endpoint mode metadata normalized by compose-go")
     func upAcceptsDeployEndpointModeMetadataNormalizedByComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -4050,7 +4051,7 @@ extension ComposeOrchestratorTests {
             image: alpine:3.20
             deploy:
               endpoint_mode: dnsrr
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -4077,7 +4078,7 @@ extension ComposeOrchestratorTests {
     @Test("up projects deploy memory reservations while retaining CPU reservation metadata")
     func upProjectsDeployMemoryReservationsWhileRetainingCPUReservationMetadata() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -4094,7 +4095,7 @@ extension ComposeOrchestratorTests {
                 reservations:
                   cpus: "0.25"
                   memory: 32M
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -5168,7 +5169,7 @@ extension ComposeOrchestratorTests {
         ])
         let logManager = RecordingContainerLogManager(outputs: ["ignored"])
         let menuController = RecordingComposeUpMenuController(actions: [.toggleWatch])
-        let temporaryDirectory = FileManager.default.temporaryDirectory
+        let temporaryDirectory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-menu-watch-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer {

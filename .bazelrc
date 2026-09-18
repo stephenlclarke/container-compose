@@ -23,7 +23,8 @@ test --flaky_test_attempts=1
 test --local_test_jobs=2
 test --run_under=//Tools/bazel:ssd_test_runner
 coverage --combined_report=lcov
-coverage --instrumentation_filter=^//
+# Test-only fixture utilities are not production coverage; no product excludes.
+coverage --instrumentation_filter=^//,-^//:ComposeTestStorage$
 coverage --experimental_use_llvm_covmap
 coverage --experimental_generate_llvm_lcov
 build:release --compilation_mode=opt

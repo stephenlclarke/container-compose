@@ -142,7 +142,7 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
             archive: archive,
             destination: destination,
             options: options,
-            temporaryDirectory: FileManager.default.temporaryDirectory,
+            temporaryDirectory: ComposeTemporaryFiles.defaultDirectory,
         )
     }
 
@@ -165,7 +165,7 @@ public struct ContainerClientCopier: ComposeRuntimeArchiveCopying {
             archive: archive,
             copyContents: copyContents,
             options: options,
-            temporaryDirectory: FileManager.default.temporaryDirectory,
+            temporaryDirectory: ComposeTemporaryFiles.defaultDirectory,
         )
     }
 
@@ -399,7 +399,7 @@ public struct ContainerClientExporter: ComposeRuntimeExporting {
     private let exportOperation: Export
 
     public init(
-        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        temporaryDirectory: URL = ComposeTemporaryFiles.defaultDirectory,
         export: @escaping Export = { id, archive, live, noFreeze in
             try await ContainerClient().export(id: id, archive: archive, live: live, noFreeze: noFreeze)
         },
@@ -409,7 +409,7 @@ public struct ContainerClientExporter: ComposeRuntimeExporting {
     }
 
     init(
-        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        temporaryDirectory: URL = ComposeTemporaryFiles.defaultDirectory,
         containerClient: @escaping ContainerClientProvider,
     ) {
         self.init(temporaryDirectory: temporaryDirectory) { id, archive, live, noFreeze in

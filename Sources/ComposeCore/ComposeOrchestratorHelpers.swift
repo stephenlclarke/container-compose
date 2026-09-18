@@ -839,18 +839,12 @@ struct ComposeMaterializedFile {
         let data = contents
         if fileManager.fileExists(atPath: url.path) {
             if try Data(contentsOf: url) != data {
-                try data.write(to: url, options: .atomic)
+                try ComposeTemporaryFiles.writeAtomically(data, to: url, permissions: permissions)
             }
             try fileManager.setAttributes([.posixPermissions: permissions], ofItemAtPath: url.path)
             return
         }
-        guard fileManager.createFile(
-            atPath: url.path,
-            contents: data,
-            attributes: [.posixPermissions: permissions],
-        ) else {
-            throw ComposeError.invalidProject("failed to materialize Compose config or secret at '\(url.path)'")
-        }
+        try ComposeTemporaryFiles.writeAtomically(data, to: url, permissions: permissions)
     }
 }
 

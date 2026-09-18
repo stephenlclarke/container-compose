@@ -20,6 +20,7 @@ import Darwin
 #elseif canImport(Glibc)
 import Glibc
 #endif
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -35,7 +36,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime run build emits progress before build output")
     func runtimeRunBuildEmitsProgressBeforeBuildOutput() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -110,7 +111,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime up handles entrypoint plus command")
     func runtimeUpHandlesEntrypointPlusCommand() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -228,7 +229,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime up assigns IPv6 for an automatic IPv6 Compose network")
     func runtimeUpAssignsAutomaticIPv6Network() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -289,7 +290,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime up applies an explicit IPv6 IPAM gateway")
     func runtimeUpAppliesIPv6Gateway() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -355,7 +356,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime up disables IPv6 while retaining the Compose IPv6 pool")
     func runtimeUpDisablesIPv6Network() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -420,7 +421,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime static IPv4 endpoint survives restart and network cleanup")
     func runtimeStaticIPv4EndpointLifecycle() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -596,7 +597,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime dry run up timestamps attaches foreground output")
     func runtimeDryRunUpTimestampsAttachesForegroundOutput() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -639,7 +640,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime dry run up attach selects foreground output")
     func runtimeDryRunUpAttachSelectsForegroundOutput() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -692,7 +693,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime dry run up accepts menu boolean values in no-start mode")
     func runtimeDryRunUpAcceptsMenuBooleanValuesInNoStartMode() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -752,7 +753,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime dry run up accepts menu exit-control and menu watch")
     func runtimeDryRunUpAcceptsMenuExitControlAndMenuWatch() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -828,7 +829,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime dry run up renders service privileged command")
     func runtimeDryRunUpRendersServicePrivilegedCommand() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -863,7 +864,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime privileged service restores guest readonly paths")
     func runtimePrivilegedServiceRestoresGuestReadonlyPaths() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -923,7 +924,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime service clears guest system-path overrides without adding capabilities")
     func runtimeServiceClearsGuestSystemPathOverridesWithoutAddingCapabilities() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1007,7 +1008,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime host user namespace retains the guest identity mapping")
     func runtimeHostUserNamespaceRetainsGuestIdentityMapping() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1067,7 +1068,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime private user namespace has an identity-mapped guest namespace")
     func runtimePrivateUserNamespaceHasIdentityMappedGuestNamespace() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1127,7 +1128,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime dry run attach no-stdin attaches output with default signal proxy")
     func runtimeDryRunAttachNoStdinAttachesOutputWithDefaultSignalProxy() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1173,7 +1174,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime up exit-code-from returns selected service status")
     func runtimeUpExitCodeFromReturnsSelectedServiceStatus() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1245,7 +1246,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime config resolves image digests")
     func runtimeConfigResolvesImageDigests() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1290,7 +1291,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime dry run exec renders privileged command")
     func runtimeDryRunExecRendersPrivilegedCommand() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1331,7 +1332,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime build print renders bake file from compose file")
     func runtimeBuildPrintRendersBakeFileFromComposeFile() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         let apiDirectory = directory.appendingPathComponent("api", isDirectory: true)
         try fileManager.createDirectory(at: apiDirectory, withIntermediateDirectories: true)
@@ -1403,7 +1404,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime build uses named builder")
     func runtimeBuildUsesNamedBuilder() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         let apiDirectory = directory.appendingPathComponent("api", isDirectory: true)
         try fileManager.createDirectory(at: apiDirectory, withIntermediateDirectories: true)
@@ -1454,7 +1455,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime build forwards default SSH from compose file and CLI")
     func runtimeBuildForwardsDefaultSSHFromComposeFileAndCLI() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         let apiDirectory = directory.appendingPathComponent("api", isDirectory: true)
         try fileManager.createDirectory(at: apiDirectory, withIntermediateDirectories: true)
@@ -1510,7 +1511,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime build forwards explicit SSH socket from CLI")
     func runtimeBuildForwardsExplicitSSHSocketFromCLI() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         let apiDirectory = directory.appendingPathComponent("api", isDirectory: true)
         try fileManager.createDirectory(at: apiDirectory, withIntermediateDirectories: true)
@@ -1563,7 +1564,7 @@ struct ComposeRuntimeSmokeTests {
     @Test("runtime build forwards multiple explicit SSH sockets from compose file")
     func runtimeBuildForwardsMultipleExplicitSSHSocketsFromComposeFile() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
         let apiDirectory = directory.appendingPathComponent("api", isDirectory: true)
         try fileManager.createDirectory(at: apiDirectory, withIntermediateDirectories: true)
@@ -1628,7 +1629,7 @@ struct ComposeRuntimeDryRunContractTests {
     @Test("foreground commands use direct attachment")
     func foregroundCommandsUseDirectAttachment() throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-contract-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1711,7 +1712,7 @@ private func copyRuntimeFixture(named name: String) throws -> URL {
     guard let source = Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Fixtures") else {
         throw ComposeError.invalidProject("missing runtime fixture '\(name)'")
     }
-    let destination = fileManager.temporaryDirectory
+    let destination = TestStorage.temporaryDirectory
         .appendingPathComponent("container-compose-runtime-\(UUID().uuidString)", isDirectory: true)
     try fileManager.copyItem(at: source, to: destination)
     return destination

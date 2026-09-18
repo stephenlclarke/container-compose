@@ -253,7 +253,7 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 
 ## Documentation
 
-The [native Bazel workflow](docs/guides/BAZEL.md) is being qualified alongside the existing build system. Both stock and enhanced CLI graphs compile natively, reusing the family launcher, SSD caches and retained timing/evidence store. This remains opt-in; complete test, packaging and release migration is unfinished and existing release gates are unchanged.
+The [native Bazel workflow](docs/guides/BAZEL.md) is being qualified alongside the existing build system. Stock/enhanced Swift products, the Go parser and both Linux volume initializers build natively. Provider-specific unit suites use declared fixtures, SSD scratch and retained test/timing evidence. This remains opt-in: coverage, live integration/parity, packaging and release migration are unfinished, and existing release gates are unchanged.
 
 - [Container developer API collection](https://stephenlclarke.github.io/api/): browse the unified documentation for `container-engine-api`, `container`, `containerization`, `container-k8s`, `container-builder-shim`, `container-compose`, and `devcontainer`.
 - [container-compose API reference](https://stephenlclarke.github.io/api/container-compose/): browse the Compose plugin API reference generated from the Swift source.

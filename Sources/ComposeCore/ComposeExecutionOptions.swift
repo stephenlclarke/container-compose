@@ -177,7 +177,7 @@ public struct ComposeExecutionOptions {
         hostPortAllocator = ComposeExecutionOptions.defaultHostPortAllocator
         watchPollInterval = .seconds(1)
         materializedConfigSecretDirectory = ComposeExecutionOptions.defaultMaterializedConfigSecretDirectory()
-        temporaryDirectory = FileManager.default.temporaryDirectory
+        temporaryDirectory = ComposeTemporaryFiles.defaultDirectory
         runtimeCapabilities = ComposeRuntimeCapabilities(identifiers: [
             ComposeRuntimeCapabilities.networkScopedAliasesV1Identifier,
         ])

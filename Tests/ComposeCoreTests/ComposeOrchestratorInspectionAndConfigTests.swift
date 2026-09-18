@@ -26,6 +26,7 @@ import ContainerResource
 #elseif canImport(Glibc)
     import Glibc
 #endif
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -2251,7 +2252,7 @@ extension ComposeOrchestratorTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let config = directory.appendingPathComponent("app.conf")
-        try "feature=true\n".write(to: config, atomically: true, encoding: .utf8)
+        try "feature=true\n".writeFixture(to: config, encoding: .utf8)
         let secretEnvironment = "COMPOSE_BRIDGE_SECRET_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
         setenv(secretEnvironment, "bridge-secret", 1)
         defer { unsetenv(secretEnvironment) }
@@ -2849,7 +2850,7 @@ extension ComposeOrchestratorTests {
         let output = directory.appendingPathComponent("out", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let guardFile = output.appendingPathComponent("README.md")
-        try "do not delete me".write(to: guardFile, atomically: true, encoding: .utf8)
+        try "do not delete me".writeFixture(to: guardFile, encoding: .utf8)
         let prompts = MessageRecorder()
         let runner = RecordingRunner()
         let orchestrator = ComposeOrchestrator(
@@ -2887,7 +2888,7 @@ extension ComposeOrchestratorTests {
         let output = directory.appendingPathComponent("out", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let guardFile = output.appendingPathComponent("stale.txt")
-        try "stale".write(to: guardFile, atomically: true, encoding: .utf8)
+        try "stale".writeFixture(to: guardFile, encoding: .utf8)
         let runner = BridgeInputInspectingRunner()
         let orchestrator = ComposeOrchestrator(
             runner: runner,
@@ -2919,7 +2920,7 @@ extension ComposeOrchestratorTests {
         let output = directory.appendingPathComponent("out", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let guardFile = output.appendingPathComponent("stale.txt")
-        try "stale".write(to: guardFile, atomically: true, encoding: .utf8)
+        try "stale".writeFixture(to: guardFile, encoding: .utf8)
         let prompts = MessageRecorder()
         let runner = BridgeInputInspectingRunner()
         let orchestrator = ComposeOrchestrator(
@@ -2951,7 +2952,7 @@ extension ComposeOrchestratorTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let output = directory.appendingPathComponent("out")
-        try "do not delete me".write(to: output, atomically: true, encoding: .utf8)
+        try "do not delete me".writeFixture(to: output, encoding: .utf8)
         let runner = RecordingRunner()
 
         await #expect(throws: ComposeError.self) {

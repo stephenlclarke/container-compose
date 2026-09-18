@@ -1,0 +1,21 @@
+# Copyright 2026 container-compose project authors. SPDX-License-Identifier: Apache-2.0
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "transform",
+    srcs = glob(["*.go"], exclude = ["*_test.go"]),
+    importpath = "github.com/stephenlclarke/container-compose/Tools/compose-normalizer/transform",
+    deps = [
+        "@in_yaml_go_yaml_v4//:go_default_library"
+    ],
+)
+
+go_test(
+    name = "transform_test",
+    args = ["-test.v"],
+    srcs = glob(["*_test.go"]),
+    embed = [":transform"],
+    deps = [],
+)

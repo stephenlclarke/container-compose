@@ -1,4 +1,19 @@
-# Copyright 2026 container-compose project authors. SPDX-License-Identifier: Apache-2.0
+#===----------------------------------------------------------------------===#
+# Copyright © 2026 container-compose project authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#===----------------------------------------------------------------------===#
+
 # Opt-in native graph. No legacy Makefile parsing or signing/keychain discovery.
 override SHELL := /bin/bash -p -euo pipefail
 .DEFAULT_GOAL := help
@@ -8,9 +23,9 @@ export FAMILY_BAZEL_LAUNCHER
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
 export ROOT
 
-.PHONY: help check-launcher build test-spi test-cli
+.PHONY: help check-launcher build test-spi test-cli test-unit test-go
 help:
-	@printf 'Set FAMILY_BAZEL_LAUNCHER to the locked family run.sh. Targets: build, test-spi, test-cli. BAZEL_PROFILE=stock|enhanced.\n'
+	@printf 'Set FAMILY_BAZEL_LAUNCHER to the locked family run.sh. Targets: build, test-spi, test-cli, test-unit, test-go. BAZEL_PROFILE=stock|enhanced.\n'
 
 check-launcher:
 	@test -n "$${FAMILY_BAZEL_LAUNCHER:-}" -a -f "$${FAMILY_BAZEL_LAUNCHER:-}" || { printf 'Set FAMILY_BAZEL_LAUNCHER to the reviewed shared launcher.\n' >&2; exit 2; }
@@ -24,3 +39,9 @@ test-spi: check-launcher
 
 test-cli: check-launcher
 	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" //Tools/bazel:cli_smoke
+
+test-unit: check-launcher
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" "//:unit_$$BAZEL_PROFILE"
+
+test-go: check-launcher
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" //:unit_go

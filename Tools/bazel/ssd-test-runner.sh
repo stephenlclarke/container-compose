@@ -18,6 +18,11 @@ export TEST_TMPDIR
 export BAZEL_TEST=1
 export TMPDIR="$TEST_TMPDIR" TMP="$TEST_TMPDIR" TEMP="$TEST_TMPDIR"
 export DEVCONTAINER_TEST_SCRATCH_ROOT=/Volumes/SSD/cf/bazel/
+# The Swift parser tests execute the declared Go binary, never `go run`.
+if [[ -n "${COMPOSE_NORMALIZER_RUNFILE:-}" ]]; then
+    export CONTAINER_COMPOSE_NORMALIZER="${TEST_SRCDIR:?}/${TEST_WORKSPACE:?}/$COMPOSE_NORMALIZER_RUNFILE"
+    [[ -x "$CONTAINER_COMPOSE_NORMALIZER" ]] || { printf 'Missing declared normalizer.\n' >&2; exit 2; }
+fi
 if "$@"; then
     status=0
 else
