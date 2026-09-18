@@ -39,7 +39,7 @@ test-spi: check-launcher
 	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" //:ComposeRuntimeSPITests
 
 test-cli: check-launcher
-	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" //Tools/bazel:cli_smoke
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" //Tools/bazel:cli_smoke //Tools/bazel:cli_contracts
 
 test-unit: check-launcher
 	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" "//:unit_$$BAZEL_PROFILE"
