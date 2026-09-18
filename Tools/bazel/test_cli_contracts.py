@@ -116,6 +116,37 @@ class CLIContracts(unittest.TestCase):
         self.assertIn("CONTRACT_VALUE", error)
         self.assertIn("required", error)
 
+    def assert_payload_help_reaches_project_validation(self, command, help_flag):
+        self.fixture.unlink()
+        output, error = self.invoke("--dry-run", command, "api", "echo", help_flag, expected_status=1)
+        self.assertIn(str(self.fixture), error)
+        self.assertIn("no such file or directory", error.lower())
+        self.assertNotIn("Usage:", output)
+
+    def test_run_payload_long_help_reaches_project_validation(self):
+        self.assert_payload_help_reaches_project_validation("run", "--help")
+
+    def test_run_payload_short_help_reaches_project_validation(self):
+        self.assert_payload_help_reaches_project_validation("run", "-h")
+
+    def test_exec_payload_long_help_reaches_project_validation(self):
+        self.assert_payload_help_reaches_project_validation("exec", "--help")
+
+    def test_exec_payload_short_help_reaches_project_validation(self):
+        self.assert_payload_help_reaches_project_validation("exec", "-h")
+
+    def assert_command_help_does_not_load_project(self, command):
+        self.fixture.unlink()
+        output, _ = self.invoke(command, "--help")
+        self.assertIn("Usage:", output)
+        self.assertIn("compose " + command, output)
+
+    def test_run_command_help_does_not_load_project(self):
+        self.assert_command_help_does_not_load_project("run")
+
+    def test_exec_command_help_does_not_load_project(self):
+        self.assert_command_help_does_not_load_project("exec")
+
     def test_missing_declared_parser_cannot_fall_back_to_compilation(self):
         self.environment["CONTAINER_COMPOSE_NORMALIZER"] = str(self.root / "missing-parser")
         _, error = self.invoke("config", "--format", "json", expected_status=1)
@@ -171,4 +202,4 @@ if __name__ == "__main__":
             kind, trace = failures[test.id()]
             ET.SubElement(element, kind).text = trace
     ET.ElementTree(root).write(os.environ["XML_OUTPUT_FILE"], encoding="utf-8", xml_declaration=True)
-    raise SystemExit(0 if result.wasSuccessful() and result.testsRun == 6 else 1)
+    raise SystemExit(0 if result.wasSuccessful() and result.testsRun == 12 else 1)

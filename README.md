@@ -188,6 +188,8 @@ option for that command is green.
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 
+In the unreleased Bazel candidate, `run` and `exec` preserve guest-command options such as `--help`, `--user` and `--workdir`: place Compose options before `SERVICE`, followed by the guest command and its arguments. `container compose run --help` displays Compose help; `container compose run web echo --help` passes `--help` to `echo`. See the [CLI boundary evidence](docs/guides/BAZEL.md#guest-command-argument-boundary) for tested scope; this is not a claim about the currently published stable binary.
+
 Use [STATUS.md](docs/project/STATUS.md) for the current stable functionality and
 [BACKLOG.md](docs/project/BACKLOG.md) for the remaining 1.0 parity contracts. The live
 source of backlog state is the cross-repository GitHub hierarchy rooted at

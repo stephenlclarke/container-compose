@@ -446,7 +446,7 @@ struct ComposePluginMain {
         if ComposeCLIHelp.renderRootIfNoCommand(arguments: arguments) {
             return
         }
-        let rewritten = ComposeArgumentRewriter.rewrite(arguments)
+        let rewritten = ComposeArgumentRewriter.argumentsForParsing(arguments)
         do {
             if let failure = try await ContainerPackageCompatibility.compatibilityFailure(
                 arguments: rewritten,
@@ -870,7 +870,7 @@ struct AlphaDryRun: AsyncParsableCommand {
             throw ComposeError.invalidProject("alpha dry-run requires a compose command after --")
         }
 
-        let arguments = ComposeArgumentRewriter.rewrite(global.rootArguments(forceDryRun: true) + nestedCommand)
+        let arguments = ComposeArgumentRewriter.argumentsForParsing(global.rootArguments(forceDryRun: true) + nestedCommand)
         await ComposePlugin.main(arguments)
     }
 }
@@ -1686,7 +1686,7 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
     var workdir: String?
     @Argument(help: "Service name.")
     var service: String
-    @Argument(parsing: .allUnrecognized, help: "Command and arguments.")
+    @Argument(parsing: .remaining, help: "Command and arguments.")
     var command: [String]
 
     /// Executes the requested command in an existing service container.
@@ -1765,7 +1765,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var capDrop: [String] = []
     @Argument(help: "Service name.")
     var service: String
-    @Argument(parsing: .allUnrecognized, help: "Optional replacement command.")
+    @Argument(parsing: .remaining, help: "Optional replacement command.")
     var command: [String] = []
 
     /// Runs a one-off service container with an optional command override.

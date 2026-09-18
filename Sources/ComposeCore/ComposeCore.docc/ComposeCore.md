@@ -24,6 +24,8 @@ invocation without sharing attach or exec session ownership.
 
 The generated reference covers the public configuration models and adapter protocols used to integrate Compose behavior into container-based tools.
 
+The unreleased Bazel candidate uses ``ComposeArgumentRewriter/argumentsForParsing(_:)`` to separate Compose options from a `run` or `exec` guest command. Compose options precede `SERVICE`; subsequent guest options, including `--help`, remain literal command arguments. ``ComposeArgumentRewriter/argumentsForOptionInspection(_:)`` applies the same service boundary when selecting Compose help and deciding whether the installed runtime requires a compatibility check. This candidate fix does not change the published stable support claim.
+
 ## Topics
 
 ### Runtime Architecture
