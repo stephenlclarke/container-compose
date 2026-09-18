@@ -128,6 +128,94 @@ class CLIContracts(unittest.TestCase):
         self.assertEqual(model["services"]["api"]["environment"]["CONTRACT_VALUE"], "literal-value")
         self.assertEqual(model["services"]["api"]["dependsOn"]["db"]["condition"], "service_started")
 
+    def test_version_json_reports_declared_build_provenance_without_loading_project(self):
+        self.fixture.unlink()
+        metadata = {"version": "9.8.7", "source": "stephenlclarke/container-compose", "branch": "main",
+                    "lane": "main", "commit": "a" * 40, "buildType": "release",
+                    "containerSource": "apple/container", "containerRef": "b" * 40,
+                    "containerizationSource": "apple/containerization", "containerizationRef": "c" * 40,
+                    "composeGoVersion": "v2.9.0", "runtimeCapabilitySchemaVersion": 1,
+                    "runtimeCapabilities": ["test-capability"]}
+        build_info = self.root / "build-info.json"
+        build_info.write_text(json.dumps(metadata))
+        self.environment["CONTAINER_COMPOSE_BUILD_INFO"] = str(build_info)
+        output, _ = self.invoke("version", "--format", "json")
+        self.assertEqual(json.loads(output), dict(metadata, containerDistribution="apple",
+                                                containerizationDistribution="apple"))
+
+    def test_config_quiet_validates_without_emitting_a_model(self):
+        output, _ = self.invoke("config", "--quiet")
+        self.assertEqual(output, "")
+
+    def test_config_output_file_contains_the_same_interpolated_model(self):
+        destination = self.root / "config output.json"
+        expected, _ = self.invoke("config", "--format", "json")
+        output, _ = self.invoke("config", "--format", "json", "--output", str(destination))
+        self.assertEqual(output, "")
+        self.assertEqual(json.loads(destination.read_text()), json.loads(expected))
+        self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(list(self.root.glob(".container-compose-*.tmp")), [])
+
+    def test_convert_json_matches_config_without_running_a_container(self):
+        expected, _ = self.invoke("config", "--format", "json")
+        output, _ = self.invoke("convert", "--format", "json")
+        self.assertEqual(json.loads(output), json.loads(expected))
+
+    def test_convert_output_file_contains_the_same_model(self):
+        destination = self.root / "converted output.json"
+        expected, _ = self.invoke("config", "--format", "json")
+        output, _ = self.invoke("convert", "--format", "json", "--output", str(destination))
+        self.assertEqual(output, "")
+        self.assertEqual(json.loads(destination.read_text()), json.loads(expected))
+        self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(list(self.root.glob(".container-compose-*.tmp")), [])
+
+    def test_config_variables_reports_required_and_default_values_without_resolving_them(self):
+        self.fixture.write_text('services:\n  api:\n    image: "${IMAGE:-alpine:3.22}"\n'
+                                '    environment:\n      VALUE: "${REQUIRED:?provide a value}"\n')
+        output, _ = self.invoke("config", "--variables")
+        rows = [line.split() for line in output.splitlines()]
+        self.assertIn(["IMAGE", "false", "alpine:3.22"], rows)
+        self.assertTrue(any(row[:2] == ["REQUIRED", "true"] for row in rows), rows)
+        self.assertNotIn("literal-value", output)
+
+    def test_no_interpolate_retains_the_unresolved_expression(self):
+        del self.environment["CONTRACT_VALUE"]
+        output, _ = self.invoke("config", "--no-interpolate", "--format", "json")
+        self.assertEqual(json.loads(output)["services"]["api"]["environment"]["CONTRACT_VALUE"],
+                         "${CONTRACT_VALUE:?required}")
+
+    def test_config_variables_output_replaces_only_the_requested_file(self):
+        destination = self.root / "variables.txt"
+        destination.write_text("obsolete")
+        expected, _ = self.invoke("config", "--variables")
+        output, _ = self.invoke("config", "--variables", "--output", str(destination))
+        self.assertEqual(output, "")
+        self.assertEqual(destination.read_text().strip(), expected.strip())
+        self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(self.fixture.is_file())
+        self.assertEqual(list(self.root.glob(".container-compose-*.tmp")), [])
+
+    def test_services_projection_returns_names_not_runtime_inventory(self):
+        output, _ = self.invoke("config", "--services")
+        self.assertEqual(output.splitlines(), ["api", "db"])
+
+    def test_service_hash_is_stable_and_changes_only_with_its_configuration(self):
+        before, _ = self.invoke("config", "--hash", "*")
+        repeated, _ = self.invoke("config", "--hash", "*")
+        self.assertEqual(repeated, before)
+        self.environment["CONTRACT_VALUE"] = "changed-value"
+        changed, _ = self.invoke("config", "--hash", "*")
+        original_hashes = dict(line.split() for line in before.splitlines())
+        changed_hashes = dict(line.split() for line in changed.splitlines())
+        self.assertEqual(set(original_hashes), {"api", "db"})
+        self.assertNotEqual(original_hashes["api"], changed_hashes["api"])
+        self.assertEqual(original_hashes["db"], changed_hashes["db"])
+
+    def test_convert_quiet_validates_without_emitting_a_model(self):
+        output, _ = self.invoke("convert", "--quiet")
+        self.assertEqual(output, "")
+
     def plan(self, *arguments):
         output, _ = self.invoke("--dry-run", *arguments)
         return [shlex.split(line[2:]) for line in output.splitlines() if line.startswith("+ ")]
@@ -382,4 +470,4 @@ if __name__ == "__main__":
             kind, trace = failures[test.id()]
             ET.SubElement(element, kind).text = trace
     ET.ElementTree(root).write(os.environ["XML_OUTPUT_FILE"], encoding="utf-8", xml_declaration=True)
-    raise SystemExit(0 if result.wasSuccessful() and result.testsRun == 31 else 1)
+    raise SystemExit(0 if result.wasSuccessful() and result.testsRun == 42 else 1)

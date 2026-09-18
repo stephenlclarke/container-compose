@@ -26,6 +26,8 @@ The generated reference covers the public configuration models and adapter proto
 
 The unreleased Bazel candidate uses ``ComposeArgumentRewriter/argumentsForParsing(_:)`` to separate Compose options from a `run` or `exec` guest command. Compose options precede `SERVICE`; subsequent guest options, including `--help`, remain literal command arguments. ``ComposeArgumentRewriter/argumentsForOptionInspection(_:)`` applies the same service boundary when selecting Compose help and deciding whether the installed runtime requires a compatibility check. This candidate fix does not change the published stable support claim.
 
+The unreleased candidate also publishes `config --output` (including variable listings) and `convert --output` through a same-directory temporary file, followed by atomic replacement. The resulting file is owner-readable/writable only (`0600`), including when replacing an existing file, because resolved configuration can contain sensitive environment values. Temporary staging remains on the destination volume; persistent runtime state locations are unchanged.
+
 ## Topics
 
 ### Runtime Architecture

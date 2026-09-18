@@ -1094,7 +1094,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
             let loadedVariables = try await global.loadVariables(options: composeOptions)
             let rendered = orchestrator().config(variables: loadedVariables)
             if let output {
-                try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
+                try ComposeTemporaryFiles.writeAtomically(Data(rendered.utf8), to: URL(fileURLWithPath: output))
                 return
             }
             if !rendered.isEmpty {
@@ -1127,7 +1127,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
             try orchestrator().config(project: loadedProject, options: configOptions)
         }
         if let output {
-            try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
+            try ComposeTemporaryFiles.writeAtomically(Data(rendered.utf8), to: URL(fileURLWithPath: output))
             return
         }
         if !rendered.isEmpty {
@@ -1195,7 +1195,7 @@ struct Convert: AsyncParsableCommand, ComposeProjectCommand {
             try orchestrator().config(project: loadedProject, options: configOptions)
         }
         if let output {
-            try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
+            try ComposeTemporaryFiles.writeAtomically(Data(rendered.utf8), to: URL(fileURLWithPath: output))
             return
         }
         if !rendered.isEmpty {
