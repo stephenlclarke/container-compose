@@ -1,0 +1,60 @@
+diff --git a/swiftpkg/internal/repository_files.bzl b/swiftpkg/internal/repository_files.bzl
+--- a/swiftpkg/internal/repository_files.bzl
++++ b/swiftpkg/internal/repository_files.bzl
+@@ -50,6 +50,18 @@
+         "-o",
+         "-name",
+         "LICENSE.*",
++        "-o",
++        "-name",
++        "NOTICE*",
++        "-o",
++        "-name",
++        "COPYING*",
++        "-o",
++        "-name",
++        "PATENTS*",
++        "-o",
++        "-name",
++        "COPYRIGHT*",
+         ")",
+     ]
+ 
+diff --git a/swiftpkg/internal/repo_rules.bzl b/swiftpkg/internal/repo_rules.bzl
+--- a/swiftpkg/internal/repo_rules.bzl
++++ b/swiftpkg/internal/repo_rules.bzl
+@@ -147,11 +147,10 @@
+ 
+     licenses = repository_files.find_license_files(repository_ctx)
+     bld_files.append(
+-        # Pick the shortest name, in order to prefer `LICENSE` over
+-        # `LICENSE.md`
++        # Preserve all upstream licence and notice texts, not just one.
+         swiftpkg_build_files.new_for_license(
+             pkg_info,
+-            sorted(licenses, key = len)[0] if licenses else None,
++            sorted(licenses, key = len),
+         ),
+     )
+ 
+diff --git a/swiftpkg/internal/swiftpkg_build_files.bzl b/swiftpkg/internal/swiftpkg_build_files.bzl
+--- a/swiftpkg/internal/swiftpkg_build_files.bzl
++++ b/swiftpkg/internal/swiftpkg_build_files.bzl
+@@ -1383,1 +1383,1 @@
+-def _new_for_license(pkg_info, license):
++def _new_for_license(pkg_info, licenses):
+@@ -1399,8 +1399,8 @@
+     default_package_metadata = [":{}".format(packageinfo_target_name)]
+     load_stmts = [rules_license_package_info_load_stmt]
+ 
+-    if license:
+-        license_target_name = "license.rspm"
++    for index, license in enumerate(licenses):
++        license_target_name = "license.rspm" if index == 0 else "license_{}.rspm".format(index)
+         decls.append(
+             build_decls.new(
+                 rules_license_kinds.license,
+@@ -1413,1 +1413,2 @@
+-        load_stmts.append(rules_license_license_load_stmt)
++        if index == 0:
++            load_stmts.append(rules_license_license_load_stmt)

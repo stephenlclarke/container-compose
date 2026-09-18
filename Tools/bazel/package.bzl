@@ -3,6 +3,7 @@
 
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_license//rules:gather_licenses_info.bzl", "gather_licenses_info", "write_licenses_info")
 
 def _metadata_impl(ctx):
     if ctx.var["COMPILATION_MODE"] != "opt":
@@ -10,6 +11,9 @@ def _metadata_impl(ctx):
     manifest = ctx.actions.declare_file(ctx.label.name + ".inputs.json")
     info = ctx.actions.declare_file(ctx.label.name + "/build-info.json")
     identity = ctx.actions.declare_file(ctx.label.name + "/candidate.json")
+    notices = ctx.actions.declare_file(ctx.label.name + "/THIRD-PARTY-NOTICES.txt")
+    licenses = ctx.actions.declare_file(ctx.label.name + ".licenses.json")
+    license_files = write_licenses_info(ctx, ctx.attr.binaries, licenses)
     binaries = [target[DefaultInfo].files_to_run.executable for target in ctx.attr.binaries]
     if None in binaries:
         fail("Candidate inputs must be executable targets")
@@ -22,22 +26,27 @@ def _metadata_impl(ctx):
         "capabilities": ctx.file.capabilities.path,
         "profile": ctx.attr.profile,
         "commit": ctx.var.get("DEVCONTAINER_COMMIT", "unspecified"),
+        "licenses": licenses.path,
+        "go_inventory": ctx.file.go_inventory.path,
+        "sdk_notices": [file.path for file in ctx.files.sdk_notices],
     }))
     ctx.actions.run(
         executable = "/usr/bin/python3",
-        arguments = [ctx.file._tool.path, "metadata", manifest.path, info.path, identity.path, ctx.file._build_info.path],
+        arguments = [ctx.file._tool.path, "metadata", manifest.path, info.path, identity.path, ctx.file._build_info.path, notices.path],
         inputs = [manifest, ctx.file.makefile, ctx.file.resolved, ctx.file.go_mod, ctx.file.go_sum,
-                  ctx.file.capabilities, ctx.file._tool, ctx.file._build_info] + binaries,
-        outputs = [info, identity],
+                  ctx.file.capabilities, ctx.file._tool, ctx.file._build_info, licenses, ctx.file.go_inventory] + binaries + license_files + ctx.files.sdk_notices,
+        outputs = [info, identity, notices],
         mnemonic = "ComposePackageIdentity",
         env = {"PYTHONDONTWRITEBYTECODE": "1"},
     )
-    return [DefaultInfo(files = depset([info, identity])), OutputGroupInfo(identity = depset([identity]))]
+    return [DefaultInfo(files = depset([info, identity, notices])), OutputGroupInfo(identity = depset([identity]))]
 
 _metadata = rule(
     implementation = _metadata_impl,
     attrs = {
-        "binaries": attr.label_list(mandatory = True),
+        "binaries": attr.label_list(aspects = [gather_licenses_info], mandatory = True),
+        "go_inventory": attr.label(allow_single_file = True, mandatory = True),
+        "sdk_notices": attr.label_list(allow_files = True, mandatory = True),
         "makefile": attr.label(allow_single_file = True, mandatory = True),
         "resolved": attr.label(allow_single_file = True, mandatory = True),
         "go_mod": attr.label(allow_single_file = True, mandatory = True),
@@ -84,6 +93,8 @@ def compose_candidate(name, profile, resolved):
         go_sum = "//Tools/compose-normalizer:go.sum",
         capabilities = "//:Tools/release/runtime-capabilities.json",
         profile = profile,
+        go_inventory = "//Tools/bazel:licenses/inventory.json",
+        sdk_notices = ["@main___download_0//:LICENSE", "@main___download_0//:PATENTS"],
     )
     native.filegroup(name = name + "_identity", srcs = [":" + name + "_metadata"], output_group = "identity")
     groups = []

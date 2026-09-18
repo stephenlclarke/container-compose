@@ -130,6 +130,80 @@ def receipt(archive: Path, identity: dict) -> dict:
     return {**identity, "archiveSHA256": sha256(archive), "archiveSize": archive.stat().st_size}
 
 
+def go_notice_inventory(manifest: dict) -> tuple[list[dict], dict[str, str]]:
+    """Bind reviewed notice modules and versions to the production Go lock."""
+    inventory = json.loads(Path(manifest["go_inventory"]).read_text())
+    rows = inventory["modules"]
+    if inventory.get("schemaVersion") != 1 or not rows:
+        raise ValueError("Invalid Go notice inventory")
+    required = {row["module"]: row["version"] for row in rows}
+    declared = dict(re.findall(r"^\s*(\S+)\s+(v\S+)", Path(manifest["go_mod"]).read_text(), re.M))
+    if len(required) != len(rows) or required != declared:
+        raise ValueError("Go notice inventory does not match go.mod")
+    return rows, required
+
+
+def source_notices(manifest: dict, required: dict[str, str]) -> tuple[dict, dict, set]:
+    """Collect dependency-graph texts with stable, source-relative headings."""
+    entries = [entry for group in json.loads(Path(manifest["licenses"]).read_text()) for entry in group["licenses"]]
+    texts = {}
+    found = {}
+    swift = set()
+    for entry in entries:
+        path = Path(entry["license_text"])
+        content = path.read_text()
+        if not content.strip():
+            raise ValueError("Empty dependency notice")
+        name, version = entry["package_name"], entry["package_version"]
+        if name in required:
+            if version != required[name]:
+                raise ValueError("Go notice version mismatch")
+            found.setdefault(name, set()).add(path.name)
+            label = name + "@" + version + "/" + path.name
+        else:
+            # rules_swift_package_manager names roots from immutable package
+            # identities; retain the nested source-relative path in headings.
+            match = re.search(r"swiftpkg_([^/]+)/(.+)$", path.as_posix())
+            bazel = re.fullmatch(r"external/([A-Za-z0-9_.+-]+)/([^\x00]+)", path.as_posix())
+            if match:
+                swift.add(match[1])
+                label = "Swift/" + match[1] + "/" + match[2]
+            elif bazel and not bazel[1].startswith("gazelle++go_deps+"):
+                # The aspect can also encounter Bazel modules (e.g. protobuf)
+                # through Go's generated-code graph. Preserve their notices.
+                label = "Bazel/" + bazel[1] + "/" + bazel[2]
+            else:
+                raise ValueError("Unrecognized dependency notice provenance")
+        if label in texts and texts[label] != content:
+            raise ValueError("Conflicting dependency notice")
+        texts[label] = content
+    return texts, found, swift
+
+
+def dependency_notices(manifest: dict) -> tuple[str, dict]:
+    """Bundle declared notices; not legal approval or a vendored-source audit."""
+    rows, required = go_notice_inventory(manifest)
+    texts, found, swift = source_notices(manifest, required)
+    for row in rows:
+        names = row["notices"]
+        if not names or len(names) != len(set(names)) or found.get(row["module"], set()) != set(names):
+            raise ValueError("Missing or unexpected Go dependency notices")
+    if not {"container", "containerization"}.issubset(swift):
+        raise ValueError("Missing selected Swift runtime notices")
+    sdk_version = re.findall(r"^go ([0-9]+\.[0-9]+\.[0-9]+)$", Path(manifest["go_mod"]).read_text(), re.M)
+    sdk_files = [Path(path) for path in manifest["sdk_notices"]]
+    if len(sdk_version) != 1 or len(sdk_files) != 2 or {path.name for path in sdk_files} != {"LICENSE", "PATENTS"}:
+        raise ValueError("Missing Go SDK notice inventory")
+    for path in sdk_files:
+        content = path.read_text()
+        if not content.strip():
+            raise ValueError("Empty Go SDK notice")
+        texts["Go SDK " + sdk_version[0] + "/" + path.name] = content
+    text = "\n\n".join(label + "\n" + "=" * len(label) + "\n\n" + texts[label] for label in sorted(texts)) + "\n"
+    return text, {"dependencyNoticesSHA256": hashlib.sha256(text.encode()).hexdigest(),
+                  "goNoticeModules": len(required), "swiftNoticePackages": len(swift), "noticeTexts": len(texts)}
+
+
 def write_json(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
@@ -139,14 +213,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     build = commands.add_parser("metadata")
-    for name in ("manifest", "info", "identity", "writer"):
+    for name in ("manifest", "info", "identity", "writer", "notices"):
         build.add_argument(name, type=Path)
     seal = commands.add_parser("receipt")
     for name in ("archive", "identity", "output"):
         seal.add_argument(name, type=Path)
     args = parser.parse_args()
     if args.command == "metadata":
-        info, identity = metadata(json.loads(args.manifest.read_bytes()), args.writer)
+        manifest = json.loads(args.manifest.read_bytes())
+        info, identity = metadata(manifest, args.writer)
+        notices, evidence = dependency_notices(manifest)
+        identity.update(evidence)
+        args.notices.write_text(notices)
         write_json(args.info, info)
         write_json(args.identity, identity)
     else:
@@ -155,4 +233,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

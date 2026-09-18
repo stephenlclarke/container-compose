@@ -2,7 +2,7 @@
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
-exports_files(["rules-swift-sandbox-output.patch", "package.py"])
+exports_files(["rules-swift-sandbox-output.patch", "package.py", "licenses/inventory.json"] + glob(["licenses/*.patch"]))
 
 sh_binary(
     name = "ssd_test_runner",

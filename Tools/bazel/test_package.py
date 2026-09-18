@@ -30,7 +30,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from package import PRODUCTS, dependency, metadata, receipt, sha256, validate_binary, write_json
+from package import PRODUCTS, dependency, dependency_notices, metadata, receipt, sha256, validate_binary, write_json
 
 WRITER = Path(sys.argv[1])
 if len(sys.argv) == 3 and sys.argv[2] == "unit":
@@ -65,7 +65,7 @@ class PackageTests(unittest.TestCase):
         contents = {
             "makefile": "COMPOSE_VERSION ?= 1.2.3\n",
             "resolved": json.dumps({"pins": pins}),
-            "go_mod": "require (\n github.com/compose-spec/compose-go/v2 v2.14.0\n)\n",
+            "go_mod": "go 1.26.3\nrequire (\n github.com/compose-spec/compose-go/v2 v2.14.0\n)\n",
             "go_sum": "fixture",
             "capabilities": json.dumps({"schemaVersion": 2, "capabilities": ["one", "two"]}),
         }
@@ -157,11 +157,84 @@ class PackageTests(unittest.TestCase):
         archive.write_bytes(b"changed")
         self.assertNotEqual(first["archiveSHA256"], receipt(archive, identity)["archiveSHA256"])
 
+    def notice_fixture(self) -> list[dict]:
+        inventory = self.root / "inventory.json"
+        inventory.write_text(json.dumps({"schemaVersion": 1, "modules": [
+            {"module": "github.com/compose-spec/compose-go/v2", "version": "v2.14.0", "notices": ["LICENSE", "NOTICE"]}]}))
+        self.manifest["go_inventory"] = str(inventory)
+        entries = []
+        for name, version, directory, files in [
+            ("github.com/compose-spec/compose-go/v2", "v2.14.0", "go_module", ["LICENSE", "NOTICE"]),
+            ("", "", "swiftpkg_container", ["LICENSE"]),
+            ("", "", "swiftpkg_containerization", ["LICENSE"]),
+        ]:
+            folder = self.root / directory
+            folder.mkdir(exist_ok=True)
+            for file in files:
+                path = folder / file
+                path.write_text(directory + " " + file + " source notice\n")
+                entries.append({"package_name": name, "package_version": version, "license_text": str(path)})
+        licenses = self.root / "licenses.json"
+        licenses.write_text(json.dumps([{"licenses": entries}]))
+        self.manifest["licenses"] = str(licenses)
+        sdk = self.root / "sdk"
+        sdk.mkdir(exist_ok=True)
+        self.manifest["sdk_notices"] = []
+        for name in ("LICENSE", "PATENTS"):
+            path = sdk / name
+            path.write_text("Go SDK " + name + "\n")
+            self.manifest["sdk_notices"].append(str(path))
+        return entries
+
+    def test_notices_cover_locked_modules_and_sdk_deterministically(self) -> None:
+        entries = self.notice_fixture()
+        text, evidence = dependency_notices(self.manifest)
+        self.assertIn("github.com/compose-spec/compose-go/v2@v2.14.0/NOTICE", text)
+        self.assertIn("Swift/container/LICENSE", text)
+        self.assertIn("Go SDK 1.26.3/PATENTS", text)
+        self.assertNotIn(str(self.root), text)
+        self.assertEqual(evidence["dependencyNoticesSHA256"], hashlib.sha256(text.encode()).hexdigest())
+        self.assertEqual((evidence["goNoticeModules"], evidence["swiftNoticePackages"], evidence["noticeTexts"]), (1, 2, 6))
+        Path(self.manifest["licenses"]).write_text(json.dumps([{"licenses": list(reversed(entries)) + entries}]))
+        self.assertEqual(dependency_notices(self.manifest), (text, evidence))
+
+    def test_notices_reject_missing_mismatched_and_unknown_inputs(self) -> None:
+        original = self.notice_fixture()
+        for entries in (original[1:], original[:-1], [{**original[0], "package_version": "v1.0.0"}] + original[1:],
+                        [{**original[0], "package_name": "unrecognized"}] + original[1:]):
+            Path(self.manifest["licenses"]).write_text(json.dumps([{"licenses": entries}]))
+            with self.assertRaises(ValueError):
+                dependency_notices(self.manifest)
+        self.notice_fixture()
+        Path(original[0]["license_text"]).write_text("")
+        with self.assertRaises(ValueError):
+            dependency_notices(self.manifest)
+        self.notice_fixture()
+        self.manifest["sdk_notices"].pop()
+        with self.assertRaises(ValueError):
+            dependency_notices(self.manifest)
+
+    def test_notices_reject_inventory_drift_and_empty_sdk(self) -> None:
+        self.notice_fixture()
+        inventory = Path(self.manifest["go_inventory"])
+        original = json.loads(inventory.read_text())
+        for invalid in ({**original, "schemaVersion": 0}, {**original, "modules": []},
+                        {**original, "modules": original["modules"] * 2},
+                        {"schemaVersion": 1, "modules": [{**original["modules"][0], "notices": ["LICENSE"]}]}):
+            inventory.write_text(json.dumps(invalid))
+            with self.assertRaises(ValueError):
+                dependency_notices(self.manifest)
+        self.notice_fixture()
+        Path(self.manifest["sdk_notices"][0]).write_text("")
+        with self.assertRaises(ValueError):
+            dependency_notices(self.manifest)
+
 
 class ArchiveTests(unittest.TestCase):
     def test_layout_modes_and_product_hashes(self) -> None:
         expected = {"compose/LICENSE", "compose/config.toml", "compose/resources/build-info.json",
                     "compose/resources/candidate.json", "compose/resources/container-compose-icon.png",
+                    "compose/resources/THIRD-PARTY-NOTICES.txt",
                     "compose/bin/compose", "compose/resources/compose-normalizer",
                     "compose/resources/volume-initializer/compose-volume-initializer-linux-arm64",
                     "compose/resources/volume-initializer/compose-volume-initializer-linux-amd64"}
@@ -174,6 +247,12 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(identity["commit"], info["commit"])
             self.assertEqual(identity["version"], info["version"])
             self.assertFalse(identity["distributionReady"])
+            notices = archive.extractfile("compose/resources/THIRD-PARTY-NOTICES.txt").read()
+            self.assertEqual(hashlib.sha256(notices).hexdigest(), identity["dependencyNoticesSHA256"])
+            self.assertGreater(identity["goNoticeModules"], 0)
+            self.assertIn(b"Swift/swift_crypto/NOTICE.txt", notices)
+            self.assertIn(b"Swift/swift_nio_ssl/NOTICE.txt", notices)
+            self.assertIn(b"Go SDK 1.26.3/PATENTS", notices)
             for entry in files:
                 self.assertTrue(entry.isfile())
                 self.assertEqual((entry.uid, entry.gid, entry.mtime), (0, 0, 946684800))
@@ -201,13 +280,21 @@ class ArchiveTests(unittest.TestCase):
                         output.chmod(entry.mode)
             info = json.loads((root / "compose/resources/build-info.json").read_text())
             cli = root / "compose/bin/compose"
-            result = subprocess.run([str(cli), "version", "--short"], capture_output=True, text=True, timeout=20, check=True)
+            # An installed package must not discover a developer checkout or
+            # build a missing helper via the host's Go installation.
+            environment = {"PATH": "/usr/bin:/bin", "HOME": str(root), "TMPDIR": str(root), "LANG": "en_US.UTF-8"}
+            result = subprocess.run([str(cli), "version", "--short"], env=environment, cwd=root,
+                                    capture_output=True, text=True, timeout=20, check=True)
             self.assertEqual(result.stdout.strip(), info["version"])
             fixture = root / "compose.yaml"
             fixture.write_text("name: native-package\nservices:\n  web:\n    image: alpine:3.22\n    command: ['echo', 'native-package']\n")
             result = subprocess.run([str(cli), "-f", str(fixture), "config", "--format", "json"],
-                                    capture_output=True, text=True, timeout=20, check=True)
+                                    env=environment, cwd=root, capture_output=True, text=True, timeout=20, check=True)
             self.assertEqual(json.loads(result.stdout)["services"]["web"]["image"], "alpine:3.22")
+            (root / "compose/resources/compose-normalizer").chmod(0o600)
+            missing = subprocess.run([str(cli), "-f", str(fixture), "config", "--format", "json"],
+                                     env=environment, cwd=root, capture_output=True, text=True, timeout=20)
+            self.assertNotEqual(missing.returncode, 0, "A package must not silently bypass its missing native helper")
 
 
 if __name__ == "__main__":

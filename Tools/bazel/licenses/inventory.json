@@ -1,0 +1,474 @@
+{
+  "schemaVersion": 1,
+  "modules": [
+    {
+      "module": "github.com/DefangLabs/secret-detector",
+      "version": "v0.0.0-20250403165618-22662109213e",
+      "repo": "com_github_defanglabs_secret_detector",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/compose-spec/compose-go/v2",
+      "version": "v2.14.0",
+      "repo": "com_github_compose_spec_compose_go_v2",
+      "notices": [
+        "LICENSE",
+        "NOTICE"
+      ]
+    },
+    {
+      "module": "github.com/containerd/containerd/v2",
+      "version": "v2.3.5",
+      "repo": "com_github_containerd_containerd_v2",
+      "notices": [
+        "LICENSE",
+        "NOTICE"
+      ]
+    },
+    {
+      "module": "github.com/containerd/errdefs",
+      "version": "v1.0.0",
+      "repo": "com_github_containerd_errdefs",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/distribution/reference",
+      "version": "v0.6.0",
+      "repo": "com_github_distribution_reference",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/docker/cli",
+      "version": "v29.7.2+incompatible",
+      "repo": "com_github_docker_cli",
+      "notices": [
+        "LICENSE",
+        "NOTICE"
+      ]
+    },
+    {
+      "module": "github.com/moby/buildkit",
+      "version": "v0.32.2",
+      "repo": "com_github_moby_buildkit",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/opencontainers/go-digest",
+      "version": "v1.0.0",
+      "repo": "com_github_opencontainers_go_digest",
+      "notices": [
+        "LICENSE",
+        "LICENSE.docs"
+      ]
+    },
+    {
+      "module": "github.com/opencontainers/image-spec",
+      "version": "v1.1.1",
+      "repo": "com_github_opencontainers_image_spec",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/sirupsen/logrus",
+      "version": "v1.10.2",
+      "repo": "com_github_sirupsen_logrus",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "go.yaml.in/yaml/v4",
+      "version": "v4.0.0-rc.6",
+      "repo": "in_yaml_go_yaml_v4",
+      "notices": [
+        "LICENSE",
+        "NOTICE"
+      ]
+    },
+    {
+      "module": "golang.org/x/sys",
+      "version": "v0.47.0",
+      "repo": "org_golang_x_sys",
+      "notices": [
+        "LICENSE",
+        "PATENTS"
+      ]
+    },
+    {
+      "module": "github.com/cespare/xxhash/v2",
+      "version": "v2.3.0",
+      "repo": "com_github_cespare_xxhash_v2",
+      "notices": [
+        "LICENSE.txt"
+      ]
+    },
+    {
+      "module": "github.com/containerd/log",
+      "version": "v0.1.0",
+      "repo": "com_github_containerd_log",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/containerd/platforms",
+      "version": "v1.0.0-rc.5",
+      "repo": "com_github_containerd_platforms",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/containerd/ttrpc",
+      "version": "v1.2.9",
+      "repo": "com_github_containerd_ttrpc",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/containerd/typeurl/v2",
+      "version": "v2.3.0",
+      "repo": "com_github_containerd_typeurl_v2",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/docker/docker-credential-helpers",
+      "version": "v0.9.8",
+      "repo": "com_github_docker_docker_credential_helpers",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/docker/go-connections",
+      "version": "v0.4.0",
+      "repo": "com_github_docker_go_connections",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/docker/go-units",
+      "version": "v0.5.0",
+      "repo": "com_github_docker_go_units",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/felixge/httpsnoop",
+      "version": "v1.0.4",
+      "repo": "com_github_felixge_httpsnoop",
+      "notices": [
+        "LICENSE.txt"
+      ]
+    },
+    {
+      "module": "github.com/go-logr/logr",
+      "version": "v1.4.3",
+      "repo": "com_github_go_logr_logr",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/go-logr/stdr",
+      "version": "v1.2.2",
+      "repo": "com_github_go_logr_stdr",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/go-viper/mapstructure/v2",
+      "version": "v2.5.0",
+      "repo": "com_github_go_viper_mapstructure_v2",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/golang-jwt/jwt/v5",
+      "version": "v5.3.1",
+      "repo": "com_github_golang_jwt_jwt_v5",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/google/uuid",
+      "version": "v1.6.0",
+      "repo": "com_github_google_uuid",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/hashicorp/errwrap",
+      "version": "v1.1.0",
+      "repo": "com_github_hashicorp_errwrap",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/hashicorp/go-multierror",
+      "version": "v1.1.1",
+      "repo": "com_github_hashicorp_go_multierror",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/in-toto/attestation",
+      "version": "v1.2.0",
+      "repo": "com_github_in_toto_attestation",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/in-toto/in-toto-golang",
+      "version": "v0.11.0",
+      "repo": "com_github_in_toto_in_toto_golang",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/inhies/go-bytesize",
+      "version": "v0.0.0-20220417184213-4913239db9cf",
+      "repo": "com_github_inhies_go_bytesize",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/klauspost/compress",
+      "version": "v1.19.1",
+      "repo": "com_github_klauspost_compress",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/mattn/go-shellwords",
+      "version": "v1.0.12",
+      "repo": "com_github_mattn_go_shellwords",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/moby/locker",
+      "version": "v1.0.1",
+      "repo": "com_github_moby_locker",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/pkg/errors",
+      "version": "v0.9.1",
+      "repo": "com_github_pkg_errors",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/planetscale/vtprotobuf",
+      "version": "v0.6.1-0.20240319094008-0393e58bdf10",
+      "repo": "com_github_planetscale_vtprotobuf",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/santhosh-tekuri/jsonschema/v6",
+      "version": "v6.0.1",
+      "repo": "com_github_santhosh_tekuri_jsonschema_v6",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/secure-systems-lab/go-securesystemslib",
+      "version": "v0.11.0",
+      "repo": "com_github_secure_systems_lab_go_securesystemslib",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/shibumi/go-pathspec",
+      "version": "v1.3.0",
+      "repo": "com_github_shibumi_go_pathspec",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "github.com/xhit/go-str2duration/v2",
+      "version": "v2.1.0",
+      "repo": "com_github_xhit_go_str2duration_v2",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/auto/sdk",
+      "version": "v1.2.1",
+      "repo": "io_opentelemetry_go_auto_sdk",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc",
+      "version": "v0.69.0",
+      "repo": "io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace",
+      "version": "v0.69.0",
+      "repo": "io_opentelemetry_go_contrib_instrumentation_net_http_httptrace_otelhttptrace",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",
+      "version": "v0.69.0",
+      "repo": "io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/otel",
+      "version": "v1.44.0",
+      "repo": "io_opentelemetry_go_otel",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/otel/metric",
+      "version": "v1.44.0",
+      "repo": "io_opentelemetry_go_otel_metric",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/otel/sdk",
+      "version": "v1.44.0",
+      "repo": "io_opentelemetry_go_otel_sdk",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "go.opentelemetry.io/otel/trace",
+      "version": "v1.44.0",
+      "repo": "io_opentelemetry_go_otel_trace",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "golang.org/x/crypto",
+      "version": "v0.55.0",
+      "repo": "org_golang_x_crypto",
+      "notices": [
+        "LICENSE",
+        "PATENTS"
+      ]
+    },
+    {
+      "module": "golang.org/x/net",
+      "version": "v0.58.0",
+      "repo": "org_golang_x_net",
+      "notices": [
+        "LICENSE",
+        "PATENTS"
+      ]
+    },
+    {
+      "module": "golang.org/x/sync",
+      "version": "v0.22.0",
+      "repo": "org_golang_x_sync",
+      "notices": [
+        "LICENSE",
+        "PATENTS"
+      ]
+    },
+    {
+      "module": "golang.org/x/text",
+      "version": "v0.41.0",
+      "repo": "org_golang_x_text",
+      "notices": [
+        "LICENSE",
+        "PATENTS"
+      ]
+    },
+    {
+      "module": "google.golang.org/genproto/googleapis/rpc",
+      "version": "v0.0.0-20260526163538-3dc84a4a5aaa",
+      "repo": "org_golang_google_genproto_googleapis_rpc",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "google.golang.org/grpc",
+      "version": "v1.83.2",
+      "repo": "org_golang_google_grpc",
+      "notices": [
+        "LICENSE",
+        "NOTICE.txt"
+      ]
+    },
+    {
+      "module": "google.golang.org/protobuf",
+      "version": "v1.36.12-0.20260120151049-f2248ac996af",
+      "repo": "org_golang_google_protobuf",
+      "notices": [
+        "LICENSE",
+        "PATENTS"
+      ]
+    },
+    {
+      "module": "gopkg.in/ini.v1",
+      "version": "v1.66.2",
+      "repo": "in_gopkg_ini_v1",
+      "notices": [
+        "LICENSE"
+      ]
+    },
+    {
+      "module": "gopkg.in/yaml.v3",
+      "version": "v3.0.1",
+      "repo": "in_gopkg_yaml_v3",
+      "notices": [
+        "LICENSE",
+        "NOTICE"
+      ]
+    }
+  ]
+}
