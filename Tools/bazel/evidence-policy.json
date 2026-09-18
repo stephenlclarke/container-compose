@@ -18,7 +18,7 @@
         "//Tools/compose-normalizer/cmd/volume-initializer:volume-initializer_test": 61,
         "//Tools/compose-normalizer/cmd/volume-initializer:permission_bits_test": 1,
         "//:ComposePluginTests": 103,
-        "//:ComposeCoreTests": 1094,
+        "//:ComposeCoreTests": 1099,
         "//:ComposeEngineRuntimeTests": 25
       },
       "component_tests": {
@@ -33,6 +33,7 @@
         "Sources/ComposeCore/ComposeOrchestratorCopy.swift",
         "Sources/ComposeCore/ComposeOrchestratorCommitExport.swift",
         "Sources/ComposeCore/ComposeOrchestratorWaitAndPorts.swift",
+        "Sources/ComposeCore/ComposeOrchestratorConfigs.swift",
         "Sources/ComposeCore/ComposeAPISocketTransform.swift",
         "Sources/ComposePlugin/ComposePlugin.swift",
         "Sources/ComposePlugin/ComposeCLIHelp.swift",
@@ -57,7 +58,7 @@
         "//Tools/compose-normalizer/cmd/volume-initializer:volume-initializer_test": 61,
         "//Tools/compose-normalizer/cmd/volume-initializer:permission_bits_test": 1,
         "//:ComposePluginTests": 102,
-        "//:ComposeCoreTests": 1250,
+        "//:ComposeCoreTests": 1252,
         "//:ComposeContainerRuntimeTests": 31
       },
       "component_tests": {
@@ -68,6 +69,7 @@
         "Sources/ComposeCore/ComposeOrchestratorCopy.swift",
         "Sources/ComposeCore/ComposeOrchestratorCommitExport.swift",
         "Sources/ComposeCore/ComposeOrchestratorWaitAndPorts.swift",
+        "Sources/ComposeCore/ComposeOrchestratorConfigs.swift",
         "Sources/ComposePlugin/ComposePlugin.swift",
         "Sources/ComposePlugin/ComposeCLIHelp.swift",
         "Sources/ComposeCore/ComposeArgumentRewriter.swift",

@@ -14,7 +14,6 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ComposeContainerRuntime
 import ComposeCore
 import ComposeTestStorage
 import Foundation
@@ -22,6 +21,78 @@ import Testing
 
 @Suite("External config and secret orchestration")
 struct ExternalConfigOrchestratorTests {
+    @Test(arguments: [false, true])
+    func unavailableExternalStoreFailsBeforeContainerCreation(secret: Bool) async throws {
+        let directory = try temporaryExternalConfigDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let configReader = ExternalConfigReader(configs: [:])
+        let secretReader = ExternalSecretReader(secrets: [:])
+        let runner = RecordingRunner()
+        var service = ComposeService(name: "api", image: "example/api")
+        service.attach = false
+        let grant: ComposeValue = .object(["source": .string("required")])
+        if secret {
+            service.secrets = [grant]
+        } else {
+            service.configs = [grant]
+        }
+        var project = ComposeProject(name: "demo", services: ["api": service])
+        let definition: ComposeValue = .object(["external": .bool(true), "name": .string("unavailable")])
+        if secret {
+            project.secrets = ["required": definition]
+        } else {
+            project.configs = ["required": definition]
+        }
+        var options = ComposeExecutionOptions()
+        options.materializedConfigSecretDirectory = directory.appendingPathComponent("state", isDirectory: true)
+        var runtime = ComposeOrchestratorRuntimeDependencies()
+        runtime.configReader = configReader
+        runtime.secretReader = secretReader
+        runtime.discoveryManager = EmptyContainerDiscovery()
+        let dependencies = ComposeOrchestratorDependencies(
+            runner: runner, options: options, runtime: runtime,
+            imageManager: NoDeclaredVolumeImageManager(),
+        )
+        let orchestrator = ComposeOrchestrator(runner: runner, options: options, dependencies: dependencies)
+        let kind = secret ? "secret" : "config"
+        do {
+            try await orchestrator.up(project: project, options: ComposeUpOptions())
+            Issue.record("An unavailable external store must fail before container creation")
+        } catch let error as ComposeError {
+            #expect(error.description.contains("could not read external \(kind)"))
+            #expect(error.description.contains("unavailable"))
+        }
+        #expect(await configReader.requests == (secret ? [] : ["unavailable"]))
+        #expect(await secretReader.requests == (secret ? ["unavailable"] : []))
+        #expect(!runner.commands.contains { $0.arguments.first == "create" })
+        #expect(!FileManager.default.fileExists(atPath: options.materializedConfigSecretDirectory.path))
+    }
+
+    @Test
+    func dryRunDoesNotReadExternalConfigsOrWritePrivateFiles() async throws {
+        let directory = try temporaryExternalConfigDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let reader = ExternalConfigReader(configs: [:])
+        let runner = RecordingRunner()
+        var service = ComposeService(name: "api", image: "example/api")
+        service.configs = [.object(["source": .string("required")])]
+        var project = ComposeProject(name: "demo", services: ["api": service])
+        project.configs = ["required": .object(["external": .bool(true)])]
+        var options = ComposeExecutionOptions(dryRun: true)
+        options.materializedConfigSecretDirectory = directory.appendingPathComponent("state", isDirectory: true)
+        var runtime = ComposeOrchestratorRuntimeDependencies()
+        runtime.configReader = reader
+        runtime.discoveryManager = EmptyContainerDiscovery()
+        let dependencies = ComposeOrchestratorDependencies(
+            runner: runner, options: options, runtime: runtime,
+            imageManager: NoDeclaredVolumeImageManager(),
+        )
+        try await ComposeOrchestrator(runner: runner, options: options, dependencies: dependencies)
+            .up(project: project, options: ComposeUpOptions())
+        #expect(await reader.requests.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: options.materializedConfigSecretDirectory.path))
+    }
+
     @Test
     func `up materializes external configs through a runtime config reader`() async throws {
         let directory = try temporaryExternalConfigDirectory()
@@ -201,61 +272,6 @@ private actor ExternalSecretReader: ComposeRuntimeSecretReading {
     }
 }
 
-@Suite("Compose external stores")
-struct ComposeExternalStoreTests {
-    @Test
-    func `config reader returns bytes from its Compose-owned directory`() async throws {
-        let directory = try temporaryExternalConfigDirectory()
-        defer {
-            try? FileManager.default.removeItem(at: directory)
-        }
-        let contents = Data([0x00, 0xFF, 0x0A])
-        try contents.write(to: directory.appendingPathComponent("shared_app_config"))
-        let reader = ComposeExternalConfigReader(directory: directory)
-
-        #expect(try await reader.readConfig(name: "shared_app_config") == contents)
-    }
-
-    @Test
-    func `config reader rejects paths outside its Compose-owned directory`() async {
-        let reader = ComposeExternalConfigReader(directory: URL(fileURLWithPath: "/tmp/configs"))
-
-        await #expect(throws: ComposeError.invalidProject(
-            "external Compose config name '../outside' escapes its configured store",
-        )) {
-            try await reader.readConfig(name: "../outside")
-        }
-    }
-
-    @Test
-    func `secret reader delegates to its caller-owned secure store`() async throws {
-        let contents = Data([0x00, 0xFF, 0x0A])
-        let reader = ComposeExternalSecretReader(service: "tests", lookup: { service, account in
-            guard service == "tests", account == "shared_api_secret" else {
-                throw ExternalStoreTestError.unexpectedLookup
-            }
-            return contents
-        })
-
-        #expect(try await reader.readSecret(name: "shared_api_secret") == contents)
-    }
-
-    @Test
-    func `secret reader rejects an empty resource name before lookup`() async {
-        let reader = ComposeExternalSecretReader(service: "tests", lookup: { _, _ in
-            throw ExternalStoreTestError.unexpectedLookup
-        })
-
-        await #expect(throws: ComposeError.invalidProject("external Compose secret name must not be empty")) {
-            try await reader.readSecret(name: "")
-        }
-    }
-}
-
-private enum ExternalStoreTestError: Error {
-    case unexpectedLookup
-}
-
 private struct EmptyContainerDiscovery: ContainerDiscoveryManaging {
     func listContainers(all _: Bool) async throws -> [ComposeContainerSummary] {
         []
@@ -266,7 +282,7 @@ private struct EmptyContainerDiscovery: ContainerDiscoveryManaging {
     }
 }
 
-private func temporaryExternalConfigDirectory() throws -> URL {
+func temporaryExternalConfigDirectory() throws -> URL {
     let directory = TestStorage.temporaryDirectory.appendingPathComponent(
         UUID().uuidString,
         isDirectory: true,

@@ -77,7 +77,7 @@ let enhancedCoreTestSources = [
     "ComposeOrchestratorRuntimeAdapterTests.swift",
     "ComposeProviderTestSupport.swift",
     "ComposeProviderModelTestSupport.swift",
-    "ExternalConfigOrchestratorTests.swift",
+    "ExternalConfigStoreTests.swift",
 ]
 
 let runtimeTargets: [Target] = enhancedRuntime

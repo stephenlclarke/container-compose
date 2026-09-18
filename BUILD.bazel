@@ -164,7 +164,7 @@ ENHANCED_CORE_TESTS = [
     "Tests/ComposeCoreTests/ComposeOrchestratorRuntimeAdapterTests.swift",
     "Tests/ComposeCoreTests/ComposeProviderTestSupport.swift",
     "Tests/ComposeCoreTests/ComposeProviderModelTestSupport.swift",
-    "Tests/ComposeCoreTests/ExternalConfigOrchestratorTests.swift",
+    "Tests/ComposeCoreTests/ExternalConfigStoreTests.swift",
 ]
 
 swift_test(
