@@ -21,7 +21,7 @@
   },
   "input_identity.py": {
     "mode": 420,
-    "sha256": "53a98f9d088769065686282621fdfa20b3ba3f9bd6541e3f2fc579954f8f115e"
+    "sha256": "77be6bfc161be130823f95215af1a73b2868820e349b314bb709d6e47fe1e118"
   },
   "oci_image_layout.py": {
     "mode": 420,
@@ -53,7 +53,7 @@
   },
   "run.sh": {
     "mode": 493,
-    "sha256": "26b9aaa607593cb25e8554598b48a8617a9143efcc6f1b621202c9cd98b770d3"
+    "sha256": "a184c1867c35efb5f35e1d06e872ad8ce362243de567fd07fc7749b402b98737"
   },
   "ssd-test-runner.sh": {
     "mode": 493,
@@ -81,11 +81,11 @@
   },
   "test_input_identity.py": {
     "mode": 420,
-    "sha256": "83f1ef0cee71bcf715e1b10ae25093b2b8419aa72cc228e8682c567776d541cf"
+    "sha256": "045deb73e3e6999f5b9d0d17818e97df21b109d8559c79ba55969f8bcf840471"
   },
   "test_launcher.py": {
     "mode": 420,
-    "sha256": "f917818a27dc711d0076e512af68630bba5486e18f53691e8eb141fe5e845ee5"
+    "sha256": "6bf52ac16efbda0836f82e69ccb5a4bba592fe9be921ce7e141bc2546d41fe3e"
   },
   "test_prepare_candidate.py": {
     "mode": 420,

@@ -6,7 +6,7 @@ The native graph compiles ComposeRuntimeSPI, ComposeCore, the selected stock/enh
 
 ## Shared workflow
 
-The family launcher is reused from the reviewed devcontainer workflow rather than duplicated. For this development checkpoint, use `Tools/bazel/run.sh` from devcontainer commit `86834d7b8ab85f4623ec93512762bd3b839b2474` (PR [83](https://github.com/stephenlclarke/devcontainer/pull/83)). `Tools/bazel/workflow-tooling.json` binds every shared executable helper's bytes and permissions; a different helper set fails before the build. Keep that checkout on internal storage. This explicit source-tooling dependency is not a runtime dependency on devcontainer and is not a stable clean-machine bootstrap claim.
+The family launcher is reused from the reviewed devcontainer workflow rather than duplicated. For this development checkpoint, use `Tools/bazel/run.sh` from devcontainer commit `8f87a2b31f5a1ece3151ad6eaa7ca4f888df2705` (PR [83](https://github.com/stephenlclarke/devcontainer/pull/83)). `Tools/bazel/workflow-tooling.json` binds every shared executable helper's bytes and permissions; a different helper set fails before the build. Keep that checkout on internal storage. This explicit source-tooling dependency is not a runtime dependency on devcontainer and is not a stable clean-machine bootstrap claim.
 
 ```sh
 export FAMILY_BAZEL_LAUNCHER=/absolute/path/to/reviewed-devcontainer/Tools/bazel/run.sh
@@ -26,6 +26,8 @@ make -f Tools/bazel/Makefile docs BAZEL_PROFILE=enhanced
 ```
 
 ## Native DocC
+
+Generate documentation only from a clean, committed source checkpoint. The shared launcher captures cleanliness and forbids a caller override; the DocC rule rejects dirty or unknown state before running compilation/conversion actions. Other native development targets continue to accept dirty sources with explicitly dirty retained evidence. This guard requires the updated launcher admitted by this checkout's tooling lock, not an older launcher that only records `HEAD`.
 
 The `docs` target runs `//:documentation_tests` against the optimized native modules, documenting `ComposeCore` and `ComposeRuntimeSPI` with the existing catalog and theme images. Per-module symbol extraction/conversion and the merged standalone site are separate Bazel actions; the workflow does not invoke SwiftPM, resolve packages again, start containers or publish Pages. The same rule/action/test snapshot is used by devcontainer. All documentation warnings fail the build. Only links to declared catalog/archive inputs may be materialized, and cached inputs remain unchanged. Nine action regressions and three real-site checks cover failure bounds, source identity, module inventory, links, images, static routes and host-path leakage. The generated `build-identity.json` records the revision; optimized symbol graphs omit source file locations, so per-symbol source links are not promised.
 

@@ -7,7 +7,9 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 def _docc_impl(ctx):
     if ctx.var["COMPILATION_MODE"] != "opt":
-        fail("Documentation requires --config=release to reuse release modules and bind source links")
+        fail("Documentation requires --config=release to reuse release modules and bind source identity")
+    if ctx.var.get("DEVCONTAINER_SOURCE_DIRTY", "unknown") != "false":
+        fail("Documentation requires a captured clean source checkpoint; commit changes before generating a revision-labelled site")
     output = ctx.actions.declare_directory(ctx.label.name + ".doccarchive")
     manifest = ctx.actions.declare_file(ctx.label.name + ".inputs.json")
     ctx.actions.write(manifest, json.encode({
