@@ -17,7 +17,7 @@
         "//Tools/compose-normalizer/cmd/volume-initializer:volume-initializer_test": 61,
         "//Tools/compose-normalizer/cmd/volume-initializer:permission_bits_test": 1,
         "//:ComposePluginTests": 92,
-        "//:ComposeCoreTests": 1056,
+        "//:ComposeCoreTests": 1094,
         "//:ComposeEngineRuntimeTests": 25
       },
       "required_sources": [
@@ -26,6 +26,9 @@
         "Sources/ComposeCore/ProcessRunner.swift",
         "Sources/ComposeCore/ComposeOrchestratorUp.swift",
         "Sources/ComposeCore/ComposeOrchestratorRunLifecycle.swift",
+        "Sources/ComposeCore/ComposeOrchestratorCopy.swift",
+        "Sources/ComposeCore/ComposeOrchestratorCommitExport.swift",
+        "Sources/ComposeCore/ComposeOrchestratorWaitAndPorts.swift",
         "Sources/ComposeCore/ComposeAPISocketTransform.swift",
         "Sources/ComposePlugin/ComposePlugin.swift",
         "Sources/ComposeRuntimeSPI/ComposeRuntimeCapabilities.swift",
@@ -48,11 +51,14 @@
         "//Tools/compose-normalizer/cmd/volume-initializer:volume-initializer_test": 61,
         "//Tools/compose-normalizer/cmd/volume-initializer:permission_bits_test": 1,
         "//:ComposePluginTests": 91,
-        "//:ComposeCoreTests": 1246,
+        "//:ComposeCoreTests": 1250,
         "//:ComposeContainerRuntimeTests": 31
       },
       "required_sources": [
         "Sources/ComposeCore/ComposeTemporaryFiles.swift",
+        "Sources/ComposeCore/ComposeOrchestratorCopy.swift",
+        "Sources/ComposeCore/ComposeOrchestratorCommitExport.swift",
+        "Sources/ComposeCore/ComposeOrchestratorWaitAndPorts.swift",
         "Sources/ComposePlugin/ComposePlugin.swift",
         "Sources/ComposeRuntimeSPI/ComposeRuntimeCapabilities.swift",
         "Tools/compose-normalizer/main.go",
