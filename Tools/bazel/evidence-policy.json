@@ -22,7 +22,7 @@
         "//:ComposeEngineRuntimeTests": 25
       },
       "component_tests": {
-        "//Tools/bazel:cli_contracts": 12
+        "//Tools/bazel:cli_contracts": 31
       },
       "required_sources": [
         "Sources/ComposeCore/ComposeTemporaryFiles.swift",
@@ -62,7 +62,7 @@
         "//:ComposeContainerRuntimeTests": 31
       },
       "component_tests": {
-        "//Tools/bazel:cli_contracts": 12
+        "//Tools/bazel:cli_contracts": 31
       },
       "required_sources": [
         "Sources/ComposeCore/ComposeTemporaryFiles.swift",

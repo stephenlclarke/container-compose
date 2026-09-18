@@ -20,6 +20,7 @@
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -127,6 +128,168 @@ class CLIContracts(unittest.TestCase):
         self.assertEqual(model["services"]["api"]["environment"]["CONTRACT_VALUE"], "literal-value")
         self.assertEqual(model["services"]["api"]["dependsOn"]["db"]["condition"], "service_started")
 
+    def plan(self, *arguments):
+        output, _ = self.invoke("--dry-run", *arguments)
+        return [shlex.split(line[2:]) for line in output.splitlines() if line.startswith("+ ")]
+
+    def runtime_plan(self, *arguments):
+        return [line[1:] for line in self.plan(*arguments) if line[0] == str(self.runtime)]
+
+    def test_run_options_and_guest_payload_reach_distinct_plan_positions(self):
+        payload = ["printf", "--help", "--dry-run", "--user", "guest", "two words", "--"]
+        commands = self.runtime_plan("run", "--no-deps", "--rm", "-T", "--name", "contract-job",
+                                     "--user", "1001:1002", "--workdir", "/work dir",
+                                     "--env", "GREETING=hello world", "--label", "purpose=contract",
+                                     "api", *payload)
+        runs = [line for line in commands if line[0] == "run"]
+        self.assertEqual(len(runs), 1, commands)
+        run = runs[0]
+        image_index = run.index("alpine:3.22")
+        self.assertEqual(run[image_index + 1:], payload)
+        options = run[:image_index]
+        for flag, value in (("--name", "contract-job"), ("--user", "1001:1002"),
+                            ("--workdir", "/work dir"), ("--env", "GREETING=hello world"),
+                            ("--label", "purpose=contract")):
+            self.assertTrue(any(options[index:index + 2] == [flag, value] for index in range(len(options))), options)
+        self.assertIn("--rm", options)
+        self.assertNotIn("--tty", options)
+        self.assertFalse(any(line[0] in ("create", "start") for line in commands), commands)
+
+    def test_exec_index_detach_and_guest_flags_reach_exact_plan(self):
+        payload = ["printf", "--help", "--dry-run", "--env", "GUEST=value", "two words", "--"]
+        commands = self.runtime_plan("exec", "--index", "2", "--detach", "-T", "--privileged",
+                                     "--env", "OUTER=hello world", "--user", "1001", "--workdir", "/work dir",
+                                     "api", *payload)
+        self.assertEqual(commands, [["exec", "--detach", "--env", "OUTER=hello world", "--user", "1001",
+                                     "--workdir", "/work dir", "--privileged", PROJECT + "-api-2", *payload]])
+
+    def test_create_scale_includes_dependencies_without_starting(self):
+        commands = self.runtime_plan("create", "--no-build", "--pull", "never", "--scale", "api=2", "api")
+        creates = [line for line in commands if line[0] == "create"]
+        names = [line[line.index("--name") + 1] for line in creates]
+        self.assertEqual(names, [PROJECT + "-db-1", PROJECT + "-api-1", PROJECT + "-api-2"])
+        self.assertFalse(any(line[0] in ("start", "run", "build") for line in commands), commands)
+
+    def test_start_wait_plan_preserves_service_and_deadline(self):
+        self.assertEqual(self.plan("start", "--wait", "--wait-timeout", "7", "api"), [
+            [str(self.runtime), "start", PROJECT + "-api-1"],
+            ["compose-runtime", "wait-ready", "--timeout", "7", PROJECT + "-api-1"],
+        ])
+
+    def test_stop_plan_uses_reverse_dependency_order_and_timeout(self):
+        self.assertEqual(self.runtime_plan("stop", "--timeout", "7"), [
+            ["stop", "--time", "7", PROJECT + "-api-1"],
+            ["stop", "--time", "7", PROJECT + "-db-1"],
+        ])
+
+    def test_restart_no_deps_plan_is_limited_to_selected_service(self):
+        self.assertEqual(self.runtime_plan("restart", "--no-deps", "--timeout", "4", "api"), [
+            ["restart", "--time", "4", PROJECT + "-api-1"],
+        ])
+
+    def test_rm_stop_force_plan_stops_before_deleting_only_selected_service(self):
+        self.assertEqual(self.runtime_plan("rm", "--stop", "--force", "api"), [
+            ["stop", PROJECT + "-api-1"],
+            ["delete", "--force", PROJECT + "-api-1"],
+        ])
+
+    def test_down_selected_service_does_not_remove_project_network(self):
+        self.assertEqual(self.runtime_plan("down", "--timeout", "6", "api"), [
+            ["stop", "--time", "6", PROJECT + "-api-1"],
+            ["delete", PROJECT + "-api-1"],
+        ])
+
+    def test_logs_plan_preserves_replica_tail_and_time_bounds(self):
+        self.assertEqual(self.plan("logs", "--follow", "--index", "2", "--tail", "5", "--timestamps",
+                                   "--since", "2026-01-01T00:00:00Z", "--until", "2026-01-02T00:00:00Z", "api"), [
+            ["compose-runtime", "logs", "--follow", "-n", "5", "--since", "2026-01-01T00:00:00Z",
+             "--until", "2026-01-02T00:00:00Z", "--timestamps", PROJECT + "-api-2"],
+        ])
+
+    def test_kill_plan_limits_signal_to_selected_service(self):
+        operations = self.plan("kill", "--signal", "TERM", "api")
+        self.assertEqual([line for line in operations if line[0] == "compose-runtime"], [
+            ["compose-runtime", "kill", "--signal", "TERM", PROJECT + "-api-1"],
+        ])
+        self.assertFalse(any("delete" in line or "stop" in line for line in operations), operations)
+
+    def test_pause_plan_is_limited_to_selected_service(self):
+        self.assertEqual(self.plan("pause", "api"), [["compose-runtime", "pause", PROJECT + "-api-1"]])
+
+    def test_unpause_plan_is_limited_to_selected_service(self):
+        self.assertEqual(self.plan("unpause", "api"), [["compose-runtime", "unpause", PROJECT + "-api-1"]])
+
+    def test_wait_plan_does_not_implicitly_remove_project(self):
+        self.assertEqual(self.plan("wait", "api"), [["compose-runtime", "wait", PROJECT + "-api-1"]])
+
+    def test_copy_plan_preserves_path_spaces_and_replica_options(self):
+        source = self.root / "input file"
+        source.write_text("fixture\n")
+        self.assertEqual(self.plan("cp", "--archive", "--follow-link", "--index", "2",
+                                   str(source), "api:/target file"), [
+            ["compose-runtime", "cp", "--archive", "--follow-link", str(source), PROJECT + "-api-2:/target file"],
+        ])
+
+    def test_port_dry_run_selects_protocol_and_static_host_binding(self):
+        self.fixture.write_text("""services:
+  api:
+    image: alpine:3.22
+    ports:
+      - '127.0.0.1:8080:80/tcp'
+      - '127.0.0.1:8081:80/udp'
+""")
+        output, _ = self.invoke("--dry-run", "port", "--protocol", "udp", "api", "80")
+        self.assertEqual(output.strip(), "127.0.0.1:8081")
+
+    def test_invalid_stop_timeout_fails_before_emitting_operations(self):
+        output, error = self.invoke("--dry-run", "stop", "--timeout=-1", "api", expected_status=1)
+        self.assertIn("stop --timeout must be between 0 and", error)
+        self.assertFalse(any(line.startswith("+ ") for line in output.splitlines()), output)
+
+    def test_build_plan_preserves_paths_and_cli_overrides(self):
+        context = self.root / "build context"
+        context.mkdir()
+        (context / "Dockerfile.test").write_text("FROM scratch\n")
+        self.fixture.write_text("""services:
+  api:
+    image: example.invalid/contract:local
+    build:
+      context: ./build context
+      dockerfile: Dockerfile.test
+      target: final
+      args:
+        BASE: configured
+""")
+        self.assertEqual(self.runtime_plan("build", "--no-cache", "--pull", "--quiet",
+                                           "--build-arg", "OVERRIDE=two words", "api"), [[
+            "build", "--tag", "example.invalid/contract:local", "--file", str(context / "Dockerfile.test"),
+            "--target", "final", "--no-cache", "--pull", "--quiet", "--build-arg", "BASE=configured",
+            "--build-arg", "OVERRIDE=two words", str(context),
+        ]])
+
+    def set_distinct_dependency_images(self):
+        self.fixture.write_text("""services:
+  api:
+    image: example.invalid/api:local
+    depends_on: [db]
+  db:
+    image: example.invalid/db:local
+""")
+
+    def test_pull_plan_includes_dependency_images_with_quiet_policy(self):
+        self.set_distinct_dependency_images()
+        self.assertEqual(self.runtime_plan("pull", "--include-deps", "--policy", "always", "--quiet", "api"), [
+            ["image", "pull", "--progress", "none", "example.invalid/db:local"],
+            ["image", "pull", "--progress", "none", "example.invalid/api:local"],
+        ])
+
+    def test_push_plan_includes_dependency_images(self):
+        self.set_distinct_dependency_images()
+        self.assertEqual(self.runtime_plan("push", "--include-deps", "--quiet", "api"), [
+            ["image", "push", "example.invalid/db:local"],
+            ["image", "push", "example.invalid/api:local"],
+        ])
+
     def test_config_failure_is_not_silently_accepted(self):
         del self.environment["CONTRACT_VALUE"]
         _, error = self.invoke("config", "--format", "json", expected_status=1)
@@ -219,4 +382,4 @@ if __name__ == "__main__":
             kind, trace = failures[test.id()]
             ET.SubElement(element, kind).text = trace
     ET.ElementTree(root).write(os.environ["XML_OUTPUT_FILE"], encoding="utf-8", xml_declaration=True)
-    raise SystemExit(0 if result.wasSuccessful() and result.testsRun == 12 else 1)
+    raise SystemExit(0 if result.wasSuccessful() and result.testsRun == 31 else 1)

@@ -190,7 +190,7 @@ The top-level help output is the quickest support overview. Run
 
 In the unreleased Bazel candidate, `run` and `exec` preserve guest-command options such as `--help`, `--user` and `--workdir`: place Compose options before `SERVICE`, followed by the guest command and its arguments. `container compose run --help` displays Compose help; `container compose run web echo --help` passes `--help` to `echo`. See the [CLI boundary evidence](docs/guides/BAZEL.md#guest-command-argument-boundary) for tested scope; this is not a claim about the currently published stable binary.
 
-The opt-in Bazel `coverage` target now measures all unit targets plus twelve native no-runtime CLI cases, with an explicitly identified `unit-cli` receipt and matching 90% gate. Unit-only measurement remains separate. Neither report replaces live integration or parity; see [coverage scope and retained evidence](docs/guides/BAZEL.md#validated-coverage-evidence).
+The opt-in Bazel `coverage` target now measures all unit targets plus a 31-case no-runtime CLI harness, with an explicitly identified `unit-cli` receipt and matching 90% gate. Twenty-nine cases exercise the native executable; two check harness process cleanup. Tests cover guest arguments, replica/service selection, lifecycle order, build paths and image dependencies. Unit-only measurement remains separate. Neither report replaces live integration or parity; see [coverage scope and retained evidence](docs/guides/BAZEL.md#validated-coverage-evidence).
 
 Use [STATUS.md](docs/project/STATUS.md) for the current stable functionality and
 [BACKLOG.md](docs/project/BACKLOG.md) for the remaining 1.0 parity contracts. The live
