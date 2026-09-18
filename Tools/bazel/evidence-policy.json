@@ -59,7 +59,7 @@
         "//Tools/compose-normalizer/cmd/volume-initializer:permission_bits_test": 1,
         "//:ComposePluginTests": 102,
         "//:ComposeCoreTests": 1252,
-        "//:ComposeContainerRuntimeTests": 31
+        "//:ComposeContainerRuntimeTests": 39
       },
       "component_tests": {
         "//Tools/bazel:cli_contracts": 31
@@ -79,7 +79,8 @@
         "Tools/compose-normalizer/oci/oci.go",
         "Tools/compose-normalizer/transform/replace.go",
         "Tools/compose-normalizer/cmd/volume-initializer/main.go",
-        "Sources/ComposeContainerRuntime/ContainerFilesystemAdapter.swift"
+        "Sources/ComposeContainerRuntime/ContainerFilesystemAdapter.swift",
+        "Sources/ComposeContainerRuntime/ContainerImageLiveAdapter.swift"
       ]
     }
   }

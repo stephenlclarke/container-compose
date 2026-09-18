@@ -192,6 +192,8 @@ In the unreleased Bazel candidate, `run` and `exec` preserve guest-command optio
 
 The opt-in Bazel `coverage` target now measures all unit targets plus a 31-case no-runtime CLI harness, with an explicitly identified `unit-cli` receipt and matching 90% gate. Twenty-nine cases exercise the native executable; two check harness process cleanup. Tests cover guest arguments, replica/service selection, lifecycle order, build paths and image dependencies. Unit-only measurement remains separate. Neither report replaces live integration or parity; see [coverage scope and retained evidence](docs/guides/BAZEL.md#validated-coverage-evidence).
 
+The enhanced native runtime suite also checks image metadata, platform selection, healthchecks, volume declarations and transformer references without starting services. These component tests exercise the production projection; they do not replace live runtime or registry qualification.
+
 Use [STATUS.md](docs/project/STATUS.md) for the current stable functionality and
 [BACKLOG.md](docs/project/BACKLOG.md) for the remaining 1.0 parity contracts. The live
 source of backlog state is the cross-repository GitHub hierarchy rooted at

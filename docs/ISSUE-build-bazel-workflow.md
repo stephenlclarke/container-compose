@@ -10,6 +10,8 @@ Internal implementation improvement. Package.swift and the existing stock/enhanc
 
 ## Acceptance
 
+Image metadata projection needs deterministic native coverage rather than relying on a running registry or service. Validate platform refusal/fallback, optional fields, healthchecks, image volume declarations and transformer reference handling through the production projection, while keeping live adapter qualification separate and preserving all existing source in the coverage denominator.
+
 Coverage must include actual native CLI execution without silently relabelling it as unit-only proof. The additive `unit-cli` inventory requires all existing unit targets plus the 31-case CLI component suite, with every native CLI invocation emitting a private nonempty LLVM profile. Two cases test Python process cleanup and do not launch Compose. The command-to-plan tests assert guest argument boundaries, service/replica selection, lifecycle ordering, file paths and option values through the executable, not just help output. Unit-only evidence stays distinct; exact inventory identity is required by the quality gate. Host/guest integration remains separately unqualified.
 
 Provider-neutral external config/secret staging tests were also excluded from stock because they shared a file with enhanced concrete-store tests. Separating those preserves the original assertions, admits the neutral methods in both profiles and adds failed-store/no-private-file and dry-run no-access checks without advertising a new stock runtime capability.
