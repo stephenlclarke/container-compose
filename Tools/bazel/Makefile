@@ -25,8 +25,9 @@ ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
 export ROOT
 
 .PHONY: help check-launcher build test-spi test-cli test-unit test-go test-go-race test-asan test-tsan coverage coverage-report coverage-check package test-package restore-package
+.PHONY: docs
 help:
-	@printf 'Set FAMILY_BAZEL_LAUNCHER to the locked family run.sh. Targets: build, test-spi, test-cli, test-unit, test-go, test-go-race, test-asan, test-tsan, coverage, coverage-report, coverage-check, package, test-package, restore-package. BAZEL_PROFILE=stock|enhanced. Sanitizers instrument Swift/C; Go race and live leak checks are separate. Report/check/restore require INVOCATION=retained-id. Packages are unsigned candidates, not releases.\n'
+	@printf 'Set FAMILY_BAZEL_LAUNCHER to the locked family run.sh. Targets: build, test-spi, test-cli, test-unit, test-go, test-go-race, test-asan, test-tsan, coverage, coverage-report, coverage-check, package, test-package, restore-package, docs. BAZEL_PROFILE=stock|enhanced. Sanitizers instrument Swift/C; Go race and live leak checks are separate. Report/check/restore require INVOCATION=retained-id. Packages are unsigned candidates, not releases.\n'
 
 check-launcher:
 	@test -n "$${FAMILY_BAZEL_LAUNCHER:-}" -a -f "$${FAMILY_BAZEL_LAUNCHER:-}" || { printf 'Set FAMILY_BAZEL_LAUNCHER to the reviewed shared launcher.\n' >&2; exit 2; }
@@ -71,6 +72,9 @@ coverage-check: check-launcher
 
 package: check-launcher
 	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" build --config=release --config="$$BAZEL_PROFILE" //:candidate_archive
+
+docs: check-launcher
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config=release --config="$$BAZEL_PROFILE" //:documentation_tests
 
 test-package: check-launcher
 	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config=release --config="$$BAZEL_PROFILE" //Tools/bazel:package_tests //Tools/bazel:package_smoke

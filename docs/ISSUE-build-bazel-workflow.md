@@ -2,6 +2,8 @@
 
 ## Feature or enhancement request details
 
+Native DocC generation now reuses optimized ComposeCore/ComposeRuntimeSPI modules and the identical family rule/action/test snapshot from devcontainer. Per-module cached conversion and safe declared-input link materialization produce a standalone site without SwiftPM or runtime work. Nine action fault tests and three real-site checks pass in both profiles; stock reuses the profile-independent documentation actions. This does not publish Pages or qualify a stable release. Independent review is clean; the shared adapter's isolated line coverage is 75/76 (98.68%).
+
 The operator requested a Bazel-owned build/test workflow shared with devcontainer: eliminate duplicate work, retain evidence for recovery, keep disposable files on the external SSD and long-lived assets internally, and ultimately publish qualified stable releases. The legacy build/test/release entry points remain until the complete native graph and acceptance gates replace them.
 
 ## Compose compatibility impact

@@ -4,6 +4,8 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 exports_files(["rules-swift-sandbox-output.patch", "rules-go-sanitizer-isolation.patch", "package.py", "licenses/inventory.json", "licenses/vendored.json"] + glob(["licenses/*.patch", "licenses/*.txt"]))
 
+exports_files(["documentation/action.py", "documentation/test_action.py", "documentation/test.sh"])
+
 sh_binary(
     name = "ssd_test_runner",
     srcs = ["ssd-test-runner.sh"],

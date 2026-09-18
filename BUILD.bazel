@@ -4,10 +4,21 @@ load("@build_bazel_rules_swift//swift:swift_library.bzl", "swift_library")
 load("@build_bazel_rules_swift//swift:swift_test.bzl", "swift_test")
 load("//Tools/bazel:fixture_bundle.bzl", "fixture_bundle")
 load("//Tools/bazel:package.bzl", "compose_candidate")
+load("//Tools/bazel:docc.bzl", "native_docc")
 
 exports_files(["Tools/release/release-notes.py", "Tools/release/test_release_notes.py"])
 
 package(default_visibility = ["//visibility:public"])
+
+native_docc(
+    name = "documentation",
+    modules = ["ComposeCore", "ComposeRuntimeSPI"],
+    catalog = glob(["Sources/ComposeCore/ComposeCore.docc/**"]),
+    catalog_path = "Sources/ComposeCore/ComposeCore.docc",
+    catalog_module = "ComposeCore",
+    repository = "stephenlclarke/container-compose",
+    hosting_base_path = "container-compose",
+)
 
 compose_candidate(
     name = "candidate_archive",

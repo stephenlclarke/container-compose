@@ -22,7 +22,14 @@ make -f Tools/bazel/Makefile coverage-check BAZEL_PROFILE=enhanced INVOCATION=RE
 make -f Tools/bazel/Makefile package BAZEL_PROFILE=enhanced
 make -f Tools/bazel/Makefile test-package BAZEL_PROFILE=enhanced
 make -f Tools/bazel/Makefile restore-package INVOCATION=RETAINED-PACKAGE-ID
+make -f Tools/bazel/Makefile docs BAZEL_PROFILE=enhanced
 ```
+
+## Native DocC
+
+The `docs` target runs `//:documentation_tests` against the optimized native modules, documenting `ComposeCore` and `ComposeRuntimeSPI` with the existing catalog and theme images. Per-module symbol extraction/conversion and the merged standalone site are separate Bazel actions; the workflow does not invoke SwiftPM, resolve packages again, start containers or publish Pages. The same rule/action/test snapshot is used by devcontainer. All documentation warnings fail the build. Only links to declared catalog/archive inputs may be materialized, and cached inputs remain unchanged. Nine action regressions and three real-site checks cover failure bounds, source identity, module inventory, links, images, static routes and host-path leakage. The generated `build-identity.json` records the revision; optimized symbol graphs omit source file locations, so per-symbol source links are not promised.
+
+DocC output remains disposable on the enrolled SSD until the final documentation phase promotes the released site's durable assets. Existing public Pages workflows are unchanged pending full migration admission. The 18 September trusted workflows passed the current reviewed source pins in [stock](https://github.com/stephenlclarke/container-build/actions/runs/35369122230) and [enhanced](https://github.com/stephenlclarke/container-build/actions/runs/35369312307), including coverage above 90%, component tests, optimized package checks and owned-invocation cleanup. [Unattended Sonar](https://github.com/stephenlclarke/container-build/actions/runs/35368647237) also passed by reusing paired retained coverage without rebuilding. Those runs qualify Compose `4b9f1fc8b364ff6f882140fba9672c1c2c1d02b9` with devcontainer tooling `8e12ed726d73480152236a07598df75a4dca16ae`, not later edits or full live parity/release readiness.
 
 Use `BAZEL_PROFILE=enhanced` for the pinned enhanced provider. The shared launcher's legacy internal `DEVCONTAINER_RUNTIME_PROFILE` variable selects the dependency graph together with the Bazel `runtime_profile` setting; callers select only the named profile. Repository/dependency overrides remain refused.
 
