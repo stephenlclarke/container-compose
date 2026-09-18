@@ -10,6 +10,8 @@ Internal implementation improvement. Package.swift and the existing stock/enhanc
 
 ## Acceptance
 
+Sonar input warnings must be resolved in maintained source rather than hidden with scanner settings. The logging oracle's intentional replacement character is expressed as the identical Swift Unicode escape so the source scanner can parse it without changing runtime string bytes or binary/NUL assertions. Its focused 17-case proof is recorded in PR 708; an earlier-head scan cannot qualify the cleanup's later source revision.
+
 Every added fixture must also satisfy the existing licence-header policy. The full Apache-2.0 header replaces the rejected abbreviated header in the help-dispatch test; no source-check exclusion is permitted.
 
 The selected shared launcher must match all 28 byte/mode entries before Bazel starts. Admit the reviewed devcontainer `86834d7` packaging regression through the exact helper lock; source SHA admission alone does not prove cross-repository helper compatibility. No runtime or quality-policy change is required.
