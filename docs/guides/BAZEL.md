@@ -19,6 +19,9 @@ make -f Tools/bazel/Makefile test-go
 make -f Tools/bazel/Makefile coverage BAZEL_PROFILE=enhanced
 make -f Tools/bazel/Makefile coverage-report INVOCATION=RETAINED-ID
 make -f Tools/bazel/Makefile coverage-check BAZEL_PROFILE=enhanced INVOCATION=RETAINED-ID
+make -f Tools/bazel/Makefile package BAZEL_PROFILE=enhanced
+make -f Tools/bazel/Makefile test-package BAZEL_PROFILE=enhanced
+make -f Tools/bazel/Makefile restore-package INVOCATION=RETAINED-PACKAGE-ID
 ```
 
 Use `BAZEL_PROFILE=enhanced` for the pinned enhanced provider. The shared launcher's legacy internal `DEVCONTAINER_RUNTIME_PROFILE` variable selects the dependency graph together with the Bazel `runtime_profile` setting; callers select only the named profile. Repository/dependency overrides remain refused.
@@ -68,4 +71,30 @@ The preceding suite-configuration, missing-input and filesystem failures remain 
 
 The first policy-validated development runs measure 28,380/32,443 enhanced lines (`e9fc2e16-3217-4ad7-918b-243da128b0a4`) and 8,020/29,967 stock lines (`4b89f05c-89ea-4f68-b51a-14880adf14b3`). Neither reaches 90%. Stock currently preserves SwiftPM's omission of the enhanced-adapter-coupled Core suite; moving runtime-neutral Core tests into the stock graph remains necessary. These dated diagnostic observations are not current-head Sonar results or release acceptance.
 
-Remaining cutover gates include closing coverage gaps and sanitizers/leaks, versioned packaging, signed retained candidate reuse, downloaded-release integration/parity, fault recovery, CI authority and stable publication. Do not package these binaries as a complete Compose distribution before version metadata, resources and distribution gates are wired. Existing workflows remain available until the complete replacement is qualified.
+At clean commit `3f765e3e39d3cf7683bab554a552a312a9f1f3ee`, invocation `c4fbd357-2818-4bcf-808a-b7e504943e27` reused all eleven enhanced test results in 0.487 seconds and validated 28,388/32,451 production lines (87.4796%). Authenticated export succeeds; the 90% gate correctly fails, and requesting the stock gate against this enhanced evidence also fails. These are development observations, not quiet benchmarks.
+
+## Native unsigned candidates
+
+`package` builds the four optimized products once and uses pinned `rules_pkg` to assemble the existing `compose/` plugin layout. `bin/compose`, `resources/compose-normalizer` and both `resources/volume-initializer/` executables retain executable permissions; configuration, icon, licence and JSON metadata are read-only package data. Archive ownership and timestamps are normalized. No SwiftPM/Go build subprocess, keychain access, signing, installation or publication occurs.
+
+`resources/build-info.json` preserves the existing version command contract using the declared Makefile version, selected immutable Swift dependency pins, compose-go version and validated enhanced capability inventory (empty in stock). `resources/candidate.json` records all four binary hashes and dependency-lock hashes. The adjacent archive receipt additionally binds the exact compressed archive bytes. Both explicitly say `distributionReady: false` and `licenseClosureComplete: false`: transitive Swift/Go notices must be added before distribution, and this archive is not a release.
+
+`test-package` checks malformed/wrong-architecture inputs and the real archive inventory, normalized modes, hashes and metadata consistency. It also extracts into isolated SSD scratch, runs the packaged version command and renders a local Compose fixture with the bundled parser. It starts no containers and downloads no images. This proves package assembly and local CLI/parser integration, not runtime parity or Developer ID trust. Debug candidate assembly is refused.
+
+The launcher retains successful `//:candidate_archive` bytes in the internal evidence store. `restore-package` authenticates and restores those bytes to the managed SSD without invoking Bazel or compilers; a repeated restore reuses the identical files. Restore is artifact recovery, not clean-source release admission. A dirty development candidate remains ineligible for release.
+
+Release-note Git fixtures also have a native target, `//Tools/bazel:release_notes_tests`. Their disposable repositories disable automatic Git maintenance before the first commit, preventing detached maintenance from racing cleanup (the CI failure was `Directory not empty: '.git'`). This does not change the user's global Git configuration.
+
+Development package evidence:
+
+| Invocation | Observation |
+| --- | --- |
+| `c77e2ad9-459a-45d6-a23f-e09da1b49710` | First optimized enhanced archive: 113.993 seconds; retained archive restores repeatedly with SHA-256 `281578c6c3933a2f6425a5aee63f9337e2d08e7172e6078c546a8d69203d675f`. |
+| `dbddbd92-5e1c-42fc-a052-35268afb5b5b` | Stock: seven metadata/input cases and both real archive/CLI/parser cases pass; 1.847 seconds. |
+| `18aea4b3-0dbe-474a-b534-03cc997da6b9` | Enhanced: the same seven metadata and two archive cases pass; 6.609 seconds, with metadata results cached. |
+| `ffd87e8b-cedf-4295-b513-89acedfcf9de` | All 28 release-note cases pass, including fixture-local maintenance configuration; 4.988 seconds. |
+| `e88475f7-6666-46d0-8922-7cf07c474e8e` | Negative check: debug candidate assembly is rejected during analysis. |
+
+Earlier smoke invocations `853ffef6-27ea-4189-af4c-e2392c08173c` and `5b3dc751-b74c-48d2-a8fa-538e14c0bb6d` built packages but reran only metadata cases because the wrapper omitted the archive argument. They are not archive-smoke proof. The wrapper now forwards every argument, and a required mode/arity check prevents silent fallback. All listed timings are development observations, not quiet-machine benchmarks or stable-release qualification.
+
+Remaining cutover gates include closing coverage gaps and sanitizers/leaks, transitive dependency notices, signed candidate admission/reuse, downloaded-release integration/parity, fault recovery, CI authority and stable publication. Existing workflows remain available until the complete replacement is qualified.

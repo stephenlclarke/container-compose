@@ -24,9 +24,9 @@ export INVOCATION
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
 export ROOT
 
-.PHONY: help check-launcher build test-spi test-cli test-unit test-go coverage coverage-report coverage-check
+.PHONY: help check-launcher build test-spi test-cli test-unit test-go coverage coverage-report coverage-check package test-package restore-package
 help:
-	@printf 'Set FAMILY_BAZEL_LAUNCHER to the locked family run.sh. Targets: build, test-spi, test-cli, test-unit, test-go, coverage, coverage-report, coverage-check. BAZEL_PROFILE=stock|enhanced. Report/check require INVOCATION=retained-id.\n'
+	@printf 'Set FAMILY_BAZEL_LAUNCHER to the locked family run.sh. Targets: build, test-spi, test-cli, test-unit, test-go, coverage, coverage-report, coverage-check, package, test-package, restore-package. BAZEL_PROFILE=stock|enhanced. Report/check/restore require INVOCATION=retained-id. Packages are unsigned candidates, not releases.\n'
 
 check-launcher:
 	@test -n "$${FAMILY_BAZEL_LAUNCHER:-}" -a -f "$${FAMILY_BAZEL_LAUNCHER:-}" || { printf 'Set FAMILY_BAZEL_LAUNCHER to the reviewed shared launcher.\n' >&2; exit 2; }
@@ -57,3 +57,13 @@ coverage-report: check-launcher
 coverage-check: check-launcher
 	@test -n "$${INVOCATION:-}" || { printf 'Set INVOCATION to a retained clean source coverage run.\n' >&2; exit 2; }
 	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" coverage-report "$$INVOCATION" --minimum-percent 90 --config="$$BAZEL_PROFILE"
+
+package: check-launcher
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" build --config=release --config="$$BAZEL_PROFILE" //:candidate_archive
+
+test-package: check-launcher
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config=release --config="$$BAZEL_PROFILE" //Tools/bazel:package_tests //Tools/bazel:package_smoke
+
+restore-package: check-launcher
+	@test -n "$${INVOCATION:-}" || { printf 'Set INVOCATION to a retained package build.\n' >&2; exit 2; }
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" restore-candidate "$$INVOCATION"

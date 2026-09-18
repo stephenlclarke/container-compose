@@ -3,8 +3,17 @@ load("@build_bazel_rules_swift//swift:swift_binary.bzl", "swift_binary")
 load("@build_bazel_rules_swift//swift:swift_library.bzl", "swift_library")
 load("@build_bazel_rules_swift//swift:swift_test.bzl", "swift_test")
 load("//Tools/bazel:fixture_bundle.bzl", "fixture_bundle")
+load("//Tools/bazel:package.bzl", "compose_candidate")
+
+exports_files(["Tools/release/release-notes.py", "Tools/release/test_release_notes.py"])
 
 package(default_visibility = ["//visibility:public"])
+
+compose_candidate(
+    name = "candidate_archive",
+    profile = select({":stock_runtime": "stock", "//conditions:default": "enhanced"}),
+    resolved = select({":stock_runtime": "Package.stock.resolved", "//conditions:default": "Package.resolved"}),
+)
 
 config_setting(
     name = "stock_runtime",
