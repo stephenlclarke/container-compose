@@ -30,27 +30,42 @@ struct TestStorageTests {
         #expect(try String(contentsOf: file, encoding: .utf8) == "two")
         #expect(throws: Error.self) { try "\u{20ac}".writeFixture(to: file, encoding: .ascii) }
         #expect(throws: Error.self) { try TestStorage.writeFixture(Data(), to: directory) }
-        #expect(throws: Error.self) { try TestStorage.writeFixture(Data(), to: directory.appendingPathComponent("missing/file")) }
+        #expect(throws: Error.self) { try TestStorage.writeFixture(
+            Data(),
+            to: directory.appendingPathComponent("missing/file")
+        ) }
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["value"])
     }
 
     @Test
     func `scratch precedence honors the runner before process and platform defaults`() {
-        #expect(TestStorage.resolve(environment: ["TEST_TMPDIR": "/test-scratch", "TMPDIR": "/process-scratch"], fallback: "/fallback")?.path == "/test-scratch")
-        #expect(TestStorage.resolve(environment: ["TMPDIR": "/process-scratch"], fallback: "/fallback")?.path == "/process-scratch")
+        #expect(TestStorage.resolve(
+            environment: ["TEST_TMPDIR": "/test-scratch", "TMPDIR": "/process-scratch"],
+            fallback: "/fallback"
+        )?.path == "/test-scratch")
+        #expect(TestStorage.resolve(environment: ["TMPDIR": "/process-scratch"], fallback: "/fallback")?
+            .path == "/process-scratch")
         #expect(TestStorage.resolve(environment: [:], fallback: "/fallback")?.path == "/fallback")
     }
 
     @Test
     func `relative and unbound Bazel storage is rejected`() {
         #expect(TestStorage.resolve(environment: ["TMPDIR": "relative"], fallback: "/fallback") == nil)
-        #expect(TestStorage.resolve(environment: ["BAZEL_TEST": "1", "TMPDIR": "/scratch"], fallback: "/fallback") == nil)
-        #expect(TestStorage.resolve(environment: ["BAZEL_TEST": "1", "TMPDIR": "/scratch", "DEVCONTAINER_TEST_SCRATCH_ROOT": "/"], fallback: "/fallback") == nil)
+        #expect(TestStorage
+            .resolve(environment: ["BAZEL_TEST": "1", "TMPDIR": "/scratch"], fallback: "/fallback") == nil)
+        #expect(TestStorage.resolve(
+            environment: ["BAZEL_TEST": "1", "TMPDIR": "/scratch", "DEVCONTAINER_TEST_SCRATCH_ROOT": "/"],
+            fallback: "/fallback"
+        ) == nil)
     }
 
     @Test
-    func `Bazel scratch must be a strict child of the enrolled root`() {
-        var environment = ["BAZEL_TEST": "1", "DEVCONTAINER_TEST_SCRATCH_ROOT": "/scratch", "TEST_TMPDIR": "/scratch/case"]
+    func `bazel scratch must be a strict child of the enrolled root`() {
+        var environment = [
+            "BAZEL_TEST": "1",
+            "DEVCONTAINER_TEST_SCRATCH_ROOT": "/scratch",
+            "TEST_TMPDIR": "/scratch/case"
+        ]
         #expect(TestStorage.resolve(environment: environment, fallback: "/fallback")?.path == "/scratch/case")
         for invalid in ["/scratch", "/scratch-other/case", "/scratch/../outside"] {
             environment["TEST_TMPDIR"] = invalid

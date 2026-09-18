@@ -6,7 +6,7 @@ The native graph compiles ComposeRuntimeSPI, ComposeCore, the selected stock/enh
 
 ## Shared workflow
 
-The family launcher is reused from the reviewed devcontainer workflow rather than duplicated. For this development checkpoint, use `Tools/bazel/run.sh` from devcontainer commit `49d254f` (PR [83](https://github.com/stephenlclarke/devcontainer/pull/83)). `Tools/bazel/workflow-tooling.json` binds every shared executable helper's bytes and permissions; a different helper set fails before the build. Keep that checkout on internal storage. This explicit source-tooling dependency is not a runtime dependency on devcontainer and is not a stable clean-machine bootstrap claim.
+The family launcher is reused from the reviewed devcontainer workflow rather than duplicated. For this development checkpoint, use `Tools/bazel/run.sh` from devcontainer commit `d930fc4` (PR [83](https://github.com/stephenlclarke/devcontainer/pull/83)). `Tools/bazel/workflow-tooling.json` binds every shared executable helper's bytes and permissions; a different helper set fails before the build. Keep that checkout on internal storage. This explicit source-tooling dependency is not a runtime dependency on devcontainer and is not a stable clean-machine bootstrap claim.
 
 ```sh
 export FAMILY_BAZEL_LAUNCHER=/absolute/path/to/reviewed-devcontainer/Tools/bazel/run.sh
@@ -16,6 +16,9 @@ make -f Tools/bazel/Makefile test-cli BAZEL_PROFILE=stock
 make -f Tools/bazel/Makefile test-unit BAZEL_PROFILE=stock
 make -f Tools/bazel/Makefile test-unit BAZEL_PROFILE=enhanced
 make -f Tools/bazel/Makefile test-go
+make -f Tools/bazel/Makefile coverage BAZEL_PROFILE=enhanced
+make -f Tools/bazel/Makefile coverage-report INVOCATION=RETAINED-ID
+make -f Tools/bazel/Makefile coverage-check BAZEL_PROFILE=enhanced INVOCATION=RETAINED-ID
 ```
 
 Use `BAZEL_PROFILE=enhanced` for the pinned enhanced provider. The shared launcher's legacy internal `DEVCONTAINER_RUNTIME_PROFILE` variable selects the dependency graph together with the Bazel `runtime_profile` setting; callers select only the named profile. Repository/dependency overrides remain refused.
@@ -57,4 +60,12 @@ Latest development evidence (not quiet or release qualification):
 
 The preceding suite-configuration, missing-input and filesystem failures remain retained. These records describe development observations; exact-head checkpoint runs and a reuse check must accompany promotion. A cached result is valid only for the same declared action inputs.
 
-Remaining cutover gates include aggregate coverage and sanitizers/leaks, versioned packaging, signed retained candidate reuse, downloaded-release integration/parity, fault recovery, CI authority and stable publication. Do not package these binaries as a complete Compose distribution before version metadata, resources and distribution gates are wired. Existing workflows remain available until the complete replacement is qualified.
+## Validated coverage evidence
+
+`Tools/bazel/evidence-policy.json` declares the stock/enhanced test inventories, minimum discovered cases, mandatory executed production files and Swift/Go source roots. The shared family validator checks both `test-unit` and `coverage`; missing/skipped cases, wrong target sets, missing production probes and inconsistent LCOV line counts fail. Only the test-only `ComposeTestStorage` fixture utility is excluded from instrumentation; no product source is excluded.
+
+`coverage-report` reconstructs LCOV, Sonar XML and a source/profile/digest receipt from internally retained bytes without a build or rerun. Export requires a clean recorded source identity, not merely a successful dirty development test. `coverage-check` additionally requires a clean current checkout and evidence for the same source SHA, selected profile and consumer policy, then enforces 90% using unrounded line counts. Another profile or repository's passing report cannot satisfy it. A below-target result leaves the diagnostic report available and fails the gate.
+
+The first policy-validated development runs measure 28,380/32,443 enhanced lines (`e9fc2e16-3217-4ad7-918b-243da128b0a4`) and 8,020/29,967 stock lines (`4b89f05c-89ea-4f68-b51a-14880adf14b3`). Neither reaches 90%. Stock currently preserves SwiftPM's omission of the enhanced-adapter-coupled Core suite; moving runtime-neutral Core tests into the stock graph remains necessary. These dated diagnostic observations are not current-head Sonar results or release acceptance.
+
+Remaining cutover gates include closing coverage gaps and sanitizers/leaks, versioned packaging, signed retained candidate reuse, downloaded-release integration/parity, fault recovery, CI authority and stable publication. Do not package these binaries as a complete Compose distribution before version metadata, resources and distribution gates are wired. Existing workflows remain available until the complete replacement is qualified.

@@ -17,9 +17,9 @@
 import ComposeCore
 @testable import ComposeEngineRuntime
 import ComposeRuntimeSPI
+import ComposeTestStorage
 import ContainerEngineWire
 import ContainerUnixHTTPServer
-import ComposeTestStorage
 import Foundation
 import Logging
 import Testing

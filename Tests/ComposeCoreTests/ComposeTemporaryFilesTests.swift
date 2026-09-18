@@ -51,13 +51,17 @@ struct ComposeTemporaryFilesTests {
         try ComposeTemporaryFiles.writeAtomically(Data("published".utf8), to: link)
         #expect(try Data(contentsOf: file) == Data("preserve".utf8))
         #expect(try Data(contentsOf: link) == Data("published".utf8))
-        #expect(try FileManager.default.attributesOfItem(atPath: link.path)[.type] as? FileAttributeType == .typeRegular)
+        #expect(try FileManager.default
+            .attributesOfItem(atPath: link.path)[.type] as? FileAttributeType == .typeRegular)
     }
 
     @Test
     func `absolute caller scratch overrides the Foundation default`() {
         let fallback = URL(fileURLWithPath: "/fallback")
-        #expect(ComposeTemporaryFiles.resolveDirectory(environment: ["TMPDIR": "/scratch/child/../test"], fallback: fallback).path == "/scratch/test")
+        #expect(ComposeTemporaryFiles.resolveDirectory(
+            environment: ["TMPDIR": "/scratch/child/../test"],
+            fallback: fallback
+        ).path == "/scratch/test")
         for environment in [[:], ["TMPDIR": ""], ["TMPDIR": "relative"]] {
             #expect(ComposeTemporaryFiles.resolveDirectory(environment: environment, fallback: fallback) == fallback)
         }

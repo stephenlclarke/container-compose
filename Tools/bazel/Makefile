@@ -20,12 +20,13 @@ override SHELL := /bin/bash -p -euo pipefail
 BAZEL_PROFILE ?= enhanced
 export BAZEL_PROFILE
 export FAMILY_BAZEL_LAUNCHER
+export INVOCATION
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
 export ROOT
 
-.PHONY: help check-launcher build test-spi test-cli test-unit test-go
+.PHONY: help check-launcher build test-spi test-cli test-unit test-go coverage coverage-report coverage-check
 help:
-	@printf 'Set FAMILY_BAZEL_LAUNCHER to the locked family run.sh. Targets: build, test-spi, test-cli, test-unit, test-go. BAZEL_PROFILE=stock|enhanced.\n'
+	@printf 'Set FAMILY_BAZEL_LAUNCHER to the locked family run.sh. Targets: build, test-spi, test-cli, test-unit, test-go, coverage, coverage-report, coverage-check. BAZEL_PROFILE=stock|enhanced. Report/check require INVOCATION=retained-id.\n'
 
 check-launcher:
 	@test -n "$${FAMILY_BAZEL_LAUNCHER:-}" -a -f "$${FAMILY_BAZEL_LAUNCHER:-}" || { printf 'Set FAMILY_BAZEL_LAUNCHER to the reviewed shared launcher.\n' >&2; exit 2; }
@@ -45,3 +46,14 @@ test-unit: check-launcher
 
 test-go: check-launcher
 	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" test --config="$$BAZEL_PROFILE" //:unit_go
+
+coverage: check-launcher
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" coverage --config="$$BAZEL_PROFILE" "//:unit_$$BAZEL_PROFILE"
+
+coverage-report: check-launcher
+	@test -n "$${INVOCATION:-}" || { printf 'Set INVOCATION to a retained clean source coverage run.\n' >&2; exit 2; }
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" coverage-report "$$INVOCATION"
+
+coverage-check: check-launcher
+	@test -n "$${INVOCATION:-}" || { printf 'Set INVOCATION to a retained clean source coverage run.\n' >&2; exit 2; }
+	@"$$FAMILY_BAZEL_LAUNCHER" --workspace "$$ROOT" coverage-report "$$INVOCATION" --minimum-percent 90 --config="$$BAZEL_PROFILE"
