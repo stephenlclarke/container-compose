@@ -2,6 +2,8 @@
 
 ## Feature or enhancement request details
 
+The typed request builder is staged and component-tested; launch activation remains pending. Standard Engine fields are projected without argv parsing, while unimplemented native extensions fail explicitly. Environment files, authenticated descriptor selection, native-only policies, receiver support and create/start transport still require integration. [PR 708](PR-708.md) records the exact focused evidence and coverage; existing live C02 remains incomplete.
+
 Current C02 blocker is first-command DNS, not running-state DNS: the strengthened Docker oracle passes and stock Apple fails before later exec reconciliation repairs resolution. Safe creation routing needs the complete prepared service configuration, not a fixture-specific native-argument parser. The launch plan now retains the service and invocation settings and crosses the Core/SPI provider boundary for up/create/run/pre-start; providers still need to project that configuration and negotiate gateway creation/start. [Current scope and evidence](guides/BAZEL.md#stock-compose-health-policy-candidate) supersede historical observations below.
 
 The corrected stock C02 run now starts all three services and verifies actual database health, but fails guest service-name resolution. Cleanup passes with zero owned resources. Native Compose launch bypasses devcontainer's existing managed-host reconciliation; safe external-adoption integration is the next observed gap. [Current evidence](guides/BAZEL.md#stock-compose-health-policy-candidate) supersedes the pending-live note below without changing the fixture or marking C02 complete.
