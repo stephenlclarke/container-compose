@@ -46,6 +46,20 @@ extension ComposeOrchestrator {
         externalVolumeMounts: ExternalVolumeMounts = [:],
         imageHealthCheckCache: ComposeImageHealthCheckCache? = nil
     ) async throws -> [String] {
+        try await serviceLaunchPlan(
+            project: project, service: service, options: run,
+            externalVolumeMounts: externalVolumeMounts, imageHealthCheckCache: imageHealthCheckCache
+        ).arguments
+    }
+
+    /// Resolves once for both the existing CLI and the typed provider handoff.
+    func serviceLaunchPlan(
+        project: ComposeProject,
+        service: ComposeService,
+        options run: RunArgumentOptions = RunArgumentOptions(),
+        externalVolumeMounts: ExternalVolumeMounts = [:],
+        imageHealthCheckCache: ComposeImageHealthCheckCache? = nil
+    ) async throws -> ContainerServiceLaunchPlan {
         var args = [run.command]
         let runtimeName: String = if let containerNameOverride = run.containerNameOverride {
             slug(containerNameOverride)
@@ -54,7 +68,7 @@ extension ComposeOrchestrator {
         } else {
             containerName(project: project, service: service, oneOff: run.oneOff)
         }
-        let createPlan = try await serviceCreatePlan(request: ServiceCreatePlanRequest(
+        var createPlan = try await serviceCreatePlan(request: ServiceCreatePlanRequest(
             project: project,
             service: service,
             runtimeName: runtimeName,
@@ -166,23 +180,18 @@ extension ComposeOrchestrator {
             context: mountContext,
             mounts: mounts,
         )
-        for mount in mounts + imageVolumeMounts {
-            try appendMount(mount, context: mountContext, args: &args)
+        let resolvedMounts = try (mounts + imageVolumeMounts).map {
+            try resolvedMount($0, context: mountContext)
         }
-        for tmpfs in service.tmpfs ?? [] {
+        createPlan.resolvedMounts = resolvedMounts
+        for mount in resolvedMounts {
+            try appendResolvedMount(mount, args: &args)
+        }
+        for tmpfs in createPlan.tmpfs {
             args.append(contentsOf: ["--tmpfs", tmpfs])
         }
-        if isNoNetworkMode(service.networkMode) {
-            args.append(contentsOf: ["--network", "none"])
-        } else if isHostNetworkMode(service.networkMode) {
-            args.append(contentsOf: ["--network", "host"])
-        } else if isBridgeNetworkMode(service.networkMode) {
-            args.append(contentsOf: ["--network", "default"])
-        } else {
-            for network in orderedNetworkAttachments(service: service) {
-                let networkArgument = try networkAttachmentArgument(project: project, service: service, network: network)
-                args.append(contentsOf: ["--network", networkArgument])
-            }
+        for attachment in createPlan.networkAttachments {
+            args.append(contentsOf: ["--network", attachment.nativeArgument])
         }
         if let isolation = try runtimeIsolationArgument(service: service) {
             args.append(contentsOf: ["--isolation", isolation])
@@ -338,7 +347,7 @@ extension ComposeOrchestrator {
         args.append(image)
         args.append(contentsOf: entrypointCommandPrefix)
         args.append(contentsOf: createPlan.processOverrides.command ?? [])
-        return args
+        return ContainerServiceLaunchPlan(arguments: args, configuration: createPlan)
     }
 
     /// Rewrites `SERVICE:/path` copy operands to the matching service container.

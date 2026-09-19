@@ -45,6 +45,10 @@ public struct ContainerServiceCreateIdentity: Sendable {
 
 /// Runtime-specific service create fields.
 public struct ContainerServiceCreateRuntime: Sendable {
+    /// Nil until launch-time materialization and image-volume resolution finish.
+    public var resolvedMounts: [ComposeResolvedMount]?
+    public var tmpfs: [String]
+    public var networkAttachments: [ComposeNetworkCreateAttachment]
     public var processOverrides: ComposeProcessOverrides
     public var initProcess: ComposeProcessConfiguration
     public var logging: ComposeLogConfiguration
@@ -61,6 +65,9 @@ public struct ContainerServiceCreateRuntime: Sendable {
     public var memorySwapLimitInBytes: Int64?
 
     public init() {
+        resolvedMounts = nil
+        tmpfs = []
+        networkAttachments = []
         processOverrides = ComposeProcessOverrides()
         initProcess = ComposeRuntimeDefaults.shellProcess()
         logging = ComposeLogConfiguration.standard
@@ -84,6 +91,9 @@ public struct ContainerServiceCreateRuntime: Sendable {
 /// `container-compose` while later execution code can create containers through
 /// apple/container typed APIs instead of Docker-shaped CLI flags.
 public struct ContainerServiceCreatePlan: Sendable {
+    public var resolvedMounts: [ComposeResolvedMount]?
+    public var tmpfs: [String]
+    public var networkAttachments: [ComposeNetworkCreateAttachment]
     public var processOverrides: ComposeProcessOverrides
     public var name: String
     public var imageReference: String
@@ -111,6 +121,9 @@ public struct ContainerServiceCreatePlan: Sendable {
         runtime: ContainerServiceCreateRuntime = ContainerServiceCreateRuntime(),
     ) {
         name = identity.name
+        resolvedMounts = runtime.resolvedMounts
+        tmpfs = runtime.tmpfs
+        networkAttachments = runtime.networkAttachments
         processOverrides = runtime.processOverrides
         imageReference = identity.imageReference
         oneOff = identity.oneOff
@@ -132,6 +145,13 @@ public struct ContainerServiceCreatePlan: Sendable {
         memoryReservationInBytes = runtime.memoryReservationInBytes
         memorySwapLimitInBytes = runtime.memorySwapLimitInBytes
     }
+}
+
+/// Both projections are produced once, after launch-time resources are resolved.
+/// Remaining native options still use arguments until the full typed migration lands.
+struct ContainerServiceLaunchPlan: Sendable {
+    var arguments: [String]
+    var configuration: ContainerServiceCreatePlan
 }
 
 /// Public planning options for service-container create projections.

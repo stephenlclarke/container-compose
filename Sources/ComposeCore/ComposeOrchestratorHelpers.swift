@@ -368,37 +368,45 @@ func networkLinkLocalIPValues(service: ComposeService, network: String) throws -
 
 /// Returns static primary-address options that are safe to encode in a runtime attachment.
 func networkStaticAddressOptions(project: ComposeProject, service: ComposeService, network: String) throws -> [String] {
+    let addresses = try networkStaticAddresses(project: project, service: service, network: network)
+    return [addresses.ipv4.map { "ip=\($0)" }, addresses.ipv6.map { "ip6=\($0)" }].compactMap(\.self)
+}
+
+/// Resolves validated primary addresses without encoding command-line options.
+func networkStaticAddresses(
+    project: ComposeProject, service: ComposeService, network: String
+) throws -> (ipv4: String?, ipv6: String?) {
     guard let options = service.networkOptions?[network] else {
-        return []
+        return (nil, nil)
     }
     guard (service.networks ?? []).contains(network) else {
         if nonEmpty(options.ipv4Address) != nil || nonEmpty(options.ipv6Address) != nil {
             throw ComposeError.unsupported("service '\(service.name)' sets a static address on unattached network '\(network)'")
         }
-        return []
+        return (nil, nil)
     }
 
-    var runtimeOptions: [String] = []
+    var addresses: (ipv4: String?, ipv6: String?) = (nil, nil)
     if let rawIPv4Address = nonEmpty(options.ipv4Address) {
-        try runtimeOptions.append(staticIPv4AddressOption(
+        addresses.ipv4 = try staticIPv4AddressValue(
             rawIPv4Address,
             project: project,
             service: service,
             network: network,
-        ))
+        )
     }
     if let rawIPv6Address = nonEmpty(options.ipv6Address) {
-        try runtimeOptions.append(staticIPv6AddressOption(
+        addresses.ipv6 = try staticIPv6AddressValue(
             rawIPv6Address,
             project: project,
             service: service,
             network: network,
-        ))
+        )
     }
-    return runtimeOptions
+    return addresses
 }
 
-private func staticIPv4AddressOption(
+private func staticIPv4AddressValue(
     _ rawAddress: String,
     project: ComposeProject,
     service: ComposeService,
@@ -417,10 +425,10 @@ private func staticIPv4AddressOption(
         throw ComposeError.invalidProject("service '\(service.name)' ipv4_address '\(rawAddress)' must not be unspecified")
     }
     try validateStaticIPv4Address(address, project: project, service: service, network: network)
-    return "ip=\(address)"
+    return "\(address)"
 }
 
-private func staticIPv6AddressOption(
+private func staticIPv6AddressValue(
     _ rawAddress: String,
     project: ComposeProject,
     service: ComposeService,
@@ -442,7 +450,7 @@ private func staticIPv6AddressOption(
         throw ComposeError.invalidProject("service '\(service.name)' ipv6_address '\(rawAddress)' must not be unspecified")
     }
     try validateStaticIPv6Address(address, project: project, service: service, network: network)
-    return "ip6=\(address)"
+    return "\(address)"
 }
 
 private func validateStaticIPv4Address(

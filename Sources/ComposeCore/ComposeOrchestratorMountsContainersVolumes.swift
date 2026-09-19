@@ -49,6 +49,31 @@ struct ComposeContainerProgressRunOptions: Sendable {
 extension ComposeOrchestrator {
     /// Appends a Compose mount in the form accepted by `container run`.
     func appendMount(_ mount: ComposeMount, context: MountRenderContext, args: inout [String]) throws {
+        try appendResolvedMount(resolvedMount(mount, context: context), args: &args)
+    }
+
+    /// Resolves names without discarding the normalized mount's policy fields.
+    func resolvedMount(_ mount: ComposeMount, context: MountRenderContext) throws -> ComposeResolvedMount {
+        guard let target = mount.target else {
+            throw ComposeError.invalidProject("\(mount.type == "tmpfs" ? "tmpfs" : "volume") mount is missing target")
+        }
+        let source = mount.source ?? ""
+        if mount.type == "tmpfs" || mount.type == "image" {
+            return ComposeResolvedMount(definition: mount, source: mount.source)
+        }
+        let mappedSource: String = if mount.type == "volume", !source.isEmpty {
+            volumeRuntimeName(project: context.project, composeName: source)
+        } else if source.isEmpty {
+            anonymousVolumeRuntimeName(context: context, target: target)
+        } else {
+            source
+        }
+        return ComposeResolvedMount(definition: mount, source: mappedSource)
+    }
+
+    /// Renders the already-resolved source without applying project names twice.
+    func appendResolvedMount(_ plan: ComposeResolvedMount, args: inout [String]) throws {
+        let mount = plan.definition
         if mount.type == "tmpfs" {
             guard let target = mount.target else {
                 throw ComposeError.invalidProject("tmpfs mount is missing target")
@@ -63,7 +88,7 @@ extension ComposeOrchestrator {
         guard let target = mount.target else {
             throw ComposeError.invalidProject("volume mount is missing target")
         }
-        let source = mount.source ?? ""
+        let source = plan.source ?? ""
         if nonEmpty(mount.imageSubpath) != nil, mount.type != "image" {
             throw ComposeError.invalidProject("image subpath is only supported for image mounts")
         }
@@ -83,13 +108,7 @@ extension ComposeOrchestrator {
             args.append(contentsOf: ["--mount", fields.joined(separator: ",")])
             return
         }
-        let mappedSource: String = if mount.type == "volume", !source.isEmpty {
-            volumeRuntimeName(project: context.project, composeName: source)
-        } else if source.isEmpty {
-            anonymousVolumeRuntimeName(context: context, target: target)
-        } else {
-            source
-        }
+        let mappedSource = source
 
         if mount.fileOwnerUID != nil || mount.fileOwnerGID != nil {
             guard mount.type == "bind" else {
