@@ -2,7 +2,7 @@
 
 ## Feature or enhancement request details
 
-Environment-file acquisition and preparation now have bounded component proof, including real blocked-FIFO cancellation. The typed request consumes captured values; live gateway activation, authenticated image selection and remaining native-policy projections are still open. This is not a live parity result.
+Environment-file acquisition and preparation now have bounded component proof, including real blocked-FIFO cancellation. Request preparation validates and reinspects an immutable image ID, binds process defaults and the wire image to that selection, and rejects identity/platform drift. The earlier Core image-derived health/volume preparation still needs coherent binding to the same selected image. Live gateway activation, receiver support and remaining native-policy projections are open. This is not a live parity result.
 
 The typed request builder is staged and component-tested; launch activation remains pending. Standard Engine fields are projected without argv parsing, while unimplemented native extensions fail explicitly. Environment files, authenticated descriptor selection, native-only policies, receiver support and create/start transport still require integration. [PR 708](PR-708.md) records the exact focused evidence and coverage; existing live C02 remains incomplete.
 

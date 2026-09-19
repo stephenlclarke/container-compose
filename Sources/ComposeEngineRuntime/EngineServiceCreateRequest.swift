@@ -12,11 +12,17 @@ struct EngineServiceCreateRequest: Encodable {
     let host: EngineCreateValue
     let networks: EngineCreateValue
     let exposed: EngineCreateValue
+    let imageReference: String
 
     init(
         plan: ContainerServiceCreatePlan, image: EngineImageConfig,
-        environmentFileContents: [Data] = [], hostEnvironment: [String: String] = ProcessInfo.processInfo.environment
+        environmentFileContents: [Data] = [], hostEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+        resolvedImageID: String? = nil
     ) throws {
+        if let resolvedImageID, !Self.validImageID(resolvedImageID) {
+            throw ComposeError.invalidProject("Gateway returned an invalid immutable image ID")
+        }
+        imageReference = resolvedImageID ?? plan.imageReference
         guard let ports = plan.publishedPorts, let mounts = plan.resolvedMounts else {
             throw ComposeError.invalidProject("Gateway creation requires prepared ports and mounts")
         }
@@ -43,7 +49,7 @@ struct EngineServiceCreateRequest: Encodable {
     func encode(to encoder: Encoder) throws {
         try process.encode(to: encoder)
         var values = encoder.container(keyedBy: CodingKeys.self)
-        try values.encode(plan.imageReference, forKey: .image)
+        try values.encode(imageReference, forKey: .image)
         try values.encode(plan.labels, forKey: .labels)
         try values.encode(host, forKey: .host)
         try values.encode(networks, forKey: .networks)
