@@ -15,7 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 /// Runtime process configuration projected from a Compose service.
-public struct ComposeProcessConfiguration: Codable, Sendable {
+public struct ComposeProcessConfiguration: Codable, Equatable, Sendable {
     public struct Rlimit: Codable, Equatable, Sendable {
         public let limit: String
         public let soft: UInt64
@@ -228,15 +228,19 @@ public struct ComposeRuntimeContainerLaunchRequest: Equatable, Sendable {
     public var command: ComposeRuntimeContainerLaunchCommand
     public var arguments: [String]
     public var logging: ComposeLogConfiguration
+    /// Resolved service configuration; nil for older argument-only callers.
+    public var configuration: ContainerServiceCreatePlan?
 
     public init(
         command: ComposeRuntimeContainerLaunchCommand,
         arguments: [String],
         logging: ComposeLogConfiguration,
+        configuration: ContainerServiceCreatePlan? = nil,
     ) {
         self.command = command
         self.arguments = arguments
         self.logging = logging
+        self.configuration = configuration
     }
 }
 
@@ -254,7 +258,7 @@ public extension ComposeRuntimeContainerLaunching {
 }
 
 /// Runtime healthcheck projected from Compose or inherited image metadata.
-public struct ComposeHealthCheck: Codable, Sendable {
+public struct ComposeHealthCheck: Codable, Equatable, Sendable {
     public static let defaultIntervalInNanoseconds: UInt64 = 30_000_000_000
     public static let defaultTimeoutInNanoseconds: UInt64 = 30_000_000_000
     public static let defaultStartPeriodInNanoseconds: UInt64 = 0

@@ -83,14 +83,16 @@ extension ComposeOrchestrator {
             labelOverrides: run.labelOverrides,
             imageHealthCheckCache: imageHealthCheckCache
         ))
+        createPlan.environmentFiles = run.envFiles
+        createPlan.detach = run.detach
         args.append(contentsOf: ["--name", runtimeName])
-        if run.detach {
+        if createPlan.detach {
             args.append("--detach")
         }
         if run.remove {
             args.append("--rm")
         }
-        if service.useAPISocket == true {
+        if createPlan.launchOptions.useEngineAPISocket {
             args.append("--engine-api-socket")
         }
 
@@ -139,7 +141,7 @@ extension ComposeOrchestrator {
                 args.append(contentsOf: ["--env", key])
             }
         }
-        for envFile in run.envFiles {
+        for envFile in createPlan.environmentFiles {
             args.append(contentsOf: ["--env-file", envFile])
         }
         let publishedPorts = try publishedPortBindings(
@@ -194,28 +196,28 @@ extension ComposeOrchestrator {
         for attachment in createPlan.networkAttachments {
             args.append(contentsOf: ["--network", attachment.nativeArgument])
         }
-        if let isolation = try runtimeIsolationArgument(service: service) {
+        if let isolation = createPlan.launchOptions.namespaces.isolation {
             args.append(contentsOf: ["--isolation", isolation])
         }
-        if let pid = try runtimePIDArgument(service: service) {
+        if let pid = createPlan.launchOptions.namespaces.pid {
             args.append(contentsOf: ["--pid", pid])
         }
-        if let cgroupNamespace = try runtimeCgroupNamespaceArgument(service: service) {
+        if let cgroupNamespace = createPlan.launchOptions.namespaces.cgroup {
             args.append(contentsOf: ["--cgroupns", cgroupNamespace])
         }
-        if let ipcNamespace = try runtimeIPCNamespaceArgument(service: service) {
+        if let ipcNamespace = createPlan.launchOptions.namespaces.ipc {
             args.append(contentsOf: ["--ipc", ipcNamespace])
         }
-        if let utsNamespace = try runtimeUTSNamespaceArgument(service: service) {
+        if let utsNamespace = createPlan.launchOptions.namespaces.uts {
             args.append(contentsOf: ["--uts", utsNamespace])
         }
-        if let userNamespace = try runtimeUserNamespaceArgument(service: service) {
+        if let userNamespace = createPlan.launchOptions.namespaces.user {
             args.append(contentsOf: ["--userns", userNamespace])
         }
-        if let platform = service.platform, !platform.isEmpty {
+        if let platform = createPlan.launchOptions.platform {
             args.append(contentsOf: ["--platform", platform])
         }
-        if let runtime = service.runtime, !runtime.isEmpty {
+        if let runtime = createPlan.launchOptions.runtime {
             args.append(contentsOf: ["--runtime", runtime])
         }
         if let workingDir = createPlan.processOverrides.workingDirectory {
@@ -224,10 +226,10 @@ extension ComposeOrchestrator {
         if let user = createPlan.processOverrides.user {
             args.append(contentsOf: ["--user", user])
         }
-        for group in try runtimeSupplementalGroupArguments(service: service) {
+        for group in createPlan.launchOptions.security.supplementalGroups {
             args.append(contentsOf: ["--group-add", group])
         }
-        if let oomScoreAdj = try runtimeOOMScoreAdj(service: service) {
+        if let oomScoreAdj = createPlan.launchOptions.resources.oomScoreAdjustment {
             args.append(contentsOf: ["--oom-score-adj", "\(oomScoreAdj)"])
         }
         if createPlan.processOverrides.terminal {
@@ -236,37 +238,37 @@ extension ComposeOrchestrator {
         if createPlan.processOverrides.openStandardInput {
             args.append("--interactive")
         }
-        if service.privileged == true {
+        if createPlan.launchOptions.security.privileged {
             args.append("--privileged")
         }
-        if let hostname = try runtimeHostnameArgument(service: service) {
+        if let hostname = createPlan.hostname {
             args.append(contentsOf: ["--hostname", hostname])
         }
-        if let domainName = try runtimeDomainnameArgument(service: service) {
+        if let domainName = createPlan.domainname {
             args.append(contentsOf: ["--domainname", domainName])
         }
-        for cap in service.capAdd ?? [] {
+        for cap in createPlan.launchOptions.security.capabilitiesAdded {
             args.append(contentsOf: ["--cap-add", cap])
         }
-        for cap in service.capDrop ?? [] {
+        for cap in createPlan.launchOptions.security.capabilitiesDropped {
             args.append(contentsOf: ["--cap-drop", cap])
         }
-        for securityOption in try runtimeSecurityOptionArguments(service: service) {
+        for securityOption in createPlan.launchOptions.security.options {
             args.append(contentsOf: ["--security-opt", securityOption])
         }
-        if let stopSignal = service.stopSignal, !stopSignal.isEmpty {
+        if let stopSignal = createPlan.launchOptions.stopSignal {
             args.append(contentsOf: ["--stop-signal", stopSignal])
         }
-        if let stopTimeout = service.stopGracePeriodSeconds {
+        if let stopTimeout = createPlan.launchOptions.stopTimeoutSeconds {
             args.append(contentsOf: ["--stop-timeout", "\(stopTimeout)"])
         }
-        for dns in service.dns ?? [] {
+        for dns in createPlan.launchOptions.dnsServers {
             args.append(contentsOf: ["--dns", dns])
         }
-        for dnsSearch in service.dnsSearch ?? [] {
+        for dnsSearch in createPlan.launchOptions.dnsSearch {
             args.append(contentsOf: ["--dns-search", dnsSearch])
         }
-        for dnsOption in service.dnsOptions ?? [] {
+        for dnsOption in createPlan.launchOptions.dnsOptions {
             args.append(contentsOf: ["--dns-option", dnsOption])
         }
         for extraHost in try runtimeExtraHostArguments(service: service) {
@@ -278,17 +280,17 @@ extension ComposeOrchestrator {
         for blkio in try runtimeBlkioArguments(service: service) {
             args.append(contentsOf: ["--blkio", blkio])
         }
-        for rule in try runtimeDeviceCgroupRuleArguments(service: service) {
+        for rule in createPlan.launchOptions.security.deviceCgroupRules {
             args.append(contentsOf: ["--device-cgroup-rule", rule])
         }
-        for device in try runtimeDeviceArguments(service: service) {
+        for device in createPlan.launchOptions.resources.deviceMappings {
             args.append(contentsOf: ["--device", device])
         }
-        for gpu in try runtimeGPUArguments(service: service) {
+        for gpu in createPlan.launchOptions.resources.gpuRequests {
             args.append(contentsOf: ["--gpus", gpu])
         }
-        if let pidsLimit = runtimePidsLimitArgument(service: service) {
-            args.append(contentsOf: ["--pids-limit", pidsLimit])
+        if let pidsLimit = createPlan.launchOptions.resources.pidsLimit {
+            args.append(contentsOf: ["--pids-limit", "\(pidsLimit)"])
         }
         if let cpuShares = createPlan.cpuShares {
             args.append(contentsOf: ["--cpu-shares", "\(cpuShares)"])
@@ -296,16 +298,16 @@ extension ComposeOrchestrator {
         if let cgroupParent = createPlan.cgroupParent {
             args.append(contentsOf: ["--cgroup-parent", cgroupParent])
         }
-        if let cpuSet = service.cpuset, !cpuSet.isEmpty {
+        if let cpuSet = createPlan.launchOptions.resources.cpuSet {
             args.append(contentsOf: ["--cpuset-cpus", cpuSet])
         }
-        if let cpuPeriod = service.cpuPeriod, cpuPeriod != 0 {
+        if let cpuPeriod = createPlan.launchOptions.resources.cpuPeriod {
             args.append(contentsOf: ["--cpu-period", "\(cpuPeriod)"])
         }
-        if let cpuQuota = service.cpuQuota, cpuQuota != 0 {
+        if let cpuQuota = createPlan.launchOptions.resources.cpuQuota {
             args.append(contentsOf: ["--cpu-quota", "\(cpuQuota)"])
         }
-        if let memLimit = service.memLimit, !memLimit.isEmpty {
+        if let memLimit = createPlan.launchOptions.resources.memoryLimit {
             args.append(contentsOf: ["--memory", memLimit])
         }
         if let memoryReservationInBytes = createPlan.memoryReservationInBytes {
@@ -314,13 +316,13 @@ extension ComposeOrchestrator {
         if let memorySwapLimitInBytes = createPlan.memorySwapLimitInBytes {
             args.append(contentsOf: ["--memory-swap", "\(memorySwapLimitInBytes)"])
         }
-        if let cpus = service.cpus, !cpus.isEmpty {
+        if let cpus = createPlan.launchOptions.resources.cpus {
             args.append(contentsOf: ["--cpus", cpus])
         }
-        if let shmSize = service.shmSize, !shmSize.isEmpty {
+        if let shmSize = createPlan.launchOptions.resources.sharedMemorySize {
             args.append(contentsOf: ["--shm-size", shmSize])
         }
-        for ulimit in service.ulimits ?? [] {
+        for ulimit in createPlan.launchOptions.resources.ulimits {
             args.append(contentsOf: ["--ulimit", ulimit])
         }
         var entrypointCommandPrefix: [String] = []
@@ -332,13 +334,13 @@ extension ComposeOrchestrator {
                 entrypointCommandPrefix = Array(entrypoint.dropFirst())
             }
         }
-        if service.readOnly == true {
+        if createPlan.launchOptions.security.readOnlyRootFilesystem {
             args.append("--read-only")
         }
-        if service.initEnabled == true {
+        if createPlan.launchOptions.initEnabled {
             args.append("--init")
         }
-        if let initImage = options.initImage, !initImage.isEmpty {
+        if let initImage = createPlan.launchOptions.initImage {
             args.append(contentsOf: ["--init-image", initImage])
         }
 

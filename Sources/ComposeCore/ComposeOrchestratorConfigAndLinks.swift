@@ -219,6 +219,7 @@ extension ComposeOrchestrator {
         restartPolicy: ComposeRestartPolicy,
     ) throws -> ContainerServiceCreateRuntime {
         var runtime = ContainerServiceCreateRuntime()
+        runtime.launchOptions = try serviceLaunchOptions(service: service)
         runtime.tmpfs = service.tmpfs ?? []
         runtime.networkAttachments = try serviceNetworkAttachments(project: project, service: service)
         runtime.processOverrides = ComposeProcessOverrides(

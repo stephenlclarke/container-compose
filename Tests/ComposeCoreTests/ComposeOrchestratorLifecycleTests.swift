@@ -24,9 +24,9 @@ import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
 #if canImport(Darwin)
-    import Darwin
+import Darwin
 #elseif canImport(Glibc)
-    import Glibc
+import Glibc
 #endif
 import Foundation
 import Testing
@@ -1231,11 +1231,46 @@ extension ComposeOrchestratorTests {
         }
     }
 
-    @Test("pre start helper projects hook runtime options and target mounts")
-    func preStartHelperProjectsHookRuntimeOptionsAndTargetMounts() async throws {
-        let runner = RecordingRunner()
-        let helperName = "demo-api-pre-start-0-abc123"
-        let discoveryManager = RecordingContainerDiscoveryManager(
+    private func preStartExecutionOptions(negotiatedLaunch: Bool) -> ComposeExecutionOptions {
+        var result = ComposeExecutionOptions(oneOffIdentifier: { "abc123" })
+        if negotiatedLaunch {
+            result.runtimeCapabilities = .init(identifiers: [
+                "io.github.stephenlclarke.container.logging-drivers.v1",
+            ])
+        }
+        return result
+    }
+
+    private func preStartHelperRecordedCommand(
+        runner: RecordingRunner, launchManager: RecordingContainerLaunchManager,
+        negotiatedLaunch: Bool, helperName: String
+    ) async throws -> [String] {
+        guard negotiatedLaunch else {
+            #expect(runner.commands.count == 2)
+            return try #require(runner.commands.last?.arguments)
+        }
+        #expect(runner.commands.isEmpty)
+        let requests = await launchManager.requests
+        #expect(requests.count == 2)
+        let request = try #require(requests.last)
+        #expect(request.command == .create)
+        let configuration = try #require(request.configuration)
+        #expect(configuration.name == helperName)
+        #expect(configuration.oneOff)
+        #expect(configuration.logging == request.logging)
+        #expect(configuration.imageReference == "example/init:1")
+        #expect(configuration.processOverrides.command == ["sh", "-c", "prepare"])
+        #expect(configuration.processOverrides.user == "1000")
+        #expect(configuration.processOverrides.workingDirectory == "/work")
+        #expect(configuration.processOverrides.environment["OVERRIDE"] == "new")
+        #expect(configuration.launchOptions.security.privileged)
+        #expect(configuration.networkAttachments.map(\.network) == ["demo_backend"])
+        #expect(configuration.resolvedMounts?.first?.source == "legacy_cache")
+        return ["container", request.command.rawValue] + request.arguments
+    }
+
+    private func preStartMountedDiscovery() -> RecordingContainerDiscoveryManager {
+        RecordingContainerDiscoveryManager(
             getResponses: [
                 "demo-api-1": [
                     nil,
@@ -1254,15 +1289,10 @@ extension ComposeOrchestratorTests {
                 ],
             ]
         )
-        let lifecycleManager = RecordingContainerLifecycleManager(
-            waitExitCodes: [helperName: 0]
-        )
-        let attachManager = RecordingContainerAttachManager(outputs: [
-            ComposeLogRecord(stream: .stdout, payload: Data("prepared\n".utf8)),
-        ])
-        let logManager = RecordingContainerLogManager()
-        let imageManager = RecordingContainerImageManager()
-        let project = composeProject(
+    }
+
+    private func preStartHookProjectionProject() -> ComposeProject {
+        composeProject(
             name: "demo",
             services: [
                 "api": composeService(name: "api", image: "example/api") {
@@ -1283,24 +1313,11 @@ extension ComposeOrchestratorTests {
         ) {
             $0.networks = ["backend": ComposeNetwork(name: "demo_backend")]
         }
+    }
 
-        try await ComposeOrchestrator(
-            runner: runner,
-            options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
-            dependencies: orchestratorDependencies {
-                $0.discoveryManager = discoveryManager
-                $0.imageManager = imageManager
-                $0.lifecycleManager = lifecycleManager
-                $0.attachManager = attachManager
-                $0.logManager = logManager
-            }
-        ).up(
-            project: project,
-            options: ComposeUpOptions { $0.detach = true }
-        )
-
-        let command = try #require(runner.commands.last?.arguments)
-        #expect(runner.commands.count == 2)
+    private func expectPreStartHelperProjection(
+        command: [String], helperName: String, discoveryManager: RecordingContainerDiscoveryManager
+    ) async {
         #expect(command.starts(with: ["container", "create", "--name", helperName]))
         #expect(command.containsSequence(["--env", "BASE=1"]))
         #expect(command.containsSequence(["--env", "OVERRIDE=new"]))
@@ -1316,6 +1333,47 @@ extension ComposeOrchestratorTests {
             "demo-api-1",
             "demo-api-1",
         ])
+    }
+
+    @Test("pre start helper projects hook runtime options and target mounts", arguments: [false, true])
+    func preStartHelperProjectsHookRuntimeOptionsAndTargetMounts(negotiatedLaunch: Bool) async throws {
+        let runner = RecordingRunner()
+        let launchManager = RecordingContainerLaunchManager()
+        let executionOptions = preStartExecutionOptions(negotiatedLaunch: negotiatedLaunch)
+        let helperName = "demo-api-pre-start-0-abc123"
+        let discoveryManager = preStartMountedDiscovery()
+        let lifecycleManager = RecordingContainerLifecycleManager(
+            waitExitCodes: [helperName: 0]
+        )
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("prepared\n".utf8)),
+        ])
+        let logManager = RecordingContainerLogManager()
+        let imageManager = RecordingContainerImageManager()
+        let project = preStartHookProjectionProject()
+
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: executionOptions,
+            dependencies: orchestratorDependencies {
+                $0.discoveryManager = discoveryManager
+                $0.imageManager = imageManager
+                $0.lifecycleManager = lifecycleManager
+                $0.attachManager = attachManager
+                $0.logManager = logManager
+                $0.launchManager = launchManager
+            }
+        ).up(
+            project: project,
+            options: ComposeUpOptions { $0.detach = true }
+        )
+
+        let command = try await preStartHelperRecordedCommand(
+            runner: runner, launchManager: launchManager, negotiatedLaunch: negotiatedLaunch, helperName: helperName
+        )
+        await expectPreStartHelperProjection(
+            command: command, helperName: helperName, discoveryManager: discoveryManager
+        )
         let preStartImageRequests = await imageManager.requests
         #expect(preStartImageRequests == [
             .pullMissing("example/init:1"),
@@ -1410,9 +1468,12 @@ extension ComposeOrchestratorTests {
         }
     }
 
-    @Test("pre start helper cleanup runs when output streaming fails")
-    func preStartHelperCleanupRunsWhenOutputStreamingFails() async throws {
+    @Test("pre start helper cleanup runs when output streaming fails", arguments: [false, true])
+    func preStartHelperCleanupRunsWhenOutputStreamingFails(negotiatedLaunch: Bool) async throws {
         let expected = ComposeError.invalidProject("log stream failed")
+        let runner = RecordingRunner()
+        let launchManager = RecordingContainerLaunchManager()
+        let executionOptions = preStartExecutionOptions(negotiatedLaunch: negotiatedLaunch)
         let helperName = "demo-api-pre-start-0-abc123"
         let lifecycleManager = RecordingContainerLifecycleManager()
         let discoveryManager = RecordingContainerDiscoveryManager(
@@ -1430,21 +1491,19 @@ extension ComposeOrchestratorTests {
 
         do {
             try await ComposeOrchestrator(
-                runner: RecordingRunner(),
-                options: ComposeExecutionOptions(oneOffIdentifier: { "abc123" }),
+                runner: runner,
+                options: executionOptions,
                 dependencies: orchestratorDependencies {
                     $0.discoveryManager = discoveryManager
                     $0.lifecycleManager = lifecycleManager
                     $0.attachManager = RecordingContainerAttachManager(error: expected)
+                    $0.launchManager = launchManager
                 }
             ).runPreStartHook(
                 project: project,
                 service: service,
                 target: ServiceContainerTarget(
-                    service: service,
-                    index: 1,
-                    name: "demo-api-1",
-                    status: "created"
+                    service: service, index: 1, name: "demo-api-1", status: "created"
                 ),
                 index: 0,
                 hook: try #require(service.preStart?.first)
@@ -1460,6 +1519,20 @@ extension ComposeOrchestratorTests {
             .wait(id: helperName),
             .delete(id: helperName, force: true),
         ])
+        try await expectPreStartCleanupLaunch(
+            runner: runner, launchManager: launchManager, negotiatedLaunch: negotiatedLaunch, helperName: helperName
+        )
+    }
+
+    private func expectPreStartCleanupLaunch(
+        runner: RecordingRunner, launchManager: RecordingContainerLaunchManager,
+        negotiatedLaunch: Bool, helperName: String
+    ) async throws {
+        guard negotiatedLaunch else { return }
+        #expect(runner.commands.isEmpty)
+        let request = try #require(await launchManager.requests.first)
+        #expect(request.command == .create)
+        #expect(request.configuration?.name == helperName)
     }
 
     @Test("pre start helper names fit the Apple container name boundary")

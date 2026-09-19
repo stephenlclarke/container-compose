@@ -14,25 +14,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import Foundation
-
-/// Runtime defaults shared by typed Compose projections.
-public enum ComposeRuntimeDefaults {
-    public static var shellExecutable: String {
-        ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_SHELL"]
-            ?? ["", "bin", "sh"].joined(separator: "/")
-    }
-
-    public static var workingDirectory: String {
-        ["", ""].joined(separator: "/")
-    }
-
-    public static func shellProcess() -> ComposeProcessConfiguration {
-        ComposeProcessConfiguration(
-            executable: shellExecutable,
-            arguments: [],
-            environment: [],
-            workingDirectory: workingDirectory,
-        )
-    }
+/// Both projections are produced once, after launch-time resources are resolved.
+struct ContainerServiceLaunchPlan: Sendable {
+    var arguments: [String]
+    var configuration: ContainerServiceCreatePlan
 }

@@ -365,6 +365,12 @@ extension ComposeOrchestratorTests {
                 "splunk-url": "https://127.0.0.1:8088",
             ],
         ))
+        let configuration = try #require(request.configuration)
+        #expect(configuration.name == "demo-api-1")
+        #expect(configuration.imageReference == "example/api")
+        #expect(configuration.logging == request.logging)
+        #expect(configuration.resolvedMounts != nil)
+        #expect(configuration.publishedPorts == [])
         #expect(!request.arguments.contains("--log-driver"))
         #expect(!request.arguments.contains("--log-opt"))
         #expect(!request.arguments.contains(where: { $0.contains("protected-value") }))
@@ -402,6 +408,10 @@ extension ComposeOrchestratorTests {
         #expect(request.command == .create)
         #expect(request.logging.driver == "syslog")
         #expect(request.logging.options == ["syslog-address": "tcp://127.0.0.1:5514"])
+        let configuration = try #require(request.configuration)
+        #expect(configuration.name == "demo-api-1")
+        #expect(configuration.logging == request.logging)
+        #expect(!configuration.oneOff)
         #expect(!request.arguments.contains("--log-driver"))
         #expect(!request.arguments.contains("--log-opt"))
     }

@@ -2431,6 +2431,12 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
         let request = try #require(await launchManager.requests.first)
         #expect(request.command == .run)
+        let configuration = try #require(request.configuration)
+        #expect(configuration.oneOff)
+        #expect(configuration.autoRemove)
+        #expect(configuration.processOverrides.command == ["true"])
+        #expect(configuration.resolvedMounts != nil)
+        #expect(configuration.publishedPorts == [])
         #expect(request.logging == ComposeLogConfiguration(
             driver: "fluentd",
             options: [

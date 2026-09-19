@@ -572,16 +572,6 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Returns a Docker-compatible positive pids cgroup limit for service create/run.
-    /// Docker Compose local mode preserves non-positive values in config output
-    /// but does not project them to Docker Engine HostConfig.
-    func runtimePidsLimitArgument(service: ComposeService) -> String? {
-        guard let pidsLimit = service.pidsLimit, pidsLimit > 0 else {
-            return nil
-        }
-        return "\(pidsLimit)"
-    }
-
     /// Converts Compose `blkio_config` into apple/container#1595 `--blkio`
     /// specifications. Device path resolution stays inside apple/container.
     func runtimeBlkioArguments(service: ComposeService) throws -> [String] {

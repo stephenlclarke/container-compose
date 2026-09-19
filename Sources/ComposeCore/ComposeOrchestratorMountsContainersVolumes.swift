@@ -28,6 +28,7 @@ struct ComposeContainerProgressRunOptions: Sendable {
     let inheritedIO: Bool
     let replaceProcess: Bool
     let logging: ComposeLogConfiguration?
+    let configuration: ContainerServiceCreatePlan?
 
     init(
         quiet: Bool = false,
@@ -36,6 +37,7 @@ struct ComposeContainerProgressRunOptions: Sendable {
         inheritedIO: Bool = false,
         replaceProcess: Bool = false,
         logging: ComposeLogConfiguration? = nil,
+        configuration: ContainerServiceCreatePlan? = nil,
     ) {
         self.quiet = quiet
         self.check = check
@@ -43,6 +45,7 @@ struct ComposeContainerProgressRunOptions: Sendable {
         self.inheritedIO = inheritedIO
         self.replaceProcess = replaceProcess
         self.logging = logging
+        self.configuration = configuration
     }
 }
 
@@ -742,6 +745,7 @@ extension ComposeOrchestrator {
         inheritedIO: Bool = false,
         replaceProcess: Bool = false,
         logging: ComposeLogConfiguration? = nil,
+        configuration: ContainerServiceCreatePlan? = nil,
     ) async throws -> CommandResult {
         if options.dryRun {
             options.emit("+ " + shellQuoted([options.containerBinary] + redactedLoggingArguments(arguments)))
@@ -758,6 +762,7 @@ extension ComposeOrchestrator {
                     command: command,
                     arguments: Array(arguments.dropFirst()),
                     logging: logging,
+                    configuration: configuration,
                 )
             )
             let result = CommandResult(status: status, stdout: "", stderr: "")
@@ -844,6 +849,7 @@ extension ComposeOrchestrator {
                 inheritedIO: runOptions.inheritedIO,
                 replaceProcess: runOptions.replaceProcess,
                 logging: runOptions.logging,
+                configuration: runOptions.configuration,
             )
         }
         return try await progressActivity(
@@ -858,6 +864,7 @@ extension ComposeOrchestrator {
                 inheritedIO: runOptions.inheritedIO,
                 replaceProcess: runOptions.replaceProcess,
                 logging: runOptions.logging,
+                configuration: runOptions.configuration,
             )
         }
     }

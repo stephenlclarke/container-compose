@@ -528,16 +528,15 @@ public extension ComposeOrchestrator {
             automaticRemove: automaticRemove,
             foregroundInteractive: foregroundInteractiveRun,
         )
-        let arguments = try await oneOffRunArguments(
+        let launch = try await oneOffLaunchPlan(
             preparation: preparation,
             invocation: invocation,
             options: run,
         )
         let launchWithInheritedIO = foregroundInteractiveRun && !managedLifecycleRun
         try await launchOneOffRun(
-            arguments: arguments,
+            launch: launch,
             serviceName: preparation.service.name,
-            logging: runtimeLogConfiguration(service: preparation.service),
             options: run,
             inheritedIO: launchWithInheritedIO,
         )
@@ -580,21 +579,21 @@ public extension ComposeOrchestrator {
 
     /// Launches the runtime process and preserves a one-off process exit status.
     private func launchOneOffRun(
-        arguments: [String],
+        launch: ContainerServiceLaunchPlan,
         serviceName: String,
-        logging: ComposeLogConfiguration,
         options run: ComposeRunOptions,
         inheritedIO: Bool,
     ) async throws {
         do {
             try await runContainerWithProgress(
-                arguments,
+                launch.arguments,
                 message: "Running \(serviceName)",
                 options: ComposeContainerProgressRunOptions(
                     quiet: run.quiet,
                     inheritedIO: inheritedIO,
                     replaceProcess: inheritedIO,
-                    logging: logging,
+                    logging: launch.configuration.logging,
+                    configuration: launch.configuration,
                 ),
             )
         } catch let error as ComposeError {
@@ -633,12 +632,12 @@ public extension ComposeOrchestrator {
     }
 
     /// Renders the direct runtime invocation for a one-off container.
-    private func oneOffRunArguments(
+    private func oneOffLaunchPlan(
         preparation: ComposeRunServicePreparation,
         invocation: ComposeOneOffRunInvocation,
         options run: ComposeRunOptions,
-    ) async throws -> [String] {
-        try await runArguments(
+    ) async throws -> ContainerServiceLaunchPlan {
+        try await serviceLaunchPlan(
             project: preparation.project,
             service: preparation.service,
             options: RunArgumentOptions {

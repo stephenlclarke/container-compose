@@ -15,7 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 /// User-visible service identity fields for create planning.
-public struct ContainerServiceCreateIdentity: Sendable {
+public struct ContainerServiceCreateIdentity: Codable, Equatable, Sendable {
     public var name: String
     public var imageReference: String
     public var oneOff: Bool
@@ -44,7 +44,8 @@ public struct ContainerServiceCreateIdentity: Sendable {
 }
 
 /// Runtime-specific service create fields.
-public struct ContainerServiceCreateRuntime: Sendable {
+public struct ContainerServiceCreateRuntime: Codable, Equatable, Sendable {
+    public var launchOptions: ComposeLaunchOptions
     /// Nil until launch-time materialization and image-volume resolution finish.
     public var resolvedMounts: [ComposeResolvedMount]?
     public var tmpfs: [String]
@@ -65,6 +66,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
     public var memorySwapLimitInBytes: Int64?
 
     public init() {
+        launchOptions = ComposeLaunchOptions()
         resolvedMounts = nil
         tmpfs = []
         networkAttachments = []
@@ -90,7 +92,10 @@ public struct ContainerServiceCreateRuntime: Sendable {
 /// This is the boundary that lets Docker/Compose syntax stay in
 /// `container-compose` while later execution code can create containers through
 /// apple/container typed APIs instead of Docker-shaped CLI flags.
-public struct ContainerServiceCreatePlan: Sendable {
+public struct ContainerServiceCreatePlan: Codable, Equatable, Sendable {
+    public var launchOptions: ComposeLaunchOptions
+    public var environmentFiles: [String]
+    public var detach: Bool
     /// Nil until launch-time allocation; an empty array means no published ports.
     public var publishedPorts: [ComposePublishedPortBinding]?
     public var resolvedMounts: [ComposeResolvedMount]?
@@ -123,6 +128,9 @@ public struct ContainerServiceCreatePlan: Sendable {
         runtime: ContainerServiceCreateRuntime = ContainerServiceCreateRuntime(),
     ) {
         name = identity.name
+        launchOptions = runtime.launchOptions
+        environmentFiles = []
+        detach = false
         publishedPorts = nil
         resolvedMounts = runtime.resolvedMounts
         tmpfs = runtime.tmpfs
@@ -148,13 +156,6 @@ public struct ContainerServiceCreatePlan: Sendable {
         memoryReservationInBytes = runtime.memoryReservationInBytes
         memorySwapLimitInBytes = runtime.memorySwapLimitInBytes
     }
-}
-
-/// Both projections are produced once, after launch-time resources are resolved.
-/// Remaining native options still use arguments until the full typed migration lands.
-struct ContainerServiceLaunchPlan: Sendable {
-    var arguments: [String]
-    var configuration: ContainerServiceCreatePlan
 }
 
 /// Public planning options for service-container create projections.
