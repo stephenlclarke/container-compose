@@ -357,7 +357,9 @@ extension ComposeOrchestrator {
             guard let hostRange = mapping.hostRange else {
                 continue
             }
-            let requiredHostPorts = mapping.targetRange.count * replicaCount
+            let requiredHostPorts = try requiredHostPortCount(
+                targetCount: mapping.targetRange.count, replicaCount: replicaCount, serviceName: serviceName
+            )
             guard hostRange.count >= requiredHostPorts else {
                 throw ComposeError.unsupported("service '\(serviceName)' publishes '\(port)'; scaled published ports require at least \(requiredHostPorts) explicit host ports for \(replicaCount) replicas")
             }
@@ -415,6 +417,18 @@ extension ComposeOrchestrator {
         replicaIndex: Int?,
         replicaCount: Int?,
     ) throws -> [String] {
+        try publishedPortBindings(
+            ports: ports, serviceName: serviceName, replicaIndex: replicaIndex, replicaCount: replicaCount
+        ).map(publishedPortArgument)
+    }
+
+    /// Resolves ports once so CLI and typed launch use the same allocated bindings.
+    func publishedPortBindings(
+        ports: [String],
+        serviceName: String,
+        replicaIndex: Int?,
+        replicaCount: Int?,
+    ) throws -> [ComposePublishedPortBinding] {
         guard let replicaIndex,
               let replicaCount,
               replicaCount > 1
@@ -423,14 +437,14 @@ extension ComposeOrchestrator {
                 try validatePublishedPort(port, serviceName: serviceName)
             }
             return try ports.flatMap {
-                try publishedPortArguments(port: $0, serviceName: serviceName)
+                try publishedPortBindings(port: $0, serviceName: serviceName)
             }
         }
         guard replicaIndex >= 1, replicaIndex <= replicaCount else {
             throw ComposeError.invalidProject("container index must be between 1 and \(replicaCount)")
         }
         return try ports.flatMap { port in
-            try publishedPortArguments(
+            try publishedPortBindings(
                 port: port,
                 serviceName: serviceName,
                 replicaIndex: replicaIndex,
@@ -441,18 +455,22 @@ extension ComposeOrchestrator {
 
     /// Expands one Compose port mapping into concrete apple/container `--publish` values.
     func publishedPortArguments(port: String, serviceName: String) throws -> [String] {
+        try publishedPortBindings(port: port, serviceName: serviceName).map(publishedPortArgument)
+    }
+
+    func publishedPortBindings(port: String, serviceName: String) throws -> [ComposePublishedPortBinding] {
         let mapping = try parsePublishedPortMapping(port, serviceName: serviceName)
         guard let hostRange = mapping.hostRange else {
-            return try dynamicPublishedPortArguments(mapping)
+            return try dynamicPublishedPortBindings(mapping)
         }
         guard hostRange.count == mapping.targetRange.count else {
             throw ComposeError.invalidProject("service '\(serviceName)' has mismatched port ranges '\(port)'")
         }
         return (0 ..< mapping.targetRange.count).map { offset in
-            formatPublishedPort(
+            ComposePublishedPortBinding(
                 hostAddress: mapping.hostAddress,
-                hostPort: hostRange.start + offset,
-                targetPort: mapping.targetRange.start + offset,
+                hostPort: UInt16(hostRange.start + offset),
+                containerPort: UInt16(mapping.targetRange.start + offset),
                 protocolName: mapping.protocolName,
             )
         }
@@ -465,38 +483,75 @@ extension ComposeOrchestrator {
         replicaIndex: Int,
         replicaCount: Int,
     ) throws -> [String] {
+        try publishedPortBindings(
+            port: port, serviceName: serviceName, replicaIndex: replicaIndex, replicaCount: replicaCount
+        ).map(publishedPortArgument)
+    }
+
+    func publishedPortBindings(
+        port: String,
+        serviceName: String,
+        replicaIndex: Int,
+        replicaCount: Int,
+    ) throws -> [ComposePublishedPortBinding] {
+        guard replicaCount >= 1, replicaIndex >= 1, replicaIndex <= replicaCount else {
+            throw ComposeError.invalidProject("container index must be between 1 and \(replicaCount)")
+        }
         let mapping = try parsePublishedPortMapping(port, serviceName: serviceName)
         guard let hostRange = mapping.hostRange else {
-            return try dynamicPublishedPortArguments(mapping)
+            return try dynamicPublishedPortBindings(mapping)
         }
         let targetCount = mapping.targetRange.count
-        let requiredHostPorts = targetCount * replicaCount
+        let requiredHostPorts = try requiredHostPortCount(
+            targetCount: targetCount, replicaCount: replicaCount, serviceName: serviceName
+        )
         guard hostRange.count >= requiredHostPorts else {
             throw ComposeError.unsupported("service '\(serviceName)' publishes '\(port)'; scaled published ports require at least \(requiredHostPorts) explicit host ports for \(replicaCount) replicas")
         }
 
         let replicaOffset = (replicaIndex - 1) * targetCount
         return (0 ..< targetCount).map { offset in
-            formatPublishedPort(
+            ComposePublishedPortBinding(
                 hostAddress: mapping.hostAddress,
-                hostPort: hostRange.start + replicaOffset + offset,
-                targetPort: mapping.targetRange.start + offset,
+                hostPort: UInt16(hostRange.start + replicaOffset + offset),
+                containerPort: UInt16(mapping.targetRange.start + offset),
                 protocolName: mapping.protocolName,
             )
         }
     }
 
+    /// Shares overflow-safe port-count validation between preflight and launch.
+    private func requiredHostPortCount(targetCount: Int, replicaCount: Int, serviceName: String) throws -> Int {
+        let (count, overflow) = targetCount.multipliedReportingOverflow(by: replicaCount)
+        guard !overflow else {
+            throw ComposeError.unsupported("service '\(serviceName)' requests too many published ports for its replicas")
+        }
+        return count
+    }
+
     /// Allocates concrete host ports for a dynamic Compose port mapping.
     func dynamicPublishedPortArguments(_ mapping: ParsedPublishedPortMapping) throws -> [String] {
+        try dynamicPublishedPortBindings(mapping).map(publishedPortArgument)
+    }
+
+    func dynamicPublishedPortBindings(_ mapping: ParsedPublishedPortMapping) throws -> [ComposePublishedPortBinding] {
         try (0 ..< mapping.targetRange.count).map { offset in
             let hostPort = try options.hostPortAllocator(mapping.hostAddress, mapping.protocolName)
-            return formatPublishedPort(
+            return ComposePublishedPortBinding(
                 hostAddress: mapping.hostAddress,
-                hostPort: Int(hostPort),
-                targetPort: mapping.targetRange.start + offset,
+                hostPort: hostPort,
+                containerPort: UInt16(mapping.targetRange.start + offset),
                 protocolName: mapping.protocolName,
             )
         }
+    }
+
+    /// Formats a normalized published-port mapping for apple/container.
+    func publishedPortArgument(_ binding: ComposePublishedPortBinding) -> String {
+        formatPublishedPort(
+            hostAddress: binding.hostAddress, hostPort: Int(binding.hostPort),
+            targetPort: Int(binding.containerPort), protocolName: binding.protocolName
+        )
     }
 
     /// Formats a normalized published-port mapping for apple/container.

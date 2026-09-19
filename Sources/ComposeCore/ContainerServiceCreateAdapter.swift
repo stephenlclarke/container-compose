@@ -91,6 +91,8 @@ public struct ContainerServiceCreateRuntime: Sendable {
 /// `container-compose` while later execution code can create containers through
 /// apple/container typed APIs instead of Docker-shaped CLI flags.
 public struct ContainerServiceCreatePlan: Sendable {
+    /// Nil until launch-time allocation; an empty array means no published ports.
+    public var publishedPorts: [ComposePublishedPortBinding]?
     public var resolvedMounts: [ComposeResolvedMount]?
     public var tmpfs: [String]
     public var networkAttachments: [ComposeNetworkCreateAttachment]
@@ -121,6 +123,7 @@ public struct ContainerServiceCreatePlan: Sendable {
         runtime: ContainerServiceCreateRuntime = ContainerServiceCreateRuntime(),
     ) {
         name = identity.name
+        publishedPorts = nil
         resolvedMounts = runtime.resolvedMounts
         tmpfs = runtime.tmpfs
         networkAttachments = runtime.networkAttachments

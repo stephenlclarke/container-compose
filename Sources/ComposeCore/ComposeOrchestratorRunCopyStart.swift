@@ -142,14 +142,15 @@ extension ComposeOrchestrator {
         for envFile in run.envFiles {
             args.append(contentsOf: ["--env-file", envFile])
         }
-        let publishedPorts = try publishedPortArguments(
+        let publishedPorts = try publishedPortBindings(
             ports: run.publishedPorts ?? service.ports ?? [],
             serviceName: service.name,
             replicaIndex: run.containerIndex,
             replicaCount: run.replicaCount
         )
+        createPlan.publishedPorts = publishedPorts
         for port in publishedPorts {
-            args.append(contentsOf: ["--publish", port])
+            args.append(contentsOf: ["--publish", publishedPortArgument(port)])
         }
         let mountContext = MountRenderContext(
             project: project,
