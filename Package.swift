@@ -40,7 +40,7 @@ let containerDependency: Package.Dependency = {
     return enhancedRuntime
         ? .package(
             url: "https://github.com/stephenlclarke/container.git",
-            revision: "353c7b3784fa790c413c5b5ef02431fbdb817690",
+            revision: "000a77c6b6ad8505e5742fae4c518a9a5b3a7dfb",
         )
         : .package(url: "https://github.com/apple/container.git", exact: "1.4.1")
 }()
@@ -54,7 +54,7 @@ let containerizationDependency: Package.Dependency = {
     return enhancedRuntime
         ? .package(
             url: "https://github.com/stephenlclarke/containerization.git",
-            revision: "51bf8a10e2036861f87ccdf2fd881a8726c534d2",
+            revision: "a13f5d347ac0723714d68e6f7802019673d04d97",
         )
         : .package(url: "https://github.com/apple/containerization.git", exact: "0.45.0")
 }()
@@ -69,6 +69,16 @@ let runtimeOnlyDependencies: [Package.Dependency] = enhancedRuntime
 let pluginRuntimeDependencies: [Target.Dependency] = enhancedRuntime
     ? ["ComposeContainerRuntime"]
     : ["ComposeEngineRuntime"]
+
+/// Keep the explicit provider-coupled inventory aligned with BUILD.bazel.
+/// New runtime-neutral Core suites run in both profiles by default.
+let enhancedCoreTestSources = [
+    "ComposeOrchestratorCopyExportCommitTests.swift",
+    "ComposeOrchestratorRuntimeAdapterTests.swift",
+    "ComposeProviderTestSupport.swift",
+    "ComposeProviderModelTestSupport.swift",
+    "ExternalConfigStoreTests.swift",
+]
 
 let runtimeTargets: [Target] = enhancedRuntime
     ? [
@@ -93,22 +103,9 @@ let runtimeTargets: [Target] = enhancedRuntime
             swiftSettings: runtimeSwiftSettings,
         ),
         .testTarget(
-            name: "ComposeCoreTests",
-            dependencies: [
-                "ComposeCore",
-                "ComposeContainerRuntime",
-                .product(name: "ContainerResource", package: "container"),
-                .product(name: "ContainerizationArchive", package: "containerization"),
-                .product(name: "ContainerizationExtras", package: "containerization"),
-            ],
-            path: "Tests/ComposeCoreTests",
-            resources: [
-                .process("Fixtures"),
-            ],
-        ),
-        .testTarget(
             name: "ComposeContainerRuntimeTests",
             dependencies: [
+                "ComposeTestStorage",
                 "ComposeContainerRuntime",
                 "ComposeRuntimeSPI",
                 .product(name: "ContainerResource", package: "container"),
@@ -132,6 +129,7 @@ let runtimeTargets: [Target] = enhancedRuntime
         .testTarget(
             name: "ComposeEngineRuntimeTests",
             dependencies: [
+                "ComposeTestStorage",
                 "ComposeEngineRuntime",
                 "ComposeRuntimeSPI",
                 .product(name: "ContainerEngineWire", package: "container-engine-api"),
@@ -193,13 +191,30 @@ let package = Package(
         .testTarget(
             name: "ComposeRuntimeSPITests",
             dependencies: [
+                "ComposeTestStorage",
                 "ComposeRuntimeSPI",
             ],
             path: "Tests/ComposeRuntimeSPITests",
         ),
         .testTarget(
+            name: "ComposeCoreTests",
+            dependencies: [
+                "ComposeTestStorage", "ComposeCore",
+                .product(name: "ContainerizationArchive", package: "containerization"),
+                .product(name: "ContainerizationExtras", package: "containerization"),
+            ] + (enhancedRuntime ? [
+                "ComposeContainerRuntime",
+                .product(name: "ContainerResource", package: "container"),
+            ] : []),
+            path: "Tests/ComposeCoreTests",
+            exclude: enhancedRuntime ? [] : enhancedCoreTestSources,
+            resources: [.process("Fixtures")],
+            swiftSettings: runtimeSwiftSettings,
+        ),
+        .testTarget(
             name: "ComposePluginTests",
             dependencies: [
+                "ComposeTestStorage",
                 "ComposeCore",
                 "ComposePlugin",
             ],
@@ -209,12 +224,17 @@ let package = Package(
         .testTarget(
             name: "ComposeRuntimeTests",
             dependencies: [
+                "ComposeTestStorage",
                 "ComposeCore",
             ],
             path: "Tests/ComposeRuntimeTests",
             resources: [
                 .copy("Fixtures"),
             ],
+        ),
+        .target(
+            name: "ComposeTestStorage",
+            path: "Tests/ComposeTestStorage",
         ),
     ] + runtimeTargets,
 )

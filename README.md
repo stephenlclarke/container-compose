@@ -188,6 +188,16 @@ option for that command is green.
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 
+In the unreleased Bazel candidate, `run` and `exec` preserve guest-command options such as `--help`, `--user` and `--workdir`: place Compose options before `SERVICE`, followed by the guest command and its arguments. `container compose run --help` displays Compose help; `container compose run web echo --help` passes `--help` to `echo`. See the [CLI boundary evidence](docs/guides/BAZEL.md#guest-command-argument-boundary) for tested scope; this is not a claim about the currently published stable binary.
+
+The unreleased stock Engine adapter also preserves digest-qualified image spelling for descriptor-verified devcontainer inspection and records logical network keys independently of custom native names. Matched live C01 now passes all original observations and cleanup with devcontainer `aa56f00` and Compose `1fe36f56`; enhanced qualification and stable release gates remain open. These changes add no Docker dependency and are not present in the currently published stable binary. See the [Bazel guide](docs/guides/BAZEL.md).
+
+The opt-in Bazel `coverage` target now measures all unit targets plus a 42-case no-runtime CLI harness, with an explicitly identified `unit-cli` receipt and matching 90% gate. Forty cases exercise the native executable; two check harness process cleanup. Tests cover guest arguments, replica/service selection, lifecycle order, build paths, image dependencies, configuration output and declared build provenance. Unit-only measurement remains separate. Neither report replaces live integration or parity; see [coverage scope and retained evidence](docs/guides/BAZEL.md#validated-coverage-evidence).
+
+In this unreleased candidate, `config --output` (including `--variables`) and `convert --output` publish through a private temporary sibling of the destination, then atomically replace the requested file with owner-only permissions (`0600`). This keeps temporary output on the destination volume and protects interpolated configuration values. See [output-file regression evidence](docs/guides/BAZEL.md#configuration-output-on-ssd).
+
+The enhanced native runtime suite also checks image metadata, platform selection, healthchecks, volume declarations and transformer references without starting services. These component tests exercise the production projection; they do not replace live runtime or registry qualification.
+
 Use [STATUS.md](docs/project/STATUS.md) for the current stable functionality and
 [BACKLOG.md](docs/project/BACKLOG.md) for the remaining 1.0 parity contracts. The live
 source of backlog state is the cross-repository GitHub hierarchy rooted at
@@ -252,6 +262,8 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 ![container help output showing the compose plugin recognised](docs/images/container-help-compose-plugin.png)
 
 ## Documentation
+
+The [native Bazel workflow](docs/guides/BAZEL.md) is being qualified alongside the existing build system. Stock/enhanced Swift products, the Go parser and both Linux volume initializers build natively. Provider-specific unit suites use declared fixtures, SSD scratch and validated retained test/coverage/timing evidence; both profiles now run the runtime-neutral Core tests, while provider-coupled Core tests still require enhanced pins. The opt-in Makefile provides `coverage`, `coverage-report` and `coverage-check`; export reuses retained bytes without rebuilding, and the 90% check binds the current source/profile/consumer identity. Both profiles pass that gate at the reviewed checkpoint linked in the guide. `test-asan`, `test-tsan` and the separate `test-go-race` retain native sanitizer results, with the candidate EXT4 dependency fix pending coordinated stack admission. The opt-in `docs` target generates and tests a standalone DocC site from optimized native modules without a SwiftPM rebuild. Native unsigned packages include version/dependency metadata, hashed dependency notices and bundled-helper smoke tests, with authenticated restore rather than rebuilding. They are not distribution-ready: complete vendored-licence closure, live integration/parity and signed release migration remain unfinished; existing release gates are unchanged.
 
 - [Container developer API collection](https://stephenlclarke.github.io/api/): browse the unified documentation for `container-engine-api`, `container`, `containerization`, `container-k8s`, `container-builder-shim`, `container-compose`, and `devcontainer`.
 - [container-compose API reference](https://stephenlclarke.github.io/api/container-compose/): browse the Compose plugin API reference generated from the Swift source.

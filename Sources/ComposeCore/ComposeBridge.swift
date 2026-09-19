@@ -85,7 +85,7 @@ extension ComposeOrchestrator {
     static let bridgeTransformerBaseImage = "docker/compose-bridge-transformer"
     static let bridgeTransformerLabel = "com.docker.compose.bridge"
     static var dryRunBridgeInputPath: String {
-        FileManager.default.temporaryDirectory.appendingPathComponent("container-compose-bridge-in").path
+        ComposeTemporaryFiles.defaultDirectory.appendingPathComponent("container-compose-bridge-in").path
     }
 
     /// Converts the Compose model by running Compose Bridge transformer images.

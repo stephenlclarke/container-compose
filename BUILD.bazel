@@ -1,0 +1,261 @@
+# Copyright 2026 container-compose project authors. SPDX-License-Identifier: Apache-2.0
+load("@build_bazel_rules_swift//swift:swift_binary.bzl", "swift_binary")
+load("@build_bazel_rules_swift//swift:swift_library.bzl", "swift_library")
+load("@build_bazel_rules_swift//swift:swift_test.bzl", "swift_test")
+load("//Tools/bazel:fixture_bundle.bzl", "fixture_bundle")
+load("//Tools/bazel:package.bzl", "compose_candidate")
+load("//Tools/bazel:docc.bzl", "native_docc")
+
+exports_files(["Tools/release/release-notes.py", "Tools/release/test_release_notes.py"])
+
+package(default_visibility = ["//visibility:public"])
+
+native_docc(
+    name = "documentation",
+    modules = ["ComposeCore", "ComposeRuntimeSPI"],
+    catalog = glob(["Sources/ComposeCore/ComposeCore.docc/**"]),
+    catalog_path = "Sources/ComposeCore/ComposeCore.docc",
+    catalog_module = "ComposeCore",
+    repository = "stephenlclarke/container-compose",
+    hosting_base_path = "container-compose",
+)
+
+compose_candidate(
+    name = "candidate_archive",
+    profile = select({":stock_runtime": "stock", "//conditions:default": "enhanced"}),
+    resolved = select({":stock_runtime": "Package.stock.resolved", "//conditions:default": "Package.resolved"}),
+)
+
+config_setting(
+    name = "stock_runtime",
+    define_values = {"runtime_profile": "stock"},
+)
+
+SWIFT_COPTS = ["-swift-version", "6", "-warnings-as-errors", "-package-name", "container_compose"]
+RUNTIME_COPTS = SWIFT_COPTS + select({
+    ":stock_runtime": [],
+    "//conditions:default": ["-DCONTAINER_COMPOSE_ENHANCED_RUNTIME"],
+})
+
+swift_library(
+    name = "ComposeRuntimeSPI",
+    srcs = glob(["Sources/ComposeRuntimeSPI/*.swift"]),
+    module_name = "ComposeRuntimeSPI",
+    copts = SWIFT_COPTS,
+)
+
+swift_library(
+    name = "ComposeCore",
+    srcs = glob(["Sources/ComposeCore/*.swift"]),
+    module_name = "ComposeCore",
+    copts = SWIFT_COPTS,
+    deps = [":ComposeRuntimeSPI"],
+)
+
+swift_library(
+    name = "ComposeEngineRuntime",
+    srcs = glob(["Sources/ComposeEngineRuntime/*.swift"]),
+    module_name = "ComposeEngineRuntime",
+    copts = SWIFT_COPTS,
+    deps = [
+        ":ComposeCore",
+        ":ComposeRuntimeSPI",
+        "@swiftpkg_container_engine_api//:ContainerEngineWire",
+        "@swiftpkg_container_engine_api//:ContainerUnixHTTPClient",
+    ],
+    target_compatible_with = select({":stock_runtime": [], "//conditions:default": ["@platforms//:incompatible"]}),
+)
+
+swift_library(
+    name = "ComposeContainerRuntime",
+    srcs = glob(["Sources/ComposeContainerRuntime/*.swift"]),
+    module_name = "ComposeContainerRuntime",
+    copts = RUNTIME_COPTS,
+    deps = [
+        ":ComposeCore",
+        ":ComposeRuntimeSPI",
+        "@swiftpkg_swift_argument_parser//:ArgumentParser",
+        "@swiftpkg_container//:ContainerAPIClient",
+        "@swiftpkg_container//:ContainerCommands",
+        "@swiftpkg_container//:ContainerPersistence",
+        "@swiftpkg_container//:ContainerResource",
+        "@swiftpkg_containerization//:Containerization",
+        "@swiftpkg_containerization//:ContainerizationArchive",
+        "@swiftpkg_containerization//:ContainerizationEXT4",
+        "@swiftpkg_containerization//:ContainerizationExtras",
+        "@swiftpkg_containerization//:ContainerizationOCI",
+        "@swiftpkg_swift_log//:Logging",
+    ],
+    target_compatible_with = select({":stock_runtime": ["@platforms//:incompatible"], "//conditions:default": []}),
+)
+
+# The executable and CLI tests must share the same compiled entry-point module.
+swift_library(
+    name = "ComposePlugin",
+    srcs = glob(["Sources/ComposePlugin/*.swift"]),
+    module_name = "ComposePlugin",
+    copts = RUNTIME_COPTS + ["-parse-as-library", "-Xfrontend", "-entry-point-function-name", "-Xfrontend", "ComposePlugin_main"],
+    deps = [
+        ":ComposeCore",
+        "@swiftpkg_swift_argument_parser//:ArgumentParser",
+        "@swiftpkg_container//:ContainerAPIClient",
+        "@swiftpkg_container//:ContainerBuild",
+        "@swiftpkg_container//:ContainerCommands",
+        "@swiftpkg_container//:ContainerLog",
+        "@swiftpkg_container//:ContainerResource",
+    ] + select({":stock_runtime": [":ComposeEngineRuntime"], "//conditions:default": [":ComposeContainerRuntime"]}),
+)
+
+swift_binary(
+    name = "compose",
+    linkopts = ["-Wl,-alias,_ComposePlugin_main,_main", "-Wl,-u,_ComposePlugin_main"],
+    deps = [":ComposePlugin"],
+)
+
+filegroup(
+    name = "product",
+    srcs = [
+        ":compose",
+        "//Tools/compose-normalizer:compose-normalizer",
+        "//Tools/compose-normalizer/cmd/volume-initializer:compose-volume-initializer-linux-arm64",
+        "//Tools/compose-normalizer/cmd/volume-initializer:compose-volume-initializer-linux-amd64",
+    ],
+)
+
+swift_test(
+    name = "ComposeRuntimeSPITests",
+    srcs = glob(["Tests/ComposeRuntimeSPITests/*.swift"]),
+    copts = SWIFT_COPTS,
+    deps = [":ComposeRuntimeSPI", ":ComposeTestStorage"],
+)
+
+swift_library(
+    name = "ComposeTestStorage",
+    testonly = True,
+    srcs = ["Tests/ComposeTestStorage/TestStorage.swift"],
+    module_name = "ComposeTestStorage",
+    copts = SWIFT_COPTS,
+)
+
+swift_test(
+    name = "ComposePluginTests",
+    srcs = glob(["Tests/ComposePluginTests/*.swift"]),
+    copts = RUNTIME_COPTS,
+    data = [":compose", "docs/project/STATUS.md"],
+    env = {"COMPOSE_TEST_EXECUTABLE": "$(rootpath :compose)"},
+    deps = [":ComposeCore", ":ComposePlugin", ":ComposeTestStorage"],
+)
+
+swift_test(
+    name = "ComposeEngineRuntimeTests",
+    srcs = glob(["Tests/ComposeEngineRuntimeTests/*.swift"]),
+    copts = SWIFT_COPTS,
+    deps = [
+        ":ComposeEngineRuntime", ":ComposeRuntimeSPI", ":ComposeTestStorage",
+        "@swiftpkg_container_engine_api//:ContainerEngineWire",
+        "@swiftpkg_container_engine_api//:ContainerUnixHTTPServer",
+        "@swiftpkg_swift_log//:Logging",
+    ],
+    target_compatible_with = select({":stock_runtime": [], "//conditions:default": ["@platforms//:incompatible"]}),
+)
+
+fixture_bundle(
+    name = "ComposeCoreFixtures",
+    testonly = True,
+    srcs = glob(["Tests/ComposeCoreTests/Fixtures/**/*"]),
+)
+
+filegroup(name = "ComposeCoreFixtureAccessor", testonly = True, srcs = [":ComposeCoreFixtures"], output_group = "accessor")
+filegroup(name = "ComposeCoreFixtureBundle", testonly = True, srcs = [":ComposeCoreFixtures"], output_group = "bundle")
+
+# These suites still exercise concrete enhanced-provider APIs. Every other
+# Core suite is runtime-neutral and must also execute with stock Apple pins.
+ENHANCED_CORE_TESTS = [
+    "Tests/ComposeCoreTests/ComposeOrchestratorCopyExportCommitTests.swift",
+    "Tests/ComposeCoreTests/ComposeOrchestratorRuntimeAdapterTests.swift",
+    "Tests/ComposeCoreTests/ComposeProviderTestSupport.swift",
+    "Tests/ComposeCoreTests/ComposeProviderModelTestSupport.swift",
+    "Tests/ComposeCoreTests/ExternalConfigStoreTests.swift",
+]
+
+swift_test(
+    name = "ComposeCoreTests",
+    srcs = glob(["Tests/ComposeCoreTests/*.swift"], exclude = ["Tests/ComposeCoreTests/ComposeTemporaryFilesTests.swift"] + ENHANCED_CORE_TESTS) + [":ComposeCoreFixtureAccessor"] + select({
+        ":stock_runtime": [],
+        "//conditions:default": ENHANCED_CORE_TESTS,
+    }),
+    copts = RUNTIME_COPTS,
+    data = [
+        ":ComposeCoreFixtureBundle",
+        "Tests/ComposeCoreTests/Fixtures/logging/docker-engine-29.2.1-terminal-session.json",
+        "Package.swift",
+        "examples/logging/compose.yml",
+        "//Tools/compose-normalizer:go.mod",
+        "//Tools/compose-normalizer:compose-normalizer",
+    ],
+    env = {"COMPOSE_NORMALIZER_RUNFILE": "$(rootpath //Tools/compose-normalizer:compose-normalizer)"},
+    deps = [
+        ":ComposeCore", ":ComposeTestStorage",
+        "@swiftpkg_containerization//:ContainerizationArchive",
+        "@swiftpkg_containerization//:ContainerizationExtras",
+    ] + select({
+        ":stock_runtime": [],
+        "//conditions:default": [
+            ":ComposeContainerRuntime",
+            "@swiftpkg_container//:ContainerResource",
+        ],
+    }),
+    timeout = "long",
+)
+
+swift_test(
+    name = "ComposeContainerRuntimeTests",
+    srcs = glob(["Tests/ComposeContainerRuntimeTests/*.swift"]),
+    copts = SWIFT_COPTS,
+    deps = [
+        ":ComposeContainerRuntime", ":ComposeRuntimeSPI", ":ComposeTestStorage",
+        "@swiftpkg_container//:ContainerResource",
+        "@swiftpkg_containerization//:ContainerizationEXT4",
+        "@swiftpkg_containerization//:ContainerizationOCI",
+    ],
+    target_compatible_with = select({":stock_runtime": ["@platforms//:incompatible"], "//conditions:default": []}),
+)
+
+test_suite(
+    name = "unit_stock",
+    tests = [":ComposeRuntimeSPITests", ":ComposePluginTests", ":ComposeCoreTests", ":ComposeEngineRuntimeTests", ":ComposeTemporaryFilesTests", ":unit_go"],
+)
+
+test_suite(
+    name = "unit_enhanced",
+    tests = [":ComposeRuntimeSPITests", ":ComposePluginTests", ":ComposeCoreTests", ":ComposeContainerRuntimeTests", ":ComposeTemporaryFilesTests", ":unit_go"],
+)
+
+test_suite(
+    name = "coverage_stock",
+    tests = [":unit_stock", "//Tools/bazel:cli_contracts"],
+)
+
+test_suite(
+    name = "coverage_enhanced",
+    tests = [":unit_enhanced", "//Tools/bazel:cli_contracts"],
+)
+
+test_suite(
+    name = "unit_go",
+    tests = [
+        "//Tools/compose-normalizer:compose-normalizer_test",
+        "//Tools/compose-normalizer/oci:oci_test",
+        "//Tools/compose-normalizer/remote:remote_test",
+        "//Tools/compose-normalizer/transform:transform_test",
+        "//Tools/compose-normalizer/cmd/volume-initializer:volume-initializer_test",
+        "//Tools/compose-normalizer/cmd/volume-initializer:permission_bits_test",
+    ],
+)
+
+swift_test(
+    name = "ComposeTemporaryFilesTests",
+    srcs = ["Tests/ComposeCoreTests/ComposeTemporaryFilesTests.swift"],
+    copts = SWIFT_COPTS,
+    deps = [":ComposeCore", ":ComposeTestStorage"],
+)

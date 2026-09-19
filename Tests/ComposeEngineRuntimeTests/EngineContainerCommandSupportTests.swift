@@ -23,6 +23,73 @@ import Testing
 
 @Suite(.serialized)
 struct EngineContainerCommandSupportTests {
+    @Test(arguments: [
+        "-a", "-c", "-e", "-k", "-l", "-m", "-p", "-u", "-v", "-w", "-ie",
+        "--kernel", "--cwd", "--scheme", "--dns-domain",
+    ])
+    func `native valued options do not consume image provenance`(option: String) async throws {
+        let runner = RecordingRunner()
+        let provider = EngineRuntimeProvider(socketPath: "/unused", runner: runner)
+        let label = EngineRuntimeProvider.originalImageReferenceLabel
+        let value = "CONTACT=a@b"
+        let pinned = "alpine:3.22@sha256:" + String(repeating: "a", count: 64)
+        for image in ["alpine", pinned] {
+            _ = try await provider.launchContainer(.init(
+                command: .create, arguments: [option, value, image], logging: .init(driver: nil, options: [:])
+            ))
+        }
+        #expect(Array(runner.commands[0].arguments.dropFirst(2)) == [option, value, "alpine"])
+        #expect(Array(runner.commands[1].arguments.dropFirst(2)) == [
+            option, value, "--label", label + "=" + pinned, pinned,
+        ])
+        await #expect(throws: ComposeError.self) {
+            _ = try await provider.launchContainer(.init(
+                command: .create, arguments: [option, value, "--label", label + "=forged", "alpine"],
+                logging: .init(driver: nil, options: [:])
+            ))
+        }
+        #expect(runner.commands.count == 2)
+    }
+
+    @Test(arguments: [false, true])
+    func `digest image launch retains original spelling without changing application arguments`(delimiter: Bool) async throws {
+        let runner = RecordingRunner()
+        let provider = EngineRuntimeProvider(socketPath: "/unused", runner: runner)
+        let image = "alpine:3.22@sha256:" + String(repeating: "a", count: 64)
+        let label = EngineRuntimeProvider.originalImageReferenceLabel
+        let status = try await provider.launchContainer(.init(
+            command: .create,
+            arguments: ["--name", "app"] + (delimiter ? ["--"] : [])
+                + [image, "tool", "--label", label + "=process-argument"],
+            logging: .init(driver: nil, options: [:])
+        ))
+        #expect(status == 0)
+        let arguments = try #require(runner.commands.first?.arguments)
+        let expected = ["--name", "app", "--label", label + "=" + image] + (delimiter ? ["--"] : [])
+            + [image, "tool", "--label", label + "=process-argument"]
+        #expect(Array(arguments.dropFirst(2)) == expected)
+    }
+
+    @Test(arguments: ["--label", "--label=", "-l", "-l=", "-lcompact", "-il", "-ilcompact", "malformed-image"])
+    func `native image metadata rejects collisions and malformed digests before launch`(form: String) async throws {
+        let runner = RecordingRunner()
+        let provider = EngineRuntimeProvider(socketPath: "/unused", runner: runner)
+        let label = EngineRuntimeProvider.originalImageReferenceLabel + "=forged"
+        let arguments: [String] = switch form {
+        case "--label=", "-l=": [form + label, "alpine"]
+        case "-lcompact": ["-l" + label, "alpine"]
+        case "-ilcompact": ["-il" + label, "alpine"]
+        case "malformed-image": ["alpine@sha256:short"]
+        default: [form, label, "alpine"]
+        }
+        await #expect(throws: ComposeError.self) {
+            _ = try await provider.launchContainer(.init(
+                command: .create, arguments: arguments, logging: .init(driver: nil, options: [:])
+            ))
+        }
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test
     func `volume initializer allocates an isolated recovery mount`() throws {
         #expect(

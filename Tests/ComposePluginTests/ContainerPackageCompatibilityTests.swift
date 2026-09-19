@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import ComposeCore
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -798,7 +799,7 @@ struct ContainerPackagePreflightProcessTests {
 
   @Test("preflight bounds large diagnostics without per-byte retention")
   func failureTextScansLargeDiagnosticsIncrementally() throws {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestStorage.temporaryDirectory
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer {
@@ -826,7 +827,7 @@ struct ContainerPackagePreflightProcessTests {
       exit 23
     fi
     exit 2
-    """.write(to: executable, atomically: true, encoding: .utf8)
+    """.write(to: executable, atomically: false, encoding: .utf8)
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o755],
       ofItemAtPath: executable.path
@@ -841,8 +842,10 @@ struct ContainerPackagePreflightProcessTests {
     let metrics = directory.appendingPathComponent("time.txt")
     let stdout = directory.appendingPathComponent("stdout.txt")
     let stderr = directory.appendingPathComponent("stderr.txt")
-    FileManager.default.createFile(atPath: stdout.path, contents: nil)
-    FileManager.default.createFile(atPath: stderr.path, contents: nil)
+    // Foundation createFile may use an out-of-sandbox volume replacement area.
+    // These private fixtures are not published until their writes complete.
+    try Data().write(to: stdout)
+    try Data().write(to: stderr)
     let stdoutHandle = try FileHandle(forWritingTo: stdout)
     let stderrHandle = try FileHandle(forWritingTo: stderr)
     defer {
@@ -850,7 +853,7 @@ struct ContainerPackagePreflightProcessTests {
       try? stderrHandle.close()
     }
 
-    let composeExecutable = URL(fileURLWithPath: ".build/debug/compose")
+    let composeExecutable = composeTestExecutable()
     #expect(FileManager.default.isExecutableFile(atPath: composeExecutable.path))
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/time")
@@ -928,7 +931,7 @@ struct ContainerPackagePreflightProcessTests {
 
   @Test("cancelling a preflight terminates its child process")
   func cancellationTerminatesChild() async throws {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestStorage.temporaryDirectory
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer {
@@ -964,7 +967,7 @@ struct ContainerPackagePreflightProcessTests {
 
   @Test("preflight starts its child only after the signal proxy is active")
   func signalProxyPrecedesChildLaunch() async throws {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestStorage.temporaryDirectory
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer {
@@ -1030,7 +1033,7 @@ private struct DelayedPreflightSignalProxy: ComposeSignalProxying {
 struct ContainerPackagePreflightSignalTests {
   @Test("interrupting the CLI preflight terminates its child process")
   func interruptTerminatesChild() async throws {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestStorage.temporaryDirectory
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer {
@@ -1087,12 +1090,22 @@ private func makeInterruptibleContainer(in directory: URL) throws -> URL {
     while :; do :; done
   fi
   exit 2
-  """.write(to: executable, atomically: true, encoding: .utf8)
+  """.write(to: executable, atomically: false, encoding: .utf8)
   try FileManager.default.setAttributes(
     [.posixPermissions: 0o755],
     ofItemAtPath: executable.path
   )
   return executable
+}
+
+/// Bazel declares the CLI as a runfile; SwiftPM keeps its existing build path.
+private func composeTestExecutable() -> URL {
+  let environment = ProcessInfo.processInfo.environment
+  if let runfile = environment["COMPOSE_TEST_EXECUTABLE"] {
+    return URL(fileURLWithPath: runfile)
+  }
+  precondition(environment["BAZEL_TEST"] != "1", "Bazel must declare the tested Compose executable")
+  return URL(fileURLWithPath: ".build/debug/compose")
 }
 
 /// Starts the real Compose CLI against an interruptible fake runtime.
@@ -1110,7 +1123,7 @@ private func makeInterruptedPreflightProcess(
   fakeContainer: URL,
   pidFile: URL
 ) throws -> InterruptedPreflightProcess {
-  let composeExecutable = URL(fileURLWithPath: ".build/debug/compose")
+  let composeExecutable = composeTestExecutable()
   #expect(FileManager.default.isExecutableFile(atPath: composeExecutable.path))
   let process = Process()
   let (terminations, continuation) = AsyncStream.makeStream(

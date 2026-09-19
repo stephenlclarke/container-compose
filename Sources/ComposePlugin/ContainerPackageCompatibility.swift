@@ -167,6 +167,7 @@ enum ContainerPackageCompatibility {
 
     /// Returns whether this invocation needs the installed runtime stack check.
     static func requiresRuntimeCheck(arguments: [String]) -> Bool {
+        let arguments = ComposeArgumentRewriter.argumentsForOptionInspection(arguments)
         if isAlphaDryRun(arguments: arguments) {
             return false
         }

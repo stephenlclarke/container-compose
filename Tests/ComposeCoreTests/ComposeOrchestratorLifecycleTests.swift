@@ -14,13 +14,15 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+#if CONTAINER_COMPOSE_ENHANCED_RUNTIME
 import ComposeContainerRuntime
+import ContainerizationOCI
+import ContainerResource
+#endif
 @testable import ComposeCore
 import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 #if canImport(Darwin)
     import Darwin
 #elseif canImport(Glibc)
@@ -287,6 +289,8 @@ extension ComposeOrchestratorTests {
         ])
     }
 
+    // ContainerizationError gains the runtime-error SPI conformance in the enhanced adapter.
+    #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
     @Test("down ignores service containers that are already removed")
     func downIgnoresServiceContainersThatAreAlreadyRemoved() async throws {
         let missing = ContainerizationError(.notFound, message: "container not found")
@@ -379,6 +383,8 @@ extension ComposeOrchestratorTests {
         ])
     }
 
+    #endif
+
     @Test("down removes remaining project scoped containers")
     func downRemovesRemainingProjectScopedContainers() async throws {
         let runner = RecordingRunner()
@@ -431,6 +437,7 @@ extension ComposeOrchestratorTests {
         ])
     }
 
+    #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
     @Test("down ignores orphan containers that disappear during cleanup")
     func downIgnoresOrphanContainersThatDisappearDuringCleanup() async throws {
         let missing = ContainerizationError(.notFound, message: "container not found")
@@ -463,6 +470,8 @@ extension ComposeOrchestratorTests {
             .delete(id: "demo-worker-1", force: false),
         ])
     }
+
+    #endif
 
     @Test("down removes all service images when requested")
     func downRemovesAllServiceImagesWhenRequested() async throws {
@@ -3046,6 +3055,8 @@ extension ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
+    // Concrete enhanced-provider adapters are not part of the stock product.
+    #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
     @Test("lifecycle manager maps compose lifecycle to direct API client")
     func lifecycleManagerMapsComposeLifecycleToDirectAPIClient() async throws {
         let client = RecordingContainerLifecycleAPIClient(waitExitCodes: ["demo-api-1": 4])
@@ -3859,5 +3870,5 @@ extension ComposeOrchestratorTests {
         #expect(await client.getRequests.isEmpty)
         #expect(await client.lifecycleViewFilters.count == 1)
     }
-
+    #endif
 }

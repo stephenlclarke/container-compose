@@ -14,18 +14,16 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ComposeContainerRuntime
 @testable import ComposeCore
 import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 #if canImport(Darwin)
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
 #endif
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -1052,7 +1050,7 @@ extension ComposeOrchestratorTests {
         let sourceDirectory = directory.appendingPathComponent("src", isDirectory: true)
         try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
         let sourceFile = sourceDirectory.appendingPathComponent("main.swift")
-        try "initial".write(to: sourceFile, atomically: true, encoding: .utf8)
+        try "initial".writeFixture(to: sourceFile, encoding: .utf8)
 
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
@@ -1102,7 +1100,7 @@ extension ComposeOrchestratorTests {
         let sourceDirectory = directory.appendingPathComponent("src", isDirectory: true)
         try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
         let sourceFile = sourceDirectory.appendingPathComponent("main.swift")
-        try "before".write(to: sourceFile, atomically: true, encoding: .utf8)
+        try "before".writeFixture(to: sourceFile, encoding: .utf8)
 
         let runner = RecordingRunner()
         let copier = RecordingContainerCopier()
@@ -1185,7 +1183,7 @@ extension ComposeOrchestratorTests {
         let sourceDirectory = directory.appendingPathComponent("src", isDirectory: true)
         try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
         let sourceFile = sourceDirectory.appendingPathComponent("main.swift")
-        try "before".write(to: sourceFile, atomically: true, encoding: .utf8)
+        try "before".writeFixture(to: sourceFile, encoding: .utf8)
 
         let execManager = RecordingContainerExecManager()
         let sleeper = FileDeletionSleeper(file: sourceFile)
@@ -1237,7 +1235,7 @@ extension ComposeOrchestratorTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let sourceFile = directory.appendingPathComponent("Dockerfile")
-        try "FROM scratch\n".write(to: sourceFile, atomically: true, encoding: .utf8)
+        try "FROM scratch\n".writeFixture(to: sourceFile, encoding: .utf8)
 
         let runner = RecordingRunner()
         let sleeper = FileMutationSleeper(file: sourceFile, contents: "FROM busybox\n")
@@ -1274,7 +1272,7 @@ extension ComposeOrchestratorTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let sourceFile = directory.appendingPathComponent("Dockerfile")
-        try "FROM scratch\n".write(to: sourceFile, atomically: true, encoding: .utf8)
+        try "FROM scratch\n".writeFixture(to: sourceFile, encoding: .utf8)
 
         let runner = RecordingRunner()
         let sleeper = ThrowingSleeper(throwOnCall: 1)

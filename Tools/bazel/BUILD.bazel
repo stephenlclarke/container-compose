@@ -1,0 +1,55 @@
+# Copyright 2026 container-compose project authors. SPDX-License-Identifier: Apache-2.0
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+exports_files(["rules-swift-sandbox-output.patch", "rules-go-sanitizer-isolation.patch", "package.py", "licenses/inventory.json", "licenses/vendored.json"] + glob(["licenses/*.patch", "licenses/*.txt"]))
+
+exports_files(["documentation/action.py", "documentation/test_action.py", "documentation/test.sh"])
+
+sh_binary(
+    name = "ssd_test_runner",
+    srcs = ["ssd-test-runner.sh"],
+    visibility = ["//visibility:public"],
+)
+
+sh_test(
+    name = "cli_smoke",
+    srcs = ["tests/cli-smoke.sh"],
+    args = ["$(location //:compose)"],
+    data = ["//:compose"],
+    size = "small",
+)
+
+sh_test(
+    name = "cli_contracts",
+    srcs = ["tests/cli-contracts.sh"],
+    args = ["$(location test_cli_contracts.py)", "$(location //:compose)", "$(location //Tools/compose-normalizer:compose-normalizer)"],
+    data = ["cli_process.py", "test_cli_contracts.py", "//:compose", "//Tools/compose-normalizer:compose-normalizer"],
+    # The shared SSD runner exports LLVM profiles from this declared binary.
+    env = {"TEST_BINARIES_FOR_LLVM_COV": "$(location //:compose)"},
+    size = "medium",
+)
+
+sh_test(
+    name = "package_tests",
+    srcs = ["tests/package.sh"],
+    args = ["$(location test_package.py)", "$(location //:Tools/release/write-build-info.py)", "unit"],
+    data = ["package.py", "test_package.py", "//:Tools/release/write-build-info.py"],
+    size = "small",
+)
+
+sh_test(
+    name = "package_smoke",
+    srcs = ["tests/package.sh"],
+    args = ["$(location test_package.py)", "$(location //:Tools/release/write-build-info.py)", "archive", "$(location //:candidate_archive_payload)"],
+    data = ["package.py", "test_package.py", "//:Tools/release/write-build-info.py", "//:candidate_archive_payload"],
+    size = "small",
+)
+
+sh_test(
+    name = "release_notes_tests",
+    srcs = ["tests/release-notes.sh"],
+    args = ["$(location //:Tools/release/test_release_notes.py)"],
+    data = ["//:Tools/release/test_release_notes.py", "//:Tools/release/release-notes.py"],
+    size = "small",
+)

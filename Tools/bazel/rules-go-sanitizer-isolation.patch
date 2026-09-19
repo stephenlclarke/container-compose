@@ -1,0 +1,15 @@
+diff --git a/go/private/context.bzl b/go/private/context.bzl
+--- a/go/private/context.bzl
++++ b/go/private/context.bzl
+@@ -134,6 +134,11 @@
+ }
+ 
+ _UNSUPPORTED_FEATURES = [
++    # Clang sanitizer runtimes cannot instrument the Go runtime through CGo.
++    # Keep the Swift/C graph instrumented, but use rules_go's own race/msan
++    # modes for Go instead of injecting a second, incompatible runtime.
++    "asan",
++    "tsan",
+     # These toolchain features require special rule support and will thus break
+     # with CGo.
+     # Taken from https://github.com/bazelbuild/rules_rust/blob/521e649ff44e9711fe3c45b0ec1e792f7e1d361e/rust/private/utils.bzl#L20.

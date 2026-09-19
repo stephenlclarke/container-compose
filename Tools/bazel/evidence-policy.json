@@ -1,0 +1,87 @@
+{
+  "schema": 2,
+  "scope": "Selected-profile native Swift and Go unit tests; excludes host integration and Linux guest execution",
+  "component_scope": "Selected-profile native Swift and Go unit tests plus native CLI no-runtime components; excludes host integration and Linux guest execution",
+  "source_roots": [
+    "Sources",
+    "Tools/compose-normalizer"
+  ],
+  "profiles": {
+    "stock": {
+      "tests": {
+        "//:ComposeRuntimeSPITests": 25,
+        "//:ComposeTemporaryFilesTests": 8,
+        "//Tools/compose-normalizer:compose-normalizer_test": 123,
+        "//Tools/compose-normalizer/oci:oci_test": 19,
+        "//Tools/compose-normalizer/remote:remote_test": 90,
+        "//Tools/compose-normalizer/transform:transform_test": 14,
+        "//Tools/compose-normalizer/cmd/volume-initializer:volume-initializer_test": 61,
+        "//Tools/compose-normalizer/cmd/volume-initializer:permission_bits_test": 1,
+        "//:ComposePluginTests": 103,
+        "//:ComposeCoreTests": 1099,
+        "//:ComposeEngineRuntimeTests": 25
+      },
+      "component_tests": {
+        "//Tools/bazel:cli_contracts": 42
+      },
+      "required_sources": [
+        "Sources/ComposeCore/ComposeTemporaryFiles.swift",
+        "Sources/ComposeCore/ComposeNormalizer.swift",
+        "Sources/ComposeCore/ProcessRunner.swift",
+        "Sources/ComposeCore/ComposeOrchestratorUp.swift",
+        "Sources/ComposeCore/ComposeOrchestratorRunLifecycle.swift",
+        "Sources/ComposeCore/ComposeOrchestratorCopy.swift",
+        "Sources/ComposeCore/ComposeOrchestratorCommitExport.swift",
+        "Sources/ComposeCore/ComposeOrchestratorWaitAndPorts.swift",
+        "Sources/ComposeCore/ComposeOrchestratorConfigs.swift",
+        "Sources/ComposeCore/ComposeAPISocketTransform.swift",
+        "Sources/ComposePlugin/ComposePlugin.swift",
+        "Sources/ComposePlugin/ComposeCLIHelp.swift",
+        "Sources/ComposeCore/ComposeArgumentRewriter.swift",
+        "Sources/ComposeRuntimeSPI/ComposeRuntimeCapabilities.swift",
+        "Tools/compose-normalizer/main.go",
+        "Tools/compose-normalizer/remote/cache.go",
+        "Tools/compose-normalizer/oci/oci.go",
+        "Tools/compose-normalizer/transform/replace.go",
+        "Tools/compose-normalizer/cmd/volume-initializer/main.go",
+        "Sources/ComposeEngineRuntime/ComposeEngineRuntime.swift"
+      ]
+    },
+    "enhanced": {
+      "tests": {
+        "//:ComposeRuntimeSPITests": 25,
+        "//:ComposeTemporaryFilesTests": 8,
+        "//Tools/compose-normalizer:compose-normalizer_test": 123,
+        "//Tools/compose-normalizer/oci:oci_test": 19,
+        "//Tools/compose-normalizer/remote:remote_test": 90,
+        "//Tools/compose-normalizer/transform:transform_test": 14,
+        "//Tools/compose-normalizer/cmd/volume-initializer:volume-initializer_test": 61,
+        "//Tools/compose-normalizer/cmd/volume-initializer:permission_bits_test": 1,
+        "//:ComposePluginTests": 102,
+        "//:ComposeCoreTests": 1252,
+        "//:ComposeContainerRuntimeTests": 39
+      },
+      "component_tests": {
+        "//Tools/bazel:cli_contracts": 42
+      },
+      "required_sources": [
+        "Sources/ComposeCore/ComposeTemporaryFiles.swift",
+        "Sources/ComposeCore/ComposeOrchestratorCopy.swift",
+        "Sources/ComposeCore/ComposeOrchestratorCommitExport.swift",
+        "Sources/ComposeCore/ComposeOrchestratorWaitAndPorts.swift",
+        "Sources/ComposeCore/ComposeOrchestratorConfigs.swift",
+        "Sources/ComposePlugin/ComposePlugin.swift",
+        "Sources/ComposePlugin/ComposeCLIHelp.swift",
+        "Sources/ComposeCore/ComposeArgumentRewriter.swift",
+        "Sources/ComposeRuntimeSPI/ComposeRuntimeCapabilities.swift",
+        "Tools/compose-normalizer/main.go",
+        "Tools/compose-normalizer/remote/cache.go",
+        "Tools/compose-normalizer/oci/oci.go",
+        "Tools/compose-normalizer/transform/replace.go",
+        "Tools/compose-normalizer/cmd/volume-initializer/main.go",
+        "Sources/ComposeContainerRuntime/ContainerFilesystemAdapter.swift",
+        "Sources/ComposeContainerRuntime/ContainerImageLiveAdapter.swift"
+      ]
+    }
+  }
+}

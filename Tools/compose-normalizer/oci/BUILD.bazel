@@ -1,0 +1,41 @@
+# Copyright 2026 container-compose project authors. SPDX-License-Identifier: Apache-2.0
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "oci",
+    srcs = glob(["*.go"], exclude = ["*_test.go"]),
+    importpath = "github.com/stephenlclarke/container-compose/Tools/compose-normalizer/oci",
+    deps = [
+        "@com_github_containerd_containerd_v2//core/remotes/docker:go_default_library",
+        "@com_github_containerd_containerd_v2//core/remotes/errors:go_default_library",
+        "@com_github_containerd_containerd_v2//core/remotes:go_default_library",
+        "@com_github_containerd_containerd_v2//pkg/labels:go_default_library",
+        "@com_github_containerd_errdefs//:go_default_library",
+        "@com_github_distribution_reference//:go_default_library",
+        "@com_github_docker_cli//cli/config/configfile:go_default_library",
+        "@com_github_moby_buildkit//util/contentutil:go_default_library",
+        "@com_github_opencontainers_go_digest//:go_default_library",
+        "@com_github_opencontainers_image_spec//specs-go/v1:go_default_library",
+        "@com_github_opencontainers_image_spec//specs-go:go_default_library"
+    ],
+)
+
+go_test(
+    name = "oci_test",
+    args = ["-test.v"],
+    srcs = glob(["*_test.go"]),
+    embed = [":oci"],
+    deps = [
+        "@com_github_containerd_containerd_v2//core/content:go_default_library",
+        "@com_github_containerd_containerd_v2//core/remotes/errors:go_default_library",
+        "@com_github_containerd_containerd_v2//core/remotes:go_default_library",
+        "@com_github_containerd_containerd_v2//pkg/labels:go_default_library",
+        "@com_github_containerd_errdefs//:go_default_library",
+        "@com_github_distribution_reference//:go_default_library",
+        "@com_github_docker_cli//cli/config/configfile:go_default_library",
+        "@com_github_opencontainers_go_digest//:go_default_library",
+        "@com_github_opencontainers_image_spec//specs-go/v1:go_default_library"
+    ],
+)

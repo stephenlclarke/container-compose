@@ -17,6 +17,8 @@
 
 """Unit tests for prebuilt release note rendering."""
 
+from __future__ import annotations
+
 import importlib.util
 import json
 import subprocess
@@ -1027,7 +1029,18 @@ class ReleaseNotesTests(unittest.TestCase):
     def init_repo(self, repo: Path) -> None:
         repo.mkdir(parents=True, exist_ok=True)
         self.git(repo, "init", "-b", "main")
+        # Disposable repositories must not outlive the test through detached
+        # Git maintenance, which can race TemporaryDirectory cleanup.
+        self.git(repo, "config", "gc.auto", "0")
+        self.git(repo, "config", "maintenance.auto", "false")
         self.commit(repo, "chore: initial import")
+
+    def test_fixture_disables_background_maintenance(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            self.init_repo(repo)
+            self.assertEqual(self.git(repo, "config", "--local", "gc.auto"), "0")
+            self.assertEqual(self.git(repo, "config", "--local", "maintenance.auto"), "false")
 
     def write_stack_refs(self, repo: Path, container_ref: str) -> None:
         path = repo / "Tools" / "release"

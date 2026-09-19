@@ -1,0 +1,54 @@
+# Copyright 2026 container-compose project authors. SPDX-License-Identifier: Apache-2.0
+load("@rules_go//go:def.bzl", "go_library", "go_test", "go_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+go_library(
+    name = "volume-initializer_lib",
+    srcs = glob(["*.go"], exclude = ["*_test.go"]),
+    importpath = "github.com/stephenlclarke/container-compose/Tools/compose-normalizer/cmd/volume-initializer",
+    deps = [
+        "@org_golang_x_sys//unix:go_default_library"
+    ],
+)
+
+go_binary(
+    name = "volume-initializer",
+    embed = [":volume-initializer_lib"],
+)
+
+go_binary(
+    name = "compose-volume-initializer-linux-arm64",
+    embed = [":volume-initializer_lib"],
+    goos = "linux",
+    goarch = "arm64",
+    pure = "on",
+)
+
+go_binary(
+    name = "compose-volume-initializer-linux-amd64",
+    embed = [":volume-initializer_lib"],
+    goos = "linux",
+    goarch = "amd64",
+    pure = "on",
+)
+
+go_test(
+    name = "volume-initializer_test",
+    args = ["-test.v"],
+    srcs = glob(["*_test.go"], exclude = ["permission_bits_test.go"]),
+    embed = [":volume-initializer_lib"],
+    deps = [
+        "@org_golang_x_sys//unix:go_default_library"
+    ],
+)
+
+# Darwin's sandbox strips set-ID bits even from private input fixtures.
+# Only this filesystem-capability test runs outside it, still in SSD scratch.
+go_test(
+    name = "permission_bits_test",
+    args = ["-test.v"],
+    srcs = ["permission_bits_test.go", "fixture_test.go"],
+    embed = [":volume-initializer_lib"],
+    tags = ["no-sandbox", "no-remote"],
+)

@@ -593,8 +593,9 @@ extension ComposeOrchestrator {
             network: network,
         )
         let driverOpts = network.driverOpts ?? [:]
+        let labels = networkLabels(project: project, composeName: composeName, labels: network.labels)
         let args = networkCreateArguments(
-            project: project,
+            labels: labels,
             network: network,
             runtimeName: runtimeName,
             driverOpts: driverOpts,
@@ -616,14 +617,14 @@ extension ComposeOrchestrator {
                 enableIPv4: network.enableIPv4,
                 enableIPv6: network.enableIPv6,
                 driverOpts: driverOpts,
-                labels: resourceLabels(project: project, labels: network.labels),
+                labels: labels,
             ))
         }
     }
 
     /// Builds the direct CLI projection for a project network.
     func networkCreateArguments(
-        project: ComposeProject,
+        labels: [String: String],
         network: ComposeNetwork,
         runtimeName: String,
         driverOpts: [String: String],
@@ -633,10 +634,7 @@ extension ComposeOrchestrator {
         for option in driverOpts.sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--option", "\(option.key)=\(option.value)"])
         }
-        for label in resourceLabels(project: project) {
-            args.append(contentsOf: ["--label", label])
-        }
-        for label in (network.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
+        for label in labels.sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
         }
         args.append(runtimeName)

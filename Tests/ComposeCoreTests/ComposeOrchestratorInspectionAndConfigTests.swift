@@ -14,18 +14,21 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+#if CONTAINER_COMPOSE_ENHANCED_RUNTIME
 import ComposeContainerRuntime
+import ContainerizationOCI
+import ContainerResource
+#endif
 @testable import ComposeCore
 import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 #if canImport(Darwin)
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
 #endif
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -825,6 +828,8 @@ extension ComposeOrchestratorTests {
         #expect(await eventsManager.requests.isEmpty)
     }
 
+    // Event API adapter fixtures belong only to the enhanced provider.
+    #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
     @Test("event manager filters runtime stream to Compose JSON service events")
     func eventManagerFiltersRuntimeStreamToComposeJSONServiceEvents() async throws {
         let emitted = MessageRecorder()
@@ -1071,6 +1076,8 @@ extension ComposeOrchestratorTests {
         ])
     }
 
+    #endif
+
     @Test("ls lists compose projects with grouped status")
     func lsListsComposeProjectsWithGroupedStatus() async throws {
         let emitted = MessageRecorder()
@@ -1226,6 +1233,7 @@ extension ComposeOrchestratorTests {
         #expect(try listedContainerIDs(from: #require(emitted.messages.first)) == ["demo-api-1"])
     }
 
+    #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
     @Test("ps default discovery uses the native lifecycle API")
     func psDefaultDiscoveryUsesNativeLifecycleAPI() async throws {
         let emitted = MessageRecorder()
@@ -1257,6 +1265,8 @@ extension ComposeOrchestratorTests {
         let rows = try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [[String: Any]]
         #expect(rows?.isEmpty == true)
     }
+
+    #endif
 
     @Test("ps keeps project scoping when all containers are requested")
     func psKeepsProjectScopingWhenAllContainersAreRequested() async throws {
@@ -2251,7 +2261,7 @@ extension ComposeOrchestratorTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let config = directory.appendingPathComponent("app.conf")
-        try "feature=true\n".write(to: config, atomically: true, encoding: .utf8)
+        try "feature=true\n".writeFixture(to: config, encoding: .utf8)
         let secretEnvironment = "COMPOSE_BRIDGE_SECRET_\(UUID().uuidString.replacingOccurrences(of: "-", with: "_"))"
         setenv(secretEnvironment, "bridge-secret", 1)
         defer { unsetenv(secretEnvironment) }
@@ -2700,6 +2710,8 @@ extension ComposeOrchestratorTests {
         )
     }
 
+    // This assertion exercises the concrete enhanced archive extractor, not a fake.
+    #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
     @Test("bridge transformations create copies templates and writes Dockerfile")
     func bridgeTransformationsCreateCopiesTemplatesAndWritesDockerfile() async throws {
         let directory = try temporaryDirectory()
@@ -2755,6 +2767,8 @@ extension ComposeOrchestratorTests {
         """ + "\n")
         #expect(emitted.messages == ["Transformer created in \"\(destination.path)\""])
     }
+
+    #endif
 
     @Test("bridge transformations create removes the stopped container after export failure")
     func bridgeTransformationsCreateRemovesContainerAfterExportFailure() async throws {
@@ -2849,7 +2863,7 @@ extension ComposeOrchestratorTests {
         let output = directory.appendingPathComponent("out", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let guardFile = output.appendingPathComponent("README.md")
-        try "do not delete me".write(to: guardFile, atomically: true, encoding: .utf8)
+        try "do not delete me".writeFixture(to: guardFile, encoding: .utf8)
         let prompts = MessageRecorder()
         let runner = RecordingRunner()
         let orchestrator = ComposeOrchestrator(
@@ -2887,7 +2901,7 @@ extension ComposeOrchestratorTests {
         let output = directory.appendingPathComponent("out", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let guardFile = output.appendingPathComponent("stale.txt")
-        try "stale".write(to: guardFile, atomically: true, encoding: .utf8)
+        try "stale".writeFixture(to: guardFile, encoding: .utf8)
         let runner = BridgeInputInspectingRunner()
         let orchestrator = ComposeOrchestrator(
             runner: runner,
@@ -2919,7 +2933,7 @@ extension ComposeOrchestratorTests {
         let output = directory.appendingPathComponent("out", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let guardFile = output.appendingPathComponent("stale.txt")
-        try "stale".write(to: guardFile, atomically: true, encoding: .utf8)
+        try "stale".writeFixture(to: guardFile, encoding: .utf8)
         let prompts = MessageRecorder()
         let runner = BridgeInputInspectingRunner()
         let orchestrator = ComposeOrchestrator(
@@ -2951,7 +2965,7 @@ extension ComposeOrchestratorTests {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let output = directory.appendingPathComponent("out")
-        try "do not delete me".write(to: output, atomically: true, encoding: .utf8)
+        try "do not delete me".writeFixture(to: output, encoding: .utf8)
         let runner = RecordingRunner()
 
         await #expect(throws: ComposeError.self) {

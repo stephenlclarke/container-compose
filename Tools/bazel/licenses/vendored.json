@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "sourceFragments": {
+    "swift-nio-sha1": {
+      "repository": "https://github.com/apple/swift-nio.git",
+      "packageRevisions": ["77b84ac2cd2ac9e4ac67d19f045fd5b434f56967"],
+      "sourceRevision": "77b84ac2cd2ac9e4ac67d19f045fd5b434f56967",
+      "sourceURL": "https://raw.githubusercontent.com/apple/swift-nio/77b84ac2cd2ac9e4ac67d19f045fd5b434f56967/Sources/CNIOSHA1/c_nio_sha1.c",
+      "extractedLines": [10, 39],
+      "license": "swift-nio-sha1.txt",
+      "sha256": "03ab108ae0baf2abf6e07f12aa34ddab24f94872dd18060c0398fb15dc0258ef"
+    },
+    "swift-nio-ushet": {
+      "repository": "https://github.com/apple/swift-nio.git",
+      "packageRevisions": ["77b84ac2cd2ac9e4ac67d19f045fd5b434f56967"],
+      "sourceRevision": "c09e0acafd86720efe42dc15c63e0cc228244c32",
+      "sourceURL": "https://raw.githubusercontent.com/18sg/uSHET/c09e0acafd86720efe42dc15c63e0cc228244c32/LICENSE",
+      "extractedLines": null,
+      "license": "swift-nio-ushet.txt",
+      "sha256": "62a279b6a64b37680b691436c3ac1c0f6e8eeb81d8ad0a05c1dfc68f2c9ca28a"
+    },
+    "yams-libyaml": {
+      "repository": "https://github.com/jpsim/Yams.git",
+      "packageRevisions": ["a27b21e0c81c5bf42049b897a62aaf387e80f279"],
+      "sourceRevision": "51843fe48257c6b7b6e70cdec1db634f64a40818",
+      "sourceURL": "https://raw.githubusercontent.com/yaml/libyaml/51843fe48257c6b7b6e70cdec1db634f64a40818/License",
+      "extractedLines": null,
+      "license": "yams-libyaml.txt",
+      "sha256": "c40112449f254b9753045925248313e9270efa36d226b22d82d4cc6c43c57f29"
+    }
+  },
+  "packages": {
+    "swift-crypto": {
+      "repository": "https://github.com/apple/swift-crypto.git",
+      "packageRevisions": ["da9d28d69ebe3894b18376c8f2395c2f37b8448f"],
+      "vendor": "BoringSSL",
+      "revision": "0226f30467f540a3f62ef48d453f93927da199b6",
+      "sourceURL": "https://raw.githubusercontent.com/google/boringssl/0226f30467f540a3f62ef48d453f93927da199b6/LICENSE",
+      "license": "boringssl-0226f30467f540a3f62ef48d453f93927da199b6.txt",
+      "sha256": "827c8d8fc207c2392794eef9e00fe246f9f61fdcc132556c275be3dd8c3cd97f"
+    },
+    "swift-nio-ssl": {
+      "repository": "https://github.com/apple/swift-nio-ssl.git",
+      "packageRevisions": ["322f3c2a4a21df31c84ca416bf65ee5e9059e440", "03827c1a9fdb2b6b00a4e93ede8861520263af8c"],
+      "vendor": "BoringSSL",
+      "revision": "817ab07ebb53da35afea409ab9328f578492832d",
+      "sourceURL": "https://raw.githubusercontent.com/google/boringssl/817ab07ebb53da35afea409ab9328f578492832d/LICENSE",
+      "license": "boringssl-817ab07ebb53da35afea409ab9328f578492832d.txt",
+      "sha256": "756a61a8300d105ae68e7f2993e27d41a765c946f3400422e2403b01e7ded527"
+    }
+  }
+}

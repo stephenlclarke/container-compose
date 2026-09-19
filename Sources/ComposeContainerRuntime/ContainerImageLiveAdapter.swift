@@ -72,20 +72,35 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         let image = try await ClientImage.get(reference: reference, containerSystemConfig: config)
         let resource = try await image.toImageResource(containerSystemConfig: config)
         let requestedPlatform = try Self.requestedPlatform(platform)
+        return Self.metadata(
+            reference: image.reference,
+            resource: resource,
+            platform: requestedPlatform,
+            allowFallback: platform == nil,
+        )
+    }
+
+    /// Keeps metadata projection testable without a registry or running service.
+    static func metadata(
+        reference: String,
+        resource: ImageResource,
+        platform: ContainerizationOCI.Platform,
+        allowFallback: Bool,
+    ) -> ComposeImageMetadata? {
         guard let variant = Self.variant(
             in: resource,
-            matching: requestedPlatform,
-            allowFallback: platform == nil,
+            matching: platform,
+            allowFallback: allowFallback,
         ) else {
-            guard platform == nil else {
+            guard allowFallback else {
                 return nil
             }
-            return ComposeImageMetadata(reference: image.reference) {
+            return ComposeImageMetadata(reference: reference) {
                 $0.displayReference = resource.displayReference
             }
         }
         let imageConfig = variant.config.config
-        return ComposeImageMetadata(reference: image.reference) {
+        return ComposeImageMetadata(reference: reference) {
             $0.displayReference = resource.displayReference
             $0.user = imageConfig?.user
             $0.environment = imageConfig?.env ?? []
@@ -114,32 +129,40 @@ public struct ContainerImageLiveAPIClient: ContainerImageAPIClienting {
         var transformers: [ComposeBridgeTransformer] = []
         for image in images {
             let resource = try await image.toImageResource(containerSystemConfig: config)
-            let labelledVariants = resource.variants.filter {
-                $0.imageConfigLabels["com.docker.compose.bridge"] == "transformation"
+            if let transformer = Self.bridgeTransformer(resource: resource, platform: platform) {
+                transformers.append(transformer)
             }
-            guard let variant = labelledVariants.first(where: { $0.platform == platform })
-                ?? labelledVariants.first
-            else {
-                continue
-            }
-            let digest = resource.configuration.descriptor.digest
-            let reference = resource.displayReference
-            let repoTags = reference.contains("@") ? [] : [reference]
-            transformers.append(
-                ComposeBridgeTransformer(
-                    id: digest,
-                    reference: reference,
-                    details: ComposeBridgeTransformerDetails(
-                        createdAtUnix: Int64(resource.creationDate.timeIntervalSince1970),
-                        labels: variant.imageConfigLabels,
-                        repoDigests: [Self.repositoryDigest(reference: reference, digest: digest)],
-                        repoTags: repoTags,
-                        size: ComposeBridgeTransformerSize(sizeInBytes: variant.size),
-                    ),
-                ),
-            )
         }
         return transformers.sorted { $0.reference < $1.reference }
+    }
+
+    /// Projects only labelled variants, retaining a registry port in repository digests.
+    static func bridgeTransformer(
+        resource: ImageResource,
+        platform: ContainerizationOCI.Platform,
+    ) -> ComposeBridgeTransformer? {
+        let labelledVariants = resource.variants.filter {
+            $0.imageConfigLabels["com.docker.compose.bridge"] == "transformation"
+        }
+        guard let variant = labelledVariants.first(where: { $0.platform == platform })
+            ?? labelledVariants.first
+        else {
+            return nil
+        }
+        let digest = resource.configuration.descriptor.digest
+        let reference = resource.displayReference
+        let repoTags = reference.contains("@") ? [] : [reference]
+        return ComposeBridgeTransformer(
+            id: digest,
+            reference: reference,
+            details: ComposeBridgeTransformerDetails(
+                createdAtUnix: Int64(resource.creationDate.timeIntervalSince1970),
+                labels: variant.imageConfigLabels,
+                repoDigests: [Self.repositoryDigest(reference: reference, digest: digest)],
+                repoTags: repoTags,
+                size: ComposeBridgeTransformerSize(sizeInBytes: variant.size),
+            ),
+        )
     }
 
     /// Pulls and unpacks using the same default platform resolution as the apple/container CLI.

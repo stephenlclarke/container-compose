@@ -20,8 +20,8 @@ import Foundation
 /// Docker Compose v2-compatible CLI help text.
 enum ComposeCLIHelp {
     /// Prints Docker Compose compatible help when the invocation asks for it.
-    static func renderIfRequested(arguments: [String]) -> Bool {
-        let rewritten = ComposeArgumentRewriter.rewrite(arguments)
+    static func renderIfRequested(arguments: [String], emit: (String) -> Void = { print($0) }) -> Bool {
+        let rewritten = ComposeArgumentRewriter.argumentsForOptionInspection(arguments)
         guard isHelpRequested(arguments: rewritten) else {
             return false
         }
@@ -29,31 +29,31 @@ enum ComposeCLIHelp {
         let command = commandPath(in: rewritten)
         let useANSI = shouldUseANSI(arguments: rewritten)
         if command == ["bridge"] {
-            print(renderedHelp(bridgeHelp, commandPath: command, useANSI: useANSI))
+            emit(renderedHelp(bridgeHelp, commandPath: command, useANSI: useANSI))
             return true
         }
         if let help = nestedCommandHelp(for: command) {
-            print(renderedHelp(help, commandPath: command, useANSI: useANSI))
+            emit(renderedHelp(help, commandPath: command, useANSI: useANSI))
             return true
         }
         if command.count == 1, let help = commandHelp[command[0]] {
-            print(renderedHelp(help, commandPath: command, useANSI: useANSI))
+            emit(renderedHelp(help, commandPath: command, useANSI: useANSI))
             return true
         }
 
-        print(renderedHelp(rootHelp, commandPath: [], useANSI: useANSI))
+        emit(renderedHelp(rootHelp, commandPath: [], useANSI: useANSI))
         return true
     }
 
     /// Prints Docker Compose compatible root help for invocations that include
     /// only global options and no subcommand.
-    static func renderRootIfNoCommand(arguments: [String]) -> Bool {
+    static func renderRootIfNoCommand(arguments: [String], emit: (String) -> Void = { print($0) }) -> Bool {
         let rewritten = ComposeArgumentRewriter.rewrite(arguments)
         guard isMissingCommandInvocation(arguments: rewritten) else {
             return false
         }
 
-        print(rootHelpText(arguments: rewritten))
+        emit(rootHelpText(arguments: rewritten))
         return true
     }
 
@@ -1428,6 +1428,8 @@ enum ComposeCLIHelp {
 
         Execute a command in a running container
 
+        Place Compose options before SERVICE. Options after SERVICE belong to COMMAND.
+
         Options:
           -d, --detach            Detached mode: Run command in the background
               --dry-run           Execute command in dry run mode
@@ -1592,6 +1594,8 @@ enum ComposeCLIHelp {
         Usage:  container compose run [OPTIONS] SERVICE [COMMAND] [ARGS...]
 
         Run a one-off command on a service
+
+        Place Compose options before SERVICE. Options after SERVICE belong to COMMAND.
 
         Options:
               --build                       Build image before starting container

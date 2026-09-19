@@ -1,0 +1,55 @@
+# Copyright 2026 container-compose project authors. SPDX-License-Identifier: Apache-2.0
+load("@rules_go//go:def.bzl", "go_library", "go_test", "go_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["go.mod", "go.sum"])
+
+go_library(
+    name = "compose-normalizer_lib",
+    srcs = glob(["*.go"], exclude = ["*_test.go"]),
+    importpath = "github.com/stephenlclarke/container-compose/Tools/compose-normalizer",
+    deps = [
+        "//Tools/compose-normalizer/oci:oci",
+        "//Tools/compose-normalizer/remote:remote",
+        "//Tools/compose-normalizer/transform:transform",
+        "@com_github_compose_spec_compose_go_v2//cli:go_default_library",
+        "@com_github_compose_spec_compose_go_v2//dotenv:go_default_library",
+        "@com_github_compose_spec_compose_go_v2//loader:go_default_library",
+        "@com_github_compose_spec_compose_go_v2//template:go_default_library",
+        "@com_github_compose_spec_compose_go_v2//types:go_default_library",
+        "@com_github_containerd_containerd_v2//core/remotes:go_default_library",
+        "@com_github_defanglabs_secret_detector//pkg/detectors/keyword:go_default_library",
+        "@com_github_defanglabs_secret_detector//pkg/scanner:go_default_library",
+        "@com_github_defanglabs_secret_detector//pkg/secrets:go_default_library",
+        "@com_github_distribution_reference//:go_default_library",
+        "@com_github_docker_cli//cli/config:go_default_library",
+        "@com_github_opencontainers_go_digest//:go_default_library",
+        "@com_github_opencontainers_image_spec//specs-go/v1:go_default_library",
+        "@in_yaml_go_yaml_v4//:go_default_library"
+    ],
+)
+
+go_binary(
+    name = "compose-normalizer",
+    embed = [":compose-normalizer_lib"],
+)
+
+go_test(
+    name = "compose-normalizer_test",
+    args = ["-test.v"],
+    srcs = glob(["*_test.go"]),
+    embed = [":compose-normalizer_lib"],
+    deps = [
+        "//Tools/compose-normalizer/oci:oci",
+        "//Tools/compose-normalizer/remote:remote",
+        "@com_github_compose_spec_compose_go_v2//types:go_default_library",
+        "@com_github_containerd_containerd_v2//core/content:go_default_library",
+        "@io_opentelemetry_go_otel_sdk//trace:go_default_library",
+        "@com_github_containerd_containerd_v2//core/remotes:go_default_library",
+        "@com_github_distribution_reference//:go_default_library",
+        "@com_github_opencontainers_go_digest//:go_default_library",
+        "@com_github_opencontainers_image_spec//specs-go/v1:go_default_library",
+        "@in_yaml_go_yaml_v4//:go_default_library"
+    ],
+)

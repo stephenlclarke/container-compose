@@ -1,0 +1,142 @@
+# Copyright 2026 devcontainer project authors. SPDX-License-Identifier: Apache-2.0
+module(name = "container_compose")
+
+bazel_dep(name = "rules_swift", version = "3.6.1", repo_name = "build_bazel_rules_swift")
+bazel_dep(name = "apple_support", version = "1.24.2")
+bazel_dep(name = "rules_cc", version = "0.2.14")
+bazel_dep(name = "rules_shell", version = "0.6.1")
+bazel_dep(name = "rules_swift_package_manager", version = "1.23.0")
+bazel_dep(name = "rules_license", version = "1.0.0")
+bazel_dep(name = "rules_pkg", version = "1.0.1")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "rules_apple", version = "4.3.3", repo_name = "build_bazel_rules_apple")
+bazel_dep(name = "rules_go", version = "0.60.0")
+bazel_dep(name = "gazelle", version = "0.50.0")
+
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.from_file(go_mod = "//Tools/compose-normalizer:go.mod")
+use_repo(go_sdk, "main___download_0")
+
+go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
+go_deps.from_file(go_mod = "//Tools/compose-normalizer:go.mod")
+use_repo(
+    go_deps,
+    "com_github_defanglabs_secret_detector",
+    "com_github_compose_spec_compose_go_v2",
+    "com_github_containerd_containerd_v2",
+    "com_github_containerd_errdefs",
+    "com_github_distribution_reference",
+    "com_github_docker_cli",
+    "com_github_moby_buildkit",
+    "com_github_opencontainers_go_digest",
+    "com_github_opencontainers_image_spec",
+    "com_github_sirupsen_logrus",
+    "in_yaml_go_yaml_v4",
+    "io_opentelemetry_go_otel_sdk",
+    "org_golang_x_sys",
+)
+
+
+# Licence metadata overlays only; reuse the exact go.mod/go.sum source archives.
+go_deps.module_override(path = "github.com/DefangLabs/secret-detector", patches = ["//Tools/bazel:licenses/com_github_defanglabs_secret_detector.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/compose-spec/compose-go/v2", patches = ["//Tools/bazel:licenses/com_github_compose_spec_compose_go_v2.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/containerd/containerd/v2", patches = ["//Tools/bazel:licenses/com_github_containerd_containerd_v2.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/containerd/errdefs", patches = ["//Tools/bazel:licenses/com_github_containerd_errdefs.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/distribution/reference", patches = ["//Tools/bazel:licenses/com_github_distribution_reference.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/docker/cli", patches = ["//Tools/bazel:licenses/com_github_docker_cli.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/moby/buildkit", patches = ["//Tools/bazel:licenses/com_github_moby_buildkit.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/opencontainers/go-digest", patches = ["//Tools/bazel:licenses/com_github_opencontainers_go_digest.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/opencontainers/image-spec", patches = ["//Tools/bazel:licenses/com_github_opencontainers_image_spec.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/sirupsen/logrus", patches = ["//Tools/bazel:licenses/com_github_sirupsen_logrus.patch"], patch_strip = 1)
+go_deps.module_override(path = "go.yaml.in/yaml/v4", patches = ["//Tools/bazel:licenses/in_yaml_go_yaml_v4.patch"], patch_strip = 1)
+go_deps.module_override(path = "golang.org/x/sys", patches = ["//Tools/bazel:licenses/org_golang_x_sys.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/cespare/xxhash/v2", patches = ["//Tools/bazel:licenses/com_github_cespare_xxhash_v2.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/containerd/log", patches = ["//Tools/bazel:licenses/com_github_containerd_log.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/containerd/platforms", patches = ["//Tools/bazel:licenses/com_github_containerd_platforms.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/containerd/ttrpc", patches = ["//Tools/bazel:licenses/com_github_containerd_ttrpc.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/containerd/typeurl/v2", patches = ["//Tools/bazel:licenses/com_github_containerd_typeurl_v2.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/docker/docker-credential-helpers", patches = ["//Tools/bazel:licenses/com_github_docker_docker_credential_helpers.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/docker/go-connections", patches = ["//Tools/bazel:licenses/com_github_docker_go_connections.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/docker/go-units", patches = ["//Tools/bazel:licenses/com_github_docker_go_units.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/felixge/httpsnoop", patches = ["//Tools/bazel:licenses/com_github_felixge_httpsnoop.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/go-logr/logr", patches = ["//Tools/bazel:licenses/com_github_go_logr_logr.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/go-logr/stdr", patches = ["//Tools/bazel:licenses/com_github_go_logr_stdr.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/go-viper/mapstructure/v2", patches = ["//Tools/bazel:licenses/com_github_go_viper_mapstructure_v2.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/golang-jwt/jwt/v5", patches = ["//Tools/bazel:licenses/com_github_golang_jwt_jwt_v5.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/google/uuid", patches = ["//Tools/bazel:licenses/com_github_google_uuid.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/hashicorp/errwrap", patches = ["//Tools/bazel:licenses/com_github_hashicorp_errwrap.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/hashicorp/go-multierror", patches = ["//Tools/bazel:licenses/com_github_hashicorp_go_multierror.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/in-toto/attestation", patches = ["//Tools/bazel:licenses/com_github_in_toto_attestation.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/in-toto/in-toto-golang", patches = ["//Tools/bazel:licenses/com_github_in_toto_in_toto_golang.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/inhies/go-bytesize", patches = ["//Tools/bazel:licenses/com_github_inhies_go_bytesize.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/klauspost/compress", patches = ["//Tools/bazel:licenses/com_github_klauspost_compress.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/mattn/go-shellwords", patches = ["//Tools/bazel:licenses/com_github_mattn_go_shellwords.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/moby/locker", patches = ["//Tools/bazel:licenses/com_github_moby_locker.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/pkg/errors", patches = ["//Tools/bazel:licenses/com_github_pkg_errors.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/planetscale/vtprotobuf", patches = ["//Tools/bazel:licenses/com_github_planetscale_vtprotobuf.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/santhosh-tekuri/jsonschema/v6", patches = ["//Tools/bazel:licenses/com_github_santhosh_tekuri_jsonschema_v6.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/secure-systems-lab/go-securesystemslib", patches = ["//Tools/bazel:licenses/com_github_secure_systems_lab_go_securesystemslib.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/shibumi/go-pathspec", patches = ["//Tools/bazel:licenses/com_github_shibumi_go_pathspec.patch"], patch_strip = 1)
+go_deps.module_override(path = "github.com/xhit/go-str2duration/v2", patches = ["//Tools/bazel:licenses/com_github_xhit_go_str2duration_v2.patch"], patch_strip = 1)
+go_deps.module_override(path = "go.opentelemetry.io/auto/sdk", patches = ["//Tools/bazel:licenses/io_opentelemetry_go_auto_sdk.patch"], patch_strip = 1)
+go_deps.module_override(path = "go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc", patches = ["//Tools/bazel:licenses/io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc.patch"], patch_strip = 1)
+go_deps.module_override(path = "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace", patches = ["//Tools/bazel:licenses/io_opentelemetry_go_contrib_instrumentation_net_http_httptrace_otelhttptrace.patch"], patch_strip = 1)
+go_deps.module_override(path = "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp", patches = ["//Tools/bazel:licenses/io_opentelemetry_go_contrib_instrumentation_net_http_otelhttp.patch"], patch_strip = 1)
+go_deps.module_override(path = "go.opentelemetry.io/otel", patches = ["//Tools/bazel:licenses/io_opentelemetry_go_otel.patch"], patch_strip = 1)
+go_deps.module_override(path = "go.opentelemetry.io/otel/metric", patches = ["//Tools/bazel:licenses/io_opentelemetry_go_otel_metric.patch"], patch_strip = 1)
+go_deps.module_override(path = "go.opentelemetry.io/otel/sdk", patches = ["//Tools/bazel:licenses/io_opentelemetry_go_otel_sdk.patch"], patch_strip = 1)
+go_deps.module_override(path = "go.opentelemetry.io/otel/trace", patches = ["//Tools/bazel:licenses/io_opentelemetry_go_otel_trace.patch"], patch_strip = 1)
+go_deps.module_override(path = "golang.org/x/crypto", patches = ["//Tools/bazel:licenses/org_golang_x_crypto.patch"], patch_strip = 1)
+go_deps.module_override(path = "golang.org/x/net", patches = ["//Tools/bazel:licenses/org_golang_x_net.patch"], patch_strip = 1)
+go_deps.module_override(path = "golang.org/x/sync", patches = ["//Tools/bazel:licenses/org_golang_x_sync.patch"], patch_strip = 1)
+go_deps.module_override(path = "golang.org/x/text", patches = ["//Tools/bazel:licenses/org_golang_x_text.patch"], patch_strip = 1)
+go_deps.module_override(path = "google.golang.org/genproto/googleapis/rpc", patches = ["//Tools/bazel:licenses/org_golang_google_genproto_googleapis_rpc.patch"], patch_strip = 1)
+go_deps.module_override(path = "google.golang.org/grpc", patches = ["//Tools/bazel:licenses/org_golang_google_grpc.patch"], patch_strip = 1)
+go_deps.module_override(path = "google.golang.org/protobuf", patches = ["//Tools/bazel:licenses/org_golang_google_protobuf.patch"], patch_strip = 1)
+go_deps.module_override(path = "gopkg.in/ini.v1", patches = ["//Tools/bazel:licenses/in_gopkg_ini_v1.patch"], patch_strip = 1)
+go_deps.module_override(path = "gopkg.in/yaml.v3", patches = ["//Tools/bazel:licenses/in_gopkg_yaml_v3.patch"], patch_strip = 1)
+
+swift_deps = use_extension("//Tools/bazel:dependencies.bzl", "dependencies")
+swift_deps.lockfiles(
+    enhanced = "//:Package.resolved",
+    stock = "//:Package.stock.resolved",
+)
+use_repo(
+    swift_deps,
+    "swiftpkg_container",
+    "swiftpkg_containerization",
+    "swiftpkg_container_engine_api",
+    "swiftpkg_swift_argument_parser",
+    "swiftpkg_swift_collections",
+    "swiftpkg_swift_docc_plugin",
+    "swiftpkg_swift_log",
+    "swiftpkg_swift_nio",
+)
+
+# Preserve root and nested Sources notices supplied by the selected Swift packages.
+single_version_override(
+    module_name = "rules_swift_package_manager",
+    version = "1.23.0",
+    patches = ["//Tools/bazel:licenses/rules-swift-all-notices.patch"],
+    patch_strip = 1,
+)
+
+# Expose SDK notices and isolate Clang sanitizers from Go's own runtime modes.
+single_version_override(
+    module_name = "rules_go",
+    version = "0.60.0",
+    patches = [
+        "//Tools/bazel:licenses/rules-go-sdk-notices.patch",
+        "//Tools/bazel:rules-go-sanitizer-isolation.patch",
+    ],
+    patch_strip = 1,
+)
+
+# macOS Foundation createFile can use a volume-level replacement directory,
+# which is outside Bazel's sandbox when outputs live on the external SSD.
+single_version_override(
+    module_name = "rules_swift",
+    version = "3.6.1",
+    patches = ["//Tools/bazel:rules-swift-sandbox-output.patch"],
+    patch_strip = 1,
+)
