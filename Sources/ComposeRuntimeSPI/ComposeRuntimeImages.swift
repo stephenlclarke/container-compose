@@ -190,6 +190,10 @@ public struct ComposeBridgeTransformer: Sendable, Equatable {
 /// or use a remote image service. The orchestrator depends on this contract
 /// rather than on a particular runtime package.
 public protocol ComposeRuntimeImageManaging: Sendable {
+    /// Selects an immutable local identity before image-derived preparation.
+    /// Nil preserves legacy providers that do not expose immutable selection.
+    func selectImageForCreation(_ reference: String, platform: String?) async throws -> ComposeImageSelection?
+
     /// Returns whether `reference` exists in the local image store.
     func imageExists(_ reference: String) async throws -> Bool
 
@@ -242,6 +246,10 @@ public protocol ComposeRuntimeImageManaging: Sendable {
 }
 
 public extension ComposeRuntimeImageManaging {
+    func selectImageForCreation(_: String, platform _: String?) async throws -> ComposeImageSelection? {
+        nil
+    }
+
     /// Treats image configuration metadata as available unless a backend has a local-image boundary.
     func prepareImageVolumeMetadata(_: String, pullIfMissing _: Bool) async throws -> Bool {
         true

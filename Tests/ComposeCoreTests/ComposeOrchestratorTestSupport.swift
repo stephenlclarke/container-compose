@@ -2372,6 +2372,18 @@ actor RecordingContainerEventsManager: ContainerEventsManaging {
 
 
 actor RecordingContainerImageManager: ContainerImageManaging {
+    private var creationSelections: [String: ComposeImageSelection] = [:]
+    private(set) var creationSelectionRequests: [ImageMetadataRequestKey] = []
+
+    func setCreationSelection(_ selection: ComposeImageSelection, for reference: String) {
+        creationSelections[reference] = selection
+    }
+
+    func selectImageForCreation(_ reference: String, platform: String?) async throws -> ComposeImageSelection? {
+        creationSelectionRequests.append(.init(reference: reference, platform: platform))
+        return creationSelections[reference]
+    }
+
     private var storage: [ContainerImageRequest] = []
     private var archivedImageData: [Data] = []
     private var existingReferences: Set<String>

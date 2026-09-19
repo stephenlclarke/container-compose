@@ -10,6 +10,48 @@ import Testing
 struct EngineServiceImageSelectionTests {
     private let imageID = "sha256:" + String(repeating: "a", count: 64)
 
+    @Test(arguments: ["linux/amd64", "linux/arm64/v7"])
+    func preparedSelectionMustStillMatchRequestedPlatform(_ platform: String) async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let recorder = RequestRecorder()
+        let server = fixture.server(ServiceImageResponder(recorder: recorder, firstID: imageID, selectedID: imageID))
+        try await server.start()
+        var plan = preparedPlan()
+        plan.imageSelection = .init(reference: imageID, platform: "linux/arm64")
+        plan.launchOptions.platform = platform
+        await #expect(throws: ComposeError.self) {
+            try await EngineRuntimeProvider(socketPath: fixture.socketPath).preparedServiceCreateRequest(plan)
+        }
+        #expect(await recorder.requests.count == 1)
+        try await server.shutdown()
+    }
+
+    @Test func preparedSelectionNeverReopensTheMutableTag() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let recorder = RequestRecorder()
+        let server = fixture.server(ServiceImageResponder(
+            recorder: recorder, firstID: "sha256:" + String(repeating: "b", count: 64), selectedID: imageID
+        ))
+        try await server.start()
+        do {
+            var plan = preparedPlan()
+            plan.imageSelection = .init(reference: imageID, platform: "linux/arm64")
+            let request = try await EngineRuntimeProvider(socketPath: fixture.socketPath)
+                .preparedServiceCreateRequest(plan)
+            #expect(request.imageReference == imageID)
+            #expect(request.process.command == ["/selected-by-id"])
+            let requests = await recorder.requests
+            #expect(requests.count == 1)
+            #expect(requests[0].target.contains("sha256"))
+        } catch {
+            try? await server.shutdown()
+            throw error
+        }
+        try await server.shutdown()
+    }
+
     @Test(arguments: [nil, "", "linux/arm64"] as [String?])
     func freezesImageIdentityWithoutMutatingTags(_ platform: String?) async throws {
         let fixture = try EngineFixture()

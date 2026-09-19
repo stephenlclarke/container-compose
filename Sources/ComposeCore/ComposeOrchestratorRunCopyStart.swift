@@ -85,6 +85,7 @@ extension ComposeOrchestrator {
         ))
         createPlan.environmentFiles = run.envFiles
         createPlan.detach = run.detach
+        let metadataService = service.selectingImage(createPlan.imageSelection)
         args.append(contentsOf: ["--name", runtimeName])
         if createPlan.detach {
             args.append("--detach")
@@ -128,7 +129,7 @@ extension ComposeOrchestrator {
         }
         try await args.append(contentsOf: runtimeHealthCheckArguments(
             project: project,
-            service: service,
+            service: metadataService,
             cache: imageHealthCheckCache
         ))
         if !run.oneOff, let restartPolicy = try runtimeRestartPolicyArguments(service: service) {
@@ -179,7 +180,7 @@ extension ComposeOrchestrator {
         try prepareBindMountSources(project: project, service: service, mounts: composeDeclaredMounts)
         let imageVolumeMounts = try await prepareRuntimeImageVolumes(
             project: project,
-            service: service,
+            service: metadataService,
             context: mountContext,
             mounts: mounts,
         )

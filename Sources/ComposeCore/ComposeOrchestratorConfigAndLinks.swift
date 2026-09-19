@@ -167,6 +167,9 @@ extension ComposeOrchestrator {
         guard let image = serviceImage(project: project, service: service) else {
             throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
         }
+        let selection = options.dryRun ? nil
+            : try await imageManager.selectImageForCreation(image, platform: service.platform)
+        let metadataService = service.selectingImage(selection)
         let supplementalGroups = try runtimeSupplementalGroups(service: service)
         let oomScoreAdj = try runtimeOOMScoreAdj(service: service)
         let baseProcess = serviceCreateBaseProcess(
@@ -178,7 +181,7 @@ extension ComposeOrchestrator {
         let healthCheck = planOptions.resolveHealthCheck
             ? try await runtimeHealthCheck(
                 project: project,
-                service: service,
+                service: metadataService,
                 cache: request.imageHealthCheckCache,
                 baseProcess: baseProcess,
             )
@@ -186,21 +189,7 @@ extension ComposeOrchestrator {
         let restartPolicy = planOptions.includeRestartPolicy
             ? try runtimeRestartPolicy(service: service) ?? .no
             : .no
-        let identity = try ContainerServiceCreateIdentity(
-            name: request.runtimeName,
-            imageReference: image,
-            oneOff: planOptions.oneOff,
-            autoRemove: planOptions.autoRemove,
-            labels: serviceCreateLabels(
-                project: project,
-                service: service,
-                oneOff: planOptions.oneOff,
-                externalVolumeMounts: request.externalVolumeMounts,
-                labelOverrides: request.labelOverrides,
-            ),
-            annotations: effectiveServiceAnnotations(service: service),
-            exposedPorts: service.expose ?? [],
-        )
+        let identity = try serviceCreateIdentity(request: request, image: image)
         let runtime = try serviceCreateRuntime(
             project: project,
             service: service,
@@ -208,7 +197,30 @@ extension ComposeOrchestrator {
             healthCheck: healthCheck,
             restartPolicy: restartPolicy,
         )
-        return ContainerServiceCreatePlan(identity: identity, runtime: runtime)
+        var plan = ContainerServiceCreatePlan(identity: identity, runtime: runtime)
+        plan.imageSelection = selection
+        return plan
+    }
+
+    private func serviceCreateIdentity(
+        request: ServiceCreatePlanRequest, image: String
+    ) throws -> ContainerServiceCreateIdentity {
+        let service = request.service
+        return try ContainerServiceCreateIdentity(
+            name: request.runtimeName,
+            imageReference: image,
+            oneOff: request.options.oneOff,
+            autoRemove: request.options.autoRemove,
+            labels: serviceCreateLabels(
+                project: request.project,
+                service: service,
+                oneOff: request.options.oneOff,
+                externalVolumeMounts: request.externalVolumeMounts,
+                labelOverrides: request.labelOverrides,
+            ),
+            annotations: effectiveServiceAnnotations(service: service),
+            exposedPorts: service.expose ?? [],
+        )
     }
 
     private func serviceCreateRuntime(

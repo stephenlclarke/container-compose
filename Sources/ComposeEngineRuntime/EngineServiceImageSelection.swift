@@ -12,20 +12,41 @@ extension EngineServiceCreateRequest {
 }
 
 extension EngineRuntimeProvider {
+    public func selectImageForCreation(
+        _ reference: String, platform: String?
+    ) async throws -> ComposeImageSelection? {
+        let image = try await inspectImage(reference, platform: platform)
+        guard EngineServiceCreateRequest.validImageID(image.id) else {
+            throw ComposeError.invalidProject("Gateway returned an invalid immutable image ID")
+        }
+        let selectedPlatform = [image.operatingSystem, image.architecture, image.variant?.nilIfEmpty]
+            .compactMap { $0 }.joined(separator: "/")
+        return ComposeImageSelection(reference: image.id, platform: selectedPlatform)
+    }
+
     /// Freeze the config identity before resolving process defaults. Reinspection
     /// addresses that identity, never a replacement tag or a temporary alias.
     func preparedServiceCreateRequest(_ plan: ContainerServiceCreatePlan) async throws -> EngineServiceCreateRequest {
         let environment = try await capturedServiceEnvironment(plan)
-        let requested = try await inspectImage(plan.imageReference, platform: plan.launchOptions.platform)
-        guard EngineServiceCreateRequest.validImageID(requested.id) else {
+        let selection: ComposeImageSelection
+        if let prepared = plan.imageSelection {
+            selection = prepared
+        } else {
+            guard let selected = try await selectImageForCreation(
+                plan.imageReference, platform: plan.launchOptions.platform
+            ) else {
+                throw ComposeError.invalidProject("Gateway did not select an image")
+            }
+            selection = selected
+        }
+        guard EngineServiceCreateRequest.validImageID(selection.reference), !selection.platform.isEmpty else {
             throw ComposeError.invalidProject("Gateway returned an invalid immutable image ID")
         }
-        let selectedPlatform = [
-            requested.operatingSystem, requested.architecture, requested.variant?.nilIfEmpty,
-        ].compactMap { $0 }.joined(separator: "/")
-        let platform = plan.launchOptions.platform?.nilIfEmpty ?? selectedPlatform
-        let selected = try await inspectImage(requested.id, platform: platform)
-        guard selected.id == requested.id else {
+        let selected = try await inspectImage(selection.reference, platform: selection.platform)
+        if let platform = plan.launchOptions.platform?.nilIfEmpty {
+            try Self.validateImagePlatform(selected, requested: EngineImagePlatformQuery(platform), argument: platform)
+        }
+        guard selected.id == selection.reference else {
             throw ComposeError.invalidProject("Gateway changed the immutable image identity during selection")
         }
         return try EngineServiceCreateRequest(

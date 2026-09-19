@@ -104,6 +104,7 @@ public struct ContainerServiceCreatePlan: Codable, Equatable, Sendable {
     public var processOverrides: ComposeProcessOverrides
     public var name: String
     public var imageReference: String
+    public var imageSelection: ComposeImageSelection?
     public var oneOff: Bool
     public var autoRemove: Bool
     public var labels: [String: String]
