@@ -29,6 +29,38 @@ import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test("network labels preserve the logical key in native and dry-run creation", arguments: ["default", "shared-backend"])
+    func networkLabelsPreserveLogicalKey(runtimeName: String) async throws {
+        let project = composeProject(name: "demo", services: [:])
+        let network = ComposeNetwork(
+            name: runtimeName,
+            options: ComposeNetwork.Options(labels: [
+                "com.apple.container.compose.network": "incorrect",
+                "com.example.network": "retained",
+            ])
+        )
+        let resources = RecordingContainerResourceManager()
+        try await ComposeOrchestrator(runner: RecordingRunner(responses: []), resourceManager: resources)
+            .ensureNetwork(project: project, composeName: "default", network: network)
+        let requests = await resources.requests
+        #expect(requests.count == 1)
+        guard case let .createNetwork(request) = try #require(requests.first) else {
+            Issue.record("Expected native network creation")
+            return
+        }
+        #expect(request.name == (runtimeName == "default" ? "demo_default" : runtimeName))
+        #expect(request.labels["com.apple.container.compose.network"] == "default")
+        #expect(request.labels["com.example.network"] == "retained")
+        let emitted = MessageRecorder()
+        try await ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }))
+            .ensureNetwork(project: project, composeName: "default", network: network)
+        let command = try #require(emitted.messages.first)
+        #expect(command.contains("--label com.apple.container.compose.network=default"))
+        #expect(command.contains("--label com.example.network=retained"))
+        #expect(!command.contains("incorrect"))
+        #expect(command.hasSuffix(request.name))
+    }
+
     @Test("up creates resources and runs services with compose labels")
     func upCreatesResourcesAndRunsServicesWithComposeLabels() async throws {
         let runner = RecordingRunner(responses: [

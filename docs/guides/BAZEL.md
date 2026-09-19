@@ -6,7 +6,9 @@ The native graph compiles ComposeRuntimeSPI, ComposeCore, the selected stock/enh
 
 ## Shared workflow
 
-The family launcher is reused from the reviewed devcontainer workflow rather than duplicated. For this development checkpoint, use `Tools/bazel/run.sh` from devcontainer commit `fecb8207858c60a8567153224445ea6cb33a8bae` (PR [83](https://github.com/stephenlclarke/devcontainer/pull/83)). `Tools/bazel/workflow-tooling.json` binds every shared executable helper's bytes and permissions; a different helper set fails before the build. Keep that checkout on internal storage. This explicit source-tooling dependency is not a runtime dependency on devcontainer and is not a stable clean-machine bootstrap claim.
+The family launcher is reused from the reviewed devcontainer workflow rather than duplicated. For this development checkpoint, use `Tools/bazel/run.sh` from devcontainer commit `014abca4cc6b1a9ed04b104a0dbfa687676d27be` (PR [83](https://github.com/stephenlclarke/devcontainer/pull/83)). `Tools/bazel/workflow-tooling.json` binds every shared executable helper's bytes and permissions; a different helper set fails before the build. Keep that checkout on internal storage. This explicit source-tooling dependency is not a runtime dependency on devcontainer and is not a stable clean-machine bootstrap claim.
+
+The unreleased stock Engine adapter now records digest-qualified image spelling in the reserved `com.apple.container.compose.image-reference` creation label, without altering the actual image operand or guest arguments. Devcontainer's matching PR 83 validates that spelling against the native descriptor and repository before projecting it. Tag-only behavior is unchanged. Network creation also records `com.apple.container.compose.network` as the logical key, including when the runtime name is customized; dry-run labels match real creation. Focused network tests and the full Engine-adapter component pass, but these changes still require a new candidate pair and live C01 proof. See [PR 708 evidence](../PR-708.md).
 
 ```sh
 export FAMILY_BAZEL_LAUNCHER=/absolute/path/to/reviewed-devcontainer/Tools/bazel/run.sh

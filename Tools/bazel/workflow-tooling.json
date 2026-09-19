@@ -5,7 +5,7 @@
   },
   "candidate_archive.py": {
     "mode": 420,
-    "sha256": "412f8bf87af1c61671c9761b7819a84c389049390ae00d5028b67eafc825712d"
+    "sha256": "b9bd5640f320246b763c49ec0683818a0c277f4843549330eef9dc9a47a012aa"
   },
   "check_evidence.py": {
     "mode": 420,
@@ -29,7 +29,11 @@
   },
   "prepare_candidate.py": {
     "mode": 420,
-    "sha256": "9584aba572ba66faf7222512643ef5657dbb73e2555aca1b4a835d4fb89461c8"
+    "sha256": "c5bb3c0fd71a8a6dd06e57ca9b5503fbde175d564c782c47dd965b4db5be4dbc"
+  },
+  "prepare_devcontainers_cli.py": {
+    "mode": 420,
+    "sha256": "d9bebb7fc79d3c3214d796743753a1f5cd4ac495f8232484f848b20519bc4aee"
   },
   "prepare_docker_cli.py": {
     "mode": 420,
@@ -41,7 +45,7 @@
   },
   "prepare_releases.py": {
     "mode": 420,
-    "sha256": "2833c7120fba8c0d6aae563e7dc272abb670657c28f3e3bb25ed783219db622d"
+    "sha256": "6446b14c9cf866474a951a955b8004bacb5f4f3676fba2266477dfc58eb9fc14"
   },
   "release_inputs.py": {
     "mode": 420,
@@ -53,7 +57,7 @@
   },
   "run.sh": {
     "mode": 493,
-    "sha256": "a184c1867c35efb5f35e1d06e872ad8ce362243de567fd07fc7749b402b98737"
+    "sha256": "6a70349639166b28a6959b456e75fbd6ef85efe8fc47685c0c63a60c1d6e1684"
   },
   "ssd-test-runner.sh": {
     "mode": 493,
@@ -65,7 +69,7 @@
   },
   "test_candidate_archive.py": {
     "mode": 420,
-    "sha256": "60d2b2bb6b9a5c0fb799e67c193fc48a5c6dde9fff928560a9817faaf86816aa"
+    "sha256": "61067fdbe6570c37fc2a591aab186df1e8c138966d5ff82a5df9200664705d26"
   },
   "test_coverage_report.py": {
     "mode": 420,
@@ -89,7 +93,11 @@
   },
   "test_prepare_candidate.py": {
     "mode": 420,
-    "sha256": "0e2c224ddce95518e2bb4aed38f95b767193652f85a692dcc9801f6c79849c0c"
+    "sha256": "25a7cb22c1c0f45e9b7c6e6acf1d013dff377fa85807f6981bd9aa8b012064fc"
+  },
+  "test_prepare_devcontainers_cli.py": {
+    "mode": 420,
+    "sha256": "53c1318f0e6682f0f22b9b5864726a927921b7c5f5c8f24ff7ad4f7bb5bda232"
   },
   "test_prepare_docker_cli.py": {
     "mode": 420,

@@ -2,6 +2,8 @@
 
 ## Feature or enhancement request details
 
+The unchanged C01 devcontainer fixture exposed missing logical network labels and loss of the original digest-qualified image spelling across native creation. PR 708 now adds the logical key to real/dry-run network labels and reserved original-image metadata at native launch; devcontainer verifies the actual native descriptor before using it. Focused network and complete Engine-adapter tests pass. Live matched-candidate proof remains required; no fixture or release threshold changes.
+
 Native DocC generation now reuses optimized ComposeCore/ComposeRuntimeSPI modules and the identical family rule/action/test snapshot from devcontainer. Per-module cached conversion and safe declared-input link materialization produce a standalone site without SwiftPM or runtime work. Nine action fault tests and three real-site checks pass in both profiles; stock reuses the profile-independent documentation actions. This does not publish Pages or qualify a stable release. Independent review is clean; the shared adapter's isolated line coverage is 75/76 (98.68%).
 
 The operator requested a Bazel-owned build/test workflow shared with devcontainer: eliminate duplicate work, retain evidence for recovery, keep disposable files on the external SSD and long-lived assets internally, and ultimately publish qualified stable releases. The legacy build/test/release entry points remain until the complete native graph and acceptance gates replace them.
@@ -16,7 +18,7 @@ Sonar input warnings must be resolved in maintained source rather than hidden wi
 
 Every added fixture must also satisfy the existing licence-header policy. The full Apache-2.0 header replaces the rejected abbreviated header in the help-dispatch test; no source-check exclusion is permitted.
 
-The selected shared launcher must match all 28 byte/mode entries before Bazel starts. Admit the reviewed devcontainer `86834d7` packaging regression through the exact helper lock; source SHA admission alone does not prove cross-repository helper compatibility. No runtime or quality-policy change is required.
+The selected shared launcher must match all 30 byte/mode entries before Bazel starts. Admit the reviewed devcontainer `014abca4cc6b1a9ed04b104a0dbfa687676d27be` artifact-admission and private-CLI preparation helpers through the exact helper lock; source SHA admission alone does not prove cross-repository helper compatibility. No runtime or quality-policy change is required.
 
 Portable test extraction must pass the unchanged source-style gate in addition to executing in both runtime profiles. Hosted run `35334813508` exposed oversized copy/filesystem fixtures; private literal constructors and wrapped calls fix that without changing test data or assertions. Exact-error assertions retain all three port validation failures. Focused native proof and independent review are recorded in PR 708; no product or compatibility claim changes.
 
