@@ -2,6 +2,8 @@
 
 ## Feature or enhancement request details
 
+Current C02 blocker is first-command DNS, not running-state DNS: the strengthened Docker oracle passes and stock Apple fails before later exec reconciliation repairs resolution. Safe creation routing needs the complete resolved service configuration, not a fixture-specific native-argument parser. The create plan now retains command/entrypoint inheritance and process overrides; mounts, networks, remaining options and negotiated gateway creation/start still need integration. [Current scope and evidence](guides/BAZEL.md#stock-compose-health-policy-candidate) supersede historical observations below.
+
 The corrected stock C02 run now starts all three services and verifies actual database health, but fails guest service-name resolution. Cleanup passes with zero owned resources. Native Compose launch bypasses devcontainer's existing managed-host reconciliation; safe external-adoption integration is the next observed gap. [Current evidence](guides/BAZEL.md#stock-compose-health-policy-candidate) supersedes the pending-live note below without changing the fixture or marking C02 complete.
 
 C02 exposed stock Apple rejection of Compose's health-check flags before container creation. The candidate now carries bounded requested policy through a negotiated gateway label rather than passing unsupported native arguments or dropping health checks. Unknown gateways are rejected before project resources, and devcontainer evaluates actual guest probes. [The contract and component evidence](guides/BAZEL.md#stock-compose-health-policy-candidate) remain separate from pending corrected live qualification; the original failed run is preserved.

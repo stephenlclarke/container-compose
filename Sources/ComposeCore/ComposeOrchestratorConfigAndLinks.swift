@@ -217,6 +217,15 @@ extension ComposeOrchestrator {
         restartPolicy: ComposeRestartPolicy,
     ) throws -> ContainerServiceCreateRuntime {
         var runtime = ContainerServiceCreateRuntime()
+        runtime.processOverrides = ComposeProcessOverrides(
+            command: service.command,
+            entrypoint: service.entrypoint,
+            environment: service.environment ?? [:],
+            workingDirectory: service.workingDir,
+            user: service.user,
+            terminal: service.tty == true,
+            openStandardInput: service.stdinOpen == true
+        )
         runtime.initProcess = baseProcess
         runtime.logging = try runtimeLogConfiguration(service: service)
         runtime.healthCheck = healthCheck

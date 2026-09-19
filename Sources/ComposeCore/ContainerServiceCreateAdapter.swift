@@ -45,6 +45,7 @@ public struct ContainerServiceCreateIdentity: Sendable {
 
 /// Runtime-specific service create fields.
 public struct ContainerServiceCreateRuntime: Sendable {
+    public var processOverrides: ComposeProcessOverrides
     public var initProcess: ComposeProcessConfiguration
     public var logging: ComposeLogConfiguration
     public var healthCheck: ComposeHealthCheck?
@@ -60,6 +61,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
     public var memorySwapLimitInBytes: Int64?
 
     public init() {
+        processOverrides = ComposeProcessOverrides()
         initProcess = ComposeRuntimeDefaults.shellProcess()
         logging = ComposeLogConfiguration.standard
         healthCheck = nil
@@ -82,6 +84,7 @@ public struct ContainerServiceCreateRuntime: Sendable {
 /// `container-compose` while later execution code can create containers through
 /// apple/container typed APIs instead of Docker-shaped CLI flags.
 public struct ContainerServiceCreatePlan: Sendable {
+    public var processOverrides: ComposeProcessOverrides
     public var name: String
     public var imageReference: String
     public var oneOff: Bool
@@ -108,6 +111,7 @@ public struct ContainerServiceCreatePlan: Sendable {
         runtime: ContainerServiceCreateRuntime = ContainerServiceCreateRuntime(),
     ) {
         name = identity.name
+        processOverrides = runtime.processOverrides
         imageReference = identity.imageReference
         oneOff = identity.oneOff
         autoRemove = identity.autoRemove

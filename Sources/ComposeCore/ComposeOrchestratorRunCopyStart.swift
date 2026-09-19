@@ -118,7 +118,7 @@ extension ComposeOrchestrator {
         if !run.oneOff, let restartPolicy = try runtimeRestartPolicyArguments(service: service) {
             args.append(contentsOf: restartPolicy.arguments)
         }
-        for (key, value) in (service.environment ?? [:]).sorted(by: { $0.key < $1.key }) {
+        for (key, value) in createPlan.processOverrides.environment.sorted(by: { $0.key < $1.key }) {
             if let value {
                 args.append(contentsOf: ["--env", "\(key)=\(value)"])
             } else {
@@ -208,10 +208,10 @@ extension ComposeOrchestrator {
         if let runtime = service.runtime, !runtime.isEmpty {
             args.append(contentsOf: ["--runtime", runtime])
         }
-        if let workingDir = service.workingDir {
+        if let workingDir = createPlan.processOverrides.workingDirectory {
             args.append(contentsOf: ["--workdir", workingDir])
         }
-        if let user = service.user {
+        if let user = createPlan.processOverrides.user {
             args.append(contentsOf: ["--user", user])
         }
         for group in try runtimeSupplementalGroupArguments(service: service) {
@@ -220,10 +220,10 @@ extension ComposeOrchestrator {
         if let oomScoreAdj = try runtimeOOMScoreAdj(service: service) {
             args.append(contentsOf: ["--oom-score-adj", "\(oomScoreAdj)"])
         }
-        if service.tty == true {
+        if createPlan.processOverrides.terminal {
             args.append("--tty")
         }
-        if service.stdinOpen == true {
+        if createPlan.processOverrides.openStandardInput {
             args.append("--interactive")
         }
         if service.privileged == true {
@@ -314,7 +314,7 @@ extension ComposeOrchestrator {
             args.append(contentsOf: ["--ulimit", ulimit])
         }
         var entrypointCommandPrefix: [String] = []
-        if let entrypoint = service.entrypoint {
+        if let entrypoint = createPlan.processOverrides.entrypoint {
             if entrypoint.isEmpty {
                 args.append("--clear-entrypoint")
             } else {
@@ -337,7 +337,7 @@ extension ComposeOrchestrator {
         }
         args.append(image)
         args.append(contentsOf: entrypointCommandPrefix)
-        args.append(contentsOf: service.command ?? [])
+        args.append(contentsOf: createPlan.processOverrides.command ?? [])
         return args
     }
 
