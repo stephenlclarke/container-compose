@@ -2,7 +2,7 @@
 
 ## Feature or enhancement request details
 
-The unchanged C01 devcontainer fixture exposed missing logical network labels and loss of the original digest-qualified image spelling across native creation. PR 708 now adds the logical key to real/dry-run network labels and reserved original-image metadata at native launch; devcontainer verifies the actual native descriptor before using it. Focused network and complete Engine-adapter tests pass. Live matched-candidate proof remains required; no fixture or release threshold changes.
+The unchanged C01 devcontainer fixture exposed missing logical network labels and loss of the original digest-qualified image spelling across native creation. PR 708 adds the logical key to real/dry-run network labels and reserved original-image metadata at native launch; devcontainer verifies the actual native descriptor before using it. Focused components and stock live C01 now pass, including all original observations and cleanup (`178bf269`, Compose `1fe36f56`, devcontainer `aa56f00`). Enhanced qualification remains blocked on its pinned guest image and stable release gates remain open; no fixture or release threshold changes.
 
 Native DocC generation now reuses optimized ComposeCore/ComposeRuntimeSPI modules and the identical family rule/action/test snapshot from devcontainer. Per-module cached conversion and safe declared-input link materialization produce a standalone site without SwiftPM or runtime work. Nine action fault tests and three real-site checks pass in both profiles; stock reuses the profile-independent documentation actions. This does not publish Pages or qualify a stable release. Independent review is clean; the shared adapter's isolated line coverage is 75/76 (98.68%).
 
