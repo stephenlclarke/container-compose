@@ -21,7 +21,7 @@ import Foundation
 
 extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
     public func launchContainer(_ request: ComposeRuntimeContainerLaunchRequest) async throws -> Int32 {
-        let arguments = try await nativeLaunchArguments(request.arguments)
+        let arguments = try await healthLaunchArguments(request.arguments)
         let result = try await runner.run(
             environmentLauncher,
             [containerBinary, request.command.rawValue] + arguments,
@@ -36,7 +36,7 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
 
     static let originalImageReferenceLabel = "com.apple.container.compose.image-reference"
 
-    private func nativeLaunchArguments(_ arguments: [String]) async throws -> [String] {
+    func nativeHealthFreeArguments(_ arguments: [String]) async throws -> [String] {
         var result = arguments
         var index = result.startIndex
         while index < result.endIndex {
@@ -99,7 +99,7 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
 
     /// Short flags may be grouped; a valued option consumes the remainder or
     /// the following token. Never treat its value as the image operand.
-    private static func shortOptionConsumesNext(_ argument: String, next: String?) throws -> Bool {
+    static func shortOptionConsumesNext(_ argument: String, next: String?) throws -> Bool {
         guard argument.hasPrefix("-"), !argument.hasPrefix("--") else { return false }
         var flags = argument.dropFirst()
         while let flag = flags.first {
@@ -118,7 +118,7 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
         return false
     }
 
-    private static func rejectImageReferenceLabel(option: String, next: String?) throws {
+    static func rejectImageReferenceLabel(option: String, next: String?) throws {
         let value: String?
         if option == "--label" || option == "-l" {
             value = next
@@ -130,12 +130,13 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
         } else {
             value = nil
         }
-        guard value?.split(separator: "=", maxSplits: 1).first != Substring(originalImageReferenceLabel) else {
-            throw ComposeError.invalidProject("The native image-reference label is reserved")
+        let reserved = [originalImageReferenceLabel, ComposeNativeHealthPolicy.label]
+        guard !reserved.contains(where: { value?.split(separator: "=", maxSplits: 1).first == Substring($0) }) else {
+            throw ComposeError.invalidProject("The native policy/provenance label is reserved")
         }
     }
 
-    private static let containerLaunchValueOptions: Set<String> = [
+    static let containerLaunchValueOptions: Set<String> = [
         "--add-host", "--annotation", "--arch", "--blkio", "--cap-add", "--cap-drop",
         "--cidfile", "--cwd", "--gid", "--uid", "--kernel", "--kernel-arg",
         "--masked-path", "--os", "--publish-socket", "--read-only-path",

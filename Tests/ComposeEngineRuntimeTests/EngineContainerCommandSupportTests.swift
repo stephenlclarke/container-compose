@@ -160,7 +160,7 @@ struct EngineContainerCommandSupportTests {
             let status = try await provider.launchContainer(.init(
                 command: .create,
                 arguments: [
-                    "--engine-api-socket", "--health-cmd", "true", "--restart", "on-failure",
+                    "--engine-api-socket", "--restart", "on-failure",
                     "--log-opt", "max-size=10m", "--volume", "project_data:/data",
                     "alpine", "--volume", "container-command:/unchanged",
                 ],
@@ -170,7 +170,7 @@ struct EngineContainerCommandSupportTests {
             #expect(status == 0)
             #expect(runner.commands.first?.arguments == [
                 "/usr/local/bin/container", "create", "--engine-api-socket",
-                "--health-cmd", "true", "--restart", "on-failure", "--log-opt",
+                "--restart", "on-failure", "--log-opt",
                 "max-size=10m", "--volume", "/volumes/project_data/_data:/data",
                 "alpine", "--volume", "container-command:/unchanged",
             ])

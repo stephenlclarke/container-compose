@@ -242,8 +242,15 @@ public struct ComposeRuntimeContainerLaunchRequest: Equatable, Sendable {
 
 /// Authority-backed container creation without a child `container` process.
 public protocol ComposeRuntimeContainerLaunching: Sendable {
+    /// Validate resolved health arguments before creating project resources.
+    func validateHealthCheckArguments(_ arguments: [String]) async throws
     /// Creates or runs one container and returns its process status.
     func launchContainer(_ request: ComposeRuntimeContainerLaunchRequest) async throws -> Int32
+}
+
+public extension ComposeRuntimeContainerLaunching {
+    /// Native enhanced providers already validate their own health primitives.
+    func validateHealthCheckArguments(_: [String]) async throws {}
 }
 
 /// Runtime healthcheck projected from Compose or inherited image metadata.
