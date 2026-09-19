@@ -13,15 +13,18 @@ struct EngineServiceCreateRequest: Encodable {
     let networks: EngineCreateValue
     let exposed: EngineCreateValue
 
-    init(plan: ContainerServiceCreatePlan, image: EngineImageConfig) throws {
-        guard plan.environmentFiles.isEmpty else {
-            throw ComposeError.unsupported("Environment files must be resolved before gateway creation")
-        }
+    init(
+        plan: ContainerServiceCreatePlan, image: EngineImageConfig,
+        environmentFileContents: [Data] = [], hostEnvironment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws {
         guard let ports = plan.publishedPorts, let mounts = plan.resolvedMounts else {
             throw ComposeError.invalidProject("Gateway creation requires prepared ports and mounts")
         }
         try Self.validateNativePolicies(plan)
-        process = try EngineServiceProcess(plan.processOverrides, image: image)
+        let overrides = try EngineServiceEnvironment.resolve(
+            plan, fileContents: environmentFileContents, hostEnvironment: hostEnvironment
+        )
+        process = try EngineServiceProcess(overrides, image: image)
         self.plan = plan
         host = try Self.hostConfiguration(plan, ports: ports, mounts: mounts)
         networks = try Self.networkConfiguration(plan.networkAttachments)
