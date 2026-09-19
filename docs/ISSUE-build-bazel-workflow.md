@@ -2,6 +2,8 @@
 
 ## Feature or enhancement request details
 
+The corrected stock C02 run now starts all three services and verifies actual database health, but fails guest service-name resolution. Cleanup passes with zero owned resources. Native Compose launch bypasses devcontainer's existing managed-host reconciliation; safe external-adoption integration is the next observed gap. [Current evidence](guides/BAZEL.md#stock-compose-health-policy-candidate) supersedes the pending-live note below without changing the fixture or marking C02 complete.
+
 C02 exposed stock Apple rejection of Compose's health-check flags before container creation. The candidate now carries bounded requested policy through a negotiated gateway label rather than passing unsupported native arguments or dropping health checks. Unknown gateways are rejected before project resources, and devcontainer evaluates actual guest probes. [The contract and component evidence](guides/BAZEL.md#stock-compose-health-policy-candidate) remain separate from pending corrected live qualification; the original failed run is preserved.
 
 The unchanged C01 devcontainer fixture exposed missing logical network labels and loss of the original digest-qualified image spelling across native creation. PR 708 adds the logical key to real/dry-run network labels and reserved original-image metadata at native launch; devcontainer verifies the actual native descriptor before using it. Focused components and stock live C01 now pass, including all original observations and cleanup (`178bf269`, Compose `1fe36f56`, devcontainer `aa56f00`). Enhanced qualification remains blocked on its pinned guest image and stable release gates remain open; no fixture or release threshold changes.

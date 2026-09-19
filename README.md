@@ -198,7 +198,7 @@ In this unreleased candidate, `config --output` (including `--variables`) and `c
 
 The enhanced native runtime suite also checks image metadata, platform selection, healthchecks, volume declarations and transformer references without starting services. These component tests exercise the production projection; they do not replace live runtime or registry qualification.
 
-The unreleased stock candidate now negotiates a versioned health-policy bridge with the matching devcontainer gateway before resource creation, replacing health flags unsupported by stock Apple Container. Health comes from actual guest probes, not labels; enhanced native behavior is unchanged. Component tests pass, but corrected C02 live qualification is still pending. See [the bounded contract and evidence](docs/guides/BAZEL.md#stock-compose-health-policy-candidate).
+The unreleased stock candidate now negotiates a versioned health-policy bridge with the matching devcontainer gateway before resource creation. Live C02 starts all three services and verifies actual database health, but its guest service-name lookup still fails; cleanup passes with zero owned resources. Enhanced native behavior is unchanged. See [the bounded contract and evidence](docs/guides/BAZEL.md#stock-compose-health-policy-candidate); this is not yet a parity pass or stable release.
 
 Use [STATUS.md](docs/project/STATUS.md) for the current stable functionality and
 [BACKLOG.md](docs/project/BACKLOG.md) for the remaining 1.0 parity contracts. The live
