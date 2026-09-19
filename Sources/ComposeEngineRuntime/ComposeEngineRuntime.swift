@@ -24,8 +24,8 @@ import Foundation
 /// Wires Compose to the runtime-neutral, current-user Container Engine socket.
 ///
 /// The adapter speaks the Engine HTTP protocol but neither imports nor invokes
-/// Docker software. Container creation remains on the selected Apple
-/// `container` CLI so an unmodified stock installation can own VM lifecycle.
+/// Docker software. Prepared creation and detached startup use the gateway;
+/// legacy argument-only callers retain the selected Apple `container` CLI.
 public enum ComposeEngineRuntime {
     public static let socketEnvironmentVariable = "CONTAINER_COMPOSE_ENGINE_SOCKET"
     public static let volumeInitializerEnvironmentVariable =

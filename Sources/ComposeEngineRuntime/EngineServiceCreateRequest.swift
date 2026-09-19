@@ -44,12 +44,16 @@ struct EngineServiceCreateRequest: Encodable {
         case image = "Image", labels = "Labels", host = "HostConfig", networks = "NetworkingConfig"
         case hostname = "Hostname", domainname = "Domainname", exposed = "ExposedPorts"
         case stopSignal = "StopSignal", stopTimeout = "StopTimeout", health = "Healthcheck"
+        case requestedImageReference = "ContainerImageReference"
     }
 
     func encode(to encoder: Encoder) throws {
         try process.encode(to: encoder)
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(imageReference, forKey: .image)
+        if imageReference != plan.imageReference {
+            try values.encode(plan.imageReference, forKey: .requestedImageReference)
+        }
         try values.encode(plan.labels, forKey: .labels)
         try values.encode(host, forKey: .host)
         try values.encode(networks, forKey: .networks)

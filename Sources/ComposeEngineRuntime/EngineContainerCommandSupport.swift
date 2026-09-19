@@ -21,6 +21,9 @@ import Foundation
 
 extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
     public func launchContainer(_ request: ComposeRuntimeContainerLaunchRequest) async throws -> Int32 {
+        if let configuration = request.configuration {
+            return try await launchPreparedContainer(request, configuration: configuration)
+        }
         let arguments = try await healthLaunchArguments(request.arguments)
         let result = try await runner.run(
             environmentLauncher,

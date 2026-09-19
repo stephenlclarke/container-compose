@@ -2,6 +2,10 @@
 
 ## Feature or enhancement request details
 
+Prepared gateway activation also requires the new versioned image-declaration extension; old/unknown gateways fail before image selection or creation. The review-discovered inspection/ownership regression is corrected by retaining display-only declaration metadata separately from immutable image identity, with paired component proof in [the current guide](guides/BAZEL.md#stock-compose-health-policy-candidate).
+
+Prepared create/detached run now route through the gateway, removing the native-CLI bypass at that boundary. Actual C02 qualification is still pending, and foreground attached I/O remains explicitly unsupported on the new prepared path until its stream lifecycle is implemented. [Current evidence](guides/BAZEL.md#stock-compose-health-policy-candidate) supersedes the earlier staged-transport observations below without closing the release or parity goal.
+
 Environment-file acquisition and preparation have bounded component proof, including real blocked-FIFO cancellation. Core now binds image-derived health, volume metadata and copy-up to the same immutable selection carried into request preparation. Reinspection rejects identity/platform drift without reopening the mutable tag. Live gateway activation, receiver support and remaining native-policy projections are open; the legacy CLI still launches the declared reference. This is not a live parity result.
 
 The typed request builder is staged and component-tested; launch activation remains pending. Standard Engine fields are projected without argv parsing, while unimplemented native extensions fail explicitly. Prepared environment and image selection now cross the component boundary; native-only policies, receiver support and create/start transport still require integration. [PR 708](PR-708.md) records the exact affected regression evidence and coverage; existing live C02 remains incomplete.
