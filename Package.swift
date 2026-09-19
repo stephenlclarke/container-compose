@@ -159,7 +159,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
         .package(
             url: "https://github.com/stephenlclarke/container-engine-api.git",
-            revision: "48e44d74d738ca3d24351ba02c4869be1a3e6998",
+            revision: "c04ed07b8a324a996b9d62397278b90a389fe830",
         ),
     ] + runtimeOnlyDependencies,
     targets: [

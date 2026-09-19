@@ -24,7 +24,7 @@ import Foundation
 /// Wires Compose to the runtime-neutral, current-user Container Engine socket.
 ///
 /// The adapter speaks the Engine HTTP protocol but neither imports nor invokes
-/// Docker software. Prepared creation and detached startup use the gateway;
+/// Docker software. Prepared creation and attached/detached startup use the gateway;
 /// legacy argument-only callers retain the selected Apple `container` CLI.
 public enum ComposeEngineRuntime {
     public static let socketEnvironmentVariable = "CONTAINER_COMPOSE_ENGINE_SOCKET"
@@ -69,6 +69,7 @@ public enum ComposeEngineRuntime {
 
 public final class EngineRuntimeProvider: @unchecked Sendable {
     private let client: Result<ContainerUnixHTTPClient, any Error>
+    let attachmentClient: Result<ContainerUnixHTTPClient, any Error>
     private static let volumeInitializations = EngineVolumeInitializationCoordinator()
     let volumeInitializerPathOverride: String?
     let runner: CommandRunning
@@ -83,6 +84,9 @@ public final class EngineRuntimeProvider: @unchecked Sendable {
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher
     ) {
         client = Result { try ContainerUnixHTTPClient(socketPath: socketPath) }
+        // Long-running foreground jobs must not inherit the control API's
+        // five-minute deadline. Cancellation still interrupts every operation.
+        attachmentClient = Result { try ContainerUnixHTTPClient(socketPath: socketPath, timeoutSeconds: 86400) }
         volumeInitializerPathOverride = volumeInitializerPath
         self.runner = runner
         self.containerBinary = containerBinary

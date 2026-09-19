@@ -41,7 +41,7 @@
   },
   "prepare_guest_images.py": {
     "mode": 420,
-    "sha256": "abac7804eaedb91af275f6e8e63ee5e26f8f122965a2c24eb54e360acee12d52"
+    "sha256": "104c28c5f98a56e725e942a75a8dd413ae41d925dde03e558939b8973a516e98"
   },
   "prepare_releases.py": {
     "mode": 420,
@@ -57,7 +57,7 @@
   },
   "run.sh": {
     "mode": 493,
-    "sha256": "6a70349639166b28a6959b456e75fbd6ef85efe8fc47685c0c63a60c1d6e1684"
+    "sha256": "e1e560f169c22a4d824a4b4d5fc2f9a0407907a210811e1b0b0dd2250331a343"
   },
   "ssd-test-runner.sh": {
     "mode": 493,
@@ -105,7 +105,7 @@
   },
   "test_prepare_guest_images.py": {
     "mode": 420,
-    "sha256": "6572343072636227612fd44b8b3f5e1ce831089f70003fe1efe7be2c900d9bb0"
+    "sha256": "d42879cd914729393c55557fa236b6da598406de676f58fed5c401e83719c41a"
   },
   "test_prepare_releases.py": {
     "mode": 420,
