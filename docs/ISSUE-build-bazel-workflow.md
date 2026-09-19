@@ -2,6 +2,8 @@
 
 ## Feature or enhancement request details
 
+Coverage merger warnings can silently remove invalid counters while leaving tests green. The shared helper update rejects those diagnostics and malformed counters, and requires a retained log for every authenticated test result before exporting coverage. Both default native and consumer-policy gates are covered; no threshold or source denominator is weakened. Devcontainer's current native counter-underflow remains unresolved and is not accepted as release evidence.
+
 Prepared gateway activation also requires the new versioned image-declaration extension; old/unknown gateways fail before image selection or creation. The review-discovered inspection/ownership regression is corrected by retaining display-only declaration metadata separately from immutable image identity, with paired component proof in [the current guide](guides/BAZEL.md#stock-compose-health-policy-candidate).
 
 Prepared create/detached run now route through the gateway, removing the native-CLI bypass at that boundary. Actual C02 qualification is still pending, and foreground attached I/O remains explicitly unsupported on the new prepared path until its stream lifecycle is implemented. [Current evidence](guides/BAZEL.md#stock-compose-health-policy-candidate) supersedes the earlier staged-transport observations below without closing the release or parity goal.

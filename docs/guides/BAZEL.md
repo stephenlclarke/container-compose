@@ -147,6 +147,10 @@ The preceding suite-configuration, missing-input and filesystem failures remain 
 
 ## Validated coverage evidence
 
+**19 September integrity correction:** retained enhanced receipt `ba2c8a11-ccb0-4801-b210-9a494c709f44` at `4b9f1fc8` contains invalid unsigned counters in Core/Plugin test logs and is rejected by the stricter exporter. Its previously reported percentage is historical diagnostic data, not valid release coverage. Devcontainer's earlier clean-source receipt has the same defect; this predates the current process-I/O patch. Original receipts are preserved, with no counter rewriting or denominator exclusions. Clean replacement measurements remain required.
+
+Coverage checks reject tracefile-merger warnings/errors and out-of-range counters rather than accepting omitted lines. Retained export requires an authenticated diagnostic log for every recorded test result, bound to the validated test inventory. Clean test exit alone cannot qualify corrupted or missing coverage evidence. These checks do not change the 90% requirement or remove any production source; devcontainer's current native counter-underflow remains an unresolved release-quality issue.
+
 ### Configuration output on SSD
 
 The expanded CLI suite exposed `config --output` and `convert --output` failures when Foundation tried to use a volume-level replacement area outside the SSD sandbox. The three output branches (including `config --variables --output`) now use the existing same-directory exclusive staging and atomic rename helper. Successful writes produce owner-only `0600` files, replace the requested destination and leave no staging file. No sandbox permission or storage boundary is broadened.
