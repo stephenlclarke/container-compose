@@ -13,7 +13,7 @@
   },
   "coverage_report.py": {
     "mode": 420,
-    "sha256": "b5b8db908bf43d390e8051e2ee693a4798606e947a3b3381d4f842d1b371427e"
+    "sha256": "c08d6bf357265a982aa248d4f6f49d7cdfe2d466758b994ccc8a6814521f8887"
   },
   "hygiene.py": {
     "mode": 420,
@@ -73,11 +73,11 @@
   },
   "test_coverage_report.py": {
     "mode": 420,
-    "sha256": "bc670ef0f0b09e5cbd017359272977dde6ab5867c36f9902ee76eb406ab2e8f4"
+    "sha256": "919766792e70a0b149742f78753ce3d620eb81d965b807530716b8530e7fbceb"
   },
   "test_evidence.py": {
     "mode": 420,
-    "sha256": "1be27de6d33ebd0e9ff94a851188c0f01851f9d03a527a77e7c05232baa1f1b6"
+    "sha256": "f12017dbbf166ea93b70cdb7f43be7d2585dfdc87076109ed0e3d64e9cfceee1"
   },
   "test_hygiene.py": {
     "mode": 420,

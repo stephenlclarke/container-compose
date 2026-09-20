@@ -26,7 +26,10 @@ sh_test(
     args = ["$(location test_cli_contracts.py)", "$(location //:compose)", "$(location //Tools/compose-normalizer:compose-normalizer)"],
     data = ["cli_process.py", "test_cli_contracts.py", "//:compose", "//Tools/compose-normalizer:compose-normalizer"],
     # The shared SSD runner exports LLVM profiles from this declared binary.
-    env = {"TEST_BINARIES_FOR_LLVM_COV": "$(location //:compose)"},
+    env = {
+        "CC_CODE_COVERAGE_SCRIPT": "",  # The SSD runner owns LLVM export.
+        "TEST_BINARIES_FOR_LLVM_COV": "$(location //:compose)",
+    },
     size = "medium",
 )
 
