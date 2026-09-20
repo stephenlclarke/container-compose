@@ -1721,14 +1721,14 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var remove = false
     @Flag(name: .shortAndLong, help: "Run the one-off container in the background.")
     var detach = false
-    @Flag(
-        name: .shortAndLong,
-        inversion: .prefixedNo,
-        help: "Keep stdin open. Enabled by default for Compose compatibility.",
-    )
-    var interactive = true
-    @Flag(name: [.customShort("T"), .customLong("no-tty"), .customLong("no-TTY")], help: "Disable pseudo-TTY allocation.")
-    var noTty = false
+    // The run-only rewriter supplies explicit Boolean values, preserving the
+    // difference between an omitted flag and an explicit false value.
+    @Option(name: .customLong("interactive"), help: "Keep stdin open. Enabled by default for Compose compatibility.")
+    var interactive: Bool?
+    @Option(name: .customLong("no-tty"), help: "Disable pseudo-TTY allocation. Auto-detected by default.")
+    var noTty: Bool?
+    @Option(name: .customLong("tty"), help: .hidden)
+    var tty: Bool?
     @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
     var noDeps = false
     @Flag(name: [.customShort("P"), .customLong("service-ports")], help: "Publish all ports declared by the service.")
@@ -1772,8 +1772,31 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     @Argument(parsing: .remaining, help: "Optional replacement command.")
     var command: [String] = []
 
+    mutating func validate() throws {
+        try validateTerminalFlags()
+    }
+
+    private func validateTerminalFlags() throws {
+        if tty != nil, noTty != nil {
+            throw ValidationError("--tty and --no-tty can't be used together")
+        }
+    }
+
+    /// Docker Compose detects stdout first, then guards implicit piped stdin.
+    func terminalOptions(inputIsTerminal: Bool, outputIsTerminal: Bool) throws -> (interactive: Bool, noTty: Bool) {
+        try validateTerminalFlags()
+        var disabled = noTty ?? !outputIsTerminal
+        if let tty {
+            disabled = !tty
+        } else if noTty == nil, interactive == nil, !inputIsTerminal {
+            disabled = true
+        }
+        return (interactive ?? true, disabled)
+    }
+
     /// Runs a one-off service container with an optional command override.
     func run() async throws {
+        let terminal = try terminalOptions(inputIsTerminal: stdinIsTerminal(), outputIsTerminal: stdoutIsTerminal())
         let loadedProject = try await project()
         do {
             try await orchestrator().run(
@@ -1784,8 +1807,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                     $0.build = build
                     $0.remove = remove
                     $0.detach = detach
-                    $0.interactive = interactive
-                    $0.noTty = noTty
+                    $0.interactive = terminal.interactive
+                    $0.noTty = terminal.noTty
                     $0.noDeps = noDeps
                     $0.servicePorts = servicePorts
                     $0.publish = publish

@@ -743,9 +743,7 @@ public extension ComposeOrchestrator {
         if let user = run.user {
             service.user = user
         }
-        if run.noTty {
-            service.tty = false
-        }
+        service.tty = !run.noTty
         service.stdinOpen = run.interactive
         if !run.useAliases {
             service.networkAliases = nil

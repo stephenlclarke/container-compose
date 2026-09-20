@@ -1894,6 +1894,7 @@ extension ComposeOrchestratorTests {
         ).run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]) {
             $0.remove = true
             $0.interactive = false
+            $0.noTty = true
         })
 
         let command = try #require(runner.commands.first?.arguments)
@@ -1953,6 +1954,7 @@ extension ComposeOrchestratorTests {
             }
         ).run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]) {
             $0.interactive = false
+            $0.noTty = true
         })
 
         #expect(await lifecycleManager.requests == [
@@ -1983,6 +1985,7 @@ extension ComposeOrchestratorTests {
                 }
             ).run(project: project, serviceName: "job", options: composeRunOptions(command: ["false"]) {
                 $0.interactive = false
+                $0.noTty = true
             })
             Issue.record("Expected lifecycle-managed run exit status")
         } catch let error as ComposeRunExitError {
@@ -2044,6 +2047,7 @@ extension ComposeOrchestratorTests {
             ).run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]) {
                 $0.remove = true
                 $0.interactive = false
+                $0.noTty = true
             })
             Issue.record("Expected lifecycle hook failure")
         } catch is ComposeError {}
@@ -2085,7 +2089,10 @@ extension ComposeOrchestratorTests {
         ).run(
             project: project,
             serviceName: "job",
-            options: composeRunOptions(command: ["sleep", "60"]) { $0.interactive = false }
+            options: composeRunOptions(command: ["sleep", "60"]) {
+                $0.interactive = false
+                $0.noTty = true
+            }
         )
 
         let command = try #require(runner.commands.first?.arguments)
@@ -2133,7 +2140,10 @@ extension ComposeOrchestratorTests {
         ).run(
             project: project,
             serviceName: "job",
-            options: composeRunOptions(command: ["sleep", "60"]) { $0.interactive = false }
+            options: composeRunOptions(command: ["sleep", "60"]) {
+                $0.interactive = false
+                $0.noTty = true
+            }
         )
 
         #expect(await execManager.attachedRequests.count == 1)

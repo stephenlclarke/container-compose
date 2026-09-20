@@ -2,6 +2,8 @@
 
 ## Feature or enhancement request details
 
+One-off terminal selection previously inherited the service's `tty` setting and lost the distinction between absent and explicit false CLI flags. The candidate now implements pinned Docker Compose 5.3.1 selection/conflict rules and always projects the selected terminal mode. A review-found grouped-option bug also rewrote flag-looking guest commands; explicit value-consumption metadata and fail-before regression tests correct that boundary. This is supporting C02 work, not full foreground or release qualification; invalid interactive-TTY input rejection, initial sizing and signals remain open.
+
 Coverage merger warnings can silently remove invalid counters while leaving tests green. The shared helper update rejects those diagnostics and malformed counters, and requires a retained log for every authenticated test result before exporting coverage. Both default native and consumer-policy gates are covered; no threshold or source denominator is weakened. Devcontainer's current native counter-underflow remains unresolved and is not accepted as release evidence.
 
 Prepared gateway activation also requires the new versioned image-declaration extension; old/unknown gateways fail before image selection or creation. The review-discovered inspection/ownership regression is corrected by retaining display-only declaration metadata separately from immutable image identity, with paired component proof in [the current guide](guides/BAZEL.md#stock-compose-health-policy-candidate).

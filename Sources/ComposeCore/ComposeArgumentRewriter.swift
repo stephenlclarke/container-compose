@@ -727,11 +727,13 @@ private extension ComposeArgumentRewriter {
                 shouldRewriteOptions = false
                 rewritten.append(argument)
                 index += 1
-            } else if let interactive = rewriteOptionalBooleanFlag(
-                argument, flag: "--interactive", falseFlag: "--no-interactive"
-            ) ?? rewriteOptionalBooleanFlag(argument, flag: "-i", falseFlag: "--no-interactive") {
-                rewritten.append(contentsOf: interactive)
+            } else if let normalized = ComposeRunTerminalArguments.normalize(argument) {
+                rewritten.append(contentsOf: normalized.arguments)
                 index += 1
+                if normalized.consumesFollowingValue, arguments.indices.contains(index) {
+                    rewritten.append(arguments[index])
+                    index += 1
+                }
             } else if argument == "-p" {
                 rewritten.append("--publish")
                 if arguments.indices.contains(index + 1) {

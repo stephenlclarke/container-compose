@@ -28,6 +28,22 @@ import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test(arguments: [false, true], [nil, true, false] as [Bool?])
+    func runTerminalSelectionOverridesServiceTTY(_ noTty: Bool, _ serviceTerminal: Bool?) async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(name: "demo", services: [
+            "job": composeService(name: "job", image: "alpine") { $0.tty = serviceTerminal },
+        ])
+        let options = ComposeRunOptions {
+            $0.noDeps = true
+            $0.noTty = noTty
+        }
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", options: options)
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.contains("--tty") == !noTty)
+        #expect(command.io == .replacingProcess)
+    }
+
     @Test(arguments: [nil, true, false] as [Bool?], [nil, true, false] as [Bool?])
     func runInteractiveSelectionOverridesServiceInput(_ explicit: Bool?, _ serviceInput: Bool?) async throws {
         let runner = RecordingRunner()
@@ -3266,6 +3282,7 @@ extension ComposeOrchestratorTests {
             serviceName: "job",
             options: composeRunOptions(command: ["sh"]) {
                 $0.quiet = true
+                $0.noTty = !terminal
             }
         )
 

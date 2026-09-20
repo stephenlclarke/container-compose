@@ -1609,7 +1609,7 @@ enum ComposeCLIHelp {
           -i, --interactive                 Keep STDIN open even if not attached (default true)
           -l, --label stringArray           Add or override a label
               --name string                 Assign a name to the container
-          -T, --no-tty                      Disable pseudo-TTY allocation (default true)
+          -T, --no-tty                      Disable pseudo-TTY allocation (default: auto-detected)
               --no-deps                     Don't start linked services
           -p, --publish stringArray         Publish a container's port(s) to the host
               --pull string                 Pull image before running ("always"|"missing"|"never") (default "policy")
