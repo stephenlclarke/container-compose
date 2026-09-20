@@ -2,6 +2,8 @@
 
 ## Feature or enhancement request details
 
+The shared launcher's test-scratch namespace now distinguishes workspaces. The previous common base allowed devcontainer's identically named package test to remove Compose's extracted files during simultaneous smoke runs. The shared-tooling lock includes the correction; the failed run remains evidence, not a retry converted into success.
+
 The volume-label correction also rejects contradictory Docker volume metadata before direct native creation. Without that check, a user-supplied conflicting mirror would create a volume that the matching devcontainer API cannot safely inspect or list.
 
 C03 inspection exposed missing logical-volume metadata: native volume creation carried project/user labels but not the original Compose volume key. Custom runtime names prevent safely inferring it later. The candidate now emits that key consistently through typed and dry-run creation; the matching devcontainer API projects it for standard inspection/filtering. [Failing-before regression and outstanding live proof](guides/BAZEL.md#compose-volume-ownership) remain part of the same release-comparison contract.

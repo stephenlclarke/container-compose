@@ -57,7 +57,7 @@
   },
   "run.sh": {
     "mode": 493,
-    "sha256": "86b09a4cfde87f60bb7172a9beab9d8c876f5614eccd66eaa6e1b11dfdb468a0"
+    "sha256": "b1253233cdec5d58be0de5549d03f5b79fbd91466288ef430a72f406f039e51e"
   },
   "ssd-test-runner.sh": {
     "mode": 493,
@@ -89,7 +89,7 @@
   },
   "test_launcher.py": {
     "mode": 420,
-    "sha256": "15a76dcd537b0f98c2c48b7fffee2b182ab7a3fde02d3fc445bb75292df1c0be"
+    "sha256": "fe42ff810b65ed0efa2859c3e153090c8a0e0d31cea987e0b31ad1d37ce825d4"
   },
   "test_prepare_candidate.py": {
     "mode": 420,

@@ -6,6 +6,8 @@ The native graph compiles ComposeRuntimeSPI, ComposeCore, the selected stock/enh
 
 ## Shared workflow
 
+Shared launcher test scratch is namespaced per canonical workspace, preventing identical test labels in separate repositories from sharing a directory. The tooling digest lock includes this correction and its failing-before/passing-after launcher regression. The original concurrent Compose package smoke `4b88135e-7497-4606-b17f-3d5063b97299` failed when its extracted executable disappeared; that result remains retained. Corrected smoke proof must use the new launcher; the built product archive is not discarded.
+
 ### Compose volume ownership
 
 Named-volume creation now emits `com.apple.container.compose.volume` using the logical Compose key, independently of a custom runtime name. Typed and dry-run paths share the same effective labels; user metadata remains, while a user-supplied logical-key mirror cannot overwrite Compose's key. The matching devcontainer API projects project/volume labels in inspection and filtering, rejects contradictory Docker/native mirrors, and requires this identity for C03 cleanup. Existing volumes are not relabelled or deleted by this change.
