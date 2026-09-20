@@ -606,7 +606,7 @@ public extension ComposeOrchestrator {
 
     /// Determines whether the runtime should inherit terminal input and output for a run.
     private func isForegroundInteractiveRun(service: ComposeService, options run: ComposeRunOptions) -> Bool {
-        !run.quiet && !run.detach && (service.tty == true || service.stdinOpen == true)
+        !run.detach && (service.tty == true || service.stdinOpen == true)
     }
 
     /// Validates hook execution before the run has allocated runtime resources.

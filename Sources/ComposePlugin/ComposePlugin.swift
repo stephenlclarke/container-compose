@@ -1737,7 +1737,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var publish: [String] = []
     @Option(name: .customLong("pull"), help: "Image pull policy before running: always, missing, if_not_present, or never.")
     var pull: String?
-    @Flag(name: .shortAndLong, help: "Do not print anything to stdout.")
+    @Flag(name: .shortAndLong, help: "Suppress Compose progress without disconnecting guest input or output.")
     var quiet = false
     @Flag(name: .customLong("quiet-build"), help: "Suppress build progress output.")
     var quietBuild = false

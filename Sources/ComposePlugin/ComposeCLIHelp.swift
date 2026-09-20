@@ -1613,7 +1613,7 @@ enum ComposeCLIHelp {
               --no-deps                     Don't start linked services
           -p, --publish stringArray         Publish a container's port(s) to the host
               --pull string                 Pull image before running ("always"|"missing"|"never") (default "policy")
-          -q, --quiet                       Don't print anything to STDOUT
+          -q, --quiet                       Suppress Compose progress; preserve guest input and output
               --quiet-build                 Suppress progress output from the build process
               --quiet-pull                  Pull without printing progress information
               --remove-orphans              Remove containers for services not defined in the Compose file

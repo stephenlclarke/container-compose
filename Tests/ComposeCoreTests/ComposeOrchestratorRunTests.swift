@@ -3244,20 +3244,24 @@ extension ComposeOrchestratorTests {
         #expect(Array(command.suffix(3)) == ["alpine", "sleep", "60"])
     }
 
-    @Test("run quiet suppresses inherited terminal IO")
-    func runQuietSuppressesInheritedTerminalIO() async throws {
+    @Test("run quiet preserves guest IO without progress", arguments: [false, true])
+    func runQuietPreservesGuestIOWithoutProgress(_ terminal: Bool) async throws {
         let runner = RecordingRunner()
+        let progress = LockedStringRecorder()
         let project = ComposeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.tty = true
+                    $0.tty = terminal
                     $0.stdinOpen = true
                 },
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).run(
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: progressReportingOptions(recordingTo: progress)
+        ).run(
             project: project,
             serviceName: "job",
             options: composeRunOptions(command: ["sh"]) {
@@ -3266,8 +3270,9 @@ extension ComposeOrchestratorTests {
         )
 
         let command = try #require(runner.commands.first?.arguments)
-        #expect(runner.commands.first?.io == .captured(input: nil))
-        #expect(command.contains("--tty"))
+        #expect(runner.commands.first?.io == .replacingProcess)
+        #expect(progress.snapshot.isEmpty)
+        #expect(command.contains("--tty") == terminal)
         #expect(command.contains("--interactive"))
         #expect(Array(command.suffix(2)) == ["alpine", "sh"])
     }

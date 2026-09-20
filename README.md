@@ -200,6 +200,8 @@ The enhanced native runtime suite also checks image metadata, platform selection
 
 The unreleased one-off `run` command now keeps stdin open by default, matching Docker Compose. Use `--interactive=false` (or `--no-interactive`) to close it explicitly, including when a service declares `stdin_open: true`. This also changes `ComposeRunOptions`' default; detached mode controls host attachment, not the container's stdin configuration. [Regression and live-test status](docs/guides/BAZEL.md#prepared-foreground-launch) remains separate from stable support.
 
+For one-off runs, `--quiet` suppresses Compose progress while preserving guest input and output, matching the observed Docker Compose 5.3.1 behavior. The unreleased legacy launcher no longer closes stdin merely because quiet mode was requested.
+
 The unreleased stock candidate negotiates the health-policy and image-declaration capabilities with the matching devcontainer gateway before resource creation. Packaged stock C02 invocation `1d5b7c55` passes startup DNS, running DNS, dependency health and selected-service assertions with zero owned residue. Stock E09 invocation `7ab7395e` now also proves the actual packaged Compose CLI's piped input, separate output streams, exact guest exit and automatic removal without Docker or a CLI fallback. See [the current contract and evidence](docs/guides/BAZEL.md#prepared-foreground-launch); enhanced qualification, complete foreground/terminal parity, quiet benchmarks and stable release remain open.
 
 Use [STATUS.md](docs/project/STATUS.md) for the current stable functionality and

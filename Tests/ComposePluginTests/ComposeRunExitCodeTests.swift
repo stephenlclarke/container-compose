@@ -21,6 +21,13 @@ import Testing
 
 @Suite("Compose run exit codes")
 struct ComposeRunExitCodeTests {
+    @Test
+    func `run help distinguishes quiet progress from guest streams`() throws {
+        let help = try #require(ComposeCLIHelp.helpText(commandPath: ["run"], arguments: ["--ansi", "never"]))
+        #expect(help.contains("Suppress Compose progress; preserve guest input and output"))
+        #expect(!help.contains("Don't print anything to STDOUT"))
+    }
+
     @Test(arguments: [[], ["-i"], ["--interactive"], ["--interactive=true"], ["-i=true"]])
     func `run keeps input open by default and when explicitly enabled`(_ flags: [String]) throws {
         let arguments = ComposeArgumentRewriter.argumentsForParsing(["run"] + flags + ["-T", "app"])
