@@ -29,6 +29,57 @@ import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test("volume labels preserve the logical key in native and dry-run creation", arguments: ["cache", "shared-cache"])
+    func volumeLabelsPreserveLogicalKey(runtimeName: String) async throws {
+        let project = composeProject(name: "demo", services: [:])
+        let volume = ComposeVolume(name: runtimeName, labels: [
+            "com.apple.container.compose.volume": "incorrect",
+            "com.docker.compose.volume": "cache",
+            "com.example.volume": "retained",
+        ])
+        let resources = RecordingContainerResourceManager()
+        try await ComposeOrchestrator(runner: RecordingRunner(responses: []), resourceManager: resources)
+            .ensureVolume(project: project, composeName: "cache", volume: volume)
+        let requests = await resources.requests
+        #expect(requests.count == 1)
+        guard case let .createVolume(request) = try #require(requests.first) else {
+            Issue.record("Expected native volume creation")
+            return
+        }
+        #expect(request.name == (runtimeName == "cache" ? "demo_cache" : runtimeName))
+        #expect(request.labels["com.apple.container.compose.volume"] == "cache")
+        #expect(request.labels["com.docker.compose.volume"] == "cache")
+        #expect(request.labels["com.example.volume"] == "retained")
+        let emitted = MessageRecorder()
+        try await ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }))
+            .ensureVolume(project: project, composeName: "cache", volume: volume)
+        let command = try #require(emitted.messages.first)
+        #expect(command.contains("--label com.apple.container.compose.volume=cache"))
+        #expect(command.contains("--label com.example.volume=retained"))
+        #expect(!command.contains("incorrect"))
+        #expect(command.hasSuffix(request.name))
+    }
+
+    @Test("contradictory Docker volume labels fail before creation", arguments: [false, true])
+    func volumeLabelsRejectConflictingDockerMirror(dryRun: Bool) async throws {
+        let project = composeProject(name: "demo", services: [:])
+        let volume = ComposeVolume(name: "shared-cache", labels: ["com.docker.compose.volume": "other"])
+        let resources = RecordingContainerResourceManager()
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(responses: []),
+            options: ComposeExecutionOptions(dryRun: dryRun, emit: { emitted.append($0) }),
+            resourceManager: resources,
+        )
+        await #expect(throws: ComposeError.invalidProject(
+            "volume 'cache' label 'com.docker.compose.volume' must match its logical key"
+        )) {
+            try await orchestrator.ensureVolume(project: project, composeName: "cache", volume: volume)
+        }
+        #expect(await resources.requests.isEmpty)
+        #expect(emitted.messages.isEmpty)
+    }
+
     @Test("network labels preserve the logical key in native and dry-run creation", arguments: ["default", "shared-backend"])
     func networkLabelsPreserveLogicalKey(runtimeName: String) async throws {
         let project = composeProject(name: "demo", services: [:])

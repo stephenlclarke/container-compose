@@ -739,13 +739,18 @@ extension ComposeOrchestrator {
     func ensureVolume(project: ComposeProject, composeName: String, volume: ComposeVolume) async throws {
         var args = ["volume", "create"]
         let driverOpts = volume.driverOpts ?? [:]
+        var labels = resourceLabels(project: project, labels: volume.labels)
+        // Keep the logical key even when the volume has a custom runtime name.
+        labels["com.apple.container.compose.volume"] = composeName
+        if let mirror = labels["com.docker.compose.volume"], mirror != composeName {
+            throw ComposeError.invalidProject(
+                "volume '\(composeName)' label 'com.docker.compose.volume' must match its logical key"
+            )
+        }
         for option in driverOpts.sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--opt", "\(option.key)=\(option.value)"])
         }
-        for label in resourceLabels(project: project) {
-            args.append(contentsOf: ["--label", label])
-        }
-        for label in (volume.labels ?? [:]).sorted(by: { $0.key < $1.key }) {
+        for label in labels.sorted(by: { $0.key < $1.key }) {
             args.append(contentsOf: ["--label", "\(label.key)=\(label.value)"])
         }
         let runtimeName = volumeRuntimeName(project: project, composeName: composeName, volume: volume)
@@ -757,7 +762,7 @@ extension ComposeOrchestrator {
                 name: runtimeName,
                 driver: volume.driver,
                 driverOpts: driverOpts,
-                labels: resourceLabels(project: project, labels: volume.labels),
+                labels: labels,
             ))
         }
     }

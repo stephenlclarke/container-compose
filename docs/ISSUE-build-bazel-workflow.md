@@ -2,6 +2,10 @@
 
 ## Feature or enhancement request details
 
+The volume-label correction also rejects contradictory Docker volume metadata before direct native creation. Without that check, a user-supplied conflicting mirror would create a volume that the matching devcontainer API cannot safely inspect or list.
+
+C03 inspection exposed missing logical-volume metadata: native volume creation carried project/user labels but not the original Compose volume key. Custom runtime names prevent safely inferring it later. The candidate now emits that key consistently through typed and dry-run creation; the matching devcontainer API projects it for standard inspection/filtering. [Failing-before regression and outstanding live proof](guides/BAZEL.md#compose-volume-ownership) remain part of the same release-comparison contract.
+
 The native unit/CLI coverage gap is resolved for signed source `8cfaf885`: stock 90.8959% and enhanced 90.1833% both pass complete clean-source inventories under the unchanged 90% threshold. [Exact evidence](guides/BAZEL.md#validated-coverage-evidence) supersedes the pending aggregate statements below. This closes this source checkpoint's unit-coverage requirement only; SonarQube, full integration/parity, benchmarks and stable-release requirements remain open.
 
 The corrected native collector produces valid full measurements, but enhanced coverage at `979bfdf4` is 89.9652%, below the unchanged 90% requirement; stock passes at 90.8959%. The runtime-neutral stock-health-policy parser lacked direct enhanced-profile tests. The new shared suite tests its safety bounds, error behavior, defaults and transport encoding without changing production code or excluding source. Focused proof covers 72/72 parser lines, with full clean-source aggregate proof still required. [The current evidence](guides/BAZEL.md#validated-coverage-evidence) retains both the below-threshold result and the test-authoring failure.

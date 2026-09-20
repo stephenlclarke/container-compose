@@ -6,6 +6,18 @@ The native graph compiles ComposeRuntimeSPI, ComposeCore, the selected stock/enh
 
 ## Shared workflow
 
+### Compose volume ownership
+
+Named-volume creation now emits `com.apple.container.compose.volume` using the logical Compose key, independently of a custom runtime name. Typed and dry-run paths share the same effective labels; user metadata remains, while a user-supplied logical-key mirror cannot overwrite Compose's key. The matching devcontainer API projects project/volume labels in inspection and filtering, rejects contradictory Docker/native mirrors, and requires this identity for C03 cleanup. Existing volumes are not relabelled or deleted by this change.
+
+A user-supplied `com.docker.compose.volume` must match that logical key. Both native creation and dry-run reject a contradiction before creating a volume or emitting a create command. Matching Docker metadata remains intact. The review regression fails four assertions at `bcc81a3d-79ed-44c2-82d2-cbdf65ddcc95` before this validation is added.
+
+Final affected Core coverage gate `9029861a-1083-4430-baa5-2da01868646b` passes all 1,146 test functions, including both conflict-rejection paths. Instrumented lines 739-749 cover label construction and both validation branches. Complete independent review is clean. Source SwiftFormat/strict SwiftLint and scoped Markdown checks pass; explicitly linting the large existing test file also reports unrelated pre-existing length/conversion findings, not a clean repository-wide quality result. These component results do not replace the packaged integration gate.
+
+The parameterized regression fails six assertions before correction at `68b75467-9466-426a-a7e8-20e513d9271e`; corrected focused invocation `afe63f4e-d635-4cf6-90b7-26969cc2cb4e` passes 14 test functions, including normal/custom naming and dry-run output. The original C03 Docker fixture passes, but the first stock run timed out because its new harness omitted the private builder needed by the volume helper. The harness now provisions that prerequisite before startup without prebuilding the helper outside operation timing. Corrected packaged stock/enhanced parity and quiet release comparisons remain pending. No Docker dependency, compatibility waiver or performance claim is introduced.
+
+The shared workflow digest lock also adopts the already-reviewed devcontainer launcher/test helper changes from `0c7e323` and `1d62401`: retained release-comparison reporting and the explicit outside-bundle service-test boundary. This is a digest update, not a change to build scheduling, source identity, runtime ownership or release authority.
+
 ### Prepared foreground launch
 
 **Enhanced component qualification:** invocation `737d1669-cc53-4d32-8b92-1175965a0783` passes 1,285 Core and 39 Container-runtime functions in 117.183 seconds overall (4.0/0.8-second target durations). Matching devcontainer enhanced runtime invocation `c3e35ce6-637d-4c68-92c0-bec353bcabd1` passes 262 functions in 39.677 seconds (9.8-second target). The first Compose attempt `5a54d7c9-34ca-4c2b-a19e-4b8a5b7ad046` incorrectly selected the stock-only Engine-runtime target and exposed an undeclared `@platforms` reference while resolving its incompatibility constraint. The root module now directly declares the already-resolved `platforms` 1.0.0; the lockfile version and compatibility rules are unchanged. A direct `query @platforms//:incompatible` succeeds (`diagnostic-e90159c7a374dcba84b90a00d59f59fd79910e873c573926ba39360a210e5d92`), and the corrected enhanced target selection passes. This verifies compile-profile/component behavior, not enhanced VM startup or live parity.
