@@ -66,7 +66,8 @@ struct EngineServiceCreateRequest: Encodable {
         try process.encode(to: encoder)
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(imageReference, forKey: .image)
-        try values.encode(!plan.detach && process.openStandardInput, forKey: .standardInputOnce)
+        // One-off stdin lifetime is independent of the initial host attachment.
+        try values.encode((plan.oneOff || !plan.detach) && process.openStandardInput, forKey: .standardInputOnce)
         if imageReference != plan.imageReference {
             try values.encode(plan.imageReference, forKey: .requestedImageReference)
         }

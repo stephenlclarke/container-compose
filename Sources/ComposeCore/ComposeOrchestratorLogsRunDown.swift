@@ -746,9 +746,7 @@ public extension ComposeOrchestrator {
         if run.noTty {
             service.tty = false
         }
-        if run.interactive {
-            service.stdinOpen = true
-        }
+        service.stdinOpen = run.interactive
         if !run.useAliases {
             service.networkAliases = nil
         }

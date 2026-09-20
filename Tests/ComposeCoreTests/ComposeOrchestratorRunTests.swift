@@ -28,6 +28,25 @@ import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test(arguments: [nil, true, false] as [Bool?], [nil, true, false] as [Bool?])
+    func runInteractiveSelectionOverridesServiceInput(_ explicit: Bool?, _ serviceInput: Bool?) async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(name: "demo", services: [
+            "job": composeService(name: "job", image: "alpine") { $0.stdinOpen = serviceInput },
+        ])
+        let options = ComposeRunOptions {
+            $0.noDeps = true
+            $0.noTty = true
+            if let explicit {
+                $0.interactive = explicit
+            }
+        }
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", options: options)
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.contains("--interactive") == (explicit ?? true))
+        #expect(command.io == (explicit == false ? .captured(input: nil) : .replacingProcess))
+    }
+
     @Test("run supports one-off containers and option flags")
     func runSupportsOneOffContainersAndOptionFlags() async throws {
         let directory = try temporaryDirectory()
@@ -829,7 +848,6 @@ extension ComposeOrchestratorTests {
         ⠓ Pulling image alpine
         ✓ Pulling image alpine
         ⠓ Running job
-        ✓ Running job
 
         """)
         #expect(await imageManager.requests == [
@@ -869,7 +887,7 @@ extension ComposeOrchestratorTests {
             }
         )
 
-        #expect(progress.snapshot.joined() == "⠓ Running job\n✓ Running job\n")
+        #expect(progress.snapshot.joined() == "⠓ Running job\n")
         #expect(await imageManager.requests == [
             .pull("alpine"),
             .healthCheck(reference: "alpine", platform: nil),

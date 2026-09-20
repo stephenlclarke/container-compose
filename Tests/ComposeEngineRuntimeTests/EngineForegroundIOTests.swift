@@ -99,7 +99,7 @@ struct EngineForegroundIOTests {
     }
 
     @Test
-    func outputPreservesBytesAndClosedReaderReturnsError() async throws {
+    func outputPreservesPipeBytes() async throws {
         let pipe = Pipe()
         defer { try? pipe.fileHandleForWriting.close(); try? pipe.fileHandleForReading.close() }
         let output = try EngineForegroundOutput(descriptor: pipe.fileHandleForWriting.fileDescriptor)
@@ -107,9 +107,22 @@ struct EngineForegroundIOTests {
         try await output.write(Data())
         try await output.write(bytes)
         #expect(try pipe.fileHandleForReading.read(upToCount: bytes.count) == bytes)
-        try pipe.fileHandleForReading.close()
-        await #expect(throws: POSIXError.self) { try await output.write(bytes) }
         #expect(throws: POSIXError.self) { try EngineForegroundOutput(descriptor: -1) }
+    }
+
+    @Test
+    func outputReportsWriteShutdownWithoutSignallingCaller() async throws {
+        var descriptors: [Int32] = [-1, -1]
+        try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &descriptors) == 0)
+        defer { Darwin.close(descriptors[0]); Darwin.close(descriptors[1]) }
+        let output = try EngineForegroundOutput(descriptor: descriptors[0])
+        // Disable writes on the shared endpoint, not just one descriptor. This
+        // remains deterministic even when concurrent process creation copies it.
+        try #require(shutdown(descriptors[0], SHUT_WR) == 0)
+        var state = pollfd(fd: descriptors[0], events: Int16(POLLOUT), revents: 0)
+        try #require(poll(&state, 1, 0) == 1)
+        try #require(state.revents & Int16(POLLERR | POLLHUP) != 0)
+        await #expect(throws: POSIXError(.EPIPE)) { try await output.write(Data([42])) }
     }
 
     @Test

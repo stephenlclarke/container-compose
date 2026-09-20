@@ -1891,7 +1891,10 @@ extension ComposeOrchestratorTests {
                 $0.attachManager = attachManager
                 $0.logManager = logManager
             }
-        ).run(project: project, serviceName: "job", command: ["true"], remove: true)
+        ).run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]) {
+            $0.remove = true
+            $0.interactive = false
+        })
 
         let command = try #require(runner.commands.first?.arguments)
         #expect(command.starts(with: ["container", "create"]))
@@ -1948,7 +1951,9 @@ extension ComposeOrchestratorTests {
                 $0.lifecycleManager = lifecycleManager
                 $0.attachManager = attachManager
             }
-        ).run(project: project, serviceName: "job", command: ["true"], remove: false)
+        ).run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]) {
+            $0.interactive = false
+        })
 
         #expect(await lifecycleManager.requests == [
             .wait(id: "demo-job-run-abc123"),
@@ -1976,7 +1981,9 @@ extension ComposeOrchestratorTests {
                     $0.lifecycleManager = lifecycleManager
                     $0.attachManager = RecordingContainerAttachManager()
                 }
-            ).run(project: project, serviceName: "job", command: ["false"], remove: false)
+            ).run(project: project, serviceName: "job", options: composeRunOptions(command: ["false"]) {
+                $0.interactive = false
+            })
             Issue.record("Expected lifecycle-managed run exit status")
         } catch let error as ComposeRunExitError {
             #expect(error.status == 7)
@@ -2034,7 +2041,10 @@ extension ComposeOrchestratorTests {
                     $0.execManager = execManager
                     $0.lifecycleManager = lifecycleManager
                 }
-            ).run(project: project, serviceName: "job", command: ["true"], remove: true)
+            ).run(project: project, serviceName: "job", options: composeRunOptions(command: ["true"]) {
+                $0.remove = true
+                $0.interactive = false
+            })
             Issue.record("Expected lifecycle hook failure")
         } catch is ComposeError {}
 
@@ -2075,7 +2085,7 @@ extension ComposeOrchestratorTests {
         ).run(
             project: project,
             serviceName: "job",
-            options: composeRunOptions(command: ["sleep", "60"])
+            options: composeRunOptions(command: ["sleep", "60"]) { $0.interactive = false }
         )
 
         let command = try #require(runner.commands.first?.arguments)
@@ -2123,7 +2133,7 @@ extension ComposeOrchestratorTests {
         ).run(
             project: project,
             serviceName: "job",
-            options: composeRunOptions(command: ["sleep", "60"])
+            options: composeRunOptions(command: ["sleep", "60"]) { $0.interactive = false }
         )
 
         #expect(await execManager.attachedRequests.count == 1)

@@ -34,6 +34,17 @@ struct EngineServiceCreateRequestTests {
         return try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any])
     }
 
+    @Test(arguments: [true, false], [true, false])
+    func oneOffStdinLifetimeDoesNotDependOnDetach(_ detached: Bool, _ interactive: Bool) throws {
+        var plan = plan()
+        plan.oneOff = true
+        plan.detach = detached
+        plan.processOverrides.openStandardInput = interactive
+        let object = try encode(plan)
+        #expect(object["OpenStdin"] as? Bool == interactive)
+        #expect(object["StdinOnce"] as? Bool == interactive)
+    }
+
     @Test func projectsPreparedServiceWithoutCommandLineParsing() throws {
         var plan = plan()
         plan.labels = ["owner": "test"]

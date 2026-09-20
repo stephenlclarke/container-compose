@@ -198,6 +198,8 @@ In this unreleased candidate, `config --output` (including `--variables`) and `c
 
 The enhanced native runtime suite also checks image metadata, platform selection, healthchecks, volume declarations and transformer references without starting services. These component tests exercise the production projection; they do not replace live runtime or registry qualification.
 
+The unreleased one-off `run` command now keeps stdin open by default, matching Docker Compose. Use `--interactive=false` (or `--no-interactive`) to close it explicitly, including when a service declares `stdin_open: true`. This also changes `ComposeRunOptions`' default; detached mode controls host attachment, not the container's stdin configuration. [Regression and live-test status](docs/guides/BAZEL.md#prepared-foreground-launch) remains separate from stable support.
+
 The unreleased stock candidate negotiates the health-policy and image-declaration capabilities with the matching devcontainer gateway before resource creation. Packaged stock C02 invocation `1d5b7c55` passes startup DNS, running DNS, dependency health and selected-service assertions with zero owned residue. Newer foreground source is component-tested but still needs live qualification: it attaches and registers the real exit before startup, restores host terminal state, and handles cancellation and auto-removal without Docker or a CLI fallback. See [the current contract and evidence](docs/guides/BAZEL.md#prepared-foreground-launch); enhanced qualification, complete foreground parity, quiet benchmarks and stable release remain open.
 
 Use [STATUS.md](docs/project/STATUS.md) for the current stable functionality and

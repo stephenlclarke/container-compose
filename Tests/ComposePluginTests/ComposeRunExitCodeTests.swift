@@ -21,6 +21,25 @@ import Testing
 
 @Suite("Compose run exit codes")
 struct ComposeRunExitCodeTests {
+    @Test(arguments: [[], ["-i"], ["--interactive"], ["--interactive=true"], ["-i=true"]])
+    func `run keeps input open by default and when explicitly enabled`(_ flags: [String]) throws {
+        let arguments = ComposeArgumentRewriter.argumentsForParsing(["run"] + flags + ["-T", "app"])
+        let command = try #require(ComposePlugin.parseAsRoot(arguments) as? Run)
+        #expect(command.interactive)
+        #expect(command.noTty)
+        #expect(ComposeRunOptions().interactive)
+    }
+
+    @Test(arguments: ["--interactive=false", "-i=false", "--no-interactive"])
+    func `run can explicitly disable input without rewriting guest arguments`(_ flag: String) throws {
+        let arguments = ComposeArgumentRewriter.argumentsForParsing([
+            "run", flag, "app", "echo", "--interactive=false"
+        ])
+        let command = try #require(ComposePlugin.parseAsRoot(arguments) as? Run)
+        #expect(!command.interactive)
+        #expect(command.command == ["echo", "--interactive=false"])
+    }
+
     @Test
     func `command failures preserve the one-off process exit status`() throws {
         let error = ComposeRunExitError(status: 7)

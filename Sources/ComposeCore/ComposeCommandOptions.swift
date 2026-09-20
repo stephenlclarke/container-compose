@@ -682,7 +682,7 @@ public struct ComposeRunOptions {
     public var build = false
     public var remove = false
     public var detach = false
-    public var interactive = false
+    public var interactive = true
     public var noTty = false
     public var noDeps = false
     public var servicePorts = false
@@ -709,7 +709,7 @@ public struct ComposeRunOptions {
         build = false
         remove = false
         detach = false
-        interactive = false
+        interactive = true
         noTty = false
         noDeps = false
         servicePorts = false

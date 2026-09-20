@@ -713,7 +713,7 @@ private extension ComposeArgumentRewriter {
         return rewritten
     }
 
-    /// Normalizes Docker Compose `run -p` before the service name.
+    /// Normalizes Docker Compose run options before the service name.
     private static func rewriteRunOptions(_ arguments: [String]) -> [String] {
         var rewritten: [String] = []
         var index = 0
@@ -726,6 +726,11 @@ private extension ComposeArgumentRewriter {
             } else if argument == "--" {
                 shouldRewriteOptions = false
                 rewritten.append(argument)
+                index += 1
+            } else if let interactive = rewriteOptionalBooleanFlag(
+                argument, flag: "--interactive", falseFlag: "--no-interactive"
+            ) ?? rewriteOptionalBooleanFlag(argument, flag: "-i", falseFlag: "--no-interactive") {
+                rewritten.append(contentsOf: interactive)
                 index += 1
             } else if argument == "-p" {
                 rewritten.append("--publish")

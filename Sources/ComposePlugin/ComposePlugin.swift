@@ -1721,8 +1721,12 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var remove = false
     @Flag(name: .shortAndLong, help: "Run the one-off container in the background.")
     var detach = false
-    @Flag(name: .shortAndLong, help: "Keep stdin open.")
-    var interactive = false
+    @Flag(
+        name: .shortAndLong,
+        inversion: .prefixedNo,
+        help: "Keep stdin open. Enabled by default for Compose compatibility.",
+    )
+    var interactive = true
     @Flag(name: [.customShort("T"), .customLong("no-tty"), .customLong("no-TTY")], help: "Disable pseudo-TTY allocation.")
     var noTty = false
     @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
