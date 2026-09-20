@@ -684,6 +684,8 @@ public struct ComposeRunOptions {
     public var detach = false
     public var interactive = true
     public var noTty = false
+    /// Caller input context. Embedders default to terminal input; the CLI supplies its detected state.
+    public var inputIsTerminal = true
     public var noDeps = false
     public var servicePorts = false
     public var publish: [String] = []
@@ -711,6 +713,7 @@ public struct ComposeRunOptions {
         detach = false
         interactive = true
         noTty = false
+        inputIsTerminal = true
         noDeps = false
         servicePorts = false
         publish = []

@@ -1796,7 +1796,8 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
 
     /// Runs a one-off service container with an optional command override.
     func run() async throws {
-        let terminal = try terminalOptions(inputIsTerminal: stdinIsTerminal(), outputIsTerminal: stdoutIsTerminal())
+        let inputIsTerminal = stdinIsTerminal()
+        let terminal = try terminalOptions(inputIsTerminal: inputIsTerminal, outputIsTerminal: stdoutIsTerminal())
         let loadedProject = try await project()
         do {
             try await orchestrator().run(
@@ -1809,6 +1810,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                     $0.detach = detach
                     $0.interactive = terminal.interactive
                     $0.noTty = terminal.noTty
+                    $0.inputIsTerminal = inputIsTerminal
                     $0.noDeps = noDeps
                     $0.servicePorts = servicePorts
                     $0.publish = publish
@@ -1837,7 +1839,14 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
 }
 
 /// Preserves a foreground `run` process status without adding error output.
-func throwRunCommandError(_ error: Error) throws -> Never {
+func throwRunCommandError(
+    _ error: Error,
+    emitError: (String) -> Void = { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+) throws -> Never {
+    if let inputError = error as? ComposeError, inputError == .invalidTerminalInput {
+        emitError(inputError.description)
+        throw ExitCode(1)
+    }
     guard let runExit = error as? ComposeRunExitError else {
         throw error
     }

@@ -28,6 +28,142 @@ import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test(arguments: [false, true])
+    func runRejectsPipedTTYAfterStartingDependenciesBeforeJobPreparation(_ detached: Bool) async throws {
+        let runner = RecordingRunner()
+        let images = RecordingContainerImageManager(pullFailures: ["missing-job"])
+        let resources = RecordingContainerResourceManager()
+        let discovery = RecordingContainerDiscoveryManager()
+        let project = composeProject(name: "demo", services: [
+            "db": composeService(name: "db", image: "postgres") { $0.networkMode = "none" },
+            "job": composeService(name: "job", image: "missing-job") {
+                $0.networkMode = "none"
+                $0.dependsOn = ["db": ComposeDependency(condition: "service_healthy")]
+                $0.volumes = [ComposeMount(type: "volume", source: "job-data", target: "/data")]
+            },
+        ]) { $0.volumes = ["job-data": ComposeVolume(name: "job-data")] }
+        let run = ComposeRunOptions {
+            $0.inputIsTerminal = false
+            $0.detach = detached
+            $0.pullPolicy = "always"
+        }
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                dependencies: orchestratorDependencies {
+                    $0.imageManager = images
+                    $0.resourceManager = resources
+                    $0.discoveryManager = discovery
+                }
+            ).run(project: project, serviceName: "job", options: run)
+            Issue.record("Expected terminal validation failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidTerminalInput)
+        }
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 1)
+        #expect(commands.first?.containsSequence(["--name", "demo-db-1"]) == true)
+        #expect(await discovery.getRequests == ["demo-db-1"])
+        #expect(await images.requests == [.healthCheck(reference: "postgres", platform: nil)])
+        #expect(await resources.requests.isEmpty)
+    }
+
+    @Test
+    func runTerminalInputValidationDependsOnInteractiveTTYAndCallerInput() async throws {
+        for interactive in [false, true] {
+            for tty in [false, true] {
+                for inputIsTerminal in [false, true] {
+                    let runner = RecordingRunner()
+                    let project = composeProject(
+                        name: "demo", services: ["job": ComposeService(name: "job", image: "alpine")]
+                    )
+                    let run = ComposeRunOptions {
+                        $0.noDeps = true
+                        $0.noTty = !tty
+                        $0.interactive = interactive
+                        $0.inputIsTerminal = inputIsTerminal
+                    }
+                    let rejected = interactive && tty && !inputIsTerminal
+                    do {
+                        try await ComposeOrchestrator(runner: runner).run(
+                            project: project, serviceName: "job", options: run
+                        )
+                        #expect(!rejected)
+                    } catch let error as ComposeError {
+                        #expect(rejected)
+                        #expect(error == .invalidTerminalInput)
+                    }
+                    #expect(runner.commands.count == (rejected ? 0 : 1))
+                }
+            }
+        }
+    }
+
+    @Test
+    func runSharedDependencyResourcesArePreparedOnce() async throws {
+        let runner = RecordingRunner()
+        let resources = RecordingContainerResourceManager()
+        let mount = ComposeMount(type: "volume", source: "shared", target: "/data")
+        let project = composeProject(name: "demo", services: [
+            "db": composeService(name: "db", image: "postgres") {
+                $0.networks = ["backend"]
+                $0.volumes = [mount]
+            },
+            "job": composeService(name: "job", image: "alpine") {
+                $0.networks = ["backend"]
+                $0.volumes = [mount]
+                $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+            },
+        ]) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["shared": ComposeVolume(name: "shared")]
+        }
+        try await ComposeOrchestrator(runner: runner, resourceManager: resources).run(
+            project: project, serviceName: "job", options: ComposeRunOptions()
+        )
+        #expect(await resources.requests.map(\.name) == ["demo_backend", "demo_shared"])
+        #expect(runner.commands.count == 2)
+    }
+
+    @Test
+    func runDependenciesUsePreparedEngineRequestsBeforeTerminalRejection() async throws {
+        let runner = RecordingRunner()
+        let launcher = RecordingContainerLaunchManager()
+        let service = composeService(name: "db", image: "postgres") {
+            $0.networkMode = "none"
+            $0.command = ["sleep", "300"]
+        }
+        let project = composeProject(name: "demo", services: [
+            "db": service,
+            "job": composeService(name: "job", image: "alpine") {
+                $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+            },
+        ])
+        let execution = ComposeExecutionOptions {
+            $0.runtimeCapabilities = .init(identifiers: ["io.github.stephenlclarke.container.logging-drivers.v1"])
+        }
+        let orchestrator = ComposeOrchestrator(
+            runner: runner, options: execution,
+            dependencies: orchestratorDependencies { $0.launchManager = launcher }
+        )
+        await #expect(throws: ComposeError.invalidTerminalInput) {
+            try await orchestrator.run(
+                project: project, serviceName: "job", options: ComposeRunOptions { $0.inputIsTerminal = false }
+            )
+        }
+        let requests = await launcher.requests
+        #expect(requests.count == 1)
+        let request = try #require(requests.first)
+        let configuration = try #require(request.configuration)
+        #expect(request.command == .run)
+        #expect(configuration.name == "demo-db-1")
+        #expect(configuration.detach)
+        #expect(!configuration.oneOff)
+        #expect(!configuration.autoRemove)
+        #expect(configuration.processOverrides.command == ["sleep", "300"])
+        #expect(runner.commands.isEmpty)
+    }
+
     @Test(arguments: [false, true], [nil, true, false] as [Bool?])
     func runTerminalSelectionOverridesServiceTTY(_ noTty: Bool, _ serviceTerminal: Bool?) async throws {
         let runner = RecordingRunner()

@@ -156,4 +156,17 @@ struct ComposeRunExitCodeTests {
             Issue.record("Unexpected error: \(error)")
         }
     }
+
+    @Test
+    func `terminal input failures emit the exact Docker diagnostic and exit one`() throws {
+        var messages: [String] = []
+        do {
+            try throwRunCommandError(ComposeError.invalidTerminalInput, emitError: { messages.append($0) })
+        } catch let exitCode as ExitCode {
+            #expect(exitCode.rawValue == 1)
+        } catch {
+            Issue.record("Unexpected error: \(error)")
+        }
+        #expect(messages == ["cannot attach stdin to a TTY-enabled container because stdin is not a terminal"])
+    }
 }

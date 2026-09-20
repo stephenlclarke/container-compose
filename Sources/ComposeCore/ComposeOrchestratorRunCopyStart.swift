@@ -472,7 +472,7 @@ extension ComposeOrchestrator {
                 try await deleteContainer(name)
             }
 
-            let arguments = try await runArguments(
+            let launch = try await serviceLaunchPlan(
                 project: workingProject,
                 service: service,
                 options: RunArgumentOptions {
@@ -483,8 +483,10 @@ extension ComposeOrchestrator {
                 imageHealthCheckCache: imageHealthCheckCache
             )
             try await runContainer(
-                arguments,
-                logging: try runtimeLogConfiguration(service: service)
+                launch.arguments,
+                emitOutput: false,
+                logging: launch.configuration.logging,
+                configuration: launch.configuration
             )
             if hasPreStartHooks(service) {
                 try await startServiceTargets(
