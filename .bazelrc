@@ -27,6 +27,13 @@ coverage --combined_report=lcov
 coverage --instrumentation_filter=^//,-^//:ComposeTestStorage$
 coverage --experimental_use_llvm_covmap
 coverage --experimental_generate_llvm_lcov
+# Parallel tests need lossless counters. The rules_swift worker can retain
+# non-atomic incremental objects after these flags change; coverage uses fresh
+# sandboxed compile actions, while Bazel's content-keyed action cache remains.
+coverage --@build_bazel_rules_swift//swift:copt=-Xllvm
+coverage --@build_bazel_rules_swift//swift:copt=-instrprof-atomic-counter-update-all
+coverage --copt=-fprofile-update=atomic
+coverage --strategy=SwiftCompile=sandboxed
 build:release --compilation_mode=opt
 build:asan --features=asan
 build:tsan --features=tsan
