@@ -35,6 +35,8 @@ go_binary(
 
 go_test(
     name = "volume-initializer_test",
+    # rules_go owns coverage here; there are no first-party C sources.
+    env = {"CC_CODE_COVERAGE_SCRIPT": ""},
     args = ["-test.v"],
     srcs = glob(["*_test.go"], exclude = ["permission_bits_test.go"]),
     embed = [":volume-initializer_lib"],
@@ -47,6 +49,8 @@ go_test(
 # Only this filesystem-capability test runs outside it, still in SSD scratch.
 go_test(
     name = "permission_bits_test",
+    # rules_go owns coverage here; there are no first-party C sources.
+    env = {"CC_CODE_COVERAGE_SCRIPT": ""},
     args = ["-test.v"],
     srcs = ["permission_bits_test.go", "fixture_test.go"],
     embed = [":volume-initializer_lib"],

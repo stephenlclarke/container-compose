@@ -2,6 +2,8 @@
 
 ## Feature or enhancement request details
 
+The same unconfigured optional C collector also affects all six maintained Go tests. The stricter full-stock gate catches it after successful test execution rather than accepting a false-green report. Each Go target now uses only its existing rules_go coverage path; there are no first-party C/cgo sources in their manifests. Focused corrected proof passes all six without recompilation, and full aggregate qualification must be regenerated under the unchanged policy.
+
 Bazel's optional C collector can fail without failing the outer test, leaving an apparently successful coverage run. The CLI shell harness now keeps the existing SSD LLVM exporter as its only native collector, and reviewed shared evidence validation rejects collector and LLVM profile failures in both fresh and retained logs. The regression and 42-case stock CLI harness pass without weakening the denominator or threshold; [current evidence](guides/BAZEL.md#validated-coverage-evidence) remains separate from complete quality and release qualification.
 
 One-off terminal selection previously inherited the service's `tty` setting and lost the distinction between absent and explicit false CLI flags. The candidate now implements pinned Docker Compose 5.3.1 selection/conflict rules and always projects the selected terminal mode. A review-found grouped-option bug also rewrote flag-looking guest commands; explicit value-consumption metadata and fail-before regression tests correct that boundary. This is supporting C02 work, not full foreground or release qualification; invalid interactive-TTY input rejection, initial sizing and signals remain open.

@@ -25,6 +25,8 @@ go_library(
 
 go_test(
     name = "remote_test",
+    # rules_go owns coverage here; there are no first-party C sources.
+    env = {"CC_CODE_COVERAGE_SCRIPT": ""},
     args = ["-test.v"],
     srcs = glob(["*_test.go"]),
     embed = [":remote"],

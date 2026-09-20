@@ -37,6 +37,8 @@ go_binary(
 
 go_test(
     name = "compose-normalizer_test",
+    # rules_go owns coverage here; there are no first-party C sources.
+    env = {"CC_CODE_COVERAGE_SCRIPT": ""},
     args = ["-test.v"],
     srcs = glob(["*_test.go"]),
     embed = [":compose-normalizer_lib"],
