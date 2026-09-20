@@ -18,11 +18,89 @@ import ComposeCore
 @testable import ComposeEngineRuntime
 import ComposeRuntimeSPI
 import ContainerEngineWire
+import Darwin
 import Foundation
 import Testing
 
 @Suite(.timeLimit(.minutes(1)))
 struct EngineForegroundLaunchTests {
+    @Test
+    func cancellationInterruptsARealSignalRequestBeforeRestoringIO() async throws {
+        try await withFixture(keepRunning: true, failure: "held-signal") { provider, responder, plan in
+            let signals = ForegroundTestSignalProxy(implementation: DispatchComposeSignalProxy())
+            let output = ForegroundTestIO()
+            var io = output.io
+            io.signalProxy = signals
+            io.write = { frame in
+                try await output.io.write(frame)
+                if frame.channel == .standardOutput, signals.beginDelivery(), !signals.installed.isEmpty {
+                    #expect(Darwin.raise(SIGUSR1) == 0)
+                }
+            }
+            let capturedIO = io
+            let operation = Task {
+                try await provider.launchPreparedContainer(
+                    .init(command: .run, arguments: [], logging: plan.logging), configuration: plan,
+                    foregroundIO: capturedIO
+                )
+            }
+            let readyDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while !(await responder.requests.contains { $0.target.contains("/kill?") }),
+                  ContinuousClock.now < readyDeadline
+            {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(await responder.requests.contains { $0.target.contains("/kill?signal=SIGUSR1") })
+            operation.cancel()
+            let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+            while !output.restored, ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(output.restored)
+            #expect(signals.restored)
+            // Release only after the assertion, to bound a fail-before run.
+            await responder.releaseSignalBarrier()
+            await #expect(throws: CancellationError.self) { try await operation.value }
+        }
+    }
+
+    @Test(arguments: [false, true], [false, true])
+    func hostSignalsUseTheImmutableIdentityAndPreserveExit(_ terminal: Bool, _ killFails: Bool) async throws {
+        let failure = killFails ? "signal-exit-race" : nil
+        try await withFixture(terminal: terminal, keepRunning: true, failure: failure) { provider, responder, plan in
+            let signals = ForegroundTestSignalProxy()
+            let output = ForegroundTestIO()
+            var io = output.io
+            io.signalProxy = signals
+            io.write = { frame in
+                try await output.io.write(frame)
+                if frame.channel == .standardOutput, signals.beginDelivery() {
+                    await signals.send("SIGUSR1")
+                    await signals.send("SIGTERM")
+                    // Bound the fail-before case where no proxy was installed.
+                    // Missing forwarding still fails the exact request checks.
+                    await responder.session.cancel()
+                }
+            }
+            let status = try await provider.launchPreparedContainer(
+                .init(command: .run, arguments: [], logging: plan.logging), configuration: plan, foregroundIO: io
+            )
+            #expect(status == 7)
+            #expect(signals.installed == ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM", "SIGUSR1", "SIGUSR2"])
+            #expect(signals.restored)
+            #expect(output.restored)
+            let requests = await responder.requests
+            #expect(requests.filter { $0.target.contains("/kill?") }.map(\.target) == [
+                "/v1.53/containers/created-id/kill?signal=SIGUSR1",
+                "/v1.53/containers/created-id/kill?signal=SIGTERM",
+            ])
+            #expect(requests.allSatisfy { $0.method != .delete })
+        }
+    }
+
+}
+
+extension EngineForegroundLaunchTests {
     @Test
     func missingExitCapabilityRefusesBeforeCreation() async throws {
         try await withFixture(failure: "wait-capability") { provider, responder, plan in
@@ -112,6 +190,9 @@ struct EngineForegroundLaunchTests {
         }
     }
 
+}
+
+extension EngineForegroundLaunchTests {
     @Test
     func autoRemovedContainerKeepsItsNonzeroExit() async throws {
         try await withFixture(failure: "auto-remove") { provider, responder, configured in
@@ -147,6 +228,7 @@ struct EngineForegroundLaunchTests {
             task.cancel()
             await #expect(throws: CancellationError.self) { try await task.value }
             #expect(output.restored)
+            #expect(output.signalProxy.restored)
             #expect(await responder.requests.allSatisfy { $0.method != .delete })
         }
     }
@@ -319,12 +401,14 @@ private extension EngineForegroundLaunchTests {
             try await operation(provider, responder, plan)
             #expect(runner.commands.isEmpty)
         } catch {
+            await responder.releaseSignalBarrier()
             await responder.releaseExitBarrier()
             await responder.session.cancel()
             try? await server.shutdown()
             throw error
         }
         await responder.releaseExitBarrier()
+        await responder.releaseSignalBarrier()
         await responder.session.cancel()
         try await server.shutdown()
     }
@@ -342,6 +426,7 @@ private final class ForegroundTestSizes: @unchecked Sendable {
 }
 
 private final class ForegroundTestIO: @unchecked Sendable {
+    let signalProxy = ForegroundTestSignalProxy()
     private let lock = NSLock()
     private var input: [Data]
     private var storage: [DockerStreamFrame] = []
@@ -365,7 +450,8 @@ private final class ForegroundTestIO: @unchecked Sendable {
     var io: EngineForegroundIO {
         .init(read: { self.lock.withLock { self.input.isEmpty ? nil : self.input.removeFirst() } },
               write: { frame in self.lock.withLock { self.storage.append(frame) } },
-              restore: { self.lock.withLock { self.didRestore = true } })
+              restore: { self.lock.withLock { self.didRestore = true } },
+              signalProxy: signalProxy)
     }
 }
 
@@ -382,6 +468,11 @@ private actor ForegroundResponder: DockerHTTPResponder {
     private var startBarrier: (@Sendable () async throws -> Bool)?
     var drainConfirmedBeforeStartResponse = false
     private let exitBarrier = ForegroundExitBarrier()
+    private let signalBarrier = ForegroundExitBarrier()
+
+    func releaseSignalBarrier() {
+        signalBarrier.release()
+    }
 
     func releaseExitBarrier() {
         exitBarrier.release()
@@ -423,6 +514,9 @@ private actor ForegroundResponder: DockerHTTPResponder {
         if request.target.hasSuffix("/start") {
             return await startResponse()
         }
+        if request.target.contains("/kill?") {
+            return await killResponse(request)
+        }
         if request.target.contains("/resize?") {
             return await resizeResponse(request)
         }
@@ -433,6 +527,19 @@ private actor ForegroundResponder: DockerHTTPResponder {
             return waitResponse(request)
         }
         return .text("unexpected request", status: 400)
+    }
+
+    private func killResponse(_ request: DockerHTTPRequest) async -> DockerHTTPResponse {
+        if failure == "held-signal" {
+            await signalBarrier.wait()
+        }
+        if request.target.hasSuffix("signal=SIGTERM") {
+            await session.cancel()
+        }
+        if failure == "signal-exit-race" {
+            return .text("container was automatically removed", status: 404)
+        }
+        return .empty(status: 204)
     }
 
     private func inspectResponse() async -> DockerHTTPResponse {

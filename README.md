@@ -38,6 +38,8 @@ remains the default for the independently installed Compose plugin. See the
 
 ## Current candidate
 
+The unreleased Bazel development branch now forwards common host signals during prepared foreground runs and safely cancels stalled signal requests. [Signal evidence and limits](docs/guides/BAZEL.md#prepared-foreground-launch) distinguish its passing component tests from the open Docker duplicate-signal oracle and full runtime/release qualification.
+
 The [latest stable release](https://github.com/stephenlclarke/container-compose/releases/latest)
 is the default macOS arm64 lane. The [Current release feed](https://github.com/stephenlclarke/container-compose/releases)
 contains immutable `current-<full-sha>` prereleases; the two Current Homebrew

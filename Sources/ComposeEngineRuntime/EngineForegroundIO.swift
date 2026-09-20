@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 import ContainerEngineWire
 import Darwin
 import Foundation
@@ -29,6 +30,7 @@ struct EngineForegroundIO: Sendable {
     var write: @Sendable (DockerStreamFrame) async throws -> Void
     var size: @Sendable () throws -> EngineTerminalSize? = { nil }
     var restore: @Sendable () throws -> Void = {}
+    var signalProxy: any ComposeSignalProxying = DispatchComposeSignalProxy()
 
     static func system(
         terminal: Bool, standardInput: Bool,

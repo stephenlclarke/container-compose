@@ -53,7 +53,7 @@ extension EngineRuntimeProvider {
             }
             let status: Int32
             if let io {
-                status = try await runAttachedContainer(
+                status = try await runSignalProxiedContainer(
                     id: created.id, terminal: body.process.terminal,
                     standardInput: body.process.openStandardInput, io: io
                 )
