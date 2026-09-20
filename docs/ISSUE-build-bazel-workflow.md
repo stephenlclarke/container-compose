@@ -2,6 +2,8 @@
 
 ## Feature or enhancement request details
 
+The corrected native collector produces valid full measurements, but enhanced coverage at `979bfdf4` is 89.9652%, below the unchanged 90% requirement; stock passes at 90.8959%. The runtime-neutral stock-health-policy parser lacked direct enhanced-profile tests. The new shared suite tests its safety bounds, error behavior, defaults and transport encoding without changing production code or excluding source. Focused proof covers 72/72 parser lines, with full clean-source aggregate proof still required. [The current evidence](guides/BAZEL.md#validated-coverage-evidence) retains both the below-threshold result and the test-authoring failure.
+
 The same unconfigured optional C collector also affects all six maintained Go tests. The stricter full-stock gate catches it after successful test execution rather than accepting a false-green report. Each Go target now uses only its existing rules_go coverage path; there are no first-party C/cgo sources in their manifests. Focused corrected proof passes all six without recompilation, and full aggregate qualification must be regenerated under the unchanged policy.
 
 Bazel's optional C collector can fail without failing the outer test, leaving an apparently successful coverage run. The CLI shell harness now keeps the existing SSD LLVM exporter as its only native collector, and reviewed shared evidence validation rejects collector and LLVM profile failures in both fresh and retained logs. The regression and 42-case stock CLI harness pass without weakening the denominator or threshold; [current evidence](guides/BAZEL.md#validated-coverage-evidence) remains separate from complete quality and release qualification.
