@@ -72,7 +72,6 @@ STAGES = (
     ('provider-enhanced', 'test', '//:ComposeContainerRuntimeTests', 'enhanced', 1800),
     ('cli-stock', 'test', '//Tools/bazel:cli_contracts', 'stock', 900),
     ('cli-enhanced', 'test', '//Tools/bazel:cli_contracts', 'enhanced', 900),
-    ('runtime-tests-build', 'build', '//:ComposeRuntimeTests', 'enhanced', 1800),
     ('unit-stock', 'test', '//:unit_stock', 'stock', 2400),
     ('unit-enhanced', 'test', '//:unit_enhanced', 'enhanced', 2400),
     ('coverage-stock', 'coverage', '//:coverage_stock', 'stock', 2400),
@@ -677,6 +676,11 @@ def run_layers(evidence: Path, original: dict, q: dict) -> tuple[list[dict], str
     rows.append({'name': 'compiled-sdk-chain', 'status': 0,
                  'receipt': str(evidence / 'compiled-sdk-chain.json'),
                  'sha256': sha(evidence / 'compiled-sdk-chain.json')})
+    rows.append(stage(evidence, 'runtime-tests-build',
+                      [str(ROOT / 'Tools/bazel/run.sh'), 'build',
+                       '//:ComposeRuntimeTests', '//:ComposeCoreTests',
+                       '//:ComposePluginTests', '--config=enhanced'], 1800))
+    verify_source(original, source_identity(ROOT))
     rows.append(stage(evidence, 'native-test-output-root',
                       [str(ROOT / 'Tools/bazel/run.sh'), 'info', 'bazel-bin',
                        '--config=enhanced'], 90))

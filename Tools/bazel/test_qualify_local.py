@@ -445,6 +445,66 @@ class QualificationTests(unittest.TestCase):
                          ('workflow-tools', ['make', '--no-print-directory',
                                              'bazel-workflow-tools-test']))
 
+    def test_native_test_binaries_are_materialized_after_all_layers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'evidence'
+            evidence.mkdir()
+            output = root / 'output' / 'bazel-out' / 'darwin_arm64-dbg' / 'bin'
+            output.mkdir(parents=True)
+            local.write(evidence / 'preflight.json', {'container': {
+                'source_receipt_sha256': {}, 'release_sha256': 'same',
+                'guest_sha256': 'same', 'builder_sha256': 'same'}})
+            seen = []
+
+            def fake_stage(directory, name, command, timeout, **_):
+                seen.append((name, command))
+                log = directory / 'stages' / (name + '.log')
+                log.parent.mkdir(exist_ok=True)
+                if name == 'package':
+                    log.write_text('Retained Compose Bazel invocation: ' + 'a' * 36 + '\n')
+                elif name == 'runtime-tests-build':
+                    for target in ('ComposeRuntimeTests', 'ComposeCoreTests',
+                                   'ComposePluginTests'):
+                        binary = output / (target + '.xctest/Contents/MacOS') / target
+                        binary.parent.mkdir(parents=True)
+                        binary.write_bytes(target.encode())
+                        binary.chmod(0o755)
+                        binary.with_name(target + '.runfiles').mkdir()
+                    log.write_text('Built all native test targets\n')
+                elif name == 'native-test-output-root':
+                    log.write_text(str(output) + '\n')
+                else:
+                    log.write_text('stage passed\n')
+                return {'name': name, 'log': str(log), 'status': 0}
+
+            with patch.object(local, 'SSD', root), \
+                 patch.object(local, 'STAGES', (
+                     ('core-enhanced', 'test', '//:ComposeCoreTests', 'enhanced', 1800),
+                     ('package', 'build', '//:candidate_archive', 'enhanced', 2400))), \
+                 patch.object(local, 'stage', side_effect=fake_stage), \
+                 patch.object(local, 'fetch_q_assets', return_value={
+                     'provenance': {'source_receipt_sha256': {}},
+                     'assets': {name: {'sha256': 'same'}
+                                for name in ('runtime', 'guest', 'builder')}}), \
+                 patch.object(local, 'compiled_sdk_chain', return_value={}), \
+                 patch.object(local, 'sha', return_value='receipt-hash'), \
+                 patch.object(local, 'source_identity', return_value={'source': 'same'}), \
+                 patch.object(local, 'verify_source'):
+                rows, _, _, binaries = local.run_layers(
+                    evidence, {'commit': 'a' * 40}, {'hashes': {}})
+
+            self.assertEqual([name for name, _ in seen][-3:],
+                             ['package', 'runtime-tests-build',
+                              'native-test-output-root'])
+            self.assertEqual(seen[-2][1], [str(local.ROOT / 'Tools/bazel/run.sh'),
+                                           'build', '//:ComposeRuntimeTests',
+                                           '//:ComposeCoreTests', '//:ComposePluginTests',
+                                           '--config=enhanced'])
+            self.assertEqual(set(binaries), {'ComposeRuntimeTests', 'ComposeCoreTests',
+                                             'ComposePluginTests'})
+            self.assertEqual(rows[-2]['name'], 'runtime-tests-build')
+
     def test_release_bound_documentation_and_package_commands(self) -> None:
         for name, target in (('docs', '//:documentation_tests'),
                              ('package', '//:candidate_archive'),
