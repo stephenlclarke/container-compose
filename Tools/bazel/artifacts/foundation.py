@@ -221,6 +221,30 @@ def header_only_c_targets(build: str) -> set[str]:
     return targets
 
 
+def compiled_c_header_sources(build: str, compiled: set[str]) -> dict[str, list[str]]:
+    """Retain public headers originally declared in C srcs, never C implementations."""
+    result = {}
+    found = set()
+    for block in re.findall(r"^cc_library\(\n.*?^\)\n", build, re.M | re.S):
+        name = re.search(r'^    name = "([^"]+)"', block, re.M)
+        if not name or name.group(1) not in compiled:
+            continue
+        target = name.group(1)
+        found.add(target)
+        srcs = re.search(r'^    srcs = (.*?)(?=^    [a-z_]+ = |^\)\n)', block, re.M | re.S)
+        if srcs is None:
+            result[target] = []
+            continue
+        value = srcs.group(1).strip().removesuffix(",").strip()
+        if not re.fullmatch(r'\[\s*(?:"[^"]+"\s*,?\s*)*\]', value, re.S):
+            raise ValueError(f"compiled C target has unsupported source expression: {target}")
+        result[target] = [path for path in re.findall(r'"([^"]+)"', value)
+                          if Path(path).suffix in {".h", ".hpp", ".inc", ".modulemap", ".def"}]
+    if found != compiled:
+        raise ValueError("compiled C target is absent from generated BUILD: " + ", ".join(sorted(compiled - found)))
+    return result
+
+
 def artifact_map(paths: list[str], execution_root: Path, output_base: Path,
                  allowed: dict[str, str]) -> tuple[dict[str, dict[str, bytes]], dict[str, dict]]:
     files: dict[str, dict[str, bytes]] = {name: {} for name in allowed}
@@ -319,6 +343,7 @@ def package_overlay(repository: str, source: Path, outputs: dict[str, bytes],
     if not identity["swift"] and not identity["cc"]:
         raise ValueError(f"package has no compiled binary output: {repository}")
     source_files = package_files(source, original)
+    c_src_headers = compiled_c_header_sources(original, set(identity["cc"]))
     # Binary members supersede any source-tree file with the same name.
     if set(source_files) & set(outputs):
         raise ValueError(f"binary output collides with package metadata: {repository}")
@@ -327,10 +352,11 @@ def package_overlay(repository: str, source: Path, outputs: dict[str, bytes],
                 'SWIFT = ' + json.dumps(identity["swift"], sort_keys=True) + '\n'
                 'C = ' + json.dumps(identity["cc"], sort_keys=True) + '\n'
                 'C_HEADER_ONLY = ' + json.dumps(sorted(header_only_c_targets(original))) + '\n'
+                'C_SRC_HEADERS = ' + json.dumps(c_src_headers, sort_keys=True) + '\n'
                 'def foundation_swift_library(**kwargs):\n'
                 '    import_swift_library(SWIFT, **kwargs)\n'
                 'def foundation_cc_library(**kwargs):\n'
-                '    import_cc_library(C, C_HEADER_ONLY, **kwargs)\n')
+                '    import_cc_library(C, C_HEADER_ONLY, C_SRC_HEADERS, **kwargs)\n')
     return {**source_files, **outputs,
             "BUILD.bazel": transformed_build(original).encode(),
             "prebuilt.bzl": prebuilt.encode()}

@@ -38,7 +38,7 @@ def import_swift_library(artifacts, name, module_name, deps = [], data = [], pri
     imported.update(common)
     _swift_import(**imported)
 
-def import_cc_library(artifacts, header_only, name, deps = [], **kwargs):
+def import_cc_library(artifacts, header_only, header_sources, name, deps = [], **kwargs):
     artifact = artifacts.get(name)
     if artifact == None and name not in header_only:
         # An inactive source target may be present in SwiftPM's generated
@@ -55,9 +55,12 @@ def import_cc_library(artifacts, header_only, name, deps = [], **kwargs):
             alwayslink = kwargs.get("alwayslink", False),
         )
         deps = deps + [":" + name + ".prebuilt_archive"]
-    # srcs may contain implementation code, so it is deliberately omitted.
+    # Original srcs can contain public headers alongside implementation code.
+    # Keep only the producer-validated literal header entries so downstream C
+    # compilation retains their original CcInfo include context.
     # The original hdrs/textual_hdrs, include paths, defines, linkopts,
     # aspect hints and dependencies still construct the C compilation and
     # linking providers consumed by Swift and upper C targets.
     attrs = {key: value for key, value in kwargs.items() if key != "srcs"}
-    _cc_library(name = name, deps = deps, srcs = kwargs.get("srcs", []) if artifact == None else [], **attrs)
+    _cc_library(name = name, deps = deps,
+                srcs = kwargs.get("srcs", []) if artifact == None else header_sources[name], **attrs)

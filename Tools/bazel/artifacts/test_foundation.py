@@ -22,8 +22,9 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from foundation import (archive_bytes, digest, group_pins, header_only_c_targets, inspect,
-                        package_overlay, recipe_identity, transformed_build)
+from foundation import (archive_bytes, compiled_c_header_sources, digest, group_pins,
+                        header_only_c_targets, inspect, package_overlay,
+                        recipe_identity, transformed_build)
 
 
 BUILD = '''load("@build_bazel_rules_swift//swift:swift.bzl", "swift_library", "swift_library_group")
@@ -35,8 +36,7 @@ swift_library(
 )
 cc_library(
     name = "CThing.rspm_c",
-    srcs = ["Sources/thing.c"],
-    hdrs = ["Sources/thing.h"],
+    srcs = ["Sources/thing.c", "Sources/thing.h"],
     textual_hdrs = ["Sources/Shims.c"],
 )
 cc_library(
@@ -83,6 +83,8 @@ class FoundationTests(unittest.TestCase):
             self.assertNotIn("Sources/Logging.swift", files)
             self.assertIn(b"CThing.rspm_c", files["prebuilt.bzl"])
             self.assertIn(b'C_HEADER_ONLY = ["HeaderOnly"]', files["prebuilt.bzl"])
+            self.assertIn(b'"CThing.rspm_c": ["Sources/thing.h"]', files["prebuilt.bzl"])
+            self.assertNotIn(b'"CThing.rspm_c": ["Sources/thing.c"', files["prebuilt.bzl"])
 
     def test_unknown_c_sources_never_become_header_only(self) -> None:
         build = '''cc_library(
@@ -95,6 +97,8 @@ cc_library(
 )
 '''
         self.assertEqual(header_only_c_targets(build), {"Headers"})
+        with self.assertRaisesRegex(ValueError, "unsupported source expression"):
+            compiled_c_header_sources(build, {"Generated"})
 
     def test_group_pins_do_not_mix_sdk_and_foundation(self) -> None:
         pins = {"swift-log": "a" * 40, "containerization": "b" * 40,
