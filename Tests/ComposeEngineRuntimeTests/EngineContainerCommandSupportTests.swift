@@ -24,6 +24,29 @@ import Testing
 @Suite(.serialized)
 struct EngineContainerCommandSupportTests {
     @Test(arguments: [
+        (["alpine", "tool", "--detach"], CommandIO.inherited),
+        (["--env", "--detach", "alpine", "tool"], CommandIO.inherited),
+        (["--volume", "/tmp:/data", "--detach", "alpine"], CommandIO.captured(input: nil)),
+        (["--mount", "type=bind,source=/tmp,target=/data", "--detach", "alpine"], CommandIO.captured(input: nil)),
+        (["--", "alpine", "tool", "--detach"], CommandIO.inherited),
+        (["--detach", "alpine", "tool"], CommandIO.captured(input: nil)),
+        (["-itd", "alpine", "tool"], CommandIO.captured(input: nil)),
+    ])
+    func `fallback run I O follows native options rather than guest arguments`(
+        arguments: [String], expectedIO: CommandIO
+    ) async throws {
+        let runner = RecordingRunner()
+        let provider = EngineRuntimeProvider(socketPath: "/unused", runner: runner)
+        let status = try await provider.launchContainer(.init(
+            command: .run, arguments: arguments, logging: .init(driver: nil, options: [:])
+        ))
+        #expect(status == 0)
+        #expect(runner.commands.count == 1)
+        #expect(runner.commands[0].io == expectedIO)
+        #expect(Array(runner.commands[0].arguments.dropFirst(2)) == arguments)
+    }
+
+    @Test(arguments: [
         "-a", "-c", "-e", "-k", "-l", "-m", "-p", "-u", "-v", "-w", "-ie",
         "--kernel", "--cwd", "--scheme", "--dns-domain",
     ])

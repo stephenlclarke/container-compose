@@ -30,7 +30,7 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
             [containerBinary, request.command.rawValue] + arguments,
             workingDirectory: nil,
             environment: nil,
-            io: request.command == .run && !arguments.contains("--detach")
+            io: request.command == .run && !(try Self.nativeRunIsDetached(arguments))
                 ? .inherited
                 : .captured(input: nil)
         )
@@ -38,6 +38,38 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
     }
 
     static let originalImageReferenceLabel = "com.apple.container.compose.image-reference"
+
+    /// Only native options before the image select detached I/O. A guest
+    /// command may itself contain `--detach`, including after a `--` separator.
+    static func nativeRunIsDetached(_ arguments: [String]) throws -> Bool {
+        var index = 0
+        while index < arguments.count {
+            let argument = arguments[index]
+            if argument == "--" || !argument.hasPrefix("-") {
+                return false
+            }
+            if argument == "--detach" {
+                return true
+            }
+            if argument.hasPrefix("--") {
+                index += containerLaunchValueOptions.contains(argument) ? 2 : 1
+                continue
+            }
+            for flag in argument.dropFirst() {
+                if flag == "d" {
+                    return true
+                }
+                if "aceklmpuvw".contains(flag) {
+                    break
+                }
+            }
+            let takesNext = try shortOptionConsumesNext(
+                argument, next: arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
+            )
+            index += takesNext ? 2 : 1
+        }
+        return false
+    }
 
     func nativeHealthFreeArguments(_ arguments: [String]) async throws -> [String] {
         var result = arguments
@@ -157,7 +189,7 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
         "--platform", "--publish", "--scheme", "--restart", "--restart-delay",
         "--restart-window", "--runtime", "--security-opt", "--shm-size",
         "--stop-signal", "--stop-timeout", "--sysctl", "--tmpfs", "--ulimit",
-        "--user", "--userns", "--uts", "--workdir",
+        "--user", "--userns", "--uts", "--volume", "--mount", "--workdir",
     ]
 
     private func managedShortVolume(_ value: String) async throws -> String? {

@@ -19,7 +19,7 @@
         "//Tools/compose-normalizer/cmd/volume-initializer:permission_bits_test": 1,
         "//:ComposePluginTests": 103,
         "//:ComposeCoreTests": 1144,
-        "//:ComposeEngineRuntimeTests": 25
+        "//:ComposeEngineRuntimeTests": 96
       },
       "component_tests": {
         "//Tools/bazel:cli_contracts": 42
