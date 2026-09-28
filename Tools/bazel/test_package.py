@@ -30,7 +30,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from package import NESTED_SWIFT_NOTICES, PRODUCTS, SOURCE_NOTICES, dependency, dependency_notices, metadata, receipt, sha256, validate_binary, write_json
+from package import NESTED_SWIFT_NOTICES, PRODUCTS, PSL_COMPONENT, PSL_DATA_SHA256, PSL_NOTICE_SHA256, PSL_PACKAGE_REVISION, SOURCE_NOTICES, dependency, dependency_notices, metadata, receipt, sha256, validate_binary, write_json
 
 WRITER = Path(sys.argv[1])
 if len(sys.argv) == 3 and sys.argv[2] == "unit":
@@ -195,7 +195,7 @@ class PackageTests(unittest.TestCase):
         rows = {}
         resolved = Path(self.manifest["resolved"])
         lock = json.loads(resolved.read_text())
-        lock["pins"] = [pin for pin in lock["pins"] if pin["identity"] not in {"swift-crypto", "swift-nio-ssl", "swift-nio", "yams"}]
+        lock["pins"] = [pin for pin in lock["pins"] if pin["identity"] not in {"swift-crypto", "swift-nio-ssl", "swift-nio", "swift-toml", "yams"}]
         self.manifest["vendor_notices"] = []
         for identity, package_revision, revision in (("swift-crypto", "e" * 40, "1" * 40),
                                                        ("swift-nio-ssl", "f" * 40, "2" * 40)):
@@ -211,6 +211,7 @@ class PackageTests(unittest.TestCase):
                                  "state": {"revision": package_revision}})
         fragments = {}
         package_pins = {"swift-nio": ("https://github.com/apple/swift-nio.git", "3" * 40),
+                        "swift-toml": ("https://github.com/mattt/swift-toml.git", "4" * 40),
                         "yams": ("https://github.com/jpsim/Yams.git", "6" * 40)}
         for identity, (repository, revision) in package_pins.items():
             lock["pins"].append({"identity": identity, "kind": "remoteSourceControl", "location": repository,
@@ -223,6 +224,11 @@ class PackageTests(unittest.TestCase):
                 "sourceRevision": revision, "sourceURL": f"https://raw.githubusercontent.com/{source_repo}/{revision}/{source_path}",
                 "extractedLines": lines, "license": path.name, "sha256": sha256(path)}
             self.manifest["vendor_notices"].append(str(path))
+        reviewed = json.loads((Path(__file__).parent / "licenses/vendored.json").read_text())
+        psl = self.root / "tldextractswift-psl-mpl.txt"
+        psl.write_bytes((Path(__file__).parent / "licenses/tldextractswift-psl-mpl.txt").read_bytes())
+        fragments[PSL_COMPONENT] = reviewed["sourceFragments"][PSL_COMPONENT]
+        self.manifest["vendor_notices"].append(str(psl))
         resolved.write_text(json.dumps(lock))
         inventory = self.root / "vendor.json"
         inventory.write_text(json.dumps({"schemaVersion": 1, "packages": rows, "sourceFragments": fragments}))
@@ -236,7 +242,7 @@ class PackageTests(unittest.TestCase):
         self.assertIn("Go SDK 1.26.3/PATENTS", text)
         self.assertNotIn(str(self.root), text)
         self.assertEqual(evidence["dependencyNoticesSHA256"], hashlib.sha256(text.encode()).hexdigest())
-        self.assertEqual((evidence["goNoticeModules"], evidence["swiftNoticePackages"], evidence["noticeTexts"]), (1, 4, 18))
+        self.assertEqual((evidence["goNoticeModules"], evidence["swiftNoticePackages"], evidence["noticeTexts"]), (1, 4, 19))
         self.assertEqual([row["package"] for row in evidence["vendoredNotices"]], ["swift-crypto", "swift-nio-ssl"])
         self.assertEqual(evidence["vendoredNotices"][0]["packageRevision"], "e" * 40)
         self.assertIn("Swift/swift_crypto/BoringSSL@" + "1" * 40 + "/LICENSE", text)
@@ -337,12 +343,61 @@ class PackageTests(unittest.TestCase):
     def test_source_header_revision_matches_selected_package(self) -> None:
         self.notice_fixture()
         path = Path(self.manifest["vendor_inventory"])
-        value = json.loads(path.read_text())
-        row = value["sourceFragments"]["swift-nio-sha1"]
-        row["sourceRevision"] = "7" * 40
-        row["sourceURL"] = row["sourceURL"].replace("3" * 40, "7" * 40)
-        path.write_text(json.dumps(value))
-        with self.assertRaisesRegex(ValueError, "selected package revision"):
+        original = json.loads(path.read_text())
+        for component, old in (("swift-nio-sha1", "3" * 40),
+                               ("swift-toml-tomlplusplus", "4" * 40)):
+            value = copy.deepcopy(original)
+            row = value["sourceFragments"][component]
+            row["sourceRevision"] = "7" * 40
+            row["sourceURL"] = row["sourceURL"].replace(old, "7" * 40)
+            path.write_text(json.dumps(value))
+            with self.subTest(component=component), self.assertRaisesRegex(ValueError, "selected package revision"):
+                dependency_notices(self.manifest)
+
+    def test_public_suffix_notice_is_selected_only_for_reviewed_enhanced_pin(self) -> None:
+        self.notice_fixture()
+        label = "Swift/tldextractswift/Vendored/Public-Suffix-List/LICENSE"
+        stock_text, stock_evidence = dependency_notices(self.manifest)
+        self.assertNotIn(label, stock_text)
+        self.assertNotIn(PSL_COMPONENT, {row["component"] for row in stock_evidence["sourceNoticeFragments"]})
+        self.manifest["profile"] = "enhanced"
+        with self.assertRaisesRegex(ValueError, "package pin is missing"):
+            dependency_notices(self.manifest)
+        resolved = Path(self.manifest["resolved"])
+        value = json.loads(resolved.read_text())
+        value["pins"].append({"identity": "tldextractswift", "kind": "remoteSourceControl",
+                              "location": "https://github.com/futamura/TLDExtractSwift.git",
+                              "state": {"revision": PSL_PACKAGE_REVISION}})
+        resolved.write_text(json.dumps(value))
+        enhanced_text, enhanced_evidence = dependency_notices(self.manifest)
+        self.assertIn(label, enhanced_text)
+        self.assertEqual(enhanced_evidence["noticeTexts"], stock_evidence["noticeTexts"] + 1)
+        self.assertEqual([row["component"] for row in enhanced_evidence["sourceNoticeFragments"]
+                          if row["component"] == PSL_COMPONENT], [PSL_COMPONENT])
+        for pins in (value["pins"] + [value["pins"][-1]],
+                     value["pins"][:-1] + [{**value["pins"][-1], "state": {"revision": "0" * 40}}]):
+            resolved.write_text(json.dumps({**value, "pins": pins}))
+            with self.assertRaises(ValueError):
+                dependency_notices(self.manifest)
+
+    def test_public_suffix_notice_rejects_data_attribution_and_text_drift(self) -> None:
+        self.notice_fixture()
+        inventory = Path(self.manifest["vendor_inventory"])
+        original = json.loads(inventory.read_text())
+        for key, changed_value in (("dataSHA256", "0" * 64),
+                                   ("sourceFileSHA256", "0" * 64),
+                                   ("sourceURL", "https://example.invalid/data"),
+                                   ("licenseSourceURL", "https://example.invalid/LICENSE"),
+                                   ("sha256", "0" * 64)):
+            changed = copy.deepcopy(original)
+            changed["sourceFragments"][PSL_COMPONENT][key] = changed_value
+            inventory.write_text(json.dumps(changed))
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "Public Suffix List"):
+                dependency_notices(self.manifest)
+        inventory.write_text(json.dumps(original))
+        path = Path(next(name for name in self.manifest["vendor_notices"] if name.endswith("tldextractswift-psl-mpl.txt")))
+        path.write_text("tampered attribution\n")
+        with self.assertRaisesRegex(ValueError, "reviewed upstream text"):
             dependency_notices(self.manifest)
 
     def test_vendor_notices_reject_stale_provenance_and_inventory(self) -> None:
@@ -394,9 +449,21 @@ class ArchiveTests(unittest.TestCase):
                 self.assertIn(label.encode(), notices)
                 self.assertEqual(len(row["licenseSHA256"]), 64)
             self.assertFalse(identity["licenseClosureComplete"])
-            self.assertEqual({row["component"] for row in identity["sourceNoticeFragments"]}, set(SOURCE_NOTICES))
+            expected_fragments = set(SOURCE_NOTICES)
+            if identity["runtimeProfile"] == "enhanced":
+                expected_fragments.add(PSL_COMPONENT)
+                self.assertIn(b"Swift/tldextractswift/Vendored/Public-Suffix-List/LICENSE", notices)
+                self.assertIn(b"Mozilla Public License Version 2.0", notices)
+            self.assertEqual({row["component"] for row in identity["sourceNoticeFragments"]}, expected_fragments)
             for row in identity["sourceNoticeFragments"]:
-                label = "Swift/" + row["package"].replace("-", "_") + "/Vendored/" + row["component"] + "/LICENSE"
+                if row["component"] == PSL_COMPONENT:
+                    label = "Swift/tldextractswift/Vendored/Public-Suffix-List/LICENSE"
+                    self.assertEqual(row["packageRevision"], PSL_PACKAGE_REVISION)
+                    self.assertEqual(row["dataSHA256"], PSL_DATA_SHA256)
+                    self.assertEqual(row["licenseSHA256"], PSL_NOTICE_SHA256)
+                    self.assertIn(PSL_PACKAGE_REVISION, row["sourceURL"])
+                else:
+                    label = "Swift/" + row["package"].replace("-", "_") + "/Vendored/" + row["component"] + "/LICENSE"
                 self.assertIn(label.encode(), notices)
                 self.assertEqual(len(row["licenseSHA256"]), 64)
             for entry in files:

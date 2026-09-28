@@ -19,6 +19,15 @@
       "license": "swift-nio-ushet.txt",
       "sha256": "62a279b6a64b37680b691436c3ac1c0f6e8eeb81d8ad0a05c1dfc68f2c9ca28a"
     },
+    "swift-toml-tomlplusplus": {
+      "repository": "https://github.com/mattt/swift-toml.git",
+      "packageRevisions": ["827506c90475e82d5a7f191f950fb3025cbdc0d6"],
+      "sourceRevision": "827506c90475e82d5a7f191f950fb3025cbdc0d6",
+      "sourceURL": "https://raw.githubusercontent.com/mattt/swift-toml/827506c90475e82d5a7f191f950fb3025cbdc0d6/Sources/CTomlPlusPlus/toml.hpp",
+      "extractedLines": [24, 43],
+      "license": "swift-toml-tomlplusplus.txt",
+      "sha256": "b0c3d7f6f2551056c9aba826e399e69bd3e4e57cf581b6661985b27fa1e76568"
+    },
     "yams-libyaml": {
       "repository": "https://github.com/jpsim/Yams.git",
       "packageRevisions": ["a27b21e0c81c5bf42049b897a62aaf387e80f279"],
@@ -27,6 +36,17 @@
       "extractedLines": null,
       "license": "yams-libyaml.txt",
       "sha256": "c40112449f254b9753045925248313e9270efa36d226b22d82d4cc6c43c57f29"
+    },
+    "tldextractswift-psl": {
+      "repository": "https://github.com/futamura/TLDExtractSwift.git",
+      "packageRevisions": ["5fb29b13f99b24401cd93c6c0c83faf7c23e9918"],
+      "sourceRevision": "5fb29b13f99b24401cd93c6c0c83faf7c23e9918",
+      "sourceURL": "https://raw.githubusercontent.com/futamura/TLDExtractSwift/5fb29b13f99b24401cd93c6c0c83faf7c23e9918/Resources/public_suffix_list_frozen.dat",
+      "sourceFileSHA256": "cad4acdfa1a74f77effc56558dd164381a79d5c3087bb59bdf8e8070aa4cf32a",
+      "dataSHA256": "76617b74fd10ee3cd654c185df63a447475c14d7cd65262232f7b33072a85045",
+      "licenseSourceURL": "https://raw.githubusercontent.com/publicsuffix/list/a179a48c465e818cfd8d626691cb317985da87fb/LICENSE",
+      "license": "tldextractswift-psl-mpl.txt",
+      "sha256": "63399014e51143c909e3b03065fe69393de2b167ef96fac84461b0266075921f"
     }
   },
   "packages": {

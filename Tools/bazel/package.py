@@ -198,8 +198,51 @@ def reviewed_package(pins: list[dict], identity: str, row: dict) -> dict:
 SOURCE_NOTICES = {
     "swift-nio-sha1": ("swift-nio", "apple/swift-nio", "Sources/CNIOSHA1/c_nio_sha1.c", [10, 39]),
     "swift-nio-ushet": ("swift-nio", "18sg/uSHET", "LICENSE", None),
+    "swift-toml-tomlplusplus": ("swift-toml", "mattt/swift-toml", "Sources/CTomlPlusPlus/toml.hpp", [24, 43]),
     "yams-libyaml": ("yams", "yaml/libyaml", "License", None),
 }
+
+PSL_COMPONENT = "tldextractswift-psl"
+PSL_PACKAGE_REVISION = "5fb29b13f99b24401cd93c6c0c83faf7c23e9918"
+PSL_DATA_SHA256 = "76617b74fd10ee3cd654c185df63a447475c14d7cd65262232f7b33072a85045"
+PSL_SOURCE_SHA256 = "cad4acdfa1a74f77effc56558dd164381a79d5c3087bb59bdf8e8070aa4cf32a"
+PSL_LICENSE_REVISION = "a179a48c465e818cfd8d626691cb317985da87fb"
+PSL_NOTICE_SHA256 = "63399014e51143c909e3b03065fe69393de2b167ef96fac84461b0266075921f"
+
+
+def public_suffix_notice(row: dict, pins: list[dict], sources: dict, profile: str) -> tuple[dict, list[dict]]:
+    """Include the embedded list's attribution only when its pinned package is selected."""
+    source = ("https://raw.githubusercontent.com/futamura/TLDExtractSwift/"
+              + PSL_PACKAGE_REVISION + "/Resources/public_suffix_list_frozen.dat")
+    license_source = ("https://raw.githubusercontent.com/publicsuffix/list/"
+                      + PSL_LICENSE_REVISION + "/LICENSE")
+    if (row["repository"] != "https://github.com/futamura/TLDExtractSwift.git"
+            or row["packageRevisions"] != [PSL_PACKAGE_REVISION]
+            or row["sourceRevision"] != PSL_PACKAGE_REVISION
+            or row["sourceURL"] != source
+            or row["dataSHA256"] != PSL_DATA_SHA256
+            or row["sourceFileSHA256"] != PSL_SOURCE_SHA256
+            or row["licenseSourceURL"] != license_source
+            or row["sha256"] != PSL_NOTICE_SHA256
+            or row["license"] != "tldextractswift-psl-mpl.txt"):
+        raise ValueError("Public Suffix List package, data or attribution provenance changed")
+    text = reviewed_text(sources, row)
+    selected = [pin for pin in pins if pin["identity"] == "tldextractswift"]
+    if not selected:
+        if profile == "enhanced":
+            raise ValueError("Enhanced Public Suffix List package pin is missing")
+        return {}, []  # The stock production graph does not include this package.
+    pin = reviewed_package(pins, "tldextractswift", row)
+    if pin["state"]["revision"] != PSL_PACKAGE_REVISION:
+        raise ValueError("Public Suffix List selected package revision changed")
+    label = "Swift/tldextractswift/Vendored/Public-Suffix-List/LICENSE"
+    return {label: text}, [{
+        "component": PSL_COMPONENT, "package": "tldextractswift",
+        "packageRevision": PSL_PACKAGE_REVISION, "sourceRevision": PSL_PACKAGE_REVISION,
+        "sourceURL": source, "sourceFileSHA256": PSL_SOURCE_SHA256,
+        "dataSHA256": PSL_DATA_SHA256, "licenseSourceURL": license_source,
+        "licenseSHA256": row["sha256"],
+    }]
 
 
 def reviewed_text(sources: dict, row: dict) -> str:
@@ -221,7 +264,7 @@ def source_fragments(rows: dict, pins: list[dict], sources: dict) -> tuple[dict,
                 row["sourceURL"] != f"https://raw.githubusercontent.com/{repository}/{revision}/{path}" or
                 row["extractedLines"] != lines or row["license"] != component + ".txt"):
             raise ValueError("Invalid vendored notice source provenance")
-        if component == "swift-nio-sha1" and revision != pin["state"]["revision"]:
+        if component in {"swift-nio-sha1", "swift-toml-tomlplusplus"} and revision != pin["state"]["revision"]:
             raise ValueError("Source-header notice must match the selected package revision")
         label = "Swift/" + identity.replace("-", "_") + "/Vendored/" + component + "/LICENSE"
         texts[label] = reviewed_text(sources, row)
@@ -237,7 +280,7 @@ def vendored_notices(manifest: dict) -> tuple[dict, list[dict], list[dict]]:
     rows = inventory["packages"]
     fragments = inventory["sourceFragments"]
     if (inventory.get("schemaVersion") != 1 or set(rows) != {"swift-crypto", "swift-nio-ssl"} or
-            set(fragments) != set(SOURCE_NOTICES)):
+            set(fragments) != set(SOURCE_NOTICES) | {PSL_COMPONENT}):
         raise ValueError("Invalid vendored notice inventory")
     pins = json.loads(Path(manifest["resolved"]).read_text())["pins"]
     sources = {Path(path).name: Path(path) for path in manifest["vendor_notices"]}
@@ -257,7 +300,9 @@ def vendored_notices(manifest: dict) -> tuple[dict, list[dict], list[dict]]:
         evidence.append({"package": identity, "packageRevision": selected["state"]["revision"],
                          "vendorRevision": revision, "sourceURL": row["sourceURL"], "licenseSHA256": row["sha256"]})
     fragment_texts, fragment_evidence = source_fragments(fragments, pins, sources)
-    return {**texts, **fragment_texts}, evidence, fragment_evidence
+    psl_texts, psl_evidence = public_suffix_notice(
+        fragments[PSL_COMPONENT], pins, sources, manifest["profile"])
+    return {**texts, **fragment_texts, **psl_texts}, evidence, fragment_evidence + psl_evidence
 
 
 NESTED_SWIFT_NOTICES = frozenset({

@@ -37,7 +37,7 @@ sh_test(
     name = "package_tests",
     srcs = ["tests/package.sh"],
     args = ["$(location test_package.py)", "$(location //:Tools/release/write-build-info.py)", "unit"],
-    data = ["package.py", "containerization-ext4-unaligned.patch", "zstd-public-module.patch", "test_package.py", "//:Tools/release/write-build-info.py"],
+    data = ["package.py", "containerization-ext4-unaligned.patch", "zstd-public-module.patch", "test_package.py", "licenses/vendored.json", "licenses/tldextractswift-psl-mpl.txt", "licenses/swift-toml-tomlplusplus.txt", "//:Tools/release/write-build-info.py"],
     size = "small",
 )
 
@@ -45,7 +45,7 @@ sh_test(
     name = "package_smoke",
     srcs = ["tests/package.sh"],
     args = ["$(location test_package.py)", "$(location //:Tools/release/write-build-info.py)", "archive", "$(location //:candidate_archive_payload)"],
-    data = ["package.py", "containerization-ext4-unaligned.patch", "zstd-public-module.patch", "test_package.py", "//:Tools/release/write-build-info.py", "//:candidate_archive_payload"],
+    data = ["package.py", "containerization-ext4-unaligned.patch", "zstd-public-module.patch", "test_package.py", "licenses/vendored.json", "licenses/tldextractswift-psl-mpl.txt", "licenses/swift-toml-tomlplusplus.txt", "//:Tools/release/write-build-info.py", "//:candidate_archive_payload"],
     size = "small",
 )
 

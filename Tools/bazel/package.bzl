@@ -106,7 +106,9 @@ def compose_candidate(name, profile, resolved):
             "//Tools/bazel:licenses/boringssl-817ab07ebb53da35afea409ab9328f578492832d.txt",
             "//Tools/bazel:licenses/swift-nio-sha1.txt",
             "//Tools/bazel:licenses/swift-nio-ushet.txt",
+            "//Tools/bazel:licenses/swift-toml-tomlplusplus.txt",
             "//Tools/bazel:licenses/yams-libyaml.txt",
+            "//Tools/bazel:licenses/tldextractswift-psl-mpl.txt",
         ],
     )
     native.filegroup(name = name + "_identity", srcs = [":" + name + "_metadata"], output_group = "identity")
