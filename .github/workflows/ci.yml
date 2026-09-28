@@ -476,6 +476,67 @@ jobs:
         env:
           HAWKEYE_AUTO_INSTALL: "1"
 
+      - name: Retain enhanced unit coverage before profile union
+        working-directory: container-compose
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git restore -- Package.resolved
+          python3 Tools/coverage/merge_profiles.py capture --profile enhanced \
+            --source-sha "$EXPECTED_SHA" --output "${RUNNER_TEMP}/coverage-profiles/enhanced"
+
+      - name: Checkout exact stock coverage source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: container-compose-stock
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Cache isolated stock SwiftPM build artifacts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            container-compose-stock/.build
+            container-compose-stock/.swiftpm
+          key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-stock-v1-${{ steps.swiftpm-cache.outputs.fingerprint }}
+
+      - name: Run stock unit coverage
+        timeout-minutes: 60
+        working-directory: container-compose-stock
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CONTAINER_COMPOSE_BUILD_PROFILE: stock
+          CONTAINER_PACKAGE_PATH: ""
+          CONTAINERIZATION_PACKAGE_PATH: ""
+          ZSTD_PACKAGE_PATH: ""
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          cp Package.stock.resolved Package.resolved
+          swift package resolve
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+
+          expected = json.loads(Path("Package.stock.resolved").read_text())
+          resolved = json.loads(Path("Package.resolved").read_text())
+          if expected["pins"] != resolved["pins"]:
+              raise SystemExit("Stock coverage resolution changed pinned dependencies")
+          PYCODE
+          make swift-coverage
+          git restore -- Package.resolved
+          python3 Tools/coverage/merge_profiles.py capture --profile stock \
+            --source-sha "$EXPECTED_SHA" --output "${RUNNER_TEMP}/coverage-profiles/stock"
+
+      - name: Require stock and enhanced coverage union
+        working-directory: container-compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          make coverage-profiles-check SWIFT_PROFILE_COVERAGE_DIR="${RUNNER_TEMP}/coverage-profiles"
+
       - name: Record exact unit coverage gate
         working-directory: container-compose
         env:
@@ -489,6 +550,8 @@ jobs:
           evidence="${RUNNER_TEMP}/unit-coverage"
           mkdir -p "$evidence"
           cp coverage.xml "$evidence/coverage.xml"
+          cp profile-union.json "$evidence/profile-union.json"
+          cp -R "${RUNNER_TEMP}/coverage-profiles" "$evidence/profiles"
           cp Tools/compose-normalizer/coverage.out "$evidence/coverage.out"
           python3 - <<'PYCODE'
           import hashlib
@@ -498,12 +561,12 @@ jobs:
 
           root = Path(os.environ["RUNNER_TEMP"]) / "unit-coverage"
           files = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
-                   for name in ("coverage.xml", "coverage.out")}
+                   for name in ("coverage.xml", "coverage.out", "profile-union.json")}
           (root / "receipt.json").write_text(json.dumps({
               "source_sha": os.environ["EXPECTED_SHA"],
-              "profile": "enhanced",
+              "profiles": ["enhanced", "stock"],
               "gate": "PASS",
-              "authority": "make coverage-check",
+              "authority": "make coverage-profiles-check",
               "sha256": files,
           }, sort_keys=True, indent=2) + "\n")
           PYCODE

@@ -230,9 +230,10 @@ become implicit exceptions.
 <!-- Separate GitHub callouts. -->
 
 > [!NOTE]
-> The candidate GitHub workflow runs enhanced-profile Swift and Go unit coverage
-> under the existing thresholds, then scans the exact pull-request head with
-> SonarQube. Production-only CodeQL builds cover both Swift runtime profiles
+> The candidate GitHub workflow runs stock and enhanced Swift unit coverage in
+> isolated builds, unions exact-source line observations, and retains Go unit
+> coverage under the existing thresholds before scanning the exact pull-request
+> head with SonarQube. Production-only CodeQL builds cover both Swift runtime profiles
 > and the shipped Linux and Darwin Go source sets; retained SARIF and extraction
 > inventories must account for the maintained sources. VM-backed integration,
 > Docker parity, quiet benchmarks, packaging, and install qualification remain

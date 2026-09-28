@@ -22,8 +22,10 @@ from pathlib import Path
 import json
 import os
 import signal
+import sys
 import tempfile
 import unittest
+import zipfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -31,6 +33,243 @@ import qualify_local as local
 
 
 class QualificationTests(unittest.TestCase):
+    def test_capture_refuses_existing_compatible_published_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            lock = root / 'benchmark.lock.json'
+            lock.write_text('{}')
+            asset = root / 'published.json'
+            image = 'docker.io/library/alpine@sha256:' + 'a' * 64
+            workload = local.benchmark_evidence.workload(image)
+            asset.write_text(json.dumps({'workload': workload, 'environment': {'host': 'same'}}))
+            q = {'modules': {'runtime_benchmark': SimpleNamespace(ALPINE=image)}}
+            with patch.object(local, 'BENCHMARK_LOCK', lock), \
+                 patch.object(local, 'source_identity', return_value={'dirty': False,
+                                                                     'commit': 'a' * 40}), \
+                 patch.object(local, 'git', return_value='a' * 40), \
+                 patch.object(local, 'host_budget'), \
+                 patch.object(local.subprocess, 'check_output', return_value='5.5.1'), \
+                 patch.object(local, 'docker_compose_binary_identity'), \
+                 patch.object(local, 'benchmark_environment', return_value={'host': 'same'}), \
+                 patch.object(local, 'cached_fetch', return_value={'asset': str(asset)}), \
+                 patch.object(local.benchmark_evidence, 'validate_reference'):
+                with self.assertRaisesRegex(RuntimeError, 'already exists'):
+                    local.reference_preflight(root, q)
+
+    def test_reference_recovery_report_failure_cannot_signal_restored(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'evidence'
+            evidence.mkdir()
+            image = 'docker.io/library/alpine@sha256:' + 'a' * 64
+            local.write(evidence / 'reference-capture-intent.json', {
+                'schema': 1, 'qualified_runtime': local.Q,
+                'workload_sha256': local.benchmark_evidence.digest(
+                    local.benchmark_evidence.workload(image)),
+                'command_lock': str(evidence / 'commands.lock')})
+            for name in ('projects-cleared.json', 'colima-lease.json', 'host-lease.json'):
+                local.write(evidence / name, {'restored': True})
+            q = {'modules': {'fork_benchmark': SimpleNamespace(STORAGE=root),
+                             'runtime_benchmark': SimpleNamespace(INSTALLS=root, ALPINE=image),
+                             'host_lease': SimpleNamespace(LOCK=root / 'host.lock',
+                                                            JOURNAL=root / 'host.journal')}}
+            original_write = local.write
+            def failed_report(path, value):
+                if path.name == 'reference-restoration.json':
+                    raise OSError('retained report failed')
+                original_write(path, value)
+            with patch.object(local, 'q_modules', return_value=q), \
+                 patch.object(local, 'write', side_effect=failed_report):
+                result = local.recover_reference(evidence)
+            self.assertFalse(result['restored'])
+            self.assertIn('retained report failed', result['failures'][0])
+            with patch.object(local, 'q_modules', return_value=q):
+                recovered = local.recover_reference(evidence)
+            self.assertTrue(recovered['restored'])
+            self.assertTrue((evidence / 'reference-restoration.json').is_file())
+
+    def test_active_reference_journal_report_failure_cannot_signal_restored(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'evidence'
+            evidence.mkdir()
+            image = 'docker.io/library/alpine@sha256:' + 'a' * 64
+            local.write(evidence / 'reference-capture-intent.json', {
+                'schema': 1, 'qualified_runtime': local.Q,
+                'workload_sha256': local.benchmark_evidence.digest(
+                    local.benchmark_evidence.workload(image)),
+                'command_lock': str(evidence / 'commands.lock')})
+            journal = root / 'host.journal'
+            local.write(journal, {'evidence': str(evidence),
+                                  'command_lock': str(evidence / 'commands.lock'),
+                                  'bazel_workspace': str(local.Q_ROOT), 'owner': 999999,
+                                  'workers': [], 'suspended': []})
+            local.write(evidence / 'colima-lease.json', {'restored': False})
+            host = SimpleNamespace(record={}, rows=[], suspended=[], close=lambda: None)
+            def restore_host(**_kwargs):
+                local.write(evidence / 'host-lease.json', {'restored': True})
+                journal.unlink()
+            host.restore = restore_host
+            colima = SimpleNamespace(record={}, command_descriptors=())
+            def restore_colima():
+                colima.record['restored'] = True
+                local.write(evidence / 'colima-lease.json', colima.record)
+            colima.restore = restore_colima
+            q = {'modules': {'fork_benchmark': SimpleNamespace(STORAGE=root),
+                             'runtime_benchmark': SimpleNamespace(INSTALLS=root, ALPINE=image),
+                             'host_lease': SimpleNamespace(LOCK=root / 'host.lock',
+                                                            JOURNAL=journal, processes=lambda: {},
+                                                            HostLease=lambda _evidence: host),
+                             'unattended': SimpleNamespace(
+                                 acquire_cleanup_commands=lambda *_args: (),
+                                 ColimaLease=lambda _evidence: colima)}}
+            original_write = local.write
+            def failed_report(path, value):
+                if path.name == 'reference-restoration.json':
+                    raise OSError('final receipt failed')
+                original_write(path, value)
+            def clear_projects(_evidence, _ledger, _q, _descriptors,
+                               _command_lock, **_kwargs):
+                original_write(evidence / 'projects-cleared.json', {'cleared': True})
+            with patch.object(local, 'q_modules', return_value=q), \
+                 patch.object(local, 'ensure_projects_cleared', side_effect=clear_projects), \
+                 patch.object(local, 'write', side_effect=failed_report):
+                outcome = local.recover_reference(evidence)
+            self.assertFalse(outcome['restored'])
+            self.assertIn('final receipt failed', outcome['failures'][0])
+            self.assertFalse(journal.exists())
+
+    def test_pinned_previous_release_is_consumed_as_data_only(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'evidence'
+            evidence.mkdir()
+            previous_source = 'a' * 40
+            archive_hash, companion_hash, provenance_hash = ('1' * 64, '2' * 64, '3' * 64)
+            previous_binary = '4' * 64
+            lock = root / 'previous.lock.json'
+            local.write(lock, {'schema': 1, 'repository': local.compose_release.REPOSITORY,
+                               'tag': 'layer-compose-old', 'targetCommit': previous_source,
+                               'asset': local.compose_release.PROVENANCE_NAME,
+                               'sha256': provenance_hash})
+            provenance = {'source': previous_source, 'signedAndNotarized': True,
+                          'notary': {'status': 'Accepted'},
+                          'qualifiedContainer': 'b' * 40,
+                          'lowerReleasedAssets': {name: {'sha256': 'a' * 64,
+                                                        'release': {'tag': 'old'}}
+                                                  for name in ('runtime', 'guest', 'builder')},
+                          'signedArchiveSHA256': archive_hash,
+                          'signedPayload': {'bin/compose': previous_binary},
+                          'signedTree': {'bin/compose': previous_binary},
+                          'evidenceCompanion': {'asset': local.compose_release.EVIDENCE_NAME,
+                                                'sha256': companion_hash}}
+            provenance_path = root / local.compose_release.PROVENANCE_NAME
+            local.write(provenance_path, provenance)
+            archive_path = root / local.compose_release.ARCHIVE_NAME
+            archive_path.write_bytes(b'old released archive')
+            reference = {'workload': {'fixture': 'exact'}, 'workloadSHA256': '5' * 64,
+                         'environment': {'host': 'same'}}
+            samples = [{'fixture': f'{count}-services-{operation}', 'lane': 'candidate',
+                        'trial': trial, 'seconds': float(trial), 'status': 0,
+                        'log_sha256': '6' * 64}
+                       for count in (1, 3) for operation in ('up', 'down')
+                       for trial in range(1, 8)]
+            benchmark = {'workload': reference['workload'],
+                         'workloadSHA256': reference['workloadSHA256'],
+                         'environment': reference['environment'],
+                         'signedArchiveSHA256': archive_hash,
+                         'candidateBinarySHA256': previous_binary,
+                         'candidateCapture': {'capturedAt': '2026-09-28T12:00:00Z'},
+                         'candidateSamples': samples,
+                         'measurements': {name: {'lanes': {'candidate': {'raw_seconds': [
+                             float(trial) for trial in range(1, 8)]}}} for name in (
+                                 '1-services-up', '1-services-down',
+                                 '3-services-up', '3-services-down')}}
+            parity = {'cases': [{'name': f'case-{number:02d}', 'status': 0,
+                                 'sourceSHA256': '7' * 64,
+                                 'assertionOutputSHA256': '8' * 64}
+                                for number in range(67)]}
+            companion_path = root / local.compose_release.EVIDENCE_NAME
+            with zipfile.ZipFile(companion_path, 'w') as companion:
+                companion.writestr('benchmark.json', json.dumps(benchmark))
+                companion.writestr('parity-summary.json', json.dumps(parity))
+            assets = {local.compose_release.PROVENANCE_NAME: provenance_path,
+                      local.compose_release.ARCHIVE_NAME: archive_path,
+                      local.compose_release.EVIDENCE_NAME: companion_path}
+            def fetched(path, _cache):
+                asset = local.read_lock(path)['asset']
+                return {'asset': str(assets[asset]), 'releaseId': 17,
+                        'assetId': list(assets).index(asset) + 1}
+            with patch.object(local, 'cached_fetch', side_effect=fetched), \
+                 patch.object(local.compose_release, 'inspect_evidence', return_value={}), \
+                 patch.object(local, 'published_release_asset', return_value=(
+                     {'id': 17}, {'id': 18, 'digest': 'sha256:' + archive_hash})):
+                admitted = local.admit_previous_candidate(evidence, lock, reference)
+            self.assertEqual(admitted['archiveSHA256'], archive_hash)
+            self.assertEqual(admitted['companionSHA256'], companion_hash)
+            self.assertEqual(len(admitted['samples']), 28)
+            self.assertEqual(len(admitted['parityCases']), 67)
+            runtime = evidence / 'runtime'
+            runtime.mkdir()
+            local.write(runtime / 'compose-operations.json', {'rows': samples})
+            local.write(evidence / 'live.json', {'passed': True})
+            (evidence / 'full-suite').mkdir()
+            local.write(evidence / 'full-suite/acceptance.json', {'rows': [
+                {'fixture': row['name'], 'status': 0} for row in parity['cases']]})
+            (evidence / 'q-assets').mkdir()
+            local.write(evidence / 'q-assets/q-assets.json', {
+                'assets': {name: {'sha256': 'c' * 64}
+                           for name in ('runtime', 'guest', 'builder')},
+                'releases': {name: {'tag': 'current'}
+                             for name in ('runtime', 'guest', 'builder')}})
+            comparison = local.compare_previous_candidate(evidence, {
+                'benchmarks': {name: {'passed': True} for name in benchmark['measurements']}},
+                admitted)
+            self.assertEqual(comparison['measurements']['1-services-up']['medianRatio'], 1)
+            self.assertEqual(comparison['measurements']['1-services-up']['p95Ratio'], 1)
+            self.assertEqual(len(comparison['parityOutcomeComparison']['samePassedCaseNames']), 67)
+            self.assertTrue(comparison['runtimeStackChanged'])
+            local.write(lock, {**local.read_lock(lock), 'sha256': '9' * 64})
+            with self.assertRaisesRegex(RuntimeError, 'lock changed'):
+                local.compare_previous_candidate(evidence, {'benchmarks': {}}, admitted)
+
+    def test_missing_reference_fails_before_hosted_or_build_stages(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            evidence = root / 'fresh'
+            runtime = SimpleNamespace(ALPINE='docker.io/library/alpine@sha256:' + 'a' * 64)
+            def cheap_preflight(destination, _q):
+                local.write(destination / 'preflight.json', {'container': {}})
+                return {'commit': 'a' * 40}, {}
+            with patch.object(local, 'OUTPUT', root), \
+                 patch.object(sys, 'argv', ['qualify_local.py', '--evidence', str(evidence)]), \
+                 patch.object(local, 'q_modules', return_value={'modules': {'runtime_benchmark': runtime}}), \
+                 patch.object(local, 'preflight', side_effect=cheap_preflight), \
+                 patch.object(local, 'admit_benchmark_reference', side_effect=RuntimeError('missing baseline')), \
+                 patch.object(local, 'admit_hosted') as hosted, \
+                 patch.object(local, 'run_layers') as layers, \
+                 patch.object(local, 'run_live') as live:
+                with self.assertRaisesRegex(RuntimeError, 'missing baseline'):
+                    local.main()
+            hosted.assert_not_called()
+            layers.assert_not_called()
+            live.assert_not_called()
+
+    def test_reference_capture_route_never_enters_candidate_pipeline(self) -> None:
+        with patch.object(local, 'q_modules', return_value={'modules': {}}) as modules, \
+             patch.object(local, 'reference_preflight') as preflight, \
+             patch.object(local, 'capture_reference', return_value={'passed': True}) as capture, \
+             patch.object(local, 'run_layers') as layers, patch.object(local, 'sign') as sign, \
+             patch.object(local, 'run_original_full_suite') as suite:
+            result = local.execute_capture(Path('/tmp/reference-test'))
+        self.assertTrue(result['passed'])
+        modules.assert_called_once()
+        preflight.assert_called_once()
+        capture.assert_called_once()
+        layers.assert_not_called()
+        sign.assert_not_called()
+        suite.assert_not_called()
+
     def test_parity_keychain_recovery_is_required_before_host_restore(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

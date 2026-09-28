@@ -39,14 +39,22 @@ final class EngineForegroundInput: @unchecked Sendable {
     func read() async throws -> Data? {
         try Task.checkCancellation()
         return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                DispatchQueue.global(qos: .userInitiated).async { [self] in
-                    continuation.resume(with: Result { try readLock.withLock { try readBlocking() } })
-                }
-            }
+            try await readOnWorker()
         } onCancel: {
             self.lock.withLock { self.cancelled = true }
         }
+    }
+
+    private func readOnWorker() async throws -> Data? {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                continuation.resume(with: readResult())
+            }
+        }
+    }
+
+    private func readResult() -> Result<Data?, any Error> {
+        Result { try readLock.withLock { try readBlocking() } }
     }
 
     private func readBlocking() throws -> Data? {

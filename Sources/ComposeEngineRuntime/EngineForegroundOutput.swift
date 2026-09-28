@@ -42,14 +42,22 @@ final class EngineForegroundOutput: @unchecked Sendable {
     func write(_ data: Data) async throws {
         try Task.checkCancellation()
         try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-                DispatchQueue.global(qos: .userInitiated).async { [self] in
-                    continuation.resume(with: Result { try writeLock.withLock { try writeBlocking(data) } })
-                }
-            }
+            try await writeOnWorker(data)
         } onCancel: {
             self.cancel()
         }
+    }
+
+    private func writeOnWorker(_ data: Data) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                continuation.resume(with: writeResult(data))
+            }
+        }
+    }
+
+    private func writeResult(_ data: Data) -> Result<Void, any Error> {
+        Result { try writeLock.withLock { try writeBlocking(data) } }
     }
 
     private func cancel() {

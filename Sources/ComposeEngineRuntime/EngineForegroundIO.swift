@@ -29,7 +29,10 @@ struct EngineForegroundIO: Sendable {
     var read: @Sendable () async throws -> Data?
     var write: @Sendable (DockerStreamFrame) async throws -> Void
     var size: @Sendable () throws -> EngineTerminalSize? = { nil }
-    var restore: @Sendable () throws -> Void = {}
+    var restore: @Sendable () throws -> Void = {
+        // Injected I/O owns no terminal state unless it supplies restoration.
+    }
+
     var signalProxy: any ComposeSignalProxying = DispatchComposeSignalProxy()
 
     static func system(

@@ -28,6 +28,7 @@ from unittest.mock import patch
 import zipfile
 
 import compose_release as release
+import benchmark_evidence as benchmark
 
 
 SOURCE = 'a' * 40
@@ -46,6 +47,10 @@ class ComposeReleaseTests(unittest.TestCase):
         lock_patch = patch.object(release, 'LOCK_DIRECTORY', self.locks)
         lock_patch.start()
         self.addCleanup(lock_patch.stop)
+        benchmark_lock_patch = patch.object(release, 'BENCHMARK_LOCK',
+                                           self.locks / 'benchmark-reference.lock.json')
+        benchmark_lock_patch.start()
+        self.addCleanup(benchmark_lock_patch.stop)
         self.receipts: dict[str, dict] = {}
         self._fixture()
 
@@ -105,6 +110,15 @@ class ComposeReleaseTests(unittest.TestCase):
         self.put('signed-candidate.json', signed)
         rows = [{'status': 0} for _ in range(67)]
         full = {'passed': True, 'runtime_tests': 27, 'parity_cases': 66, 'rows': rows}
+        for index, row in enumerate(rows):
+            name = 'runtime-suite' if index == 0 else f'docker-compose-case-{index}-parity'
+            row.update(fixture=name, seconds=1.0)
+            log = self.evidence / 'full-suite' / (name + '.log')
+            log.parent.mkdir(exist_ok=True)
+            log.write_text('assertions passed\n')
+            self.put('full-suite/' + name + '.json', {
+                'name': name, 'status': 0, 'source_sha256': 'c' * 64,
+                'log': str(log), 'log_sha256': release.digest(log)})
         self.put('full-suite/acceptance.json', full)
         self.put('full-suite-cleared.json', {'verified_under_exclusive_lease': True})
         measurement = {'passed': True, 'lanes': {
@@ -112,7 +126,68 @@ class ComposeReleaseTests(unittest.TestCase):
         live = {'passed': True, 'original_full_suite': full,
                 'benchmarks': {f'{count}-services-{operation}': measurement
                                for count in (1, 3) for operation in ('up', 'down')}}
+        samples = [{'fixture': name, 'lane': 'candidate', 'trial': trial,
+                    'seconds': 1.0, 'status': 0, 'log_sha256': 'e' * 64}
+                   for name in sorted(live['benchmarks']) for trial in range(1, 8)]
+        candidate_warmups = [{**row, 'trial': 0} for row in samples[::7]]
+        live['benchmark_candidate_warmups'] = candidate_warmups
         self.put('live.json', live)
+        before_snapshot = {'observed_unix_seconds': 1, 'load_average': [0.5, 0.4, 0.3],
+                           'power': "Now drawing from 'AC Power'",
+                           'top_cpu_processes': [{'pid': 123, 'cpu_percent': 1.5,
+                                                  'command': '/private/example'}]}
+        after_snapshot = {**before_snapshot, 'observed_unix_seconds': 2}
+        before = self.put('runtime/benchmark-host-before.json', before_snapshot)
+        after = self.put('runtime/benchmark-host-after.json', after_snapshot)
+        reference_samples = [{**row, 'lane': 'docker'} for row in samples]
+        image = 'docker.io/library/alpine@sha256:' + 'a' * 64
+        workload = benchmark.workload(image)
+        environment = {'architecture': 'arm64', 'host_model': 'Mac16,1', 'host_cpus': 12,
+                       'host_memory_bytes': 32 * 1024**3, 'macos_version': '26.0',
+                       'macos_build': '25A123', 'docker_cli_sha256': 'a' * 64,
+                       'colima': {'arch': 'aarch64', 'runtime': 'docker', 'cpus': 4,
+                                  'memory_bytes': 8 * 1024**3, 'disk_bytes': 100 * 1024**3,
+                                  'config_sha256': 'b' * 64, 'binary_sha256': 'c' * 64}}
+        binary = {'formula': 'docker-compose', 'version': '5.5.1',
+                  'sha256': 'c' * 64, 'bottleSHA256': 'd' * 64,
+                  'bottleURL': 'https://ghcr.io/v2/homebrew/core/docker-compose/blobs/sha256:'
+                               + 'd' * 64}
+        capture = {'cleanupVerified': True, 'hostRestored': True,
+                   'capturedAt': '2026-09-28T10:00:00Z',
+                   'hostBeforeSHA256': '1' * 64, 'hostAfterSHA256': '2' * 64,
+                   'hostBefore': benchmark.host_projection(before_snapshot),
+                   'hostAfter': benchmark.host_projection(after_snapshot),
+                   'cleanupReceiptSHA256': '3' * 64,
+                   'dockerEngine': {'version': '29.2.1', 'apiVersion': '1.53',
+                                    'os': 'linux', 'arch': 'arm64', 'kernelVersion': '6.12.0'}}
+        warmups = [{**row, 'trial': 0} for row in reference_samples[::7]]
+        baseline = self.put('baseline-asset.json', benchmark.reference_document(
+            workload, environment, binary, reference_samples, warmups, capture))
+        release.write(release.BENCHMARK_LOCK, {
+            'schema': 1, 'repository': 'owner/repo', 'tag': 'benchmark-reference',
+            'targetCommit': SOURCE, 'asset': 'baseline-asset.json',
+            'sha256': release.digest(baseline)})
+        self.put('benchmark-reference.json', {
+            'asset': str(baseline), 'lock_sha256': release.digest(release.BENCHMARK_LOCK),
+            'asset_sha256': release.digest(baseline), 'release_id': 41, 'asset_id': 42})
+        self.put('portable-benchmark.json', {
+            'schema': 1, 'source': SOURCE, 'signedArchiveSHA256': release.digest(archive),
+            'candidateBinarySHA256': hashes['bin/compose'],
+            'historicalReference': True, 'passed': True,
+            'workload': workload, 'workloadSHA256': benchmark.digest(workload),
+            'environment': environment,
+            'reference': {'repository': 'owner/repo', 'tag': 'benchmark-reference',
+                          'targetCommit': SOURCE, 'releaseId': 41, 'assetId': 42,
+                          'assetSHA256': release.digest(baseline),
+                          'referenceBinary': binary, 'capture': capture},
+            'candidateCapture': {'capturedAt': '2026-09-28T11:00:00Z',
+                                 'hostBeforeSHA256': release.digest(before),
+                                 'hostAfterSHA256': release.digest(after),
+                                 'hostBefore': benchmark.host_projection(before_snapshot),
+                                 'hostAfter': benchmark.host_projection(after_snapshot),
+                                 'warmups': candidate_warmups},
+            'candidateSamples': samples, 'referenceSamples': reference_samples,
+            'measurements': live['benchmarks']})
         self.put('cleanup-phases.json', {'completed': list(release.PHASES)})
         self.put('notarization.json', {'passed': True, 'source': SOURCE,
                   'archive': str(archive), 'archive_sha256': release.digest(archive),
@@ -130,6 +205,8 @@ class ComposeReleaseTests(unittest.TestCase):
                  'hosted_quality_sha256': release.digest(self.evidence / 'hosted-quality/quality.json'),
                  'released_q_assets_sha256': release.digest(self.evidence / 'q-assets/q-assets.json'),
                  'compiled_sdk_chain_sha256': release.digest(self.evidence / 'compiled-sdk-chain.json'),
+                 'benchmark_reference_sha256': release.digest(self.evidence / 'benchmark-reference.json'),
+                 'portable_benchmark_sha256': release.digest(self.evidence / 'portable-benchmark.json'),
                  'live_sha256': release.digest(self.evidence / 'live.json'),
                  'notarization_sha256': release.digest(self.evidence / 'notarization.json')})
 
@@ -142,6 +219,10 @@ class ComposeReleaseTests(unittest.TestCase):
         self.assertTrue(release.read(output / release.PROVENANCE_NAME)['signedAndNotarized'])
         self.assertFalse(record['published'])
         self.assertEqual(release.digest(output / release.ARCHIVE_NAME), record['archiveSHA256'])
+        self.assertEqual(release.digest(output / release.EVIDENCE_NAME), record['evidenceSHA256'])
+        provenance = release.read(output / release.PROVENANCE_NAME)
+        manifest = release.inspect_evidence(output / release.EVIDENCE_NAME, provenance)
+        self.assertEqual(set(manifest['files']), {'benchmark.json', 'parity-summary.json'})
 
     def test_tampered_notary_and_notice_fail_closed(self) -> None:
         notary = self.evidence / 'notarization.json'
@@ -164,7 +245,9 @@ class ComposeReleaseTests(unittest.TestCase):
                 'tag': release.read(output / 'prepare-receipt.json')['tag'],
                 'targetCommit': SOURCE, 'releaseId': 42,
                 'assets': {name: {'sha256': release.digest(output / name), 'assetId': index}
-                           for index, name in enumerate((release.ARCHIVE_NAME, release.PROVENANCE_NAME), 1)}}) as publisher:
+                           for index, name in enumerate((release.ARCHIVE_NAME,
+                                                         release.PROVENANCE_NAME,
+                                                         release.EVIDENCE_NAME), 1)}}) as publisher:
             release.publish(output)
             publisher.assert_called_once()
         with self.assertRaisesRegex(RuntimeError, 'already'):
@@ -179,7 +262,11 @@ class ComposeReleaseTests(unittest.TestCase):
                      'prepareReceiptSHA256': release.digest(output / 'prepare-receipt.json'),
                      'assets': {name: {'sha256': release.digest(output / name), 'assetId': index}
                                 for index, name in enumerate((release.ARCHIVE_NAME,
-                                                              release.PROVENANCE_NAME), 1)}}
+                                                              release.PROVENANCE_NAME,
+                                                              release.EVIDENCE_NAME), 1)}}
+        published['evidenceCompanion'] = {
+            **release.read(output / release.PROVENANCE_NAME)['evidenceCompanion'],
+            'releaseId': 42, 'assetId': published['assets'][release.EVIDENCE_NAME]['assetId']}
         release.write(output / 'publish-receipt.json', published)
         def downloaded(lock: Path, destination: Path) -> dict:
             name = release.read_lock(lock)['asset']
@@ -206,6 +293,7 @@ class ComposeReleaseTests(unittest.TestCase):
         with patch.object(release, 'fetch', side_effect=downloaded), patch.object(release.subprocess, 'run', side_effect=run):
             result = release.verify_published(output, self.base / 'consumer')
         self.assertTrue(result['publishedBytesVerified'])
+        self.assertEqual(result['evidenceSHA256'], published['assets'][release.EVIDENCE_NAME]['sha256'])
         self.assertEqual(sum(command[0] == '/usr/bin/ditto' for command in commands), 1)
         self.assertEqual(sum(command[0] == '/usr/bin/codesign' for command in commands), 2)
         self.assertTrue((self.base / 'consumer/extracted/compose/bin/compose').is_file())
@@ -223,6 +311,62 @@ class ComposeReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'lock changed'):
                 release.publish(output)
             publisher.assert_not_called()
+
+    def test_public_companion_rejects_local_paths_and_raw_trial_mismatch(self) -> None:
+        portable = self.evidence / 'portable-benchmark.json'
+        benchmark = release.read(portable)
+        benchmark['reference']['log_path'] = '/Users/sclarke/private.log'
+        release.write(portable, benchmark)
+        accepted = release.read(self.evidence / 'acceptance.json')
+        accepted['portable_benchmark_sha256'] = release.digest(portable)
+        release.write(self.evidence / 'acceptance.json', accepted)
+        with self.assertRaisesRegex(RuntimeError, 'unsupported public fields'):
+            release.prepare(self.evidence, self.base / 'rejected-path')
+        self._fixture()
+        benchmark = release.read(portable)
+        benchmark['measurements']['1-services-up']['lanes']['candidate']['raw_seconds'][0] = 100
+        release.write(portable, benchmark)
+        accepted = release.read(self.evidence / 'acceptance.json')
+        accepted['portable_benchmark_sha256'] = release.digest(portable)
+        release.write(self.evidence / 'acceptance.json', accepted)
+        with self.assertRaisesRegex(RuntimeError, 'raw trials differ'):
+            release.prepare(self.evidence, self.base / 'rejected-trial')
+
+    def test_companion_manifest_rejects_changed_member(self) -> None:
+        output = self.base / 'staged'
+        release.prepare(self.evidence, output)
+        archive = output / release.EVIDENCE_NAME
+        with zipfile.ZipFile(archive, 'a') as target:
+            target.writestr('unexpected.json', '{}')
+        with patch.object(release, 'publish_assets') as publisher:
+            with self.assertRaisesRegex(RuntimeError, 'unsafe or unexpected'):
+                release.publish(output)
+            publisher.assert_not_called()
+
+    def test_reference_asset_or_accepted_portable_receipt_cannot_change(self) -> None:
+        reference = release.read(self.evidence / 'benchmark-reference.json')
+        asset = Path(reference['asset'])
+        asset.write_text(asset.read_text() + ' ')
+        with self.assertRaisesRegex(RuntimeError, 'reference changed'):
+            release.prepare(self.evidence, self.base / 'changed-reference')
+        self._fixture()
+        portable = self.evidence / 'portable-benchmark.json'
+        value = release.read(portable)
+        value['reference']['assetId'] = 900
+        release.write(portable, value)
+        with self.assertRaisesRegex(RuntimeError, 'Accepted Compose receipt changed'):
+            release.prepare(self.evidence, self.base / 'changed-portable')
+
+    def test_candidate_capture_must_match_accepted_host_and_warmups(self) -> None:
+        portable = self.evidence / 'portable-benchmark.json'
+        value = release.read(portable)
+        value['candidateCapture']['hostAfterSHA256'] = '0' * 64
+        release.write(portable, value)
+        accepted = release.read(self.evidence / 'acceptance.json')
+        accepted['portable_benchmark_sha256'] = release.digest(portable)
+        release.write(self.evidence / 'acceptance.json', accepted)
+        with self.assertRaisesRegex(RuntimeError, 'candidate capture differs'):
+            release.prepare(self.evidence, self.base / 'changed-capture')
 
 
 if __name__ == '__main__':

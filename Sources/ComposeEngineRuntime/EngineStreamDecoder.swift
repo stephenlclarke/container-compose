@@ -28,7 +28,9 @@ struct EngineStreamDecoder {
     private var remaining: UInt32 = 0
     private var channel = DockerStreamChannel.standardOutput
 
-    init() {}
+    init() {
+        // Stored defaults begin at an empty frame boundary.
+    }
 
     mutating func consume(_ bytes: Data) throws -> [DockerStreamFrame] {
         var offset = bytes.startIndex

@@ -137,6 +137,42 @@ def download(run_id: int, name: str, directory: Path) -> None:
                    stdin=subprocess.DEVNULL, timeout=120, check=True)
 
 
+def require_unit_coverage(directory: Path, sha: str) -> None:
+    """Require both shipping profiles and bind every submitted coverage input."""
+    value = json.loads((directory / 'receipt.json').read_text())
+    if (value.get('source_sha') != sha or value.get('profiles') != ['enhanced', 'stock']
+            or value.get('gate') != 'PASS'
+            or value.get('authority') != 'make coverage-profiles-check'):
+        raise ValueError('Unit coverage receipt does not bind both profiles to the exact candidate')
+    for name in ('coverage.xml', 'coverage.out', 'profile-union.json'):
+        path = directory / name
+        if (not path.is_file() or not path.stat().st_size
+                or hashlib.sha256(path.read_bytes()).hexdigest() != value.get('sha256', {}).get(name)):
+            raise ValueError(f'Unit coverage {name} hash mismatch')
+    union = json.loads((directory / 'profile-union.json').read_text())
+    if (union.get('schema') != 1 or union.get('kind') != 'stock-and-enhanced-line-union'
+            or union.get('source_sha') != sha or union.get('profiles') != ['enhanced', 'stock']
+            or set(union.get('profile_inputs', {})) != {'enhanced', 'stock'}
+            or union.get('coverage_sha256') != value['sha256']['coverage.xml']):
+        raise ValueError('Unit coverage union provenance is incomplete')
+    sources = None
+    for profile, hashes in union['profile_inputs'].items():
+        root = directory / 'profiles' / profile
+        for name, field in (('receipt.json', 'receipt_sha256'), ('coverage.xml', 'coverage_sha256')):
+            path = root / name
+            if (not path.is_file() or not path.stat().st_size
+                    or hashlib.sha256(path.read_bytes()).hexdigest() != hashes.get(field)):
+                raise ValueError(f'Unit coverage {profile} {name} hash mismatch')
+        receipt = json.loads((root / 'receipt.json').read_text())
+        if (receipt.get('schema') != 1 or receipt.get('source_sha') != sha
+                or receipt.get('profile') != profile or not receipt.get('source_files')
+                or receipt.get('coverage_sha256') != hashes['coverage_sha256']):
+            raise ValueError('Unit coverage profile identity differs: ' + profile)
+        if sources is not None and receipt['source_files'] != sources:
+            raise ValueError('Unit coverage profiles used different source files')
+        sources = receipt['source_files']
+
+
 def admit(sha: str, evidence: Path) -> dict:
     evidence.mkdir(parents=True, exist_ok=False)
     result: dict = {'schema': 1, 'source': sha, 'passed': False}
@@ -196,15 +232,7 @@ def admit(sha: str, evidence: Path) -> dict:
                     if scope.get('selected_tracked_count') != value['inventory_count']:
                         raise ValueError(f'Hosted {prefix} Go scope differs from extraction inventory')
             elif prefix == 'unit-coverage':
-                value = json.loads((directory / 'receipt.json').read_text())
-                if (value.get('source_sha') != sha or value.get('profile') != 'enhanced'
-                        or value.get('gate') != 'PASS' or value.get('authority') != 'make coverage-check'):
-                    raise ValueError('Unit coverage receipt does not bind the exact candidate')
-                for name in ('coverage.xml', 'coverage.out'):
-                    path = directory / name
-                    if (not path.is_file() or not path.stat().st_size
-                            or hashlib.sha256(path.read_bytes()).hexdigest() != value.get('sha256', {}).get(name)):
-                        raise ValueError(f'Unit coverage {name} hash mismatch')
+                require_unit_coverage(directory, sha)
             result['downloaded_sha256'][prefix] = {
                 str(path.relative_to(directory)): hashlib.sha256(path.read_bytes()).hexdigest()
                 for path in sorted(directory.rglob('*')) if path.is_file()

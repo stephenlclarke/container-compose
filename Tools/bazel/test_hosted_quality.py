@@ -21,6 +21,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 import json
+import hashlib
 import tempfile
 from unittest.mock import patch
 
@@ -204,6 +205,80 @@ class HostedQualityTests(unittest.TestCase):
              patch.object(quality, 'download', side_effect=download):
             with self.assertRaisesRegex(ValueError, 'Newer or changed Swift style'):
                 quality.admit(SHA, Path(temporary) / 'quality')
+
+
+class CoverageAdmissionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.inputs = {}
+        for profile in ('enhanced', 'stock'):
+            directory = self.root / 'profiles' / profile
+            directory.mkdir(parents=True)
+            (directory / 'coverage.xml').write_text('<coverage version="1"/>')
+            receipt = {'schema': 1, 'source_sha': SHA, 'profile': profile,
+                       'source_files': {'Sources/File.swift': 'c' * 64},
+                       'coverage_sha256': self.digest(directory / 'coverage.xml')}
+            (directory / 'receipt.json').write_text(json.dumps(receipt))
+            self.inputs[profile] = {'receipt_sha256': self.digest(directory / 'receipt.json'),
+                                    'coverage_sha256': receipt['coverage_sha256']}
+        (self.root / 'coverage.xml').write_text('<coverage version="1"/>')
+        (self.root / 'coverage.out').write_text('mode: atomic\n')
+        self.union = {'schema': 1, 'kind': 'stock-and-enhanced-line-union',
+                      'source_sha': SHA, 'profiles': ['enhanced', 'stock'],
+                      'profile_inputs': self.inputs,
+                      'coverage_sha256': self.digest(self.root / 'coverage.xml')}
+        self.seal()
+
+    @staticmethod
+    def digest(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def seal(self) -> None:
+        (self.root / 'profile-union.json').write_text(json.dumps(self.union))
+        value = {'source_sha': SHA, 'profiles': ['enhanced', 'stock'], 'gate': 'PASS',
+                 'authority': 'make coverage-profiles-check',
+                 'sha256': {name: self.digest(self.root / name) for name in
+                            ('coverage.xml', 'coverage.out', 'profile-union.json')}}
+        (self.root / 'receipt.json').write_text(json.dumps(value))
+
+    def test_two_profile_receipt_is_admitted(self) -> None:
+        quality.require_unit_coverage(self.root, SHA)
+
+    def test_old_enhanced_only_authority_is_rejected(self) -> None:
+        (self.root / 'receipt.json').write_text(json.dumps({
+            'source_sha': SHA, 'profile': 'enhanced', 'gate': 'PASS',
+            'authority': 'make coverage-check'}))
+        with self.assertRaisesRegex(ValueError, 'both profiles'):
+            quality.require_unit_coverage(self.root, SHA)
+
+    def test_tampered_raw_profile_is_rejected(self) -> None:
+        (self.root / 'profiles/stock/coverage.xml').write_text('changed')
+        with self.assertRaisesRegex(ValueError, 'stock coverage.xml hash'):
+            quality.require_unit_coverage(self.root, SHA)
+
+    def test_other_sha_or_different_sources_are_rejected_even_after_rehash(self) -> None:
+        path = self.root / 'profiles/stock/receipt.json'
+        original = json.loads(path.read_text())
+        for key, value in (('source_sha', 'b' * 40), ('source_files', {'Sources/File.swift': 'd' * 64})):
+            with self.subTest(key=key):
+                path.write_text(json.dumps({**original, key: value}))
+                self.inputs['stock']['receipt_sha256'] = self.digest(path)
+                self.seal()
+                with self.assertRaisesRegex(ValueError, 'identity differs|different source'):
+                    quality.require_unit_coverage(self.root, SHA)
+
+    def test_missing_profile_or_wrong_merged_hash_is_rejected(self) -> None:
+        self.union['profile_inputs'] = {'enhanced': self.inputs['enhanced']}
+        self.seal()
+        with self.assertRaisesRegex(ValueError, 'union provenance'):
+            quality.require_unit_coverage(self.root, SHA)
+        self.union['profile_inputs'] = self.inputs
+        self.union['coverage_sha256'] = '0' * 64
+        self.seal()
+        with self.assertRaisesRegex(ValueError, 'union provenance'):
+            quality.require_unit_coverage(self.root, SHA)
 
 
 if __name__ == '__main__':

@@ -32,7 +32,9 @@ public struct ComposeLaunchOptions: Codable, Equatable, Sendable {
     public var useEngineAPISocket = false
 
     /// Defaults request no additional runtime policy.
-    public init() {}
+    public init() {
+        // Stored defaults request no additional runtime policy.
+    }
 }
 
 /// Nil selects the existing native default for that namespace or isolation mode.
@@ -44,7 +46,9 @@ public struct ComposeNamespaceOptions: Codable, Equatable, Sendable {
     public var uts: String?
     public var user: String?
 
-    public init() {}
+    public init() {
+        // Stored defaults request no additional runtime policy.
+    }
 }
 
 /// Additional resource settings not already carried by the service create plan.
@@ -62,7 +66,9 @@ public struct ComposeResourceOptions: Codable, Equatable, Sendable {
     public var deviceMappings: [String] = []
     public var gpuRequests: [String] = []
 
-    public init() {}
+    public init() {
+        // Stored defaults request no additional runtime policy.
+    }
 }
 
 /// Validated effective policy; unsupported security profiles never reach this model.
@@ -75,5 +81,7 @@ public struct ComposeSecurityOptions: Codable, Equatable, Sendable {
     public var deviceCgroupRules: [String] = []
     public var readOnlyRootFilesystem = false
 
-    public init() {}
+    public init() {
+        // Stored defaults request no additional runtime policy.
+    }
 }

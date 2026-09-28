@@ -254,7 +254,9 @@ public protocol ComposeRuntimeContainerLaunching: Sendable {
 
 public extension ComposeRuntimeContainerLaunching {
     /// Native enhanced providers already validate their own health primitives.
-    func validateHealthCheckArguments(_: [String]) async throws {}
+    func validateHealthCheckArguments(_: [String]) async throws {
+        // Native enhanced providers validate health primitives during launch.
+    }
 }
 
 /// Runtime healthcheck projected from Compose or inherited image metadata.

@@ -20,12 +20,14 @@ from __future__ import annotations
 
 import argparse
 from contextlib import ExitStack
+from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
+import platform
 import re
 import shutil
 import signal
@@ -36,10 +38,14 @@ import sys
 import tarfile
 import time
 import uuid
+import zipfile
 from xml.etree import ElementTree
 
 from hosted_quality import admit as admit_hosted, current_context
+import benchmark_evidence
+import compose_release
 import full_suite
+from artifacts.release_asset import cached_fetch, read_lock, release_asset as published_release_asset
 from input_identity import source_identity, verify as verify_source
 from q_assets import fetch_assets as fetch_q_assets, revalidate as revalidate_q_assets
 from run import RETAINED, ROOT, SSD
@@ -49,7 +55,10 @@ Q = '15361ce5f55a6b8ab3242e89650a188766b47581'
 Q_ROOT = Path('/Users/sclarke/github/container-bazel-minimal')
 Q_EVIDENCE = Path.home() / 'Library/Application Support/ContainerFamily/retained/container-only/local-final/15361ce5-20260928T090931Z'
 OUTPUT = RETAINED / 'local-final'
+CAPTURE_OUTPUT = RETAINED / 'benchmark-reference-capture'
 TRIALS = 7
+BENCHMARK_LOCK = ROOT / 'Tools/bazel/artifacts/benchmark-reference.lock.json'
+BENCHMARK_CACHE = RETAINED / 'release-asset-cache'
 DOCKER_COMPOSE_VERSION = '5.5.1'
 COLIMA_MEMORY_MAX = 8 * 1024**3
 RUNTIME_VM_BUDGET = 6 * 1024**3
@@ -134,6 +143,288 @@ def benchmark_host_snapshot() -> dict:
                                              timeout=10).strip(),
             'top_cpu_processes': sorted(processes, key=lambda row: row['cpu_percent'],
                                         reverse=True)[:8]}
+
+
+def benchmark_environment() -> dict:
+    """Bind historical timings to the same laptop and VM resource envelope."""
+    profiles = [json.loads(row) for row in subprocess.check_output(
+        ['colima', 'list', '--json'], text=True, timeout=20).splitlines()]
+    matches = [row for row in profiles if row.get('name') == 'default']
+    if len(matches) != 1:
+        raise RuntimeError('Default Colima benchmark profile is ambiguous')
+    profile = matches[0]
+    config = Path.home() / '.colima/default/colima.yaml'
+    colima = shutil.which('colima')
+    docker = shutil.which('docker')
+    if not colima or not docker or not config.is_file():
+        raise RuntimeError('Benchmark reference host tools or Colima configuration are missing')
+    return {'architecture': platform.machine(),
+            'host_model': subprocess.check_output(['sysctl', '-n', 'hw.model'],
+                                                  text=True, timeout=5).strip(),
+            'host_cpus': int(subprocess.check_output(['sysctl', '-n', 'hw.ncpu'],
+                                                     text=True, timeout=5)),
+            'host_memory_bytes': int(subprocess.check_output(['sysctl', '-n', 'hw.memsize'],
+                                                              text=True, timeout=5)),
+            'macos_version': subprocess.check_output(['sw_vers', '-productVersion'],
+                                                    text=True, timeout=5).strip(),
+            'macos_build': subprocess.check_output(['sw_vers', '-buildVersion'],
+                                                  text=True, timeout=5).strip(),
+            'colima': {'arch': profile.get('arch'), 'runtime': profile.get('runtime'),
+                       'cpus': profile.get('cpus'), 'memory_bytes': profile.get('memory'),
+                       'disk_bytes': profile.get('disk'), 'config_sha256': sha(config),
+                       'binary_sha256': sha(Path(colima).resolve())},
+            'docker_cli_sha256': sha(Path(docker).resolve())}
+
+
+def docker_compose_binary_identity() -> dict:
+    """Describe the installed released Homebrew bottle without rebuilding it."""
+    prefix = Path(subprocess.check_output(['brew', '--prefix', 'docker-compose'],
+                                          text=True, timeout=30).strip())
+    binary = prefix / 'lib/docker/cli-plugins/docker-compose'
+    metadata = json.loads(subprocess.check_output(
+        ['brew', 'info', '--json=v2', '--installed', 'docker-compose'],
+        text=True, timeout=30))
+    matches = [item for item in metadata.get('formulae', [])
+               if item.get('name') == 'docker-compose']
+    if len(matches) != 1 or not binary.is_file() or not os.access(binary, os.X_OK):
+        raise RuntimeError('Installed Docker Compose bottle is unavailable')
+    formula = matches[0]
+    installed = formula.get('installed', [])
+    bottles = formula.get('bottle', {}).get('stable', {}).get('files', {})
+    if (len(installed) != 1 or installed[0].get('version') != DOCKER_COMPOSE_VERSION
+            or installed[0].get('poured_from_bottle') is not True
+            or len(bottles) != 1):
+        raise RuntimeError('Docker Compose is not the expected installed Homebrew bottle')
+    bottle = next(iter(bottles.values()))
+    return {'formula': 'docker-compose', 'version': DOCKER_COMPOSE_VERSION,
+            'sha256': sha(binary), 'bottleSHA256': bottle['sha256'],
+            'bottleURL': bottle['url']}
+
+
+def docker_engine_identity() -> dict:
+    value = json.loads(subprocess.check_output(
+        ['docker', '--context', 'colima', 'version', '--format', '{{json .Server}}'],
+        text=True, timeout=20))
+    result = {'version': value.get('Version'), 'apiVersion': value.get('ApiVersion'),
+              'os': value.get('Os'), 'arch': value.get('Arch'),
+              'kernelVersion': value.get('KernelVersion')}
+    if any(not isinstance(item, str) or not item for item in result.values()):
+        raise RuntimeError('Docker Engine provenance is incomplete after owned Colima start')
+    return result
+
+
+def verify_selected_docker_compose(expected_sha256: str) -> None:
+    """Prove `docker compose` selects the bottle whose bytes were recorded."""
+    plugins = json.loads(subprocess.check_output(
+        ['docker', '--context', 'colima', 'info', '--format', '{{json .ClientInfo.Plugins}}'],
+        text=True, timeout=20))
+    matches = [row for row in plugins if isinstance(row, dict) and row.get('Name') == 'compose']
+    if len(matches) != 1 or not isinstance(matches[0].get('Path'), str):
+        raise RuntimeError('Docker did not identify one selected Compose CLI plugin')
+    selected = Path(matches[0]['Path'])
+    if not selected.is_file() or sha(selected.resolve()) != expected_sha256:
+        raise RuntimeError('Docker selected a different Compose plugin than the recorded bottle')
+
+
+def admit_benchmark_reference(evidence: Path, image: str) -> dict:
+    """Fetch one published baseline before any Bazel or live qualification stage."""
+    if not BENCHMARK_LOCK.is_file():
+        raise RuntimeError('Published benchmark reference lock is missing; use explicit reference capture first')
+    lock = read_lock(BENCHMARK_LOCK)
+    receipt = cached_fetch(BENCHMARK_LOCK, BENCHMARK_CACHE)
+    asset = Path(receipt['asset'])
+    document = json.loads(asset.read_text())
+    workload = benchmark_evidence.workload(image)
+    environment = benchmark_environment()
+    benchmark_evidence.validate_reference(document, workload, environment)
+    result = {'schema': 1, 'lock_sha256': sha(BENCHMARK_LOCK),
+              'asset_sha256': lock['sha256'], 'asset': str(asset),
+              'repository': lock['repository'], 'tag': lock['tag'],
+              'target_commit': lock['targetCommit'], 'release_id': receipt['releaseId'],
+              'asset_id': receipt['assetId'], 'offline_cache_reuse': receipt['offlineCacheReuse'],
+              'workload_sha256': benchmark_evidence.digest(workload),
+              'environment_sha256': benchmark_evidence.digest(environment)}
+    write(evidence / 'benchmark-reference.json', result)
+    return {'receipt': result, 'document': document}
+
+
+def revalidate_benchmark_reference(evidence: Path, image: str) -> dict:
+    result = json.loads((evidence / 'benchmark-reference.json').read_text())
+    lock = read_lock(BENCHMARK_LOCK)
+    asset = Path(result['asset'])
+    if (result.get('lock_sha256') != sha(BENCHMARK_LOCK)
+            or result.get('asset_sha256') != lock['sha256']
+            or not asset.is_file() or asset.is_symlink() or sha(asset) != lock['sha256']):
+        raise RuntimeError('Published benchmark reference changed after admission')
+    document = json.loads(asset.read_text())
+    benchmark_evidence.validate_reference(document, benchmark_evidence.workload(image),
+                                          benchmark_environment())
+    return document
+
+
+def admit_previous_candidate(evidence: Path, lock_path: Path, reference: dict) -> dict:
+    """Consume a pinned earlier Compose product and its portable results as data."""
+    provenance_lock = read_lock(lock_path)
+    if (provenance_lock['repository'] != compose_release.REPOSITORY or
+            provenance_lock['asset'] != compose_release.PROVENANCE_NAME):
+        raise RuntimeError('Previous Compose lock must pin published product provenance')
+    published = cached_fetch(lock_path, BENCHMARK_CACHE)
+    provenance = json.loads(Path(published['asset']).read_text())
+    companion = provenance.get('evidenceCompanion', {})
+    if (provenance.get('source') != provenance_lock['targetCommit'] or
+            provenance.get('signedAndNotarized') is not True or
+            provenance.get('notary', {}).get('status') != 'Accepted' or
+            not isinstance(companion, dict) or
+            companion.get('asset') != compose_release.EVIDENCE_NAME or
+            not isinstance(companion.get('sha256'), str) or
+            not re.fullmatch(r'[0-9a-f]{64}', companion['sha256']) or
+            not re.fullmatch(r'[0-9a-f]{64}', provenance.get('signedArchiveSHA256', '')) or
+            not re.fullmatch(r'[0-9a-f]{40}', provenance.get('qualifiedContainer', '')) or
+            not isinstance(provenance.get('lowerReleasedAssets'), dict) or
+            not {'runtime', 'guest', 'builder'} <= set(provenance['lowerReleasedAssets']) or
+            any(not re.fullmatch(r'[0-9a-f]{64}', provenance['lowerReleasedAssets'][name].get(
+                'sha256', '')) for name in ('runtime', 'guest', 'builder'))):
+        raise RuntimeError('Previous Compose provenance lacks accepted signed product/evidence')
+    directory = evidence / 'previous-candidate'
+    directory.mkdir()
+    receipts = {}
+    for name, expected in ((compose_release.ARCHIVE_NAME, provenance['signedArchiveSHA256']),
+                           (compose_release.EVIDENCE_NAME, companion['sha256'])):
+        asset_lock = {'schema': 1, 'repository': provenance_lock['repository'],
+                      'tag': provenance_lock['tag'],
+                      'targetCommit': provenance_lock['targetCommit'],
+                      'asset': name, 'sha256': expected}
+        asset_lock_path = directory / (name + '.lock.json')
+        write(asset_lock_path, asset_lock)
+        if name == compose_release.ARCHIVE_NAME:
+            release, metadata = published_release_asset(asset_lock)
+            if (release.get('id') != published['releaseId'] or
+                    metadata.get('digest') != 'sha256:' + expected):
+                raise RuntimeError('Previous signed Compose asset metadata differs from provenance')
+            receipts[name] = {'releaseId': release['id'], 'assetId': metadata['id']}
+        else:
+            receipts[name] = cached_fetch(asset_lock_path, BENCHMARK_CACHE)
+            if receipts[name]['releaseId'] != published['releaseId']:
+                raise RuntimeError('Previous Compose assets are from different releases')
+    companion_path = Path(receipts[compose_release.EVIDENCE_NAME]['asset'])
+    compose_release.inspect_evidence(companion_path, provenance)
+    with zipfile.ZipFile(companion_path) as source:
+        benchmark = json.loads(source.read('benchmark.json'))
+        parity = json.loads(source.read('parity-summary.json'))
+    if (benchmark.get('workload') != reference['workload'] or
+            benchmark.get('workloadSHA256') != reference['workloadSHA256'] or
+            benchmark.get('environment') != reference['environment'] or
+            benchmark.get('signedArchiveSHA256') != provenance['signedArchiveSHA256'] or
+            benchmark.get('candidateBinarySHA256') != provenance['signedPayload']['bin/compose']):
+        raise RuntimeError('Previous Compose benchmark has a different workload or host envelope')
+    samples = benchmark_evidence.checked_samples(benchmark['candidateSamples'], 'candidate')
+    for name in ('1-services-up', '1-services-down', '3-services-up', '3-services-down'):
+        expected = [row['seconds'] for row in samples if row['fixture'] == name]
+        if benchmark['measurements'][name]['lanes']['candidate']['raw_seconds'] != expected:
+            raise RuntimeError('Previous Compose raw trials differ from the published report')
+    record = {'schema': 1, 'historical': True, 'source': provenance['source'],
+              'repository': provenance_lock['repository'], 'tag': provenance_lock['tag'],
+              'lockPath': str(lock_path.resolve()), 'lockSHA256': sha(lock_path),
+              'releaseId': published['releaseId'], 'provenanceAssetId': published['assetId'],
+              'provenanceSHA256': provenance_lock['sha256'],
+              'archiveAssetId': receipts[compose_release.ARCHIVE_NAME]['assetId'],
+              'archiveSHA256': provenance['signedArchiveSHA256'],
+              'companionAssetId': receipts[compose_release.EVIDENCE_NAME]['assetId'],
+              'companionSHA256': companion['sha256'],
+              'binarySHA256': provenance['signedPayload']['bin/compose'],
+              'qualifiedContainer': provenance.get('qualifiedContainer'),
+              'lowerReleasedAssets': provenance.get('lowerReleasedAssets'),
+              'capturedAt': benchmark['candidateCapture']['capturedAt'],
+              'workloadSHA256': reference['workloadSHA256'], 'samples': samples,
+              'parityCases': [{'name': row['name'], 'status': row['status'],
+                               'sourceSHA256': row['sourceSHA256'],
+                               'assertionOutputSHA256': row['assertionOutputSHA256']}
+                              for row in parity['cases']]}
+    write(directory / 'admission.json', record)
+    return record
+
+
+def compare_previous_candidate(evidence: Path, live: dict, previous: dict) -> dict:
+    """Compare current raw samples with a released old candidate, without running it."""
+    lock_path = Path(previous['lockPath'])
+    if (not lock_path.is_file() or lock_path.is_symlink() or
+            sha(lock_path) != previous['lockSHA256']):
+        raise RuntimeError('Previous Compose release lock changed after admission')
+    rows = json.loads((evidence / 'runtime/compose-operations.json').read_text())['rows']
+    current = benchmark_evidence.checked_samples(rows, 'candidate')
+    outcomes = {}
+    for name in ('1-services-up', '1-services-down', '3-services-up', '3-services-down'):
+        now = [row['seconds'] for row in current if row['fixture'] == name]
+        old = [row['seconds'] for row in previous['samples'] if row['fixture'] == name]
+        current_p95 = sorted(now)[math.ceil(.95 * len(now)) - 1]
+        old_p95 = sorted(old)[math.ceil(.95 * len(old)) - 1]
+        outcomes[name] = {'currentRawSeconds': now, 'historicalRawSeconds': old,
+                          'currentMedianSeconds': statistics.median(now),
+                          'historicalMedianSeconds': statistics.median(old),
+                          'currentP95Seconds': current_p95,
+                          'historicalP95Seconds': old_p95,
+                          'medianRatio': statistics.median(now) / statistics.median(old),
+                          'p95Ratio': current_p95 / old_p95}
+    full = json.loads((evidence / 'full-suite/acceptance.json').read_text())
+    current_cases = {row['fixture']: row['status'] for row in full['rows']}
+    old_cases = {row['name']: row['status'] for row in previous['parityCases']}
+    if set(current_cases) != set(old_cases) or any(value != 0 for value in current_cases.values()):
+        raise RuntimeError('Current and historical Compose parity case inventories differ')
+    q_assets = json.loads((evidence / 'q-assets/q-assets.json').read_text())
+    current_lower = {name: {'sha256': asset['sha256'],
+                            'release': q_assets['releases'][name]}
+                     for name, asset in q_assets['assets'].items()}
+    result = {'schema': 1, 'historical': True, 'previousSource': previous['source'],
+              'previousCompanionSHA256': previous['companionSHA256'],
+              'currentLiveSHA256': sha(evidence / 'live.json'), 'measurements': outcomes,
+              'previousQualifiedContainer': previous['qualifiedContainer'],
+              'currentQualifiedContainer': Q,
+              'previousLowerReleasedAssets': previous['lowerReleasedAssets'],
+              'currentLowerReleasedAssets': current_lower,
+              'runtimeStackChanged': (previous['qualifiedContainer'] != Q or
+                                      previous['lowerReleasedAssets'] != current_lower),
+              'parityOutcomeComparison': {'samePassedCaseNames': sorted(current_cases),
+                                          'observationReuse': False},
+              'dockerSlowdownGateUnchanged': all(row['passed'] for row in live['benchmarks'].values())}
+    write(evidence / 'previous-candidate-comparison.json', result)
+    return result
+
+
+def portable_benchmark(evidence: Path, live: dict, signed: dict,
+                       notarization: dict, image: str) -> dict:
+    """Export accepted raw samples without machine paths or private logs."""
+    admitted = json.loads((evidence / 'benchmark-reference.json').read_text())
+    reference = revalidate_benchmark_reference(evidence, image)
+    operations = json.loads((evidence / 'runtime/compose-operations.json').read_text())
+    candidate = benchmark_evidence.checked_samples(operations['rows'], 'candidate')
+    document = {'schema': 1, 'source': signed['source'],
+                'signedArchiveSHA256': notarization['archive_sha256'], 'passed': True,
+                'workload': reference['workload'],
+                'workloadSHA256': reference['workloadSHA256'],
+                'environment': reference['environment'],
+                'candidateBinarySHA256': signed['payload']['bin/compose'],
+                'historicalReference': True,
+                'reference': {'repository': admitted['repository'], 'tag': admitted['tag'],
+                              'targetCommit': admitted['target_commit'],
+                              'releaseId': admitted['release_id'], 'assetId': admitted['asset_id'],
+                              'assetSHA256': admitted['asset_sha256'],
+                              'referenceBinary': reference['referenceBinary'],
+                              'capture': reference['capture']},
+                'candidateSamples': candidate,
+                'candidateCapture': {
+                    'capturedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+                    'hostBeforeSHA256': sha(evidence / 'runtime/benchmark-host-before.json'),
+                    'hostAfterSHA256': sha(evidence / 'runtime/benchmark-host-after.json'),
+                    'hostBefore': benchmark_evidence.host_projection(json.loads(
+                        (evidence / 'runtime/benchmark-host-before.json').read_text())),
+                    'hostAfter': benchmark_evidence.host_projection(json.loads(
+                        (evidence / 'runtime/benchmark-host-after.json').read_text())),
+                    'warmups': benchmark_evidence.checked_samples(
+                        live['benchmark_candidate_warmups'], 'candidate', trial=0)},
+                'referenceSamples': reference['samples'],
+                'measurements': live['benchmarks']}
+    write(evidence / 'portable-benchmark.json', document)
+    return document
 
 
 def q_modules() -> dict:
@@ -229,6 +520,40 @@ def preflight(evidence: Path, q: dict) -> tuple[dict, dict]:
                                         'budget': budget,
                                         'container': qualified, 'host_checks': checks})
     return identity, config
+
+
+def reference_preflight(evidence: Path, q: dict) -> None:
+    """Admit released Docker capture without signing or candidate build stages."""
+    identity = source_identity(ROOT)
+    if identity['dirty'] or identity['commit'] != git(ROOT, 'rev-parse', 'HEAD'):
+        raise RuntimeError('Reference capture requires one clean Compose checkpoint')
+    host_budget()
+    if subprocess.check_output(['docker', 'compose', 'version', '--short'],
+                               text=True, timeout=20).strip().lstrip('v') != DOCKER_COMPOSE_VERSION:
+        raise RuntimeError('Reference capture requires installed Docker Compose 5.5.1')
+    docker_compose_binary_identity()
+    environment = benchmark_environment()
+    if BENCHMARK_LOCK.is_file():
+        receipt = cached_fetch(BENCHMARK_LOCK, BENCHMARK_CACHE)
+        prior = json.loads(Path(receipt['asset']).read_text())
+        benchmark_evidence.validate_reference(prior, prior['workload'], prior['environment'])
+        current = benchmark_evidence.workload(q['modules']['runtime_benchmark'].ALPINE)
+        if prior['workload'] == current and prior['environment'] == environment:
+            raise RuntimeError('Compatible published Docker reference already exists; reuse it')
+    runtime = q['modules']['runtime_benchmark']
+    q['modules']['runtime_coverage'].require_idle(runtime.INSTALLS / 'fork/install')
+    if q['modules']['host_lease'].JOURNAL.exists():
+        raise RuntimeError('Prior shared host restoration is incomplete')
+    validate_q(q)
+    write(evidence / 'reference-preflight.json', {'schema': 1, 'ready': True,
+                                                  'source': identity['commit'],
+                                                  'qualified_runtime': Q})
+
+
+def execute_capture(evidence: Path) -> dict:
+    q = q_modules()
+    reference_preflight(evidence, q)
+    return capture_reference(evidence, q)
 
 
 def stage(evidence: Path, name: str, args: list[str], timeout: int, cwd: Path = ROOT,
@@ -719,15 +1044,184 @@ def restore_colima_after_projects(lease: object, ledger: ProjectLedger) -> None:
 
 
 def fixture(path: Path, count: int, image: str) -> None:
-    if count not in (1, 3):
-        raise ValueError('Only bounded one/three-service fixtures are allowed')
-    lines = ['services:']
-    for index in range(1, count + 1):
-        lines += [f'  worker{index:02d}:', f'    image: {image}',
-                  '    command: ["sh", "-c", "sleep 120"]',
-                  '    mem_limit: 128m', '    cpus: 1.0', '    stop_grace_period: 1s',
-                  '    network_mode: none']
-    path.write_text('\n'.join(lines) + '\n')
+    path.write_text(benchmark_evidence.fixture_text(count, image))
+
+
+def measure_lane(lane: str, base: list[str], fixtures: Path, ledger: ProjectLedger,
+                 issue: object, progress: Path) -> tuple[list[dict], list[dict]]:
+    """Run only the requested lane with the exact published workload commands."""
+    if lane not in {'candidate', 'docker'}:
+        raise ValueError('Benchmark lane must be candidate or Docker')
+    rows: list[dict] = []
+    warmups: list[dict] = []
+    operations = benchmark_evidence.OPERATIONS
+    timeouts = benchmark_evidence.TIMEOUTS
+    for count in benchmark_evidence.COUNTS:
+        source = fixtures / f'{count}.yml'
+        for trial in range(TRIALS + 1):
+            project = f'cfq{os.getpid()}-{count}-{trial}-{lane}'
+            prefix = base + ['-p', project, '-f', str(source)]
+            issue(lane, f'{count}-services-config', trial,
+                  prefix + operations['config'], timeouts['config'])
+            up = None
+            ledger.begin(project, lane, source)
+            try:
+                up = issue(lane, f'{count}-services-up', trial,
+                           prefix + operations['up'], timeouts['up'])
+                ps = issue(lane, f'{count}-services-ps', trial,
+                           prefix + operations['ps'], timeouts['ps'])
+                report = Path(ps['log']).read_text(errors='replace')
+                if any(f'worker{index:02d}' not in report for index in range(1, count + 1)):
+                    raise RuntimeError('Compose did not report every expected service')
+            finally:
+                down = issue(lane, f'{count}-services-down', trial,
+                             prefix + operations['down'], timeouts['down'])
+                absent = issue(lane, f'{count}-services-absent', trial,
+                               prefix + operations['absent'], timeouts['absent'])
+                if Path(absent['log']).read_text().strip():
+                    raise RuntimeError('Project containers remain after successful down: ' + project)
+                if lane == 'docker' and subprocess.check_output(
+                        ['docker', '--context', 'colima', 'ps', '-aq', '--filter',
+                         'label=com.docker.compose.project=' + project],
+                        text=True, timeout=20).strip():
+                    raise RuntimeError('Docker containers remain after successful down: ' + project)
+                ledger.finished(project)
+                if up is not None:
+                    target = warmups if trial == 0 else rows
+                    for operation, result in (('up', up), ('down', down)):
+                        target.append({'fixture': f'{count}-services-{operation}',
+                                       'lane': lane, 'trial': trial,
+                                       'seconds': result['seconds'], 'status': result['status'],
+                                       'log_sha256': sha(Path(result['log']))})
+            write(progress, {'rows': rows, 'warmups': warmups})
+    return rows, warmups
+
+
+def capture_reference(evidence: Path, q: dict) -> dict:
+    """Capture the missing Docker denominator once, without any Compose build."""
+    modules = q['modules']
+    runtime = modules['runtime_benchmark']
+    fb = modules['fork_benchmark']
+    unattended = modules['unattended']
+    image = runtime.ALPINE
+    workload = benchmark_evidence.workload(image)
+    environment = benchmark_environment()
+    binary = docker_compose_binary_identity()
+    fixtures = evidence / 'fixtures'
+    fixtures.mkdir()
+    for count in benchmark_evidence.COUNTS:
+        fixture(fixtures / f'{count}.yml', count, image)
+        if sha(fixtures / f'{count}.yml') != workload['fixtureSHA256'][str(count)]:
+            raise RuntimeError('Captured fixture differs from canonical workload')
+    runner_evidence = evidence / 'runtime'
+    runner_evidence.mkdir()
+    runner = runtime.RuntimeRunner(runner_evidence, fb.STORAGE)
+    ledger = ProjectLedger(evidence)
+    host = modules['host_lease'].HostLease(evidence)
+    colima = unattended.ColimaLease(evidence)
+    command_lock = evidence / 'commands.lock'
+    write(evidence / 'reference-capture-intent.json',
+          {'schema': 1, 'qualified_runtime': Q, 'workload_sha256': benchmark_evidence.digest(workload),
+           'command_lock': str(command_lock)})
+    result = {'schema': 1, 'target': 'capture-compose-docker-reference',
+              'passed': False, 'restored': False, 'failures': []}
+    with (fb.STORAGE / 'qualification.lock').open('w') as qualify_lock, \
+         (runtime.INSTALLS / 'benchmark.lock').open('w') as benchmark_lock, ExitStack() as commands:
+        fcntl.flock(qualify_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(benchmark_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        host.record['command_lock'] = str(command_lock)
+        host.record['bazel_workspace'] = str(Q_ROOT)
+        descriptor = os.open(command_lock, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+        os.close(descriptor)
+        colima.command_descriptors = commands.enter_context(
+            fb.command_lease({fb.COMMAND_LOCK_ENV: str(command_lock)}))
+        runner.runtime_environment[fb.COMMAND_LOCK_ENV] = str(command_lock)
+        host_started = False
+        cleanup_ok = True
+        rows: list[dict] = []
+        warmups: list[dict] = []
+        engine = None
+        try:
+            host_started = True
+            host.acquire()
+            colima.acquire()
+            for fd in colima.command_descriptors:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            commands.close()
+            colima.command_descriptors = ()
+            if benchmark_environment() != environment:
+                raise RuntimeError('Reference environment changed during owned Colima start')
+            engine = docker_engine_identity()
+            verify_selected_docker_compose(binary['sha256'])
+            def issue(lane: str, fixture_name: str, trial: int,
+                      command: list[str], timeout: int = 180) -> dict:
+                if lane != 'docker':
+                    raise RuntimeError('Reference capture may execute only the released Docker lane')
+                runner.env = dict(os.environ, **runner.runtime_environment)
+                row = runner.run('compose-reference', lane, fixture_name, trial,
+                                 command, ROOT, timeout)
+                if row['status']:
+                    raise RuntimeError(f'Docker reference {fixture_name}/{trial} failed; see {row["log"]}')
+                return row
+            issue('docker', 'setup-image', 0,
+                  ['docker', '--context', 'colima', 'pull', image], 300)
+            write(runner_evidence / 'benchmark-host-before.json', benchmark_host_snapshot())
+            rows, warmups = measure_lane('docker', ['docker', '--context', 'colima', 'compose'],
+                                         fixtures, ledger, issue,
+                                         runner_evidence / 'compose-operations.json')
+            verify_selected_docker_compose(binary['sha256'])
+            write(runner_evidence / 'benchmark-host-after.json', benchmark_host_snapshot())
+        except BaseException as error:
+            result['failures'].append(str(error))
+        finally:
+            commands.close()
+            try:
+                colima.command_descriptors = unattended.acquire_cleanup_commands(
+                    evidence, commands, str(Q_ROOT))
+                ensure_projects_cleared(evidence, ledger, q, colima.command_descriptors,
+                                        command_lock, allow_existing=False)
+                colima.restore()
+                if colima.record['restored'] is not True:
+                    raise RuntimeError('Reference Colima restoration was not recorded')
+            except BaseException as error:
+                cleanup_ok = False
+                result['failures'].append('Reference project/Colima cleanup failed: ' + str(error))
+            try:
+                if host_started:
+                    host.restore(restore_workers=cleanup_ok)
+            except BaseException as error:
+                cleanup_ok = False
+                result['failures'].append('Reference host restoration failed: ' + str(error))
+            finally:
+                host.close()
+            result['restored'] = cleanup_ok and not ledger.active()
+            write(evidence / 'reference-capture.json', result)
+    if not result['restored'] or result['failures'] or engine is None:
+        raise RuntimeError('Reference capture failed or left host restoration uncertain')
+    restoration = {'schema': 1, 'projects_cleared_sha256': sha(evidence / 'projects-cleared.json'),
+                   'colima_lease_sha256': sha(evidence / 'colima-lease.json'),
+                   'host_lease_sha256': sha(evidence / 'host-lease.json'),
+                   'restored': True}
+    write(evidence / 'reference-restoration.json', restoration)
+    capture = {'cleanupVerified': True, 'hostRestored': True,
+               'capturedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+               'hostBeforeSHA256': sha(runner_evidence / 'benchmark-host-before.json'),
+               'hostAfterSHA256': sha(runner_evidence / 'benchmark-host-after.json'),
+               'hostBefore': benchmark_evidence.host_projection(json.loads(
+                   (runner_evidence / 'benchmark-host-before.json').read_text())),
+               'hostAfter': benchmark_evidence.host_projection(json.loads(
+                   (runner_evidence / 'benchmark-host-after.json').read_text())),
+               'cleanupReceiptSHA256': sha(evidence / 'reference-restoration.json'),
+               'dockerEngine': engine}
+    document = benchmark_evidence.reference_document(workload, environment, binary,
+                                                     rows, warmups, capture)
+    write(evidence / 'compose-benchmark-reference-v1.json', document)
+    benchmark_evidence.validate_reference(document, workload, environment)
+    result['passed'] = True
+    result['reference_sha256'] = sha(evidence / 'compose-benchmark-reference-v1.json')
+    write(evidence / 'reference-capture.json', result)
+    (evidence / 'reference-capture-intent.json').unlink()
+    return result
 
 
 def compare(rows: list[dict], report_dir: Path | None = None) -> dict:
@@ -738,10 +1232,11 @@ def compare(rows: list[dict], report_dir: Path | None = None) -> dict:
             lanes = {}
             for lane in ('candidate', 'docker'):
                 values = [r['seconds'] for r in rows if r['fixture'] == key and r['lane'] == lane and r['trial'] > 0]
-                if len(values) != TRIALS or any(x <= 0 for x in values):
+                if len(values) != TRIALS or any(not math.isfinite(x) or x <= 0 for x in values):
                     raise RuntimeError('Incomplete matched performance fixture: ' + key)
                 lanes[lane] = {'raw_seconds': values, 'median_seconds': statistics.median(values),
-                               'p95_seconds': sorted(values)[math.ceil(.95 * len(values)) - 1]}
+                               'p95_seconds': sorted(values)[math.ceil(.95 * len(values)) - 1],
+                               'historical': lane == 'docker'}
             ratio = lanes['candidate']['median_seconds'] / lanes['docker']['median_seconds']
             results[key] = {'lanes': lanes, 'candidate_to_docker': ratio, 'passed': ratio < 10}
     if report_dir is not None:
@@ -753,7 +1248,8 @@ def compare(rows: list[dict], report_dir: Path | None = None) -> dict:
 
 def retain_performance_reports(directory: Path, results: dict) -> None:
     rows = ['# Matched Compose performance', '',
-            'Seven same-fixture trials per lane; P95 uses nearest rank.', '',
+            'Seven same-fixture trials per lane; Docker is a released historical reference. '
+            'P95 uses nearest rank.', '',
             '| Fixture | Candidate median (s) | Docker median (s) | Candidate P95 (s) | Docker P95 (s) | Median ratio |',
             '| --- | ---: | ---: | ---: | ---: | ---: |']
     suite = ElementTree.Element('testsuite', name='compose-matched-performance',
@@ -881,7 +1377,7 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
 
 
 def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
-             q_assets: dict, native_tests: dict) -> dict:
+             q_assets: dict, native_tests: dict, benchmark_reference: dict) -> dict:
     """Own signed Q release bytes, private plugin and exact host/command leases."""
     modules = q['modules']
     runtime = modules['runtime_benchmark']
@@ -917,7 +1413,6 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
     runner = runtime.RuntimeRunner(runtime_evidence, fb.STORAGE)
     ledger = ProjectLedger(evidence)
     candidate = [str(install / 'bin/container'), 'compose']
-    docker = ['docker', '--context', 'colima', 'compose']
     def issue(lane: str, fixture_name: str, trial: int, command: list[str], timeout: int = 180) -> dict:
         runner.env = dict(runtime.environment('fork'), **runner.runtime_environment) if lane == 'candidate' else dict(os.environ, **runner.runtime_environment)
         row = runner.run('compose', lane, fixture_name, trial, command, ROOT, timeout)
@@ -993,56 +1488,27 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
                    'inventory_sha256': hashlib.sha256(json.dumps(
                        quiet, sort_keys=True).encode()).hexdigest()})
             image = runtime.ALPINE
+            reference = revalidate_benchmark_reference(evidence, image)
+            if reference != benchmark_reference:
+                raise RuntimeError('Published historical benchmark changed before live measurements')
             fixtures = evidence / 'fixtures'
             fixtures.mkdir()
             for count in (1, 3):
                 fixture(fixtures / f'{count}.yml', count, image)
             result['fixture_sha256'] = {str(count): sha(fixtures / f'{count}.yml') for count in (1, 3)}
+            if result['fixture_sha256'] != reference['workload']['fixtureSHA256']:
+                raise RuntimeError('Current fixture bytes differ from the published reference')
             result['budget'] = {**host_budget(), 'service_memory_max_mib': 384, 'trials': TRIALS}
-            # Image acquisition and a visible CLI readiness check occur outside timings.
-            issue('docker', 'setup-image', 0, ['docker', '--context', 'colima', 'pull', image], 300)
+            # Only the current signed candidate is timed; Docker rows are immutable evidence.
             write(runtime_evidence / 'benchmark-host-before.json', benchmark_host_snapshot())
-            rows = []
-            for count in (1, 3):
-                source = fixtures / f'{count}.yml'
-                for trial in range(0, TRIALS + 1):
-                    schedule = (('candidate', candidate), ('docker', docker))
-                    if trial % 2:
-                        schedule = tuple(reversed(schedule))
-                    for lane, base in schedule:
-                        project = f'cfq{os.getpid()}-{count}-{trial}-{lane}'
-                        prefix = base + ['-p', project, '-f', str(source)]
-                        issue(lane, f'{count}-services-config', trial, prefix + ['config', '--services'], 60)
-                        up = None
-                        ledger.begin(project, lane, source)
-                        try:
-                            up = issue(lane, f'{count}-services-up', trial,
-                                       prefix + ['up', '--detach', '--wait', '--wait-timeout', '120', '--pull', 'never'], 180)
-                            ps = issue(lane, f'{count}-services-ps', trial, prefix + ['ps'], 60)
-                            report = Path(ps['log']).read_text(errors='replace')
-                            if any(f'worker{index:02d}' not in report for index in range(1, count + 1)):
-                                raise RuntimeError('Compose did not report every expected service')
-                        finally:
-                            down = issue(lane, f'{count}-services-down', trial,
-                                         prefix + ['down', '--remove-orphans', '--timeout', '10'], 120)
-                            absent = issue(lane, f'{count}-services-absent', trial,
-                                           prefix + ['ps', '--all', '--quiet'], 60)
-                            if Path(absent['log']).read_text().strip():
-                                raise RuntimeError('Project containers remain after successful down: ' + project)
-                            if lane == 'docker' and subprocess.check_output(
-                                    ['docker', '--context', 'colima', 'ps', '-aq', '--filter',
-                                     'label=com.docker.compose.project=' + project],
-                                    text=True, timeout=20).strip():
-                                raise RuntimeError('Docker containers remain after successful down: ' + project)
-                            ledger.finished(project)
-                            if up is not None and trial:
-                                rows.append({'fixture': f'{count}-services-up', 'lane': lane,
-                                             'trial': trial, 'seconds': up['seconds'], 'log': up['log']})
-                                rows.append({'fixture': f'{count}-services-down', 'lane': lane,
-                                             'trial': trial, 'seconds': down['seconds'], 'log': down['log']})
-                        write(runtime_evidence / 'compose-operations.json', {'rows': rows})
+            measured, warmups = measure_lane(
+                'candidate', candidate, fixtures, ledger, issue,
+                runtime_evidence / 'compose-operations.json')
             write(runtime_evidence / 'benchmark-host-after.json', benchmark_host_snapshot())
-            result['benchmarks'] = compare(rows, runtime_evidence)
+            historical = [{**row, 'historical_reference': True} for row in reference['samples']]
+            result['benchmark_reference'] = json.loads((evidence / 'benchmark-reference.json').read_text())
+            result['benchmark_candidate_warmups'] = warmups
+            result['benchmarks'] = compare(measured + historical, runtime_evidence)
             result['passed'] = True
         except BaseException as error:
             result['failures'].append(str(error))
@@ -1429,6 +1895,119 @@ def finalize_unswapped_plugin_intent(evidence: Path, install: Path, runtime_cove
     write(receipt, record)
 
 
+def recover_reference(evidence: Path) -> dict:
+    """Clear only enrolled Docker projects before restoring capture-owned host state."""
+    result = {'schema': 1, 'target': 'capture-compose-docker-reference',
+              'restored': False, 'failures': []}
+    q = q_modules()
+    modules = q['modules']
+    fb, runtime = modules['fork_benchmark'], modules['runtime_benchmark']
+    host_module = modules['host_lease']
+    command_lock = evidence / 'commands.lock'
+    intent = json.loads((evidence / 'reference-capture-intent.json').read_text())
+    if (intent.get('schema') != 1 or intent.get('qualified_runtime') != Q
+            or intent.get('command_lock') != str(command_lock)
+            or intent.get('workload_sha256') != benchmark_evidence.digest(
+                benchmark_evidence.workload(runtime.ALPINE))):
+        raise RuntimeError('Reference capture recovery intent changed')
+    ledger = ProjectLedger(evidence)
+    descriptors: list[int] = []
+    host = None
+    try:
+        with ExitStack() as commands:
+            for path in (fb.STORAGE / 'qualification.lock', host_module.LOCK,
+                         runtime.INSTALLS / 'benchmark.lock'):
+                fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+                descriptors.append(fd)
+                info = os.fstat(fd)
+                if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                        or info.st_nlink != 1 or info.st_mode & 0o022):
+                    raise RuntimeError('Unsafe reference recovery lock: ' + str(path))
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if host_module.JOURNAL.is_symlink():
+                raise RuntimeError('Shared host recovery journal is a symbolic link')
+            if not host_module.JOURNAL.exists():
+                if ledger.active():
+                    raise RuntimeError('Reference projects remain without host recovery authority')
+                colima_record = evidence / 'colima-lease.json'
+                if colima_record.exists() and json.loads(colima_record.read_text()).get('restored') is not True:
+                    raise RuntimeError('Reference Colima restoration lacks shared host authority')
+                host_record = evidence / 'host-lease.json'
+                if host_record.exists() and json.loads(host_record.read_text()).get('restored') is not True:
+                    raise RuntimeError('Reference host receipt does not prove worker restoration')
+                if colima_record.exists() and not (evidence / 'projects-cleared.json').is_file():
+                    raise RuntimeError('Reference project clearance receipt is missing')
+                if colima_record.exists() and not host_record.exists():
+                    raise RuntimeError('Reference host receipt is missing after Colima ownership')
+                if (evidence / 'reference-restoration.json').exists():
+                    prior = json.loads((evidence / 'reference-restoration.json').read_text())
+                    if prior.get('restored') is not True:
+                        raise RuntimeError('Reference restoration receipt does not attest success')
+                elif colima_record.exists():
+                    write(evidence / 'reference-restoration.json', {
+                        'schema': 1, 'projects_cleared_sha256': sha(evidence / 'projects-cleared.json'),
+                        'colima_lease_sha256': sha(colima_record),
+                        'host_lease_sha256': sha(host_record), 'restored': True,
+                        'recovered': True})
+                result['restored'] = True
+                return result
+            record = json.loads(host_module.JOURNAL.read_text())
+            if (record.get('evidence') != str(evidence)
+                    or record.get('command_lock') != str(command_lock)
+                    or record.get('bazel_workspace') != str(Q_ROOT)
+                    or type(record.get('owner')) is not int
+                    or record['owner'] in host_module.processes()):
+                raise RuntimeError('Reference host recovery belongs to an active or different owner')
+            command_descriptors = modules['unattended'].acquire_cleanup_commands(
+                evidence, commands, str(Q_ROOT))
+            host = host_module.HostLease(evidence)
+            host.record = record
+            host.rows = record['workers']
+            host.suspended = record['suspended']
+            cleanup_ok = True
+            try:
+                ensure_projects_cleared(evidence, ledger, q, command_descriptors,
+                                        command_lock, allow_existing=True)
+                path = evidence / 'colima-lease.json'
+                if path.exists():
+                    colima = modules['unattended'].ColimaLease(evidence)
+                    colima.record = json.loads(path.read_text())
+                    colima.command_descriptors = command_descriptors
+                    colima.restore()
+                    if colima.record['restored'] is not True:
+                        raise RuntimeError('Reference Colima restoration is unconfirmed')
+            except BaseException as error:
+                cleanup_ok = False
+                result['failures'].append(str(error))
+            try:
+                host.restore(restore_workers=cleanup_ok)
+            except BaseException as error:
+                cleanup_ok = False
+                result['failures'].append(str(error))
+            result['restored'] = cleanup_ok and not ledger.active()
+            if result['restored']:
+                restoration = {'schema': 1,
+                               'projects_cleared_sha256': sha(evidence / 'projects-cleared.json'),
+                               'colima_lease_sha256': sha(evidence / 'colima-lease.json')
+                               if (evidence / 'colima-lease.json').exists() else None,
+                               'host_lease_sha256': sha(evidence / 'host-lease.json'),
+                               'restored': True, 'recovered': True}
+                write(evidence / 'reference-restoration.json', restoration)
+            return result
+    except BaseException as error:
+        result['restored'] = False
+        result['failures'].append(str(error))
+        return result
+    finally:
+        try:
+            write(evidence / ('reference-recovery-' + str(os.getpid()) + '.json'), result)
+        finally:
+            if host:
+                host.close()
+            for fd in reversed(descriptors):
+                os.close(fd)
+
+
 def recover(evidence: Path) -> dict:
     """Recover Compose project/plugin journals before Q workers can resume."""
     result = {'schema': 1, 'restored': False, 'evidence': str(evidence), 'failures': []}
@@ -1607,11 +2186,20 @@ def recover(evidence: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence', type=Path, required=True, help='Fresh internal retained directory')
-    parser.add_argument('--recover', action='store_true', help='Recover a previously interrupted Compose host lease')
+    parser.add_argument('--previous-candidate-lock', type=Path,
+                        help='Exact published Compose provenance lock for historical comparison')
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument('--recover', action='store_true', help='Recover a previously interrupted Compose host lease')
+    action.add_argument('--capture-reference', action='store_true',
+                        help='Capture one released Docker reference without building Compose')
     args = parser.parse_args()
+    if args.previous_candidate_lock and (args.recover or args.capture_reference):
+        parser.error('Historical Compose comparison applies only to full qualification')
     evidence = args.evidence.resolve()
-    if not evidence.is_relative_to(OUTPUT) or args.evidence.is_symlink():
-        parser.error('Evidence must be a direct directory under the Compose internal local-final root')
+    allowed = (OUTPUT, CAPTURE_OUTPUT) if args.recover else (
+        (CAPTURE_OUTPUT,) if args.capture_reference else (OUTPUT,))
+    if (not any(evidence.parent == root for root in allowed) or args.evidence.is_symlink()):
+        parser.error('Evidence must be a direct directory under its internal retained root')
     def interrupted(signum: int, _frame: object) -> None:
         raise SystemExit(128 + signum)
     for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
@@ -1619,7 +2207,8 @@ def main() -> None:
     if args.recover:
         if not evidence.is_dir():
             parser.error('Recovery evidence directory is missing')
-        outcome = recover(evidence)
+        outcome = (recover_reference(evidence) if
+                   (evidence / 'reference-capture-intent.json').exists() else recover(evidence))
         print(json.dumps(outcome, indent=2))
         if not outcome['restored']:
             raise SystemExit(1)
@@ -1627,6 +2216,10 @@ def main() -> None:
     if evidence.exists():
         parser.error('Use a fresh directory under the Compose internal local-final root')
     evidence.mkdir(parents=True)
+    if args.capture_reference:
+        outcome = execute_capture(evidence)
+        print(json.dumps(outcome, indent=2))
+        return
     result = {'schema': 1, 'target': 'compose-only-qualify', 'passed': False,
               'source': None, 'q_checkpoint': Q, 'stages': [], 'failures': []}
     try:
@@ -1635,6 +2228,12 @@ def main() -> None:
         result['source'] = source['commit']
         result['preflight_sha256'] = sha(evidence / 'preflight.json')
         result['qualified_container'] = json.loads((evidence / 'preflight.json').read_text())['container']
+        benchmark_reference = admit_benchmark_reference(
+            evidence, q['modules']['runtime_benchmark'].ALPINE)
+        result['benchmark_reference_sha256'] = sha(evidence / 'benchmark-reference.json')
+        previous = (admit_previous_candidate(evidence, args.previous_candidate_lock.resolve(),
+                                             benchmark_reference['document'])
+                    if args.previous_candidate_lock else None)
         result['hosted_quality'] = admit_hosted(source['commit'], evidence / 'hosted-quality')
         result['hosted_quality_sha256'] = sha(evidence / 'hosted-quality/quality.json')
         result['stages'], package_invocation, q_assets, native_tests = run_layers(evidence, source, q)
@@ -1644,10 +2243,19 @@ def main() -> None:
         plugin = unpack_candidate(evidence, package_invocation)
         signed = sign(evidence, plugin, config.get('signing_identity', q['modules']['runtime_benchmark'].IDENTITY))
         result['signed_candidate'] = signed
-        result['live'] = run_live(evidence, q, plugin, signed, q_assets, native_tests)
+        result['live'] = run_live(evidence, q, plugin, signed, q_assets, native_tests,
+                                  benchmark_reference['document'])
         result['live_sha256'] = sha(evidence / 'live.json')
+        if previous is not None:
+            result['previous_candidate_comparison'] = compare_previous_candidate(
+                evidence, result['live'], previous)
+            result['previous_candidate_comparison_sha256'] = sha(
+                evidence / 'previous-candidate-comparison.json')
         result['notarization'] = notarize(evidence, plugin, signed, config['notary_profile'])
         result['notarization_sha256'] = sha(evidence / 'notarization.json')
+        portable_benchmark(evidence, result['live'], signed, result['notarization'],
+                           q['modules']['runtime_benchmark'].ALPINE)
+        result['portable_benchmark_sha256'] = sha(evidence / 'portable-benchmark.json')
         verify_source(source, source_identity(ROOT))
         if git(Q_ROOT, 'rev-parse', 'HEAD') != Q or git(Q_ROOT, 'status', '--porcelain'):
             raise RuntimeError('Qualified helper source changed during Compose qualification')

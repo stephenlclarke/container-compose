@@ -36,39 +36,51 @@ extension EngineRuntimeProvider {
         }
         let exit = try await EngineForegroundExitWait.prepare(client: client, path: path)
         defer { exit.cancel() }
-        let detachment = ForegroundDetachment()
+        let session = ForegroundSession(connection: connection, io: io, exit: exit)
         return try await withTaskCancellationHandler {
-            try await withThrowingTaskGroup(of: ForegroundEvent.self) { group in
-                defer { exit.cancel(); group.cancelAll() }
-                group.addTask {
-                    _ = try await exit.value
-                    return .exitReady
-                }
-                group.addTask {
-                    try await Self.copyOutput(connection, terminal: terminal, io: io)
-                    return .outputEnded
-                }
-                // Drain while the start response is pending: init may emit more
-                // than the bounded attachment queues before native confirmation.
-                try await startContainer(id: id)
-                if standardInput {
-                    group.addTask {
-                        try await Self.copyInput(connection, terminal: terminal, io: io, detachment: detachment)
-                    }
-                }
-                if terminal {
-                    group.addTask { [self] in
-                        try await monitorTerminalSize(id: id, path: path, io: io, exit: exit)
-                        return .resizeEnded
-                    }
-                }
-                return try await Self.waitForForegroundEnd(group: &group, exit: exit, detachment: detachment)
-            }
+            try await runForegroundTasks(
+                id: id, path: path, terminal: terminal, standardInput: standardInput, session: session
+            )
         } onCancel: {
             // Task.value does not inherit its waiter's cancellation. The outer
             // launch owns this request; cancelling a sibling output/resize task
             // during normal drainage must not discard the authentic exit.
             exit.cancel()
+        }
+    }
+
+    private func runForegroundTasks(
+        id: String, path: String, terminal: Bool, standardInput: Bool, session: ForegroundSession
+    ) async throws -> Int32 {
+        let connection = session.connection
+        let io = session.io
+        let exit = session.exit
+        let detachment = session.detachment
+        return try await withThrowingTaskGroup(of: ForegroundEvent.self) { group in
+            defer { exit.cancel(); group.cancelAll() }
+            group.addTask {
+                _ = try await exit.value
+                return .exitReady
+            }
+            group.addTask {
+                try await Self.copyOutput(connection, terminal: terminal, io: io)
+                return .outputEnded
+            }
+            // Drain while the start response is pending: init may emit more
+            // than the bounded attachment queues before native confirmation.
+            try await startContainer(id: id)
+            if standardInput {
+                group.addTask {
+                    try await Self.copyInput(connection, terminal: terminal, io: io, detachment: detachment)
+                }
+            }
+            if terminal {
+                group.addTask { [self] in
+                    try await monitorTerminalSize(id: id, path: path, io: io, exit: exit)
+                    return .resizeEnded
+                }
+            }
+            return try await Self.waitForForegroundEnd(group: &group, exit: exit, detachment: detachment)
         }
     }
 
@@ -176,6 +188,13 @@ extension EngineRuntimeProvider {
         try await connection.finishInput()
         return terminal ? .detached : .inputEnded
     }
+}
+
+private struct ForegroundSession: Sendable {
+    let connection: ContainerUnixHTTPConnection
+    let io: EngineForegroundIO
+    let exit: EngineForegroundExitWait
+    let detachment = ForegroundDetachment()
 }
 
 private enum ForegroundEvent: Sendable {

@@ -32,6 +32,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+STYLE_POLICY_PATHS = frozenset(
+    {
+        ".github/workflows/quality.yml",
+        ".swiftformat",
+        ".swiftlint.yml",
+        "Tools/ci/swift-style.py",
+        "Tools/ci/test_swift_style.py",
+    }
+)
 LEGACY_EXCLUSIONS = frozenset(
     {
         "Sources/ComposePlugin/ComposeCLIHelp.swift",
@@ -216,12 +225,15 @@ def changed_paths() -> tuple[str, ...]:
             raise SystemExit(f"SWIFT_STYLE_FILES_FROM must be absolute: {path}")
         output = path.read_text(encoding="utf-8")
     elif os.environ.get("SWIFT_STYLE_STAGED") == "1":
-        output = git("diff", "--cached", "--name-only", "--diff-filter=ACMR")
+        output = git("diff", "--cached", "--no-renames", "--name-only", "--diff-filter=ACMRD")
     else:
         base = os.environ.get("SWIFT_STYLE_BASE", "origin/main")
         head = os.environ.get("SWIFT_STYLE_HEAD", "HEAD")
-        output = git("diff", "--name-only", "--diff-filter=ACMR", f"{base}...{head}")
-    return tuple(line for line in output.splitlines() if line)
+        output = git("diff", "--no-renames", "--name-only", "--diff-filter=ACMRD", f"{base}...{head}")
+    paths = tuple(line for line in output.splitlines() if line)
+    if any(path in STYLE_POLICY_PATHS for path in paths):
+        return tuple(git("ls-files", "Package.swift", "Sources", "Tests").splitlines())
+    return paths
 
 
 def style_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
@@ -239,8 +251,17 @@ def style_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(sorted(set(selected)))
 
 
-def run_style(action: str) -> None:
+def selected_style_paths() -> tuple[str, ...]:
     paths = style_paths(changed_paths())
+    if not paths and os.environ.get("SWIFT_STYLE_REQUIRE_PATHS") == "1":
+        paths = style_paths(tuple(git("ls-files", "Package.swift", "Sources", "Tests").splitlines()))
+        if not paths:
+            raise SystemExit("No maintained Swift style paths found for required check")
+    return paths
+
+
+def run_style(action: str) -> None:
+    paths = selected_style_paths()
     if not paths:
         print("No Swift style paths selected.")
         return
@@ -296,7 +317,7 @@ def main() -> None:
     if arguments.action == "install":
         install_tools(cache_root())
     elif arguments.action == "paths":
-        print("\n".join(style_paths(changed_paths())))
+        print("\n".join(selected_style_paths()))
     else:
         run_style(arguments.action)
 
