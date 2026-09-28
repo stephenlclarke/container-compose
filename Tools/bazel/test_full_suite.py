@@ -259,6 +259,69 @@ class FullSuiteTests(unittest.TestCase):
                          ['docker', '--context', 'colima', 'image', 'rm', '--force',
                           'container-compose-rm-42:latest'])
 
+    def test_multiplatform_owned_tag_is_removed_once_and_all_ids_verified(self) -> None:
+        name = 'docker-compose-rm-parity'
+        source = 'a' * 64
+        tag = 'container-compose-rm-42:latest'
+        baseline = self.empty()
+        baseline['docker']['images']['user:baseline|same-id'] = 'user:baseline'
+        added = self.empty()
+        added['docker']['images'].update(baseline['docker']['images'])
+        added['docker']['images'][tag + '|same-id'] = tag
+        added['docker']['images'][tag + '|other-id'] = tag
+        remove_tag = ['docker', '--context', 'colima', 'image', 'rm', '--force', tag]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            ledger = full_suite.Ledger(Path(temporary))
+            ledger.begin(name, source, ['container-compose-rm-'], baseline)
+            commands = []
+            with patch.object(full_suite, 'snapshot', side_effect=[added, baseline, baseline]):
+                removed = ledger.recover(
+                    lambda lane, kind, command: commands.append(command) or '',
+                    {name: source})
+            self.assertEqual(commands, [remove_tag])
+            self.assertEqual({row['id'] for row in removed},
+                             {tag + '|same-id', tag + '|other-id'})
+            self.assertFalse(full_suite.Ledger(Path(temporary)).pending())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            ledger = full_suite.Ledger(Path(temporary))
+            ledger.begin(name, source, ['container-compose-rm-'], baseline)
+            ledger.finish(name, baseline)
+            commands = []
+            with patch.object(full_suite, 'snapshot', side_effect=[added, baseline]):
+                removed = ledger.recover(
+                    lambda lane, kind, command: commands.append(command) or '',
+                    {name: source})
+            self.assertEqual(commands, [remove_tag])
+            self.assertEqual(len(removed), 2)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            ledger = full_suite.Ledger(Path(temporary))
+            ledger.begin(name, source, ['container-compose-rm-'], baseline)
+            one_variant_left = self.empty()
+            one_variant_left['docker']['images'].update(baseline['docker']['images'])
+            one_variant_left['docker']['images'][tag + '|other-id'] = tag
+            commands = []
+            with patch.object(full_suite, 'snapshot',
+                              side_effect=[added, one_variant_left]):
+                with self.assertRaisesRegex(RuntimeError, 'left owned resources'):
+                    ledger.recover(lambda lane, kind, command:
+                                   commands.append(command) or '', {name: source})
+            self.assertEqual(commands, [remove_tag])
+            self.assertEqual(len(full_suite.Ledger(Path(temporary)).pending()), 1)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            ledger = full_suite.Ledger(Path(temporary))
+            ledger.begin(name, source, ['container-compose-rm-'], baseline)
+            missing_alias = self.empty()
+            commands = []
+            with patch.object(full_suite, 'snapshot', side_effect=[added, missing_alias]):
+                with self.assertRaisesRegex(RuntimeError, 'Original docker images changed'):
+                    ledger.recover(lambda lane, kind, command:
+                                   commands.append(command) or '', {name: source})
+            self.assertEqual(commands, [remove_tag])
+
     def test_commit_source_declared_image_prefix_is_image_only(self) -> None:
         baseline, current = self.empty(), self.empty()
         image = 'example/commit-parity-docker-42:latest'

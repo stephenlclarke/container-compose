@@ -377,6 +377,24 @@ def removal(resource: dict) -> list[str]:
                    else [kind.removesuffix('s'), 'rm', identity])
 
 
+def remove_additions(additions: list[dict],
+                     invoke: Callable[[str, str, list[str]], str]) -> list[dict]:
+    """Remove each owned Docker tag once while retaining every variant ID."""
+    removed = []
+    commands_seen = set()
+    for kind in ('containers', 'volumes', 'networks', 'images'):
+        for resource in additions:
+            if resource['kind'] != kind:
+                continue
+            command = removal(resource)
+            key = (resource['lane'], tuple(command))
+            if key not in commands_seen:
+                invoke(resource['lane'], 'remove-' + kind, command)
+                commands_seen.add(key)
+            removed.append(resource)
+    return removed
+
+
 class Ledger:
     def __init__(self, directory: Path):
         self.directory = directory
@@ -460,11 +478,7 @@ class Ledger:
             additions = difference(row['baseline'], observed, row['owned_prefixes'],
                                    row['enrolled_volumes'], row['name'],
                                    row['owned_image_prefixes'])
-            for kind in ('containers', 'volumes', 'networks', 'images'):
-                for resource in additions:
-                    if resource['kind'] == kind:
-                        invoke(resource['lane'], 'remove-' + kind, removal(resource))
-                        removed.append(resource)
+            removed.extend(remove_additions(additions, invoke))
             self.finish(row['name'], snapshot(invoke))
         if self.data['cases']:
             baseline = self.data['cases'][0]['baseline']
@@ -476,11 +490,7 @@ class Ledger:
                              for prefix in row.get('owned_image_prefixes', [])})
             additions = difference(baseline, snapshot(invoke), prefixes, enrolled,
                                    image_prefixes=images)
-            for kind in ('containers', 'volumes', 'networks', 'images'):
-                for resource in additions:
-                    if resource['kind'] == kind:
-                        invoke(resource['lane'], 'remove-' + kind, removal(resource))
-                        removed.append(resource)
+            removed.extend(remove_additions(additions, invoke))
             if additions and difference(baseline, snapshot(invoke), prefixes, enrolled,
                                         image_prefixes=images):
                 raise RuntimeError('Full-suite resource baseline did not restore')
