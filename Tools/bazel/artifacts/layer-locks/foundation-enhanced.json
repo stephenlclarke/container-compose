@@ -1,9 +1,9 @@
 {
-  "archiveSHA256": "4e03a6ff7a190ecda75785b270cfa594785c06b4938a12334bf69caad0477398",
+  "archiveSHA256": "2c0f42b6902f5b4e1a55fff97d9ef901911cc8e621a3d09ee1d071bc434f9671",
   "asset": "foundation-enhanced-darwin-arm64-opt.tar.gz",
   "developmentProof": false,
-  "evidenceAsset": "release-evidence.json",
-  "evidenceSHA256": "f67782e44c196871317eac8c5cc6dfbacc754e7d644d60cf35969baf3499c527",
+  "evidenceAsset": "evidence.json",
+  "evidenceSHA256": "90e7c9b01ac63bf25e4104cc6832150f29a03da8445bc2827094b8cbb49fd6c5",
   "group": "foundation",
   "lower": {
     "argument-parser": {
@@ -12,7 +12,7 @@
       "tag": "layer-argument-parser-6a52f3251125-ef5a65929c858802"
     }
   },
-  "producerCommit": "c88a65cd891284dfc977e9508c08895a40ffc139",
+  "producerCommit": "3c78b3e864a3b783e9ae53b6557d19718a295d1a",
   "profile": "enhanced",
   "reachedSources": {
     "async-http-client": {
@@ -173,12 +173,13 @@
   },
   "recipeSHA256": {
     "bazelConfiguration": "eaa82a266098e27996a8ba20b3cf53c2360bc45e47e0646a71a9035b2f0b4eec",
+    "configuredOutputs": "f24f9358d18b2f074c1dda677b8c3c0081d9aa977cb1a822cefd3ac4918ade41",
     "dependencyExtension": "526170ea357efd25e8e05631e45254f25286144a5913b32db4ead4e4c227730b",
-    "importer": "a51a22febfc3ed9f37d9c47248e282b0dc4b8851b34bf38104521cb8db5281c8",
+    "importer": "ab6cf862d45ed991abd4bbb3a83963b1cb8ea30d103d8d92a4b0178036ec6003",
     "launcher": "d8a3bde435faa1c481d3408da99b934f387022664267e736cc7ee436750b0dfc",
     "moduleGraph": "6c2a999d2b7e3d333dabf3dfd1dc43912afdcad7059da82dea77782293f0ccd6",
     "moduleRules": "c2cda92b2dd22bb47987e1619458693db0c5e83f3bbeb6e21f28877e22b4ba01",
-    "producer": "834f6fcc62814b1b1a1d5751ff2b9b114e1fae6751093c07adfbc5126eef0061",
+    "producer": "fc84c316dc42f7c978cadf8a89208bcf5f1984aeb270eab5276442cb494bb678",
     "rootBuild": "0ea5ae98c5f8045a44dd89bdd2f8680b96c79aef5974079d267e99ec5d64594d",
     "sourceIdentity": "d4d4eec1f9d86086b4a31e0f39236bdbc5567911b098d17611f6835c83878e34",
     "swiftPackageManifest": "459a721a03f96978259620ec8ab278c809e0fec182ed08a13f76cbe432e81ac1",
@@ -221,8 +222,8 @@
     "yams": "a27b21e0c81c5bf42049b897a62aaf387e80f279",
     "zstd": "f8745da6ff1ad1e7bab384bd1f9d742439278e99"
   },
-  "tag": "layer-foundation-enhanced-4e03a6ff7a190ecda757",
-  "targetCommit": "c88a65cd891284dfc977e9508c08895a40ffc139",
+  "tag": "layer-foundation-enhanced-2c0f42b6902f5b4e1a55",
+  "targetCommit": "3c78b3e864a3b783e9ae53b6557d19718a295d1a",
   "toolchain": {
     "bazelVersion": "8.8.0",
     "sdkSettingsSHA256": "7b93ad7e534cc4b31c6a4e39d19b5e0288acf2168c2649479a796d1cb51939fb",
