@@ -131,6 +131,13 @@ jobs:
         with:
           path: container-compose
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact source-check input
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        working-directory: container-compose
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - name: Resolve container ref
         id: container-ref
@@ -212,10 +219,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HAWKEYE_AUTO_INSTALL: "1"
 
+      - name: Test CodeQL source-inventory checker
+        run: python3 Tools/ci/test_check_codeql_extraction.py
+        working-directory: container-compose
+
   stock_runtime:
     name: Stock Apple Runtime
     needs: changes
-    if: needs.changes.outputs.heavy == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     env:
@@ -290,7 +301,7 @@ jobs:
       - changes
       - resolve-canonical-main
     if: >
-      (needs.changes.outputs.runtime == 'true' || github.ref == 'refs/heads/main') &&
+      (needs.changes.outputs.heavy == 'true' || github.ref == 'refs/heads/main') &&
       needs.resolve-canonical-main.result == 'success'
     # This lane compiles and exercises unit/CLI coverage only. Keep VM-backed
     # integration in the recoverable release graph and use a managed runner
@@ -307,6 +318,13 @@ jobs:
         with:
           path: container-compose
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact quality source
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        working-directory: container-compose
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
 
       - name: Checkout canonical main recovery source
         if: needs.resolve-canonical-main.outputs.restore == 'true'
@@ -337,75 +355,56 @@ jobs:
           test -s sonar-main-recovery/coverage.xml
           test -s sonar-main-recovery/Tools/compose-normalizer/coverage.out
 
-      - name: Resolve stack refs
-        id: stack-refs
-        shell: bash
+      - name: Resolve exact SwiftPM dependency pins
+        id: package-pins
         working-directory: container-compose
-        run: |
-          set -euo pipefail
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          from pathlib import Path
-
-          manifest = Path("Tools/release/stack-refs.json")
-          if not manifest.exists():
-              print("containerization_ref=")
-              raise SystemExit(0)
-
-          data = json.loads(manifest.read_text(encoding="utf-8"))
-          components = data.get("components", {})
-          print(f"containerization_ref={components.get('containerization', {}).get('ref', '')}")
-          PY
-
-      - name: Resolve container ref
-        id: container-ref
         shell: bash
         run: |
           set -euo pipefail
-          ref="$(python3 container-compose/Tools/release/resolve-container-ref.py --stack-refs container-compose/Tools/release/stack-refs.json)"
-          if [[ -z "$ref" ]]; then
-            printf 'container ref is empty\n' >&2
-            exit 1
-          fi
-          printf 'ref=%s\n' "$ref" >> "$GITHUB_OUTPUT"
+          container_ref="$(jq -er '.pins[] | select(.identity == "container") | .state.revision' Package.resolved)"
+          containerization_ref="$(jq -er '.pins[] | select(.identity == "containerization") | .state.revision' Package.resolved)"
+          [[ "$container_ref" =~ ^[0-9a-f]{40}$ && "$containerization_ref" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$container_ref" == "$(jq -er '.components.container.ref' Tools/release/stack-refs.json)" ]]
+          [[ "$containerization_ref" == "$(jq -er '.components.containerization.ref' Tools/release/stack-refs.json)" ]]
+          printf 'container_ref=%s\ncontainerization_ref=%s\n' \
+            "$container_ref" "$containerization_ref" >> "$GITHUB_OUTPUT"
 
       - name: Checkout container dependency
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: stephenlclarke/container
           path: container
-          ref: ${{ steps.container-ref.outputs.ref }}
-
-      - name: Checkout containerization dependency
-        if: steps.stack-refs.outputs.containerization_ref != ''
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: stephenlclarke/containerization
-          path: containerization
-          ref: ${{ steps.stack-refs.outputs.containerization_ref }}
+          ref: ${{ steps.package-pins.outputs.container_ref }}
 
       - name: Verify container dependency ref
         shell: bash
         run: |
           set -euo pipefail
           actual="$(git -C container rev-parse HEAD)"
-          expected="${{ steps.container-ref.outputs.ref }}"
+          expected="${{ steps.package-pins.outputs.container_ref }}"
           if [[ "$actual" != "$expected" ]]; then
             printf 'container checkout mismatch: expected %s, got %s\n' "$expected" "$actual" >&2
             exit 1
           fi
 
-      - name: Verify containerization dependency ref
-        if: steps.stack-refs.outputs.containerization_ref != ''
+      - name: Prepare enhanced SwiftPM dependency sources
+        working-directory: container-compose
         shell: bash
         run: |
           set -euo pipefail
-          actual="$(git -C containerization rev-parse HEAD)"
-          expected="${{ steps.stack-refs.outputs.containerization_ref }}"
-          if [[ "$actual" != "$expected" ]]; then
-            printf 'containerization checkout mismatch: expected %s, got %s\n' "$expected" "$actual" >&2
-            exit 1
-          fi
+          output="${RUNNER_TEMP}/compose-quality-dependencies"
+          python3 Tools/bazel/prepare_dependencies.py \
+            --profile enhanced \
+            --output "$output"
+          receipt="$output/receipt.json"
+          jq -e '.profile == "enhanced" and .containerization.path != null and .zstd.path != null' "$receipt" >/dev/null
+          containerization_path="$(jq -er '.containerization.path' "$receipt")"
+          zstd_path="$(jq -er '.zstd.path' "$receipt")"
+          test -f "${GITHUB_WORKSPACE}/container/Package.swift"
+          test -f "$containerization_path/Package.swift"
+          test -f "$zstd_path/Package.swift"
+          printf 'CONTAINER_PACKAGE_PATH=%s\nCONTAINERIZATION_PACKAGE_PATH=%s\nZSTD_PACKAGE_PATH=%s\n' \
+            "${GITHUB_WORKSPACE}/container" "$containerization_path" "$zstd_path" >> "$GITHUB_ENV"
 
       - name: Compute SwiftPM cache fingerprint
         id: swiftpm-cache
@@ -414,14 +413,13 @@ jobs:
           set -euo pipefail
           {
             swift --version 2>&1
-            printf 'container_ref=%s\n' "${{ steps.container-ref.outputs.ref }}"
-            printf 'containerization_ref=%s\n' "${{ steps.stack-refs.outputs.containerization_ref }}"
+            printf 'container_ref=%s\n' "${{ steps.package-pins.outputs.container_ref }}"
+            printf 'containerization_ref=%s\n' "${{ steps.package-pins.outputs.containerization_ref }}"
             shasum -a 256 container-compose/Package.swift container-compose/Package.resolved
             shasum -a 256 container-compose/Makefile
             shasum -a 256 container/Package.swift container/Package.resolved
-            if [[ -f containerization/Package.swift ]]; then
-              shasum -a 256 containerization/Package.swift containerization/Package.resolved
-            fi
+            jq -r '.containerization.resultTreeSHA256, .zstd.resultTreeSHA256' \
+              "${RUNNER_TEMP}/compose-quality-dependencies/receipt.json"
           } | shasum -a 256 | awk '{ printf "fingerprint=%s\n", $1 }' >> "$GITHUB_OUTPUT"
 
       - name: Cache SwiftPM build artifacts
@@ -431,18 +429,29 @@ jobs:
             container-compose/.build
             container-compose/.swiftpm
             ~/Library/Caches/org.swift.swiftpm
-          key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v2-${{ steps.swiftpm-cache.outputs.fingerprint }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v2-
+          key: ${{ runner.os }}-${{ runner.arch }}-macos26-swiftpm-v3-${{ steps.swiftpm-cache.outputs.fingerprint }}
 
-      - name: Use checked-out container dependency
-        run: Tools/ci/use-stack-container.sh ../container
+      - name: Resolve exact local SwiftPM quality dependencies
+        shell: bash
         working-directory: container-compose
+        run: |
+          set -euo pipefail
+          cp Package.resolved "${RUNNER_TEMP}/quality-lock-before.json"
+          swift package resolve
+          python3 - <<'PYCODE'
+          import json
+          import os
+          from pathlib import Path
 
-      - name: Use checked-out containerization dependency
-        if: steps.stack-refs.outputs.containerization_ref != ''
-        run: Tools/ci/use-stack-containerization.sh ../containerization
-        working-directory: container-compose
+          before = json.loads((Path(os.environ["RUNNER_TEMP"]) / "quality-lock-before.json").read_text())
+          after = json.loads(Path("Package.resolved").read_text())
+          old = {pin["identity"]: pin for pin in before["pins"]}
+          new = {pin["identity"]: pin for pin in after["pins"]}
+          expected_removed = {"container", "containerization", "zstd"}
+          if set(old) - set(new) != expected_removed or set(new) - set(old) or any(old[key] != new[key] for key in new):
+              raise SystemExit("SwiftPM quality resolution changed remote pins beyond three reviewed local overrides")
+          print("Resolved exact Q Container and two patched dependencies without changing other remote pins")
+          PYCODE
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -455,24 +464,57 @@ jobs:
           swift --version
           xcodebuild -version
 
-      - name: Run quick validation
-        if: github.event_name == 'pull_request'
-        timeout-minutes: 45
-        run: make test go-build cli-smoke-built
-        working-directory: container-compose
-        env:
-          HAWKEYE_AUTO_INSTALL: "1"
-
       - name: Run coverage gate
         if: >
+          github.event_name == 'pull_request' ||
           github.ref == 'refs/heads/main' ||
           github.ref_type == 'tag' ||
           github.event_name == 'workflow_dispatch'
-        timeout-minutes: 45
+        timeout-minutes: 60
         run: make coverage-check
         working-directory: container-compose
         env:
           HAWKEYE_AUTO_INSTALL: "1"
+
+      - name: Record exact unit coverage gate
+        working-directory: container-compose
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git restore -- Package.resolved
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          test -z "$(git status --porcelain --untracked-files=no)"
+          evidence="${RUNNER_TEMP}/unit-coverage"
+          mkdir -p "$evidence"
+          cp coverage.xml "$evidence/coverage.xml"
+          cp Tools/compose-normalizer/coverage.out "$evidence/coverage.out"
+          python3 - <<'PYCODE'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "unit-coverage"
+          files = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+                   for name in ("coverage.xml", "coverage.out")}
+          (root / "receipt.json").write_text(json.dumps({
+              "source_sha": os.environ["EXPECTED_SHA"],
+              "profile": "enhanced",
+              "gate": "PASS",
+              "authority": "make coverage-check",
+              "sha256": files,
+          }, sort_keys=True, indent=2) + "\n")
+          PYCODE
+
+      - name: Retain exact unit coverage gate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: unit-coverage-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/unit-coverage
+          if-no-files-found: error
+          overwrite: true
 
       - name: Retain canonical Sonar inputs
         if: github.ref == 'refs/heads/main'
@@ -498,7 +540,7 @@ jobs:
           HAWKEYE_AUTO_INSTALL: "1"
 
       - name: Cache SonarQube packages
-        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref_type == 'tag'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.sonar/cache
@@ -507,7 +549,7 @@ jobs:
 
       - name: Check SonarQube TCP availability
         id: sonar_tcp
-        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
+        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref_type == 'tag'
         env:
           SONAR_HOST: sonarcloud.io
           SONAR_PORT: "443"
@@ -522,7 +564,7 @@ jobs:
       - name: Check SonarQube API availability
         id: sonar_api
         if: >
-          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
+          (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
           steps.sonar_tcp.outputs.available == 'true'
         env:
           SONAR_STATUS_URL: https://sonarcloud.io/api/system/status
@@ -542,7 +584,7 @@ jobs:
       - name: Install Sonar Scanner CLI
         id: sonar_install
         if: >
-          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
+          (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
           steps.sonar_tcp.outputs.available == 'true' &&
           steps.sonar_api.outputs.available == 'true'
         continue-on-error: true
@@ -602,6 +644,104 @@ jobs:
           fi
           printf '%s\n' "$scanner_bin" >> "$GITHUB_PATH"
 
+      - name: SonarQube pull request scan
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 40
+        working-directory: container-compose
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PR_HEAD_REPOSITORY" == "$GITHUB_REPOSITORY" ]] || {
+            printf 'Sonar token is unavailable to an untrusted fork PR; trusted replay is required.\n' >&2
+            exit 1
+          }
+          [[ -n "$SONAR_TOKEN" && "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          [[ '${{ steps.sonar_tcp.outputs.available }}' == 'true' ]]
+          [[ '${{ steps.sonar_api.outputs.available }}' == 'true' ]]
+          [[ '${{ steps.sonar_install.outcome }}' == 'success' ]]
+          test -s coverage.xml
+          test -s Tools/compose-normalizer/coverage.out
+          settings="$(curl --fail --silent --show-error --user "$SONAR_TOKEN:" --get \
+            --data-urlencode 'component=stephenlclarke_container-compose2' \
+            --data-urlencode 'keys=sonar.leak.period,sonar.leak.period.type' \
+            https://sonarcloud.io/api/settings/values)"
+          jq -e '[.settings[] | select(.key == "sonar.leak.period" or .key == "sonar.leak.period.type") | .value] | length == 2 and all(. == "previous_version")' <<< "$settings" >/dev/null
+          sonar-scanner \
+            -Dsonar.projectVersion="$EXPECTED_SHA" \
+            -Dsonar.scm.revision="$EXPECTED_SHA" \
+            -Dsonar.buildString="$EXPECTED_SHA" \
+            -Dsonar.pullrequest.key="$PR_NUMBER" \
+            -Dsonar.pullrequest.branch="$PR_BRANCH" \
+            -Dsonar.pullrequest.base=main \
+            -Dsonar.qualitygate.wait=true
+
+      - name: Record exact Sonar pull request gate
+        if: github.event_name == 'pull_request'
+        working-directory: container-compose
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          report=.scannerwork/report-task.txt
+          test -s "$report"
+          task_id="$(awk -F= '$1 == "ceTaskId" { print $2 }' "$report")"
+          project_key="$(awk -F= '$1 == "projectKey" { print $2 }' "$report")"
+          [[ "$project_key" == 'stephenlclarke_container-compose2' ]]
+          [[ "$task_id" =~ ^[A-Za-z0-9_-]+$ ]]
+          task="$(curl --fail --silent --show-error --user "$SONAR_TOKEN:" --get \
+            --data-urlencode "id=$task_id" https://sonarcloud.io/api/ce/task)"
+          jq -e --arg project "$project_key" \
+            '.task.status == "SUCCESS" and .task.componentKey == $project and (.task.analysisId | type == "string")' \
+            <<< "$task" >/dev/null
+          analysis_id="$(jq -er '.task.analysisId' <<< "$task")"
+          gate="$(curl --fail --silent --show-error --user "$SONAR_TOKEN:" --get \
+            --data-urlencode "analysisId=$analysis_id" https://sonarcloud.io/api/qualitygates/project_status)"
+          jq -e '.projectStatus.status == "OK"' <<< "$gate" >/dev/null
+          issues="$(curl --fail --silent --show-error --user "$SONAR_TOKEN:" --get \
+            --data-urlencode "componentKeys=$project_key" \
+            --data-urlencode "pullRequest=$PR_NUMBER" \
+            --data-urlencode 'inNewCodePeriod=true' \
+            --data-urlencode 'resolved=false' \
+            --data-urlencode 'ps=1' https://sonarcloud.io/api/issues/search)"
+          pr_hotspots="$(curl --fail --silent --show-error --user "$SONAR_TOKEN:" --get \
+            --data-urlencode "component=$project_key" \
+            --data-urlencode "pullRequest=$PR_NUMBER" \
+            --data-urlencode 'metricKeys=new_security_hotspots_to_review_status' \
+            https://sonarcloud.io/api/measures/component)"
+          hotspots="$(curl --fail --silent --show-error --user "$SONAR_TOKEN:" --get \
+            --data-urlencode "projectKey=$project_key" \
+            --data-urlencode 'status=TO_REVIEW' \
+            --data-urlencode 'ps=1' https://sonarcloud.io/api/hotspots/search)"
+          jq -e '.total == 0' <<< "$issues" >/dev/null
+          jq -e --arg project "$project_key" --arg pr "$PR_NUMBER" \
+            '.component.key == $project and .component.pullRequest == $pr and ([.component.measures[] | select(.metric == "new_security_hotspots_to_review_status") | .periods[]?.value] == ["0"])' \
+            <<< "$pr_hotspots" >/dev/null
+          jq -e '.paging.total == 0' <<< "$hotspots" >/dev/null
+          test -z "$(git status --porcelain --untracked-files=no)"
+          jq -n --arg sha "$EXPECTED_SHA" --arg pr "$PR_NUMBER" \
+            --arg task "$task_id" --arg analysis "$analysis_id" \
+            '{source_sha:$sha, pull_request:($pr|tonumber), ce_task_id:$task, analysis_id:$analysis, quality_gate:"OK", unresolved_pr_issues:0, unreviewed_pr_hotspots:0, unreviewed_project_hotspots:0}' \
+            > "${RUNNER_TEMP}/sonar-pr-gate.json"
+
+      - name: Retain exact Sonar pull request gate
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sonar-pr-gate-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/sonar-pr-gate.json
+          if-no-files-found: error
+          overwrite: true
+
       - name: Record canonical restoration obligation
         id: sonar_restore_obligation
         if: >
@@ -640,6 +780,9 @@ jobs:
               -- \
               make sonar-scan
           }
+          if [[ "${GITHUB_REF}" == 'refs/heads/main' ]]; then
+            export SONAR_BRANCH=main
+          fi
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             release_version="${GITHUB_REF_NAME#v}"
             if [[ ! "${release_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -771,54 +914,418 @@ jobs:
           steps.sonar_scan.outcome == 'success'
         run: printf 'SonarQube analysis completed successfully.\n'
 
-      - name: Enforce SonarQube failures when the service is available
-        if: >
-          (github.ref == 'refs/heads/main' || github.ref_type == 'tag') &&
-          ((steps.sonar_restore_obligation.outputs.required == 'true' && steps.sonar_scan.outputs.canonical_restore_completed != 'true') || steps.sonar_tcp.outputs.available != 'true' || steps.sonar_api.outputs.available != 'true' || steps.sonar_install.outcome == 'failure' || steps.sonar_scan.outcome == 'failure')
+      - name: Require completed SonarQube analysis and restoration
+        if: always() && (github.ref == 'refs/heads/main' || github.ref_type == 'tag')
         env:
           CANONICAL_RESTORE_COMPLETED: ${{ steps.sonar_scan.outputs.canonical_restore_completed }}
           CANONICAL_RESTORE_FAILED: ${{ steps.sonar_scan.outputs.canonical_restore_failed }}
           CANONICAL_RESTORE_REQUIRED: ${{ steps.sonar_restore_obligation.outputs.required }}
           SONAR_TCP_AVAILABLE: ${{ steps.sonar_tcp.outputs.available }}
           SONAR_API_AVAILABLE: ${{ steps.sonar_api.outputs.available }}
-          SONAR_STATUS_URL: https://sonarcloud.io/api/system/status
+          SONAR_INSTALL_OUTCOME: ${{ steps.sonar_install.outcome }}
+          SONAR_SCAN_OUTCOME: ${{ steps.sonar_scan.outcome }}
         run: |
           set -euo pipefail
-          if [[ "${CANONICAL_RESTORE_REQUIRED}" == "true" && "${CANONICAL_RESTORE_COMPLETED}" != "true" ]]; then
-            printf 'Canonical Sonar restoration did not complete; failing closed.\n' >&2
-            exit 1
-          fi
           if [[ "${CANONICAL_RESTORE_FAILED}" == "true" ]]; then
             printf 'Canonical Sonar restoration failed; preserving the release validation failure.\n' >&2
             exit 1
           fi
-          if [[ "${SONAR_TCP_AVAILABLE}" != "true" || "${SONAR_API_AVAILABLE}" != "true" ]]; then
-            printf '::warning title=SonarQube unavailable::SonarQube TCP or API preflight failed within five seconds; skipping scanner installation and analysis.\n'
-            {
-              printf '## SonarQube scan deferred\n\n'
-              printf 'The SonarQube TCP or API preflight failed within five seconds, so this external quality scan did not delay or fail CI. Local source checks, tests, and coverage gates remain required; CodeQL is enforced by release publication.\n'
-            } >> "${GITHUB_STEP_SUMMARY}"
-            exit 0
-          fi
-          set +e
-          status_code="$(curl --location --silent --show-error --connect-timeout 5 --max-time 15 \
-            --retry 2 --retry-all-errors --write-out '%{http_code}' "${SONAR_STATUS_URL}" --output /dev/null)"
-          curl_status="$?"
-          set -e
-          if [[ "${curl_status}" -eq 0 && "${status_code}" =~ ^[1-4][0-9][0-9]$ ]]; then
-            printf 'SonarQube failed while its API is reachable; preserving the CI failure.\n' >&2
+          if [[ "${SONAR_TCP_AVAILABLE}" != "true" || "${SONAR_API_AVAILABLE}" != "true" ||
+                "${SONAR_INSTALL_OUTCOME}" != "success" || "${SONAR_SCAN_OUTCOME}" != "success" ]]; then
+            printf 'SonarQube analysis is missing or failed (TCP=%s API=%s install=%s scan=%s).\n' \
+              "${SONAR_TCP_AVAILABLE}" "${SONAR_API_AVAILABLE}" \
+              "${SONAR_INSTALL_OUTCOME}" "${SONAR_SCAN_OUTCOME}" >&2
             exit 1
           fi
-          printf '::warning title=SonarQube unavailable::Scanner installation or analysis failed while the SonarQube API was unavailable; local checks and coverage gates remain enforced.\n'
-          {
-            printf '## SonarQube scan deferred\n\n'
-            printf 'The SonarQube API was unavailable after retries, so this external quality scan did not fail CI. Local source checks, tests, and coverage gates remain required; CodeQL is enforced by release publication.\n'
-          } >> "${GITHUB_STEP_SUMMARY}"
+          if [[ "${CANONICAL_RESTORE_REQUIRED}" == "true" && "${CANONICAL_RESTORE_COMPLETED}" != "true" ]]; then
+            printf 'Canonical Sonar restoration did not complete; failing closed.\n' >&2
+            exit 1
+          fi
+
+  codeql_swift:
+    name: CodeQL Swift (${{ matrix.profile }})
+    needs: changes
+    if: >
+      needs.changes.outputs.heavy == 'true' &&
+      (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+    runs-on: macos-26
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [enhanced, stock]
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      CODEQL_ACTION_FILE_COVERAGE_ON_PRS: "true"
+      CONTAINER_COMPOSE_BUILD_PROFILE: ${{ matrix.profile }}
+      CONTAINER_PACKAGE_PATH: ${{ matrix.profile == 'enhanced' && format('{0}/container', github.workspace) || '' }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify source and write Swift inventory
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          git ls-files Sources | grep '[.]swift$' > "${RUNNER_TEMP}/all-swift-sources.txt"
+          case '${{ matrix.profile }}' in
+            enhanced) grep -v '^Sources/ComposeEngineRuntime/' "${RUNNER_TEMP}/all-swift-sources.txt" ;;
+            stock) grep -v '^Sources/ComposeContainerRuntime/' "${RUNNER_TEMP}/all-swift-sources.txt" ;;
+          esac > "${RUNNER_TEMP}/swift-source-inventory.txt"
+          test -s "${RUNNER_TEMP}/swift-source-inventory.txt"
+          printf 'Swift %s source inventory: %s files\n' '${{ matrix.profile }}' "$(wc -l < "${RUNNER_TEMP}/swift-source-inventory.txt")"
+
+      - name: Select stock dependency lock
+        if: matrix.profile == 'stock'
+        run: cp Package.stock.resolved Package.resolved
+
+      - name: Resolve enhanced dependency refs
+        if: matrix.profile == 'enhanced'
+        id: stack-refs
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_ref="$(jq -er '.pins[] | select(.identity == "container") | .state.revision' Package.resolved)"
+          containerization_ref="$(jq -er '.pins[] | select(.identity == "containerization") | .state.revision' Package.resolved)"
+          [[ "$container_ref" =~ ^[0-9a-f]{40}$ && "$containerization_ref" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$container_ref" == "$(jq -er '.components.container.ref' Tools/release/stack-refs.json)" ]]
+          [[ "$containerization_ref" == "$(jq -er '.components.containerization.ref' Tools/release/stack-refs.json)" ]]
+          printf 'container_ref=%s\n' "$container_ref" >> "$GITHUB_OUTPUT"
+          printf 'containerization_ref=%s\n' "$containerization_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout enhanced container
+        if: matrix.profile == 'enhanced'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: stephenlclarke/container
+          path: container
+          ref: ${{ steps.stack-refs.outputs.container_ref }}
+
+      - name: Prepare enhanced SwiftPM dependency sources
+        if: matrix.profile == 'enhanced'
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="${RUNNER_TEMP}/compose-codeql-dependencies"
+          python3 Tools/bazel/prepare_dependencies.py \
+            --profile enhanced \
+            --output "$output"
+          receipt="$output/receipt.json"
+          jq -e '.profile == "enhanced" and .containerization.path != null and .zstd.path != null' "$receipt" >/dev/null
+          containerization_path="$(jq -er '.containerization.path' "$receipt")"
+          zstd_path="$(jq -er '.zstd.path' "$receipt")"
+          test -f "$containerization_path/Package.swift"
+          test -f "$zstd_path/Package.swift"
+          printf 'CONTAINERIZATION_PACKAGE_PATH=%s\nZSTD_PACKAGE_PATH=%s\n' \
+            "$containerization_path" "$zstd_path" >> "$GITHUB_ENV"
+
+      - name: Resolve profile dependency graph without compiling
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp Package.resolved "${RUNNER_TEMP}/codeql-lock-before.json"
+          swift package resolve
+          python3 - <<'PYCODE'
+          import json
+          import os
+          from pathlib import Path
+
+          before = json.loads((Path(os.environ["RUNNER_TEMP"]) / "codeql-lock-before.json").read_text())
+          after = json.loads(Path("Package.resolved").read_text())
+          old = {pin["identity"]: pin for pin in before["pins"]}
+          new = {pin["identity"]: pin for pin in after["pins"]}
+          expected_removed = {"container", "containerization", "zstd"} if os.environ["CONTAINER_COMPOSE_BUILD_PROFILE"] == "enhanced" else set()
+          if set(old) - set(new) != expected_removed or set(new) - set(old) or any(old[key] != new[key] for key in new):
+              raise SystemExit("SwiftPM resolution changed remote pins beyond the declared local source overrides")
+          print(f"Resolved {os.environ['CONTAINER_COMPOSE_BUILD_PROFILE']} profile; local overrides: {sorted(expected_removed)}")
+          PYCODE
+
+      - name: Initialize CodeQL Swift
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          languages: swift
+          build-mode: manual
+
+      - name: Build production source for CodeQL
+        timeout-minutes: 100
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$CONTAINER_COMPOSE_BUILD_PROFILE" == stock ]]; then
+            unset CONTAINERIZATION_PACKAGE_PATH ZSTD_PACKAGE_PATH
+          fi
+          swift build --disable-automatic-resolution -c release --product compose
+          git restore -- Package.resolved
+
+      - name: Verify exact source after production build
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test -z "$(git status --porcelain --untracked-files=no)"
+
+      - name: Analyze CodeQL Swift
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          category: /language:swift-${{ matrix.profile }}
+          output: codeql-swift-results-${{ matrix.profile }}
+          sha: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.ref }}
+          wait-for-processing: true
+
+      - name: Verify extracted Swift inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          sarif="$(python3 - <<'PYCODE'
+          from pathlib import Path
+          files = list(Path("codeql-swift-results-${{ matrix.profile }}").rglob("*.sarif"))
+          if len(files) != 1:
+              raise SystemExit(f"expected one Swift SARIF, found {len(files)}")
+          print(files[0])
+          PYCODE
+          )"
+          cp "$sarif" "${RUNNER_TEMP}/swift-${{ matrix.profile }}.sarif"
+          python3 Tools/ci/check-codeql-extraction.py \
+            --language swift \
+            --require-clean \
+            --sarif "${RUNNER_TEMP}/swift-${{ matrix.profile }}.sarif" \
+            --inventory "${RUNNER_TEMP}/swift-source-inventory.txt" \
+            --output "${RUNNER_TEMP}/swift-extraction-${{ matrix.profile }}.json"
+
+      - name: Retain Swift extraction evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: swift-codeql-extraction-${{ matrix.profile }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/swift-extraction-${{ matrix.profile }}.json
+            ${{ runner.temp }}/swift-source-inventory.txt
+            ${{ runner.temp }}/compose-codeql-dependencies/receipt.json
+            ${{ runner.temp }}/swift-${{ matrix.profile }}.sarif
+          if-no-files-found: warn
+          overwrite: true
+
+  codeql_swift_inventory:
+    name: CodeQL Swift Source Inventory
+    needs:
+      - changes
+      - codeql_swift
+    if: always() && needs.changes.outputs.heavy == 'true' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download profile inventories
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: swift-codeql-extraction-*-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/swift-inventories
+
+      - name: Require complete coverage of all Swift sources
+        env:
+          CODEQL_SWIFT_RESULT: ${{ needs.codeql_swift.result }}
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CODEQL_SWIFT_RESULT" == success ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          python3 - <<'PYCODE'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "swift-inventories"
+          sha = os.environ["EXPECTED_SHA"]
+          all_sources = set(subprocess.check_output(
+              ["git", "ls-files", "Sources"], text=True
+          ).splitlines())
+          all_sources = {path for path in all_sources if path.endswith(".swift")}
+          combined = set()
+          for profile in ("enhanced", "stock"):
+              directory = root / f"swift-codeql-extraction-{profile}-{sha}"
+              report = json.loads((directory / f"swift-extraction-{profile}.json").read_text())
+              if not report["complete"] or not report["clean"] or report["language"] != "swift":
+                  raise SystemExit(f"{profile} CodeQL inventory was incomplete or had findings")
+              paths = set((directory / "swift-source-inventory.txt").read_text().splitlines())
+              if len(paths) != report["inventory_count"]:
+                  raise SystemExit(f"{profile} inventory count differs from extraction report")
+              combined.update(paths)
+          if combined != all_sources:
+              raise SystemExit(f"Swift inventory union mismatch: missing={sorted(all_sources - combined)}, extra={sorted(combined - all_sources)}")
+          print(f"Both production profiles extracted all {len(all_sources)} tracked Swift source files")
+          PYCODE
+
+  codeql_go:
+    name: CodeQL Go (${{ matrix.goos }})
+    needs: changes
+    if: >
+      needs.changes.outputs.heavy == 'true' &&
+      (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, darwin]
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      CODEQL_ACTION_FILE_COVERAGE_ON_PRS: "true"
+      CGO_ENABLED: "0"
+      GOOS: ${{ matrix.goos }}
+      GOARCH: amd64
+      GOFLAGS: -mod=readonly
+      GOTOOLCHAIN: local
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact Go source
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: Tools/compose-normalizer/go.mod
+          cache-dependency-path: Tools/compose-normalizer/go.sum
+
+      - name: Record Linux Go production source scope
+        run: |
+          python3 Tools/ci/write-go-codeql-inventory.py \
+            --output "${RUNNER_TEMP}/go-source-inventory-${{ matrix.goos }}.txt" \
+            --scope "${RUNNER_TEMP}/go-scope-${{ matrix.goos }}.json"
+
+      - name: Initialize CodeQL Go
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          languages: go
+          build-mode: manual
+
+      - name: Build Go production source for CodeQL
+        working-directory: Tools/compose-normalizer
+        run: go build ./...
+
+      - name: Analyze CodeQL Go
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          category: /language:go-${{ matrix.goos }}
+          output: codeql-go-results-${{ matrix.goos }}
+          sha: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/head', github.event.pull_request.number) || github.ref }}
+          wait-for-processing: true
+
+      - name: Verify extracted Go inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t sarif_files < <(find "codeql-go-results-${{ matrix.goos }}" -name '*.sarif' -type f)
+          [[ "${#sarif_files[@]}" -eq 1 ]]
+          cp "${sarif_files[0]}" "${RUNNER_TEMP}/go-${{ matrix.goos }}.sarif"
+          python3 Tools/ci/check-codeql-extraction.py \
+            --language go \
+            --require-clean \
+            --sarif "${RUNNER_TEMP}/go-${{ matrix.goos }}.sarif" \
+            --inventory "${RUNNER_TEMP}/go-source-inventory-${{ matrix.goos }}.txt" \
+            --output "${RUNNER_TEMP}/go-extraction-${{ matrix.goos }}.json"
+
+      - name: Retain Go extraction evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: go-codeql-extraction-${{ matrix.goos }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/go-extraction-${{ matrix.goos }}.json
+            ${{ runner.temp }}/go-scope-${{ matrix.goos }}.json
+            ${{ runner.temp }}/go-source-inventory-${{ matrix.goos }}.txt
+            ${{ runner.temp }}/go-${{ matrix.goos }}.sarif
+          if-no-files-found: warn
+          overwrite: true
+
+  codeql_go_inventory:
+    name: CodeQL Go Source Inventory
+    needs:
+      - changes
+      - codeql_go
+    if: always() && needs.changes.outputs.heavy == 'true' && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Download platform inventories
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: go-codeql-extraction-*-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/go-inventories
+
+      - name: Require shipped Linux and Darwin Go source coverage
+        env:
+          CODEQL_GO_RESULT: ${{ needs.codeql_go.result }}
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$CODEQL_GO_RESULT" == success ]]
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
+          python3 - <<'PYCODE'
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          root = Path(os.environ["RUNNER_TEMP"]) / "go-inventories"
+          sha = os.environ["EXPECTED_SHA"]
+          tracked = set(subprocess.check_output(
+              ["git", "ls-files", "Tools/compose-normalizer"], text=True
+          ).splitlines())
+          production = {path for path in tracked if path.endswith(".go") and not path.endswith("_test.go")}
+          shipped = {path for path in production if not path.endswith("_windows.go")}
+          combined = set()
+          for goos in ("linux", "darwin"):
+              directory = root / f"go-codeql-extraction-{goos}-{sha}"
+              report = json.loads((directory / f"go-extraction-{goos}.json").read_text())
+              scope = json.loads((directory / f"go-scope-{goos}.json").read_text())
+              if not report["complete"] or not report["clean"] or report["language"] != "go" or scope["goos"] != goos:
+                  raise SystemExit(f"{goos} CodeQL extraction was incomplete or had findings")
+              paths = set((directory / f"go-source-inventory-{goos}.txt").read_text().splitlines())
+              if len(paths) != report["inventory_count"] or scope["selected_tracked_count"] != len(paths):
+                  raise SystemExit(f"{goos} source inventory disagrees with extraction report")
+              combined.update(paths)
+          if combined != shipped:
+              raise SystemExit(f"shipped Go inventory mismatch: missing={sorted(shipped - combined)}, extra={sorted(combined - shipped)}")
+          print(f"Both production platforms extracted all {len(shipped)} shipped Go source files; Windows-only files: {sorted(production - shipped)}")
+          PYCODE
 
   resolve-canonical-main:
     name: Resolve Canonical Main
     needs: changes
-    if: needs.changes.outputs.runtime == 'true' || github.ref == 'refs/heads/main'
+    if: needs.changes.outputs.heavy == 'true' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     outputs:
       artifact_run_id: ${{ steps.main.outputs.artifact_run_id }}
@@ -948,19 +1455,31 @@ jobs:
       - tool_tests
       - validate_runtime
       - resolve-canonical-main
+      - codeql_swift
+      - codeql_swift_inventory
+      - codeql_go
+      - codeql_go_inventory
     if: always() && needs.changes.outputs.heavy == 'true'
     runs-on: ubuntu-24.04
     steps:
       - name: Check parallel validation jobs
         env:
           RESOLVE_CANONICAL_MAIN_RESULT: ${{ needs.resolve-canonical-main.result }}
-          RUNTIME_SELECTED: ${{ needs.changes.outputs.runtime == 'true' || github.ref == 'refs/heads/main' }}
+          RUNTIME_SELECTED: ${{ needs.changes.outputs.heavy == 'true' || github.ref == 'refs/heads/main' }}
           SOURCE_CHECKS_RESULT: ${{ needs.source_checks.result }}
           TOOLS_SELECTED: ${{ needs.changes.outputs.tools }}
           TOOL_TESTS_RESULT: ${{ needs.tool_tests.result }}
           VALIDATE_RUNTIME_RESULT: ${{ needs.validate_runtime.result }}
+          CODEQL_SWIFT_RESULT: ${{ needs.codeql_swift_inventory.result }}
+          CODEQL_GO_RESULT: ${{ needs.codeql_go_inventory.result }}
         run: |
           set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" &&
+                "${GITHUB_REF}" != "refs/heads/main" &&
+                "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            printf 'Heavy manual branch dispatch has no complete hosted quality authority; use a pull request.\n' >&2
+            exit 1
+          fi
           if [[ "${SOURCE_CHECKS_RESULT}" != "success" ]]; then
             printf 'Source Checks concluded %s\n' "${SOURCE_CHECKS_RESULT}" >&2
             exit 1
@@ -988,6 +1507,12 @@ jobs:
           if [[ "${RUNTIME_SELECTED}" != "true" && "${RESOLVE_CANONICAL_MAIN_RESULT}" != "skipped" ]]; then
             printf 'Unselected Resolve Canonical Main concluded %s\n' "${RESOLVE_CANONICAL_MAIN_RESULT}" >&2
             exit 1
+          fi
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            [[ "${CODEQL_SWIFT_RESULT}" == "success" && "${CODEQL_GO_RESULT}" == "success" ]] || {
+              printf 'CodeQL Swift/Go concluded %s/%s\n' "${CODEQL_SWIFT_RESULT}" "${CODEQL_GO_RESULT}" >&2
+              exit 1
+            }
           fi
           printf 'All selected validation scopes passed, including any required atomic Sonar restoration.\n'
 

@@ -2,6 +2,8 @@
 
 ## Feature or enhancement request details
 
+The current candidate separates hosted source quality from local heavy qualification. GitHub is configured for exact-head enhanced Swift/Go unit coverage and SonarQube, plus production-source CodeQL extraction for both Swift profiles and shipped Linux/Darwin Go code. VM integration, Docker parity, quiet benchmarks, packaging, and install checks remain local, with explicit publication dispatch. The first complete hosted and local run for the final source revision is still required; historical results below do not establish that final gate.
+
 The shared launcher's test-scratch namespace now distinguishes workspaces. The previous common base allowed devcontainer's identically named package test to remove Compose's extracted files during simultaneous smoke runs. The shared-tooling lock includes the correction; the failed run remains evidence, not a retry converted into success.
 
 The volume-label correction also rejects contradictory Docker volume metadata before direct native creation. Without that check, a user-supplied conflicting mirror would create a volume that the matching devcontainer API cannot safely inspect or list.

@@ -52,7 +52,9 @@ readonly SCRIPT_NAME
 REPO_ROOT="$(cd "$(dirname "$SELF_PATH")/../.." && pwd)"
 readonly REPO_ROOT
 
+# Bound both parity lanes equally, including scaled and one-off services.
 readonly FIXTURE_IMAGE="alpine:3.20"
+readonly FIXTURE_MEMORY="256m"
 STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
@@ -169,6 +171,7 @@ write_fixture() {
 services:
   pool:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     networks:
@@ -176,6 +179,7 @@ services:
       - secondary
   linked:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     links:
@@ -185,12 +189,14 @@ services:
       - secondary
   peer:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     networks:
       - backend
   external-client:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     external_links:
@@ -200,6 +206,7 @@ services:
       - secondary
   moving:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     networks:
@@ -207,6 +214,7 @@ services:
         ipv4_address: ${subnet_prefix}.10
   watcher:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     links:
@@ -241,6 +249,7 @@ create_fixtures() {
         printf '# timeout_seconds=%s\n' "$PARITY_TIMEOUT_SECONDS"
         printf '# material_slowdown=max_ratio:%s\n' "$PARITY_TIMING_MAX_RATIO"
         printf '# fixture_image=%s\n' "$FIXTURE_IMAGE"
+        printf '# fixture_memory=%s\n' "$FIXTURE_MEMORY"
         printf '# image_preparation=pulled outside the timed startup workload\n'
         printf 'implementation\toperation\trepetition\tseconds\n'
     } >"$TIMING_FILE"
@@ -250,14 +259,16 @@ create_fixtures() {
 run_bounded_for() {
     local timeout="$1"
     shift
-    python3 -c '
+    PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c '
 import os
 import signal
 import subprocess
 import sys
+from Tools.parity.qualification_lease import child_command_lease
 
 timeout = float(sys.argv[1])
-process = subprocess.Popen(sys.argv[2:], start_new_session=True)
+with child_command_lease() as command_fds:
+    process = subprocess.Popen(sys.argv[2:], start_new_session=True, pass_fds=command_fds)
 try:
     raise SystemExit(process.wait(timeout=timeout))
 except subprocess.TimeoutExpired:
@@ -567,11 +578,11 @@ run_live_suite() {
     }
     if [[ "$implementation" == "docker" ]]; then
         measure_capture "$implementation" external_secondary_create 1 \
-            docker run --detach --name "$external_target" --network "${project}_secondary" \
+            docker run --detach --memory "$FIXTURE_MEMORY" --name "$external_target" --network "${project}_secondary" \
             "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
     else
         measure_capture "$implementation" external_secondary_create 1 \
-            "$CONTAINER_BINARY" run --detach --name "$external_target" \
+            "$CONTAINER_BINARY" run --detach --memory "$FIXTURE_MEMORY" --name "$external_target" \
             --network "${project}_secondary" "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
     fi
     assert_timed_address_count "$implementation" external-client external-db 1 external_secondary_lookup
@@ -585,11 +596,11 @@ run_live_suite() {
     assert_alias_unavailable "$implementation" external-client external-db external_post_remove_lookup
     if [[ "$implementation" == "docker" ]]; then
         measure_capture "$implementation" external_backend_create 1 \
-            docker run --detach --name "$external_target" --network "${project}_backend" \
+            docker run --detach --memory "$FIXTURE_MEMORY" --name "$external_target" --network "${project}_backend" \
             "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
     else
         measure_capture "$implementation" external_backend_create 1 \
-            "$CONTAINER_BINARY" run --detach --name "$external_target" \
+            "$CONTAINER_BINARY" run --detach --memory "$FIXTURE_MEMORY" --name "$external_target" \
             --network "${project}_backend" "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
     fi
     assert_timed_address_count "$implementation" external-client external-db 1 external_backend_lookup
@@ -722,9 +733,26 @@ PY
     info "Timing evidence written to $PARITY_TIMING_OUTPUT"
 }
 
-# Removes runtime resources and temporary fixtures.
+# Retains partial timings without replacing an earlier report on failure.
+retain_partial_timings() {
+    [[ -f "$TIMING_FILE" ]] || return 0
+    mkdir -p "$(dirname "$PARITY_TIMING_OUTPUT")" || return 1
+    if [[ ! -e "$PARITY_TIMING_OUTPUT" && ! -L "$PARITY_TIMING_OUTPUT" ]]; then
+        (set -o noclobber; cat "$TIMING_FILE" >"$PARITY_TIMING_OUTPUT") || return 1
+    fi
+    [[ -f "$PARITY_TIMING_OUTPUT" && ! -L "$PARITY_TIMING_OUTPUT" ]] &&
+        cmp -s "$TIMING_FILE" "$PARITY_TIMING_OUTPUT"
+}
+
+# Removes runtime resources while preserving failed timing evidence.
 cleanup() {
     local status=$?
+    local preserve_fixture=0
+    if ! retain_partial_timings; then
+        warning "could not retain timings without changing $PARITY_TIMING_OUTPUT; preserving $FIXTURE_DIR"
+        preserve_fixture=1
+        ((status != 0)) || status=1
+    fi
     if [[ -n "$FIXTURE_DIR" ]]; then
         docker rm --force "$DOCKER_EXTERNAL_TARGET" >/dev/null 2>&1 || true
         if [[ -f "$DOCKER_FILE" ]]; then
@@ -737,7 +765,9 @@ cleanup() {
                 "$CONTAINER_COMPOSE" --ansi never --project-name "$CONTAINER_PROJECT" --file "$CONTAINER_FILE" \
                 down --remove-orphans >/dev/null 2>&1 || true
         fi
-        rm -rf "$FIXTURE_DIR"
+        if ((preserve_fixture == 0)); then
+            rm -rf "$FIXTURE_DIR"
+        fi
     fi
     exit "$status"
 }
@@ -769,4 +799,6 @@ main() {
     info 'Docker Compose V2 and container-compose links parity passed.'
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

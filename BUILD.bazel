@@ -129,6 +129,29 @@ swift_test(
     deps = [":ComposeRuntimeSPI", ":ComposeTestStorage"],
 )
 
+# Build the original live runtime suite once, then execute its exact binary
+# under the separate Q-owned private runtime lease. It is not part of the
+# no-runtime unit/coverage aliases.
+fixture_bundle(
+    name = "ComposeRuntimeFixtures",
+    testonly = True,
+    srcs = glob(["Tests/ComposeRuntimeTests/Fixtures/**/*"]),
+    resource_root = "Tests/ComposeRuntimeTests",
+)
+
+filegroup(name = "ComposeRuntimeFixtureAccessor", testonly = True, srcs = [":ComposeRuntimeFixtures"], output_group = "accessor")
+filegroup(name = "ComposeRuntimeFixtureBundle", testonly = True, srcs = [":ComposeRuntimeFixtures"], output_group = "bundle")
+
+swift_test(
+    name = "ComposeRuntimeTests",
+    srcs = glob(["Tests/ComposeRuntimeTests/*.swift"]) + [":ComposeRuntimeFixtureAccessor"],
+    copts = SWIFT_COPTS,
+    data = [":ComposeRuntimeFixtureBundle"],
+    deps = [":ComposeCore", ":ComposeTestStorage"],
+    tags = ["manual"],
+    timeout = "long",
+)
+
 swift_library(
     name = "ComposeTestStorage",
     testonly = True,

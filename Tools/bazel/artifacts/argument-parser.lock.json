@@ -1,0 +1,48 @@
+{
+  "archiveSHA256": "05390252b4cb98ad15e5e14578c2549efc882bfb424bd827080aa11d640cc003",
+  "asset": "swift-argument-parser-darwin-arm64-opt.tar.gz",
+  "evidenceAsset": "release-evidence.json",
+  "evidenceSHA256": "6898336341bc81b5b693d3daaf28422089cf742927d3f04ba23d8939d3a58399",
+  "manifest": {
+    "configuration": "opt",
+    "files": {
+      "ArgumentParser.swiftdoc": "6b287135b0ef74d948a58310ff11ed0c5a9a99ac519345bd1385657d98d401c3",
+      "ArgumentParser.swiftmodule": "15fe05262f4ab6f889891a723560f673bf1fcdac8255fe65bdd6a1883d8e8f7b",
+      "ArgumentParserToolInfo.swiftdoc": "f81abaeaa340062bd13e7707775ac87cfe37bfb7dc68746d5fea0e60ad470685",
+      "ArgumentParserToolInfo.swiftmodule": "378a207270f1a7a7bd2d0466758e43687c961377967d7eb20e90f0033776f158",
+      "LICENSE.txt": "770af8291f708538d8ff885a0bbc4e045cd700531741c4f99528d435c14d7f55",
+      "libArgumentParser.rspm.__impl.a": "59ab2897bb16b31cf15c7ea46902f72f44eaa4400a88116618f4c2012084c319",
+      "libArgumentParserToolInfo.rspm.__impl.a": "cc13dfc00e60529cd8b77cc2eea23b321ee0d1b008cb85f9ee8c0eeb54152765",
+      "pkg_info.json": "272106aa9073dfba764dba4a3d8678419adf50ac39d6bf5a1fc0f69890206d8f"
+    },
+    "modules": {
+      "ArgumentParser": [
+        "ArgumentParserToolInfo"
+      ],
+      "ArgumentParserToolInfo": []
+    },
+    "package": "swift-argument-parser",
+    "platform": "darwin-arm64",
+    "producerCommit": "15361ce5f55a6b8ab3242e89650a188766b47581",
+    "producerRepository": "stephenlclarke/container",
+    "schema": 1,
+    "sourceCommit": "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+    "toolchain": {
+      "bazelVersion": "8.8.0",
+      "bazelrcSHA256": "14fe06559779af234409b1ed5a47d6e6710771aa0bdaa9e16d3ab325221fa855",
+      "generatedBuildSHA256": "008810e43ddf6820daf7a13a1455368b96087256bdb93fbfebc0393f94ff30d9",
+      "hostMachine": "arm64",
+      "rulesSwiftPackageManagerVersion": "1.23.0",
+      "rulesSwiftVersion": "3.6.1",
+      "sdkSettingsSHA256": "7b93ad7e534cc4b31c6a4e39d19b5e0288acf2168c2649479a796d1cb51939fb",
+      "sdkVersion": "27.0",
+      "swiftVersion": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+      "swiftcSHA256": "cf81104bf554eef05e28a8bb5285c763f1323b4511b944d755d8bdd6cb8db717",
+      "xcodeVersion": "Xcode 27.0\nBuild version 27A266a"
+    },
+    "upstream": "apple/swift-argument-parser"
+  },
+  "repository": "stephenlclarke/container",
+  "schema": 1,
+  "tag": "layer-argument-parser-6a52f3251125-ef5a65929c858802"
+}

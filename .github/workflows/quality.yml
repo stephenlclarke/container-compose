@@ -43,8 +43,6 @@ on:
       - "Sources/**"
       - "Tests/**"
       - "Tools/ci/run-swift-test.sh"
-  schedule:
-    - cron: "23 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -123,7 +121,7 @@ jobs:
   swift-address-sanitizer:
     name: Swift ASan
     needs: changes
-    if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.swift == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.changes.outputs.swift == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -258,9 +256,9 @@ jobs:
         working-directory: container-compose
 
   swift-thread-sanitizer:
-    name: Swift TSan Nightly
+    name: Swift TSan
     needs: changes
-    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.swift == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.changes.outputs.swift == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     steps:

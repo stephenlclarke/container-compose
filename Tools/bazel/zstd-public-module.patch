@@ -1,0 +1,30 @@
+diff --git a/Package.swift b/Package.swift
+--- a/Package.swift
++++ b/Package.swift
+@@ -26,7 +26,7 @@
+             name: "libzstd",
+             path: "lib",
+             sources: [ "common", "compress", "decompress", "dictBuilder" ],
+-            publicHeadersPath: ".",
++            publicHeadersPath: "include",
+             cSettings: [
+                 .headerSearchPath(".")
+             ])
+diff --git a/lib/include/zstd.h b/lib/include/zstd.h
+new file mode 100644
+--- /dev/null
++++ b/lib/include/zstd.h
+@@ -0,0 +1 @@
++#include "../zstd.h"
+diff --git a/lib/include/zdict.h b/lib/include/zdict.h
+new file mode 100644
+--- /dev/null
++++ b/lib/include/zdict.h
+@@ -0,0 +1 @@
++#include "../zdict.h"
+diff --git a/lib/include/zstd_errors.h b/lib/include/zstd_errors.h
+new file mode 100644
+--- /dev/null
++++ b/lib/include/zstd_errors.h
+@@ -0,0 +1 @@
++#include "../zstd_errors.h"

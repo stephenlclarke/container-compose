@@ -408,6 +408,45 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 
 .PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint actions-lint
 .PHONY: worktree-audit worktree-audit-strict
+.PHONY: bazel-compose-qualify bazel-workflow-tools-test
+.PHONY: bazel-compose-release-prepare bazel-compose-release-publish bazel-compose-release-verify
+
+# Cheap, no-runtime regressions for the retained launcher, hosted admission,
+# private recovery and published-layer consumers. The native CLI/package tests
+# remain in their declared Bazel targets and need actual built artifacts.
+bazel-workflow-tools-test:
+	$(TOOL_TEST_TEMP_ENV) PYTHONPATH="Tools/bazel:Tools/bazel/artifacts" $(PYTHON) -m unittest -q \
+		test_local_launcher test_hosted_quality test_qualify_local test_q_assets \
+		test_prebuilt_parity_tests test_full_suite test_compose_release
+	$(TOOL_TEST_TEMP_ENV) PYTHONPATH="Tools/bazel:Tools/bazel/artifacts" $(PYTHON) -m unittest \
+		discover -s Tools/bazel/artifacts -p 'test_*.py' -q
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_keychain_fixture.py
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_network_parity_fixtures.py
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_qualification_lease.py
+
+# Final local gate for one clean Compose checkpoint. Evidence is retained on
+# internal storage; cached Bazel build scratch stays on the enrolled SSD.
+bazel-compose-qualify:
+	@stamp="$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	sha="$$(git rev-parse --short=8 HEAD)"; \
+	$(PYTHON) Tools/bazel/qualify_local.py \
+	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/local-final/$$sha-$$stamp"
+
+# The signed product release is separate from the unsigned Bazel candidate.
+# Publishing is an explicit command after independent review of a clean pass.
+bazel-compose-release-prepare:
+	@test -n "$(COMPOSE_QUALIFICATION_EVIDENCE)" && test -n "$(COMPOSE_RELEASE_OUTPUT)"
+	$(PYTHON) Tools/bazel/compose_release.py prepare \
+	  --evidence "$(COMPOSE_QUALIFICATION_EVIDENCE)" --output "$(COMPOSE_RELEASE_OUTPUT)"
+
+bazel-compose-release-publish:
+	@test -n "$(COMPOSE_RELEASE_OUTPUT)"
+	$(PYTHON) Tools/bazel/compose_release.py publish --prepared "$(COMPOSE_RELEASE_OUTPUT)"
+
+bazel-compose-release-verify:
+	@test -n "$(COMPOSE_RELEASE_OUTPUT)" && test -n "$(COMPOSE_RELEASE_CONSUME)"
+	$(PYTHON) Tools/bazel/compose_release.py verify-published \
+	  --prepared "$(COMPOSE_RELEASE_OUTPUT)" --destination "$(COMPOSE_RELEASE_CONSUME)"
 .PHONY: core-runtime-neutrality
 .PHONY: codeql-local codeql-sarif-upload codeql-sarif-upload-dry-run
 .PHONY: docker-compose-environment-parity docker-compose-named-volume-reuse-parity docker-compose-oci-annotations-parity docker-compose-exposed-ports-parity docker-compose-empty-process-overrides-parity docker-compose-provider-services-parity
@@ -2661,7 +2700,7 @@ release-tools-test: coverage-tools-syntax
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover Tools/release
 	$(TOOL_TEST_TEMP_ENV) Tools/release/test_publish_github_release.sh
 
-ci-tools-test: coverage-tools-syntax
+ci-tools-test: coverage-tools-syntax bazel-workflow-tools-test
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover Tools/ci
 	$(MAKE) --no-print-directory stack-self-test
 

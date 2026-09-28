@@ -2,7 +2,7 @@
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
-exports_files(["rules-swift-sandbox-output.patch", "rules-go-sanitizer-isolation.patch", "package.py", "licenses/inventory.json", "licenses/vendored.json"] + glob(["licenses/*.patch", "licenses/*.txt"]))
+exports_files(["rules-swift-sandbox-output.patch", "rules-go-sanitizer-isolation.patch", "package.py", "containerization-ext4-unaligned.patch", "zstd-public-module.patch", "licenses/inventory.json", "licenses/vendored.json"] + glob(["licenses/*.patch", "licenses/*.txt"]))
 
 exports_files(["documentation/action.py", "documentation/test_action.py", "documentation/test.sh"])
 
@@ -37,7 +37,7 @@ sh_test(
     name = "package_tests",
     srcs = ["tests/package.sh"],
     args = ["$(location test_package.py)", "$(location //:Tools/release/write-build-info.py)", "unit"],
-    data = ["package.py", "test_package.py", "//:Tools/release/write-build-info.py"],
+    data = ["package.py", "containerization-ext4-unaligned.patch", "zstd-public-module.patch", "test_package.py", "//:Tools/release/write-build-info.py"],
     size = "small",
 )
 
@@ -45,7 +45,7 @@ sh_test(
     name = "package_smoke",
     srcs = ["tests/package.sh"],
     args = ["$(location test_package.py)", "$(location //:Tools/release/write-build-info.py)", "archive", "$(location //:candidate_archive_payload)"],
-    data = ["package.py", "test_package.py", "//:Tools/release/write-build-info.py", "//:candidate_archive_payload"],
+    data = ["package.py", "containerization-ext4-unaligned.patch", "zstd-public-module.patch", "test_package.py", "//:Tools/release/write-build-info.py", "//:candidate_archive_payload"],
     size = "small",
 )
 

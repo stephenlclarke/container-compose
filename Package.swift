@@ -40,7 +40,7 @@ let containerDependency: Package.Dependency = {
     return enhancedRuntime
         ? .package(
             url: "https://github.com/stephenlclarke/container.git",
-            revision: "000a77c6b6ad8505e5742fae4c518a9a5b3a7dfb",
+            revision: "15361ce5f55a6b8ab3242e89650a188766b47581",
         )
         : .package(url: "https://github.com/apple/container.git", exact: "1.4.1")
 }()
@@ -54,9 +54,23 @@ let containerizationDependency: Package.Dependency = {
     return enhancedRuntime
         ? .package(
             url: "https://github.com/stephenlclarke/containerization.git",
-            revision: "a13f5d347ac0723714d68e6f7802019673d04d97",
+            revision: "5ed9bc7490aa30c76337bd5b3d8ff251b63c678f",
         )
         : .package(url: "https://github.com/apple/containerization.git", exact: "0.45.0")
+}()
+
+let engineAPIDependency: Package.Dependency = .package(
+    url: "https://github.com/stephenlclarke/container-engine-api.git",
+    revision: enhancedRuntime
+        ? "48e44d74d738ca3d24351ba02c4869be1a3e6998"
+        : "c04ed07b8a324a996b9d62397278b90a389fe830",
+)
+
+let zstdDependency: [Package.Dependency] = {
+    guard enhancedRuntime,
+          let path = ProcessInfo.processInfo.environment["ZSTD_PACKAGE_PATH"],
+          !path.isEmpty else { return [] }
+    return [.package(name: "zstd", path: path)]
 }()
 
 let runtimeOnlyDependencies: [Package.Dependency] = enhancedRuntime
@@ -157,11 +171,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.4.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
-        .package(
-            url: "https://github.com/stephenlclarke/container-engine-api.git",
-            revision: "c04ed07b8a324a996b9d62397278b90a389fe830",
-        ),
-    ] + runtimeOnlyDependencies,
+        engineAPIDependency,
+    ] + runtimeOnlyDependencies + zstdDependency,
     targets: [
         .executableTarget(
             name: "ComposePlugin",

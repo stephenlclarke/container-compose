@@ -555,7 +555,7 @@ run_timed() {
     local repetition="$3"
     shift 3
 
-    python3 - \
+    PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 - \
         "$TIMING_TSV" \
         "$fixture" \
         "$lane" \
@@ -569,17 +569,20 @@ import signal
 import subprocess
 import sys
 import time
+from Tools.parity.qualification_lease import child_command_lease
 
 timing_path, fixture, lane, repetition, timeout_raw, *command = sys.argv[1:]
 timeout = float(timeout_raw)
 started = time.monotonic()
-process = subprocess.Popen(
-    command,
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.PIPE,
-    text=True,
-    start_new_session=True,
-)
+with child_command_lease() as command_fds:
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+        pass_fds=command_fds,
+    )
 outcome = "success"
 try:
     _, stderr = process.communicate(timeout=timeout)

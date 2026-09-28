@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "repository": "stephenlclarke/containerization",
+  "tag": "layer-vminit-5ed9bc7490aa-3de1d32b71d9",
+  "targetCommit": "5ed9bc7490aa30c76337bd5b3d8ff251b63c678f",
+  "asset": "guest.oci.tar",
+  "sha256": "3de1d32b71d95f896173c79b5d15979e20f0e2a1a8c0e9339af97e55e1a32db1"
+}

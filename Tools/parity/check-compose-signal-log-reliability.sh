@@ -43,6 +43,9 @@
 #                           CONTAINER_ENGINE_API_STACK_REPO.
 #   DOCKER_COMPOSE          Docker Compose command to compare with. Defaults to
 #                           "docker compose" when available, otherwise docker-compose.
+#   COMPOSE_PARITY_TEST_RUNNER
+#                           Optional absolute executable accepting --filter REGEX
+#                           and running the already-built focused unit tests.
 #
 # This local parity check proves non-TTY foreground output independently of
 # historical readability, restart retention, scaled aggregation, foreground
@@ -715,8 +718,8 @@ cleanup() {
 # Runs focused Compose adapter contracts for attach and logs.
 check_unit_contracts() {
     env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER \
-        swift test \
-        --filter '(ComposeBuildInfoTests/localDependencyPathsOverrideLockfile|ComposeOrchestratorTests/(attachInteractiveMode|attachOutputOnlyMode|logsPasses|logsAcceptsComposeAllTailValue|logManagerNormalizesUnreadableDriverErrorsForCompose|logManagerNormalizesPublicUnreadableDriverCategory|logsTreatsUnreadableDriverHistoryAsEmptyStream|logsContinuesReadableServicesAfterUnreadableDriverHistory|logsPreservesUnreadableDriverErrorsForFollowRequests))'
+        "$REPO_ROOT/Tools/parity/run-unit-contracts.sh" \
+        --filter '(ComposeBuildInfoTests/|ComposeOrchestratorTests/(attachInteractiveMode|attachOutputOnlyMode|logsPasses|logsAcceptsComposeAllTailValue|logManagerNormalizesUnreadableDriverErrorsForCompose|logManagerNormalizesPublicUnreadableDriverCategory|logsTreatsUnreadableDriverHistoryAsEmptyStream|logsContinuesReadableServicesAfterUnreadableDriverHistory|logsPreservesUnreadableDriverErrorsForFollowRequests))'
 }
 
 # Coordinates prerequisite, Docker, optional Apple runtime, and unit validation.
