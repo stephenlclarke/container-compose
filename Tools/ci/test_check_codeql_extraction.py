@@ -18,12 +18,17 @@
 """Focused fixtures for CodeQL source-extraction evidence."""
 
 import json
+import copy
+import hashlib
 import importlib.util
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+
+import codeql_compatibility as compatibility
 
 
 CHECKER = Path(__file__).with_name("check-codeql-extraction.py")
@@ -111,6 +116,99 @@ class ExtractionInventoryTests(unittest.TestCase):
                 "Tools/compose-normalizer/remote/cache_unix.go",
                 "Tools/compose-normalizer/remote/git_command_unix.go",
             })
+
+
+class ReviewedCompatibilityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.policy = compatibility.load_policy(CHECKER.with_name(compatibility.POLICY_NAME))
+        self.results = [{"ruleId": item["rule_id"],
+                         "partialFingerprints": item["partial_fingerprints"],
+                         "locations": [{"physicalLocation": {
+                             "artifactLocation": {"uri": item["uri"], "uriBaseId": "%SRCROOT%"},
+                             "region": item["region"]}}]} for item in self.policy["findings"]]
+
+    def assess(self, rows: list[dict]) -> dict:
+        return compatibility.assessment({"runs": [{"results": rows}]}, self.policy)
+
+    def test_exact_pair_keeps_raw_alert_count(self) -> None:
+        result = self.assess(self.results)
+        self.assertEqual(result["alert_count"], 2)
+        self.assertEqual(result["reviewed_compatibility_count"], 2)
+        self.assertEqual(result["actionable_alert_count"], 0)
+        self.assertEqual(result["unreviewed_alert_count"], 0)
+        self.assertTrue(result["compatibility_disposition_complete"])
+
+    def test_missing_duplicate_new_changed_and_suppressed_findings_fail(self) -> None:
+        cases = [[], self.results[:1], self.results + self.results[:1],
+                 self.results + [{"ruleId": "swift/new-risk"}]]
+        for field in ("rule", "uri", "line", "fingerprint", "suppression"):
+            rows = copy.deepcopy(self.results)
+            if field == "rule":
+                rows[0]["ruleId"] = "swift/other"
+            elif field == "uri":
+                rows[0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] = "Sources/New.swift"
+            elif field == "line":
+                rows[0]["locations"][0]["physicalLocation"]["region"]["startLine"] += 1
+            elif field == "fingerprint":
+                rows[0]["partialFingerprints"]["primaryLocationLineHash"] = "changed"
+            else:
+                rows[0]["suppressions"] = [{"kind": "external"}]
+            cases.append(rows)
+        for rows in cases:
+            with self.subTest(rows=rows):
+                self.assertFalse(self.assess(rows)["compatibility_disposition_complete"])
+
+    def test_source_pin_repository_commit_and_file_drift_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            policy = copy.deepcopy(self.policy)
+            source = root / policy["dependency"]["file"]
+            source.parent.mkdir(parents=True)
+            source.write_text("reviewed fixture")
+            policy["dependency"]["sha256"] = hashlib.sha256(source.read_bytes()).hexdigest()
+            pin = {"identity": policy["dependency"]["identity"],
+                   "location": policy["dependency"]["repository"],
+                   "state": {"revision": policy["dependency"]["revision"]}}
+            for name in policy["dependency"]["lockfiles"]:
+                (root / name).write_text(json.dumps({"pins": [pin]}))
+            with patch.object(compatibility.subprocess, "check_output",
+                              return_value=pin["state"]["revision"]):
+                receipt = compatibility.source_receipt(root, policy, verify_checkout=True)
+                self.assertEqual(receipt["revision"], pin["state"]["revision"])
+                source.write_text("changed")
+                with self.assertRaisesRegex(ValueError, "source hash"):
+                    compatibility.source_receipt(root, policy, verify_checkout=True)
+            with patch.object(compatibility.subprocess, "check_output", return_value="b" * 40):
+                with self.assertRaisesRegex(ValueError, "checkout revision"):
+                    compatibility.source_receipt(root, policy, verify_checkout=True)
+            for field in ("location", "revision"):
+                changed = copy.deepcopy(pin)
+                if field == "location":
+                    changed["location"] = "https://github.com/other/swift-certificates.git"
+                else:
+                    changed["state"]["revision"] = "b" * 40
+                (root / policy["dependency"]["lockfiles"][0]).write_text(json.dumps({"pins": [changed]}))
+                with self.assertRaisesRegex(ValueError, "pin or repository"):
+                    compatibility.source_receipt(root, policy, verify_checkout=False)
+
+    def test_shared_consumer_recomputes_counts_and_rejects_errors(self) -> None:
+        root = CHECKER.resolve().parents[2]
+        sarif = {"runs": [{"results": self.results}]}
+        report = {"language": "swift", "complete": True, "clean": True,
+                  "extraction_error_diagnostic_count": 0, **self.assess(self.results),
+                  "compatibility_disposition_sha256": compatibility.digest(
+                      CHECKER.with_name(compatibility.POLICY_NAME)),
+                  "compatibility_source": compatibility.source_receipt(
+                      root, self.policy, verify_checkout=False)}
+        compatibility.require_report(report, sarif, root)
+        for change in ({"alert_count": 0}, {"reviewed_compatibility_count": 0},
+                       {"actionable_alert_count": 1}, {"complete": False},
+                       {"extraction_error_diagnostic_count": 1},
+                       {"compatibility_disposition_sha256": "0" * 64}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                compatibility.require_report({**report, **change}, sarif, root)
+        with self.assertRaisesRegex(ValueError, "raw findings"):
+            compatibility.require_report(report, {"runs": [{"results": self.results[:1]}]}, root)
 
 
 if __name__ == "__main__":

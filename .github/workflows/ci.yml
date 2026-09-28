@@ -1161,6 +1161,7 @@ jobs:
           python3 Tools/ci/check-codeql-extraction.py \
             --language swift \
             --require-clean \
+            --reviewed-compatibility Tools/ci/codeql-swift-compatibility.json \
             --sarif "${RUNNER_TEMP}/swift-${{ matrix.profile }}.sarif" \
             --inventory "${RUNNER_TEMP}/swift-source-inventory.txt" \
             --output "${RUNNER_TEMP}/swift-extraction-${{ matrix.profile }}.json"
@@ -1207,12 +1208,16 @@ jobs:
           [[ "$CODEQL_SWIFT_RESULT" == success ]]
           [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]]
           python3 - <<'PYCODE'
+          import hashlib
           import json
           import os
           from pathlib import Path
           import subprocess
+          import sys
 
           root = Path(os.environ["RUNNER_TEMP"]) / "swift-inventories"
+          sys.path.insert(0, str(Path.cwd() / "Tools/ci"))
+          from codeql_compatibility import require_report
           sha = os.environ["EXPECTED_SHA"]
           all_sources = set(subprocess.check_output(
               ["git", "ls-files", "Sources"], text=True
@@ -1224,6 +1229,10 @@ jobs:
               report = json.loads((directory / f"swift-extraction-{profile}.json").read_text())
               if not report["complete"] or not report["clean"] or report["language"] != "swift":
                   raise SystemExit(f"{profile} CodeQL inventory was incomplete or had findings")
+              sarif = directory / f"swift-{profile}.sarif"
+              if hashlib.sha256(sarif.read_bytes()).hexdigest() != report["sarif_sha256"]:
+                  raise SystemExit(f"{profile} CodeQL SARIF changed")
+              require_report(report, json.loads(sarif.read_text()), Path.cwd())
               paths = set((directory / "swift-source-inventory.txt").read_text().splitlines())
               if len(paths) != report["inventory_count"]:
                   raise SystemExit(f"{profile} inventory count differs from extraction report")

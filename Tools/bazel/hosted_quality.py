@@ -26,6 +26,11 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'Tools/ci'))
+import codeql_compatibility
 
 REPOSITORY = 'stephenlclarke/container-compose'
 JOBS = ('Validate Runtime', 'CodeQL Swift (enhanced)', 'CodeQL Swift (stock)',
@@ -218,15 +223,18 @@ def admit(sha: str, evidence: Path) -> dict:
                 if (value.get('complete') is not True or value.get('clean') is not True
                         or value.get('inventory_count', 0) <= 0
                         or value.get('inventory_extracted_count') != value.get('inventory_count')
-                        or value.get('alert_count') != 0
                         or value.get('extraction_error_diagnostic_count') != 0):
                     raise ValueError(f'Incomplete {prefix} extraction evidence')
                 language, profile = ('swift', prefix.removeprefix('swift-codeql-extraction-')) if prefix.startswith('swift') else ('go', prefix.removeprefix('go-codeql-extraction-'))
+                if value.get('language') != language:
+                    raise ValueError(f'Hosted {prefix} extraction language changed')
                 for name, expected in ((f'{language}-{profile}.sarif', value.get('sarif_sha256')),
                                        (f'{language}-source-inventory' + (f'-{profile}' if language == 'go' else '') + '.txt', value.get('inventory_sha256'))):
                     file = directory / name
                     if not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest() != expected:
                         raise ValueError(f'Hosted {prefix} raw {name} hash mismatch')
+                codeql_compatibility.require_report(
+                    value, json.loads((directory / f'{language}-{profile}.sarif').read_text()), ROOT)
                 if language == 'go':
                     scope = json.loads((directory / f'go-scope-{profile}.json').read_text())
                     if scope.get('selected_tracked_count') != value['inventory_count']:

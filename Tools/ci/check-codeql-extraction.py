@@ -23,6 +23,8 @@ import json
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
+import codeql_compatibility
+
 ERROR_EXAMPLE_LIMIT = 5
 
 
@@ -94,6 +96,8 @@ def main() -> int:
     parser.add_argument("--sarif", type=Path, required=True)
     parser.add_argument("--inventory", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--reviewed-compatibility", type=Path)
+    parser.add_argument("--source-root", type=Path, default=Path.cwd())
     args = parser.parse_args()
 
     sarif = json.loads(args.sarif.read_text(encoding="utf-8"))
@@ -116,10 +120,8 @@ def main() -> int:
     invocation_results = []
     language_successful_invocation = False
     invocation_count = 0
-    result_count = 0
     language_run_count = 0
     for run in sarif.get("runs", []):
-        result_count += len(run.get("results", []))
         artifacts = run.get("artifacts", [])
         for invocation in run.get("invocations", []):
             invocation_count += 1
@@ -153,6 +155,15 @@ def main() -> int:
     expected_source = {path for path in expected if is_source(path, args.language)}
     missing = inventory - extracted_source
     invocation_success = bool(invocation_results) and all(invocation_results)
+    policy = None
+    compatibility_source = None
+    if args.reviewed_compatibility:
+        if args.language != "swift":
+            raise ValueError("Reviewed compatibility applies only to Swift")
+        policy = codeql_compatibility.load_policy(args.reviewed_compatibility)
+        compatibility_source = codeql_compatibility.source_receipt(
+            args.source_root, policy, verify_checkout=True)
+    disposition = codeql_compatibility.assessment(sarif, policy)
     report = {
         "language": args.language,
         "sarif": str(args.sarif.resolve()),
@@ -163,7 +174,10 @@ def main() -> int:
         "invocation_success": invocation_success,
         "language_successful_invocation": language_successful_invocation,
         "language_run_count": language_run_count,
-        "alert_count": result_count,
+        **disposition,
+        "compatibility_disposition_sha256": sha256(args.reviewed_compatibility)
+        if args.reviewed_compatibility else None,
+        "compatibility_source": compatibility_source,
         "inventory_count": len(inventory),
         "expected_source_count": len(expected_source),
         "extracted_source_count": len(extracted_source),
@@ -177,15 +191,16 @@ def main() -> int:
         "expected_not_in_inventory": sorted(expected_source - inventory),
         "inventory_not_expected": sorted(inventory - expected_source),
         "complete": invocation_success and language_successful_invocation and not missing,
-        "clean": result_count == 0 and not errors,
-        "interpretation": "complete requires all invocations to succeed and every inventoried source file to have a successful-extraction diagnostic from a successful invocation; extraction errors are reported separately",
+        "clean": disposition["compatibility_disposition_complete"] and not errors,
+        "interpretation": "complete requires successful invocations and extraction of every inventoried source; clean requires zero extraction errors and zero unreviewed findings, with any reviewed compatibility findings retained in the raw alert count and bound to exact dependency source",
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({key: report[key] for key in (
         "inventory_count", "expected_source_count", "extracted_source_count",
         "inventory_extracted_count", "extraction_error_diagnostic_count",
-        "alert_count", "invocation_success", "complete",
+        "alert_count", "reviewed_compatibility_count", "actionable_alert_count",
+        "unreviewed_alert_count", "invocation_success", "complete", "clean",
     )}, sort_keys=True))
     return 0 if report["complete"] and (not args.require_clean or report["clean"]) else 1
 

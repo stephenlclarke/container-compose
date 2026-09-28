@@ -50,6 +50,54 @@ def style_job(conclusion: str = 'success') -> dict:
 
 
 class HostedQualityTests(unittest.TestCase):
+    def test_hosted_codeql_rechecks_exact_reviewed_raw_findings(self) -> None:
+        compatibility = quality.codeql_compatibility
+        policy_path = quality.ROOT / 'Tools/ci' / compatibility.POLICY_NAME
+        policy = compatibility.load_policy(policy_path)
+        rows = [{'ruleId': item['rule_id'],
+                 'partialFingerprints': item['partial_fingerprints'],
+                 'locations': [{'physicalLocation': {
+                     'artifactLocation': {'uri': item['uri'], 'uriBaseId': '%SRCROOT%'},
+                     'region': item['region']}}]} for item in policy['findings']]
+        ci, style = run(30, 1, 'success'), run(40, 1, 'success')
+        prefix = 'swift-codeql-extraction-stock'
+        def api(path: str) -> dict:
+            if 'ci.yml/runs?' in path:
+                return {'workflow_runs': [ci]}
+            if 'quality.yml/runs?' in path:
+                return {'workflow_runs': [style]}
+            if '/jobs?' in path:
+                return {'jobs': [style_job()]}
+            return {'artifacts': []}
+        for unexpected in (False, True):
+            def download(_run, _name, directory):
+                sarif = {'runs': [{'results': rows + ([{'ruleId': 'swift/new'}] if unexpected else [])}]}
+                raw = directory / 'swift-stock.sarif'
+                raw.write_text(json.dumps(sarif))
+                inventory = directory / 'swift-source-inventory.txt'
+                inventory.write_text('Sources/ComposeCore/A.swift\n')
+                report = {'language': 'swift', 'complete': True, 'clean': True,
+                          'inventory_count': 1, 'inventory_extracted_count': 1,
+                          'extraction_error_diagnostic_count': 0,
+                          **compatibility.assessment({'runs': [{'results': rows}]}, policy),
+                          'compatibility_disposition_sha256': compatibility.digest(policy_path),
+                          'compatibility_source': compatibility.source_receipt(
+                              quality.ROOT, policy, verify_checkout=False),
+                          'sarif_sha256': compatibility.digest(raw),
+                          'inventory_sha256': compatibility.digest(inventory)}
+                (directory / quality.ARTIFACTS[prefix]).write_text(json.dumps(report))
+            with self.subTest(unexpected=unexpected), tempfile.TemporaryDirectory() as temporary, \
+                 patch.object(quality, 'api', side_effect=api), \
+                 patch.object(quality, 'current_context', return_value=CONTEXT), \
+                 patch.object(quality, 'require_jobs', return_value={}), \
+                 patch.object(quality, 'require_artifacts', return_value={prefix: {'name': prefix}}), \
+                 patch.object(quality, 'download', side_effect=download):
+                if unexpected:
+                    with self.assertRaisesRegex(ValueError, 'raw findings'):
+                        quality.admit(SHA, Path(temporary) / 'evidence')
+                else:
+                    self.assertTrue(quality.admit(SHA, Path(temporary) / 'evidence')['passed'])
+
     def test_style_requires_real_exact_head_job_and_both_steps(self) -> None:
         self.assertEqual(quality.require_style_job([style_job()], SHA)['id'], 91)
         for changed in ({'conclusion': 'skipped'}, {'status': 'in_progress'},
