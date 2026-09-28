@@ -125,7 +125,7 @@ cc_library(
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "Tools/bazel/artifacts").mkdir(parents=True)
-            for name in ("foundation.py", "foundation_import.bzl"):
+            for name in ("foundation.py", "foundation_import.bzl", "compiled_outputs.bzl"):
                 (root / "Tools/bazel/artifacts" / name).write_text("recipe\n")
             for name in ("run.py", "input_identity.py", "dependencies.bzl"):
                 (root / "Tools/bazel" / name).write_text("recipe\n")
@@ -143,6 +143,9 @@ cc_library(
             patch.write_text("after\n")
             self.assertNotEqual(first, recipe_identity(root))
             patch.write_text("before\n")
+            (root / "Tools/bazel/artifacts/compiled_outputs.bzl").write_text("changed aspect\n")
+            self.assertNotEqual(first, recipe_identity(root))
+            (root / "Tools/bazel/artifacts/compiled_outputs.bzl").write_text("recipe\n")
             (root / ".bazelrc").write_text("common --enable_bzlmod\nbuild --macos_minimum_os=16.0\n"
                                            "build:release --compilation_mode=opt\n")
             self.assertNotEqual(first, recipe_identity(root))

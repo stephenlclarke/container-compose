@@ -116,6 +116,7 @@ def recipe_identity(root: Path, profile: str = "enhanced", group: str = "foundat
                                         if "%local_git_ext" not in key}
     result = {"producer": file_digest(root / "Tools/bazel/artifacts/foundation.py"),
               "importer": file_digest(root / "Tools/bazel/artifacts/foundation_import.bzl"),
+              "configuredOutputs": file_digest(root / "Tools/bazel/artifacts/compiled_outputs.bzl"),
               "launcher": file_digest(root / "Tools/bazel/run.py"),
               "sourceIdentity": file_digest(root / "Tools/bazel/input_identity.py"),
               "rootBuild": file_digest(root / "BUILD.bazel"),
@@ -516,7 +517,16 @@ def produce(root: Path, output: Path, lower_lock: Path, development_proof: bool,
     build_flags = ["--config=release", f"--config={profile}", f"--config={lower_config}"]
     if group == "container-sdk":
         build_flags.append("--config=prebuilt-containerization")
-    built = subprocess.run([runner, "build", *build_flags, "//:compose"],
+    # The executable's link graph need not request every transitive library's
+    # DefaultInfo interface. Request selected outputs through an aspect on the
+    # configured root so minimum-OS transitions are preserved.
+    aspect_name = group.replace("-", "_") + "_outputs"
+    materialize_flags = [
+        f"--aspects=//Tools/bazel/artifacts:compiled_outputs.bzl%{aspect_name}",
+        "--output_groups=+layer_compiled",
+    ]
+    producer_flags = build_flags + materialize_flags
+    built = subprocess.run([runner, "build", *producer_flags, "//:compose"],
                            cwd=root, capture_output=True, text=True, timeout=3600)
     if built.returncode:
         raise RuntimeError(f"foundation source producer failed: {built.stderr[-2000:]}")
@@ -533,7 +543,7 @@ def produce(root: Path, output: Path, lower_lock: Path, development_proof: bool,
     finished = [item["finished"] for item in events if "finished" in item]
     options = [item["optionsParsed"]["cmdLine"] for item in events if "optionsParsed" in item]
     if (len(commands) != 1 or commands[0][0] != "build" or "//:compose" not in commands[0]
-            or not set(build_flags).issubset(commands[0]) or
+            or not set(producer_flags).issubset(commands[0]) or
             len(options) != 1 or "--compilation_mode=opt" not in options[0] or
             len(finished) != 1 or finished[0].get("overallSuccess") is not True or
             finished[0].get("exitCode", {}).get("name") != "SUCCESS"):
