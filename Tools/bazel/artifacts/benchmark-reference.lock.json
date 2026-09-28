@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "repository": "stephenlclarke/container-compose",
+  "tag": "benchmark-reference-7003ccf6501a-d1afea242337",
+  "targetCommit": "7003ccf6501a8e9b65cf09a803054a94af2ef1c1",
+  "asset": "compose-benchmark-reference-v1.json",
+  "sha256": "d1afea242337276d189dd0705f1a60c5891d57828684c23da5f9ac857e9a986f"
+}
