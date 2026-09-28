@@ -83,6 +83,52 @@ class FullSuiteTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'reference/digest'):
             full_suite.native_images('[{"configuration":{"name":"alpine:3.20"}}]')
 
+    def test_docker_image_inventory_collapses_only_identical_rows(self) -> None:
+        first = 'sha256:' + '5' * 64
+        second = 'sha256:' + '6' * 64
+        duplicate = 'isolation-fixture/alpine:3.20 ' + first
+        rows = '\n'.join((duplicate, duplicate, 'alpine:3.20 ' + first,
+                          '<none>:<none> ' + first, '<none>:<none> ' + second)) + '\n'
+        parsed = full_suite.docker_images(rows)
+        self.assertEqual(len(parsed), 4)
+        self.assertEqual(parsed[duplicate.replace(' ', '|')],
+                         'isolation-fixture/alpine:3.20')
+        self.assertIn('<none>:<none>|' + first, parsed)
+        self.assertIn('<none>:<none>|' + second, parsed)
+        variants = full_suite.docker_images(duplicate + '\n' +
+                                            'isolation-fixture/alpine:3.20 ' + second + '\n')
+        self.assertEqual(len(variants), 2)
+        with self.assertRaisesRegex(RuntimeError, 'unique repository/tag and ID'):
+            full_suite.docker_images('isolation-fixture/alpine:3.20 5c2987750228\n')
+
+    def test_new_docker_image_variant_cannot_remove_baseline_tag(self) -> None:
+        first = 'sha256:' + '5' * 64
+        second = 'sha256:' + '6' * 64
+        baseline = self.empty()
+        baseline['docker']['images']['owned-case:latest|' + first] = 'owned-case:latest'
+        current = self.empty()
+        current['docker']['images'].update(baseline['docker']['images'])
+        current['docker']['images']['owned-case:latest|' + second] = 'owned-case:latest'
+        with self.assertRaisesRegex(RuntimeError, 'cannot be safely removed'):
+            full_suite.difference(baseline, current, ['owned-case:'])
+        current['docker']['images'].pop('owned-case:latest|' + second)
+        current['docker']['images']['<none>:<none>|' + second] = '<none>:<none>'
+        with self.assertRaisesRegex(RuntimeError, 'cannot be safely removed'):
+            full_suite.difference(baseline, current, ['<none>'])
+
+    def test_docker_snapshot_requests_full_image_ids(self) -> None:
+        commands = []
+
+        def invoke(lane, kind, command):
+            commands.append((lane, kind, command))
+            return '[]' if lane == 'candidate' and kind in ('containers', 'images') else ''
+
+        full_suite.snapshot(invoke)
+        image_commands = [command for lane, kind, command in commands
+                          if lane == 'docker' and kind == 'images']
+        self.assertEqual(len(image_commands), 1)
+        self.assertIn('--no-trunc', image_commands[0])
+
     def test_runtime_suite_enrolls_only_its_exact_new_builders(self) -> None:
         baseline = self.empty()
         current = self.empty()

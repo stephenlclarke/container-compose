@@ -189,9 +189,12 @@ def docker_images(text: str) -> dict[str, str]:
     result = {}
     for line in text.splitlines():
         parts = line.strip().split(None, 1)
-        if len(parts) != 2 or (parts[0] + '|' + parts[1]) in result:
+        if len(parts) != 2 or not re.fullmatch(r'sha256:[0-9a-f]{64}', parts[1]):
             raise RuntimeError('Docker image inventory omitted a unique repository/tag and ID')
-        result[parts[0] + '|' + parts[1]] = parts[0]
+        reference, identity = parts
+        # The Engine may repeat one RepoTag within one image summary. Preserve
+        # each distinct platform ID, while collapsing only an identical row.
+        result[reference + '|' + identity] = reference
     return result
 
 
@@ -295,7 +298,8 @@ def snapshot(invoke: Callable[[str, str, list[str]], str]) -> dict:
             'volumes': (['volume', 'list', '--quiet'] if lane == 'candidate'
                         else ['volume', 'ls', '--format', '{{.Name}}']),
             'images': (['image', 'list', '--format', 'json'] if lane == 'candidate'
-                       else ['image', 'ls', '--format', '{{.Repository}}:{{.Tag}} {{.ID}}']),
+                       else ['image', 'ls', '--no-trunc', '--format',
+                             '{{.Repository}}:{{.Tag}} {{.ID}}']),
         }
         rows[lane] = {}
         for kind, args in commands.items():
@@ -326,11 +330,17 @@ def difference(before: dict, after: dict, prefixes: list[str],
         for kind in ('containers', 'networks', 'volumes', 'images'):
             original = before[lane][kind]
             current = after[lane][kind]
+            baseline_refs = ({image_reference(key) for key in original}
+                             if lane == 'docker' and kind == 'images' else set())
             if any(current.get(identity) != name for identity, name in original.items()):
                 raise RuntimeError('Original ' + lane + ' ' + kind + ' changed during parity')
             for identity, name in current.items():
                 if identity in original:
                     continue
+                if lane == 'docker' and kind == 'images':
+                    reference = image_reference(identity)
+                    if reference in baseline_refs or reference.endswith(':<none>'):
+                        raise RuntimeError('Docker image tag cannot be safely removed: ' + reference)
                 volume_owned = (lane == 'docker' and kind == 'volumes' and
                                 (name in (enrolled_volumes or []) or any(
                                     after['docker'].get('volume_labels', {}).get(name, {}).get(
