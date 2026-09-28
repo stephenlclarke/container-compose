@@ -52,14 +52,20 @@ enum EngineServiceEnvironment {
         for (index, rawLine) in text.components(separatedBy: "\n").enumerated() {
             // Match the line scanner's bound without including secret contents
             // in errors. CRLF is one delimiter; embedded CR is not a new line.
-            guard rawLine.utf8.count < 65_536 else {
+            guard rawLine.utf8.count < 65536 else {
                 throw ComposeError.invalidProject("Environment file line exceeds its size limit")
             }
             var line = rawLine[...]
-            if line.last == "\r" { line = line.dropLast() }
-            if index == 0, line.first == "\u{FEFF}" { line = line.dropFirst() }
+            if line.last == "\r" {
+                line = line.dropLast()
+            }
+            if index == 0, line.first == "\u{FEFF}" {
+                line = line.dropFirst()
+            }
             line = line.drop { $0.isWhitespace }
-            if line.isEmpty || line.first == "#" { continue }
+            if line.isEmpty || line.first == "#" {
+                continue
+            }
             let parts = line.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
             let key = String(parts[0])
             guard !key.isEmpty, !key.contains(where: { $0 == " " || $0 == "\t" }), !line.contains("\0") else {

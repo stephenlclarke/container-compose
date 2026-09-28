@@ -23,7 +23,8 @@ extension EngineServiceCreateRequest {
         for attachment in attachments {
             if ["none", "host", "default"].contains(attachment.network) {
                 guard attachment == ComposeNetworkCreateAttachment(network: attachment.network),
-                      attachments.count == 1 else {
+                      attachments.count == 1
+                else {
                     throw ComposeError.invalidProject("Special network mode cannot carry endpoint settings")
                 }
                 continue
@@ -62,7 +63,7 @@ extension EngineServiceCreateRequest {
                     }
                     binding["HostIp"] = .string(String(address.dropFirst().dropLast()))
                 } else {
-                    guard !address.contains("[") && !address.contains("]") else {
+                    guard !address.contains("["), !address.contains("]") else {
                         throw ComposeError.invalidProject("Invalid bind address brackets")
                     }
                     binding["HostIp"] = .string(address)
@@ -76,15 +77,16 @@ extension EngineServiceCreateRequest {
     static func exposedPortNames(_ values: [String]) throws -> [String] {
         try values.flatMap { value in
             let parts = value.split(separator: "/", omittingEmptySubsequences: false)
-            guard (1...2).contains(parts.count) else { throw ComposeError.invalidProject("Invalid exposed port") }
+            guard (1 ... 2).contains(parts.count) else { throw ComposeError.invalidProject("Invalid exposed port") }
             let proto = parts.count == 2 ? String(parts[1]) : "tcp"
             let range = parts[0].split(separator: "-", omittingEmptySubsequences: false)
-            guard ["tcp", "udp", "sctp"].contains(proto), (1...2).contains(range.count),
+            guard ["tcp", "udp", "sctp"].contains(proto), (1 ... 2).contains(range.count),
                   let lower = UInt16(range[0]), lower > 0,
-                  let upper = UInt16(range[range.count - 1]), upper >= lower else {
+                  let upper = UInt16(range[range.count - 1]), upper >= lower
+            else {
                 throw ComposeError.invalidProject("Invalid exposed port range or protocol")
             }
-            return (lower...upper).map { "\($0)/\(proto)" }
+            return (lower ... upper).map { "\($0)/\(proto)" }
         }
     }
 }

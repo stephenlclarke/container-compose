@@ -734,22 +734,9 @@ private extension ComposeArgumentRewriter {
                     rewritten.append(arguments[index])
                     index += 1
                 }
-            } else if argument == "-p" {
-                rewritten.append("--publish")
-                if arguments.indices.contains(index + 1) {
-                    rewritten.append(arguments[index + 1])
-                    index += 2
-                } else {
-                    index += 1
-                }
-            } else if argument.hasPrefix("-p="), argument.count > 3 {
-                rewritten.append("--publish")
-                rewritten.append(String(argument.dropFirst(3)))
-                index += 1
-            } else if argument.hasPrefix("-p"), argument.count > 2 {
-                rewritten.append("--publish")
-                rewritten.append(String(argument.dropFirst(2)))
-                index += 1
+            } else if let publish = normalizedRunPublishOption(arguments, at: index) {
+                rewritten.append(contentsOf: publish.arguments)
+                index += publish.consumed
             } else if let split = splitCompactRunValueOption(argument) {
                 rewritten.append(split.option)
                 rewritten.append(split.value)
@@ -767,6 +754,27 @@ private extension ComposeArgumentRewriter {
             }
         }
         return rewritten
+    }
+
+    /// Expands Docker Compose publish shorthand before the service name.
+    private static func normalizedRunPublishOption(
+        _ arguments: [String],
+        at index: Int,
+    ) -> (arguments: [String], consumed: Int)? {
+        let argument = arguments[index]
+        if argument == "-p" {
+            if arguments.indices.contains(index + 1) {
+                return (["--publish", arguments[index + 1]], 2)
+            }
+            return (["--publish"], 1)
+        }
+        if argument.hasPrefix("-p="), argument.count > 3 {
+            return (["--publish", String(argument.dropFirst(3))], 1)
+        }
+        if argument.hasPrefix("-p"), argument.count > 2 {
+            return (["--publish", String(argument.dropFirst(2))], 1)
+        }
+        return nil
     }
 
     /// Rewrites Docker-style optional boolean flag values for ArgumentParser flags.

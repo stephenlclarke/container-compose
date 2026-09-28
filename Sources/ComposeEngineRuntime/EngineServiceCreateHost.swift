@@ -56,7 +56,9 @@ extension EngineServiceCreateRequest {
             ("Isolation", options.namespaces.isolation), ("PidMode", options.namespaces.pid),
             ("CgroupnsMode", options.namespaces.cgroup), ("IpcMode", options.namespaces.ipc),
             ("UTSMode", options.namespaces.uts), ("UsernsMode", options.namespaces.user),
-        ] { host[key] = value.map(EngineCreateValue.string) }
+        ] {
+            host[key] = value.map(EngineCreateValue.string)
+        }
         try addResources(options.resources, to: &host)
         addSecurity(options.security, to: &host)
         var tmpfs: [String: EngineCreateValue] = [:]
@@ -87,7 +89,9 @@ extension EngineServiceCreateRequest {
         for (key, value) in [
             ("OomScoreAdj", resources.oomScoreAdjustment), ("PidsLimit", resources.pidsLimit),
             ("CpuPeriod", resources.cpuPeriod), ("CpuQuota", resources.cpuQuota),
-        ] { host[key] = value.map { .integer(Int64($0)) } }
+        ] {
+            host[key] = value.map { .integer(Int64($0)) }
+        }
         host["CpusetCpus"] = resources.cpuSet.map(EngineCreateValue.string)
         for (key, value) in [("Memory", resources.memoryLimit), ("ShmSize", resources.sharedMemorySize)] {
             if let value {
@@ -98,7 +102,8 @@ extension EngineServiceCreateRequest {
         if let cpus = resources.cpus {
             guard !cpus.isEmpty, cpus.allSatisfy({ $0.isASCII && ($0.isNumber || $0 == ".") }),
                   cpus.filter({ $0 == "." }).count <= 1,
-                  let decimal = Decimal(string: cpus, locale: Locale(identifier: "en_US_POSIX")), decimal >= 0 else {
+                  let decimal = Decimal(string: cpus, locale: Locale(identifier: "en_US_POSIX")), decimal >= 0
+            else {
                 throw ComposeError.invalidProject("Invalid prepared CPU quantity")
             }
             let nanos = decimal * 1_000_000_000

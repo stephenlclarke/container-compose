@@ -66,7 +66,9 @@ struct EnginePreparedContainerLaunchTests {
         let runner = RecordingRunner()
         let provider = EngineRuntimeProvider(socketPath: "/unused", runner: runner)
         var plan = preparedPlan()
-        if reason == "name" { plan.name = "" }
+        if reason == "name" {
+            plan.name = ""
+        }
         let logging = reason == "logging" ? ComposeLogConfiguration(driver: "none") : plan.logging
         await #expect(throws: ComposeError.self) {
             try await provider.launchContainer(.init(

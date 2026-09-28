@@ -25,9 +25,9 @@ extension EngineServiceCreateRequest {
         let digits = value.prefix { $0.isASCII && $0.isNumber }
         let suffix = String(value.dropFirst(digits.count))
         let scales: [String: Int64] = ["": 1, "b": 1, "k": 1024, "kb": 1024, "kib": 1024,
-                                      "m": 1 << 20, "mb": 1 << 20, "mib": 1 << 20,
-                                      "g": 1 << 30, "gb": 1 << 30, "gib": 1 << 30,
-                                      "t": 1 << 40, "tb": 1 << 40, "tib": 1 << 40]
+                                       "m": 1 << 20, "mb": 1 << 20, "mib": 1 << 20,
+                                       "g": 1 << 30, "gb": 1 << 30, "gib": 1 << 30,
+                                       "t": 1 << 40, "tb": 1 << 40, "tib": 1 << 40]
         guard let number = Int64(digits), let scale = scales[suffix] else {
             throw ComposeError.invalidProject("Invalid prepared byte quantity")
         }

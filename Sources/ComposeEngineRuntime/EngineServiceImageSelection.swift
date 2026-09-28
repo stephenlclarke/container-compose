@@ -34,7 +34,7 @@ extension EngineRuntimeProvider {
             throw ComposeError.invalidProject("Gateway returned an invalid immutable image ID")
         }
         let selectedPlatform = [image.operatingSystem, image.architecture, image.variant?.nilIfEmpty]
-            .compactMap { $0 }.joined(separator: "/")
+            .compactMap(\.self).joined(separator: "/")
         return ComposeImageSelection(reference: image.id, platform: selectedPlatform)
     }
 

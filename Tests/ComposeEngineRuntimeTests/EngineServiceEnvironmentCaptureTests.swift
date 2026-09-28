@@ -26,7 +26,7 @@ struct EngineServiceEnvironmentCaptureTests {
         defer { fixture.cleanup() }
         let first = fixture.root.appendingPathComponent("-first.env")
         let second = fixture.root.appendingPathComponent("second.env")
-        let bytes = [Data("KEY=first\r\n".utf8), Data([0xff])]
+        let bytes = [Data("KEY=first\r\n".utf8), Data([0xFF])]
         try bytes[0].write(to: first)
         try bytes[1].write(to: second)
         let result = try await EngineServiceEnvironment.capture(

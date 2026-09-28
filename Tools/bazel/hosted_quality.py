@@ -66,7 +66,7 @@ def current_context(sha: str) -> dict:
             'base': pr['base']['ref'], 'base_sha': pr['base']['sha']}
 
 
-def newest_run(runs: list[dict], context: dict) -> dict:
+def newest_run(runs: list[dict], context: dict, workflow: str = 'CI') -> dict:
     matches = [run for run in runs if run.get('head_sha') == context['head']
                and run.get('head_branch') == context['branch']
                and run.get('event') == 'pull_request'
@@ -78,7 +78,7 @@ def newest_run(runs: list[dict], context: dict) -> dict:
                        and pr.get('base', {}).get('ref') == context['base']
                        for pr in run.get('pull_requests', []))]
     if not matches:
-        raise ValueError('No matching hosted CI run for exact PR head and base')
+        raise ValueError(f'No matching hosted {workflow} run for exact PR head and base')
     return max(matches, key=lambda run: (datetime.fromisoformat(run['run_started_at']),
                                          run['id'], run['run_attempt']))
 
@@ -103,6 +103,20 @@ def require_jobs(jobs: list[dict], sha: str) -> dict:
             raise ValueError(f'Hosted {name} must complete successfully without skipping')
         admitted[name] = {key: selected[key] for key in ('id', 'name', 'head_sha', 'conclusion', 'html_url')}
     return admitted
+
+
+def require_style_job(jobs: list[dict], sha: str) -> dict:
+    matches = [job for job in jobs if job.get('name') == 'SwiftLint/SwiftFormat']
+    if (len(matches) != 1 or matches[0].get('head_sha') != sha
+            or matches[0].get('status') != 'completed'
+            or matches[0].get('conclusion') != 'success'):
+        raise ValueError('Exact-source SwiftLint/SwiftFormat job must complete successfully without skipping')
+    selected = matches[0]
+    for name in ('Verify exact Swift style source', 'Run deterministic Swift style checks'):
+        steps = [step for step in selected.get('steps', []) if step.get('name') == name]
+        if len(steps) != 1 or steps[0].get('conclusion') != 'success':
+            raise ValueError('Swift style did not verify and check the exact PR head: ' + name)
+    return {key: selected[key] for key in ('id', 'name', 'head_sha', 'conclusion', 'html_url')}
 
 
 def require_artifacts(artifacts: list[dict], sha: str) -> dict:
@@ -137,6 +151,14 @@ def admit(sha: str, evidence: Path) -> dict:
             raise ValueError('Newest exact-source hosted attempt is not successful')
         jobs = api(f'actions/runs/{selected["id"]}/attempts/{selected["run_attempt"]}/jobs?per_page=100')['jobs']
         result['jobs'] = require_jobs(jobs, sha)
+        style = newest_run(api(f'actions/workflows/quality.yml/runs?head_sha={sha}&per_page=100')['workflow_runs'],
+                           context, 'Quality')
+        result['style_run'] = {key: style[key] for key in
+                               ('id', 'run_attempt', 'run_started_at', 'head_sha', 'status', 'conclusion', 'html_url')}
+        if style['status'] != 'completed' or style['conclusion'] != 'success':
+            raise ValueError('Newest exact-source Swift style workflow attempt is not successful')
+        style_jobs = api(f'actions/runs/{style["id"]}/attempts/{style["run_attempt"]}/jobs?per_page=100')['jobs']
+        result['style_job'] = require_style_job(style_jobs, sha)
         artifacts = api(f'actions/runs/{selected["id"]}/artifacts?per_page=100')['artifacts']
         result['artifacts'] = require_artifacts(artifacts, sha)
         result['downloaded_sha256'] = {}
@@ -192,6 +214,11 @@ def admit(sha: str, evidence: Path) -> dict:
         latest = newest_run(api(f'actions/workflows/ci.yml/runs?head_sha={sha}&per_page=100')['workflow_runs'], context)
         if any(latest.get(key) != selected.get(key) for key in ('id', 'run_attempt', 'status', 'conclusion', 'head_sha')):
             raise ValueError('Newer or changed hosted CI attempt appeared during artifact admission')
+        latest_style = newest_run(api(f'actions/workflows/quality.yml/runs?head_sha={sha}&per_page=100')['workflow_runs'],
+                                  context, 'Quality')
+        if any(latest_style.get(key) != style.get(key) for key in
+               ('id', 'run_attempt', 'status', 'conclusion', 'head_sha')):
+            raise ValueError('Newer or changed Swift style attempt appeared during artifact admission')
         result['passed'] = True
         return result
     finally:

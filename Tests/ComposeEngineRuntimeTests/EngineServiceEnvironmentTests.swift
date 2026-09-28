@@ -65,12 +65,12 @@ struct EngineServiceEnvironmentTests {
 
     @Test func invalidUTF8Fails() {
         #expect(throws: ComposeError.self) {
-            try EngineServiceEnvironment.parse(Data([0xff]), hostEnvironment: [:])
+            try EngineServiceEnvironment.parse(Data([0xFF]), hostEnvironment: [:])
         }
     }
 
     @Test func oversizedLineFailsWithoutDumpingItsContents() {
-        let value = "KEY=" + String(repeating: "x", count: 65_532)
+        let value = "KEY=" + String(repeating: "x", count: 65532)
         invalidFilesFailWithoutLeakingValues(value)
     }
 }

@@ -403,6 +403,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact Swift style source
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          if [[ ! "$expected" =~ ^[0-9a-f]{40}$ ]] || [[ "$actual" != "$expected" ]]; then
+            printf 'Swift style checkout does not match the event source SHA\n' >&2
+            exit 1
+          fi
 
       - name: Run deterministic Swift style checks
         shell: bash
@@ -411,7 +423,7 @@ jobs:
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
               export SWIFT_STYLE_BASE="${{ github.event.pull_request.base.sha }}"
-              export SWIFT_STYLE_HEAD="${GITHUB_SHA}"
+              export SWIFT_STYLE_HEAD="${{ github.event.pull_request.head.sha }}"
               ;;
             push)
               before="${{ github.event.before }}"

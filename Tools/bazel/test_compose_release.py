@@ -100,7 +100,7 @@ class ComposeReleaseTests(unittest.TestCase):
                     'vendoredNotices': {'x': 'y'}, 'sourceNoticeFragments': {'x': 'y'}}
         self.put('candidate-unsigned.json', {'receipt': unsigned})
         signed = {'source': SOURCE, 'identity': 'Developer ID: fixture',
-                  'payload': {name: hashes[name] for name in files if name != 'resources/THIRD-PARTY-NOTICES.txt'},
+                  'payload': {name: hashes[name] for name in ('bin/compose', 'resources/compose-normalizer')},
                   'tree': hashes}
         self.put('signed-candidate.json', signed)
         rows = [{'status': 0} for _ in range(67)]
@@ -188,14 +188,26 @@ class ComposeReleaseTests(unittest.TestCase):
             shutil.copyfile(output / name, asset)
             return {'asset': str(asset), 'sha256': release.digest(asset),
                     'releaseId': 42, 'assetId': published['assets'][name]['assetId']}
-        original_run = release.subprocess.run
+        commands = []
         def run(command: list[str], **kwargs: object) -> object:
+            commands.append(command)
             if command[0] == '/usr/bin/ditto':
-                return original_run(command, **kwargs)
-            return original_run(['/usr/bin/true'], **kwargs)
+                self.assertEqual(command[1:3], ['-x', '-k'])
+                with zipfile.ZipFile(command[3]) as archive:
+                    for member in archive.infolist():
+                        path = Path(command[4]) / member.filename
+                        if member.is_dir():
+                            path.mkdir(parents=True, exist_ok=True)
+                        else:
+                            path.parent.mkdir(parents=True, exist_ok=True)
+                            path.write_bytes(archive.read(member))
+                            path.chmod((member.external_attr >> 16) & 0o777)
+            return release.subprocess.CompletedProcess(command, 0)
         with patch.object(release, 'fetch', side_effect=downloaded), patch.object(release.subprocess, 'run', side_effect=run):
             result = release.verify_published(output, self.base / 'consumer')
         self.assertTrue(result['publishedBytesVerified'])
+        self.assertEqual(sum(command[0] == '/usr/bin/ditto' for command in commands), 1)
+        self.assertEqual(sum(command[0] == '/usr/bin/codesign' for command in commands), 2)
         self.assertTrue((self.base / 'consumer/extracted/compose/bin/compose').is_file())
         for name in release.EXECUTABLES:
             self.assertTrue((self.base / 'consumer/extracted/compose' / name).stat().st_mode & 0o111)

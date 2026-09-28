@@ -67,9 +67,11 @@ extension EngineServiceCreateRequest {
 
     private static func tmpfsConfiguration(_ mount: ComposeMount) throws -> EngineCreateValue {
         var tmpfs: [String: EngineCreateValue] = [:]
-        if let size = mount.tmpfsSize { tmpfs["SizeBytes"] = .integer(try byteQuantity(size)) }
+        if let size = mount.tmpfsSize {
+            tmpfs["SizeBytes"] = .integer(try byteQuantity(size))
+        }
         if let mode = mount.tmpfsMode {
-            guard let parsed = Int64(mode, radix: 8), (0...0o7777).contains(parsed) else {
+            guard let parsed = Int64(mode, radix: 8), (0 ... 0o7777).contains(parsed) else {
                 throw ComposeError.invalidProject("Invalid tmpfs mode")
             }
             tmpfs["Mode"] = .integer(parsed)

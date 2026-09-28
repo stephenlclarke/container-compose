@@ -28,7 +28,7 @@ struct EngineServiceProcessTests {
         let expectedEntrypoint = entrypoint ?? ["/image-entry"]
         let expectedCommand = command ?? (entrypoint == nil ? ["image-arg"] : [])
         let overrides = ComposeProcessOverrides(command: command, entrypoint: entrypoint)
-        if expectedEntrypoint.isEmpty && expectedCommand.isEmpty {
+        if expectedEntrypoint.isEmpty, expectedCommand.isEmpty {
             #expect(throws: ComposeError.self) { try EngineServiceProcess(overrides, image: image) }
             return
         }
@@ -39,9 +39,15 @@ struct EngineServiceProcessTests {
         // Codable round trip. It must preserve the Compose-effective process.
         var mergedEntrypoint = process.entrypoint
         var mergedCommand = process.command
-        if mergedCommand.isEmpty && mergedEntrypoint.isEmpty { mergedCommand = image.command ?? [] }
-        if mergedEntrypoint.isEmpty { mergedEntrypoint = image.entrypoint ?? [] }
-        if mergedEntrypoint == [""] { mergedEntrypoint = [] }
+        if mergedCommand.isEmpty, mergedEntrypoint.isEmpty {
+            mergedCommand = image.command ?? []
+        }
+        if mergedEntrypoint.isEmpty {
+            mergedEntrypoint = image.entrypoint ?? []
+        }
+        if mergedEntrypoint == [""] {
+            mergedEntrypoint = []
+        }
         #expect(mergedEntrypoint + mergedCommand == expectedEntrypoint + expectedCommand)
     }
 
