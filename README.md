@@ -38,6 +38,8 @@ remains the default for the independently installed Compose plugin. See the
 
 ## Current candidate
 
+The first full local qualification of source `5ed47e5b` stopped in the original live runtime suite; its host and private installation were subsequently restored. The candidate now resolves the actual native test runfiles workspace, checks the declared fixture bundle, matches shell-quoted private paths in dry-run assertions, and prepares source-declared images before the first resource baseline. Focused native dry-run and tooling checks pass, while the full 27 runtime tests and 66 parity cases still need a clean qualification. See the [Bazel guide](docs/guides/BAZEL.md#first-live-suite-recovery-at-5ed47e5b).
+
 The unreleased Bazel development branch now forwards common host signals during prepared foreground runs and safely cancels stalled signal requests. [Signal evidence and limits](docs/guides/BAZEL.md#prepared-foreground-launch) distinguish its passing component tests from the open Docker duplicate-signal oracle and full runtime/release qualification.
 
 The [latest stable release](https://github.com/stephenlclarke/container-compose/releases/latest)

@@ -48,6 +48,7 @@ import full_suite
 from artifacts.release_asset import cached_fetch, read_lock, release_asset as published_release_asset
 from input_identity import source_identity, verify as verify_source
 from q_assets import fetch_assets as fetch_q_assets, revalidate as revalidate_q_assets
+from prebuilt_parity_tests import test_workspace
 from run import RETAINED, ROOT, SSD
 from retain_evidence import restore_candidate
 
@@ -57,6 +58,12 @@ Q_EVIDENCE = Path.home() / 'Library/Application Support/ContainerFamily/retained
 OUTPUT = RETAINED / 'local-final'
 CAPTURE_OUTPUT = RETAINED / 'benchmark-reference-capture'
 TRIALS = 7
+ORIGINAL_FIXTURE_IMAGES = ('alpine:3.20', 'alpine:3.21',
+                           'ghcr.io/linuxcontainers/alpine:3.20', 'busybox:latest',
+                           'docker/compose-bridge-kubernetes@sha256:'
+                           '4ffd3f23f377b1fdd9d0195732980e7534a8975c8a210a12681dc803c002f761',
+                           'docker/compose-bridge-helm@sha256:'
+                           '7aeee453c13045dcec87b92cb13973871ed8c72d5ca1e9365886487782ea2b09')
 BENCHMARK_LOCK = ROOT / 'Tools/bazel/artifacts/benchmark-reference.lock.json'
 BENCHMARK_CACHE = RETAINED / 'release-asset-cache'
 DOCKER_COMPOSE_VERSION = '5.5.1'
@@ -693,8 +700,10 @@ def run_layers(evidence: Path, original: dict, q: dict) -> tuple[list[dict], str
         runfiles = binary.with_name(name + '.runfiles')
         if not binary.is_file() or not os.access(binary, os.X_OK) or not runfiles.is_dir():
             raise RuntimeError('Built native test executable/runfiles are missing: ' + name)
+        workspace = test_workspace(runfiles, name,
+                                   'ComposeRuntimeFixtures.bundle' if name == 'ComposeRuntimeTests' else None)
         binaries[name] = {'path': str(binary), 'sha256': sha(binary),
-                          'runfiles': str(runfiles)}
+                          'runfiles': str(runfiles), 'workspace': workspace}
     write(evidence / 'native-tests.json', {'source': original['commit'], 'binaries': binaries})
     verify_source(original, source_identity(ROOT))
     return rows, package_invocation, assets, binaries
@@ -1288,6 +1297,57 @@ def expected_case_cleanup_resource(case: str, resource: dict) -> bool:
     return resource['kind'] == 'images'
 
 
+def require_runtime_test_summary(output: str) -> None:
+    """Require Swift Testing's terminal summary for the original 27 tests."""
+    summaries = re.findall(
+        r'(?m)^(?:✔ )?Test run with ([1-9][0-9]*) tests?'
+        r'(?: in [1-9][0-9]* suites?)? passed after [0-9]+(?:\.[0-9]+)? seconds?\.$',
+        output)
+    if not summaries or int(summaries[-1]) != 27:
+        raise RuntimeError('Original live runtime suite did not report all 27 passing tests')
+
+
+def verified_journald_archive(install: Path, payload: dict[str, str]) -> tuple[Path, dict]:
+    """Bind a preloaded OCI image to the exact released Q service payload."""
+    prefix = 'libexec/container/services/journald/container-journald-service'
+    archive_name, manifest_name = prefix + '.oci.tar', prefix + '.manifest.json'
+    archive, manifest_path = install / archive_name, install / manifest_name
+    for name, path in ((archive_name, archive), (manifest_name, manifest_path)):
+        if (not path.is_file() or path.is_symlink() or
+                not re.fullmatch(r'[0-9a-f]{64}', payload.get(name, '')) or
+                sha(path) != payload[name]):
+            raise RuntimeError('Released Q journald asset changed: ' + name)
+    manifest = json.loads(manifest_path.read_text())
+    if (manifest.get('schemaVersion') != 1 or manifest.get('platform') != 'linux'
+            or manifest.get('architecture') != 'arm64'
+            or manifest.get('ociArchiveSHA256') != payload[archive_name]
+            or not re.fullmatch(r'sha256:[0-9a-f]{64}',
+                                manifest.get('workloadManifestDigest', ''))):
+        raise RuntimeError('Released Q journald manifest does not bind its OCI image')
+    return archive, {'archive_sha256': payload[archive_name],
+                     'manifest_sha256': payload[manifest_name],
+                     'workload_manifest_digest': manifest['workloadManifestDigest']}
+
+
+def preload_original_fixture_images(runtime_image: str, install: Path,
+                                    issue: object, present: object) -> list[dict]:
+    """Resolve every image the maintained live fixture can otherwise pull later."""
+    rows = []
+    for image in (runtime_image, 'alpine:3.22', *ORIGINAL_FIXTURE_IMAGES):
+        for lane in ('candidate', 'docker'):
+            pinned = image in (runtime_image, 'alpine:3.22')
+            if not pinned and present(lane, image):
+                rows.append({'lane': lane, 'image': image, 'already_present': True})
+                continue
+            base = ([str(install / 'bin/container')] if lane == 'candidate'
+                    else ['docker', '--context', 'colima'])
+            args = (['image', 'pull', '--progress', 'none', image] if lane == 'candidate'
+                    else ['pull', image])
+            issue(lane, 'setup-original-fixture-image', 0, base + args, 300)
+            rows.append({'lane': lane, 'image': image, 'already_present': False})
+    return rows
+
+
 def run_original_full_suite(evidence: Path, runner: object, runtime: object,
                             install: Path, plugin: Path, native_tests: dict,
                             issue: object) -> dict:
@@ -1325,7 +1385,10 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
         path = Path(record['path'])
         if (not path.is_file() or sha(path) != record['sha256']
                 or path.with_name(name + '.runfiles') != Path(record['runfiles'])
-                or not Path(record['runfiles']).is_dir()):
+                or not Path(record['runfiles']).is_dir()
+                or test_workspace(Path(record['runfiles']), name,
+                                  'ComposeRuntimeFixtures.bundle'
+                                  if name == 'ComposeRuntimeTests' else None) != record['workspace']):
             raise RuntimeError('Native test executable/runfiles changed after cached build: ' + name)
     def run_case(name: str, source_hash: str, prefixes: list[str],
                  args: list[str], environment: dict, timeout: int,
@@ -1350,14 +1413,13 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
         if row['status'] or (removed and not expected):
             raise RuntimeError('Original full-suite case failed or leaked resources: ' + name)
     test = native_tests['ComposeRuntimeTests']
+    workspace = test['workspace']
     run_case('runtime-suite', sources['runtime-suite'], ['ccrt-'], [test['path']],
              dict(common, CONTAINER_COMPOSE_RUN_RUNTIME_TESTS='1',
-                  TEST_SRCDIR=test['runfiles'], TEST_WORKSPACE='container_compose'), 1800,
+                  TEST_SRCDIR=test['runfiles'], TEST_WORKSPACE=workspace), 1800,
              list(full_suite.EXTRA_IMAGE_PREFIXES['runtime-suite']))
     output = Path(rows[-1]['log']).read_text(errors='replace')
-    counts = re.findall(r'Test run with (\d+) tests? passed', output)
-    if not counts or int(counts[-1]) != 27:
-        raise RuntimeError('Original live runtime suite did not report all 27 passing tests')
+    require_runtime_test_summary(output)
     for item in full_suite.inventory():
         name = item['target']
         case_dir = base / 'cases' / name
@@ -1467,13 +1529,33 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
                 raise RuntimeError('Released Q private runtime kernel changed')
             plugin_lease.acquire(plugin)
             runtime.start_lane(runner, 'fork')
-            for source_image in (runtime.ALPINE, 'alpine:3.22'):
-                for lane in ('candidate', 'docker'):
+            journald_archive, journald_identity = verified_journald_archive(
+                install, runtime_lease.payload)
+            row = issue('candidate', 'setup-released-journald-image', 0,
+                        [str(install / 'bin/container'), 'image', 'load', '--input',
+                         str(journald_archive)], 300)
+            write(runtime_evidence / 'journald-preload.json',
+                  dict(journald_identity, load_log_sha256=sha(Path(row['log']))))
+            fixture_inventories = {}
+            def fixture_image_present(lane: str, image: str) -> bool:
+                if lane not in fixture_inventories:
                     base = ([str(install / 'bin/container')] if lane == 'candidate'
                             else ['docker', '--context', 'colima'])
-                    pull = (['image', 'pull', '--progress', 'none', source_image]
-                            if lane == 'candidate' else ['pull', source_image])
-                    issue(lane, 'setup-original-fixture-image', 0, base + pull, 300)
+                    args = (['image', 'list', '--format', 'json'] if lane == 'candidate'
+                            else ['image', 'ls', '--no-trunc', '--format',
+                                  '{{.Repository}}:{{.Tag}} {{.ID}}'])
+                    listed = issue(lane, 'setup-original-fixture-image-inventory', 0,
+                                   base + args, 90)
+                    output = Path(listed['log']).read_text(errors='replace')
+                    images = (full_suite.native_images(output) if lane == 'candidate'
+                              else full_suite.docker_images(output))
+                    fixture_inventories[lane] = {full_suite.image_reference(identity)
+                                                 for identity in images}
+                return full_suite.image_reference(image) in fixture_inventories[lane]
+            fixture_rows = preload_original_fixture_images(
+                runtime.ALPINE, install, issue, fixture_image_present)
+            write(runtime_evidence / 'fixture-image-preload.json',
+                  {'schema': 1, 'images': fixture_rows})
             issue('candidate', 'setup-api-socket-image', 0,
                   [str(install / 'bin/container'), 'image', 'pull', '--progress', 'none',
                    'docker.io/library/docker:29.2.1-cli@sha256:'

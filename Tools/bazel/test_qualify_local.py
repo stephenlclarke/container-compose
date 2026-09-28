@@ -33,6 +33,85 @@ import qualify_local as local
 
 
 class QualificationTests(unittest.TestCase):
+    def test_runtime_summary_accepts_real_swift_testing_suite_wording(self) -> None:
+        for summary in ('✔ Test run with 27 tests in 2 suites passed after 0.364 seconds.',
+                        '✔ Test run with 27 tests passed after 10.52 seconds.'):
+            local.require_runtime_test_summary('◇ Test run started.\n' + summary + '\n')
+
+    def test_runtime_summary_rejects_zero_wrong_or_malformed_counts(self) -> None:
+        for summary in ('✔ Test run with 1 test in 1 suite passed after 0.354 seconds.',
+                        '✔ Test run with 0 tests in 2 suites passed after 1.0 seconds.',
+                        '✔ Test run with 26 tests in 2 suites passed after 1.0 seconds.',
+                        '✔ Test run with 27 tests in 0 suites passed after 1.0 seconds.',
+                        '✔ Test run with 27 tests in 2 suites failed after 1.0 seconds.',
+                        'Test run with 27 tests in 2 suites passed',
+                        '✔ Test run with 27 tests in 2 suites passed after 1.0 seconds.\n'
+                        '✔ Test run with 26 tests in 2 suites passed after 2.0 seconds.'):
+            with self.subTest(summary=summary), self.assertRaisesRegex(RuntimeError, '27 passing'):
+                local.require_runtime_test_summary(summary)
+
+    def test_original_fixture_preload_admits_existing_tags_without_refresh(self) -> None:
+        runtime_source = (local.ROOT / 'Tests/ComposeRuntimeTests/ComposeRuntimeSmokeTests.swift').read_text()
+        rm_source = (local.ROOT / 'Tools/parity/check-compose-rm.sh').read_text()
+        self.assertIn('FROM ghcr.io/linuxcontainers/alpine:3.20', runtime_source)
+        self.assertIn('image: alpine:3.20', runtime_source)
+        self.assertIn('image: busybox:latest', rm_source)
+        lifecycle_fixture = (local.ROOT / 'Tools/parity/fixtures/lifecycle-hooks/compose.yaml')
+        self.assertIn('image: alpine:3.21', lifecycle_fixture.read_text())
+        bridge_source = (local.ROOT / 'Tools/parity/check-compose-bridge.sh').read_text()
+        self.assertIn('docker/compose-bridge-kubernetes@sha256:', bridge_source)
+        self.assertIn('docker/compose-bridge-helm@sha256:', bridge_source)
+        self.assertEqual(set(local.ORIGINAL_FIXTURE_IMAGES),
+                         {'alpine:3.20', 'alpine:3.21',
+                          'ghcr.io/linuxcontainers/alpine:3.20',
+                          'busybox:latest',
+                          'docker/compose-bridge-kubernetes@sha256:'
+                          '4ffd3f23f377b1fdd9d0195732980e7534a8975c8a210a12681dc803c002f761',
+                          'docker/compose-bridge-helm@sha256:'
+                          '7aeee453c13045dcec87b92cb13973871ed8c72d5ca1e9365886487782ea2b09'})
+        with tempfile.TemporaryDirectory() as temporary:
+            install = Path(temporary)
+            issued = []
+            inspected = []
+            def issue(lane, name, trial, command, timeout):
+                issued.append((lane, name, command))
+            def present(lane, image):
+                inspected.append((lane, image))
+                return image == 'busybox:latest'
+            rows = local.preload_original_fixture_images(
+                'docker.io/library/alpine@sha256:' + 'a' * 64, install, issue, present)
+            self.assertEqual(len(rows), 16)
+            self.assertEqual(len(issued), 14)
+            self.assertEqual(len(inspected), 12)
+            self.assertEqual([row['image'] for row in rows if row['already_present']],
+                             ['busybox:latest', 'busybox:latest'])
+            self.assertIn(('candidate', 'setup-original-fixture-image',
+                           [str(install / 'bin/container'), 'image', 'pull', '--progress',
+                            'none', 'ghcr.io/linuxcontainers/alpine:3.20']), issued)
+            self.assertIn(('docker', 'setup-original-fixture-image',
+                           ['docker', '--context', 'colima', 'pull', 'alpine:3.20']), issued)
+
+    def test_journald_preload_requires_exact_signed_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            install = Path(temporary)
+            prefix = 'libexec/container/services/journald/container-journald-service'
+            archive = install / (prefix + '.oci.tar')
+            manifest = install / (prefix + '.manifest.json')
+            archive.parent.mkdir(parents=True)
+            archive.write_bytes(b'published OCI archive')
+            manifest.write_text(json.dumps({
+                'schemaVersion': 1, 'platform': 'linux', 'architecture': 'arm64',
+                'ociArchiveSHA256': local.sha(archive),
+                'workloadManifestDigest': 'sha256:' + 'b' * 64}))
+            payload = {prefix + '.oci.tar': local.sha(archive),
+                       prefix + '.manifest.json': local.sha(manifest)}
+            selected, identity = local.verified_journald_archive(install, payload)
+            self.assertEqual(selected, archive)
+            self.assertEqual(identity['workload_manifest_digest'], 'sha256:' + 'b' * 64)
+            archive.write_bytes(b'different archive')
+            with self.assertRaisesRegex(RuntimeError, 'asset changed'):
+                local.verified_journald_archive(install, payload)
+
     def test_capture_refuses_existing_compatible_published_reference(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -470,7 +549,11 @@ class QualificationTests(unittest.TestCase):
                         binary.parent.mkdir(parents=True)
                         binary.write_bytes(target.encode())
                         binary.chmod(0o755)
-                        binary.with_name(target + '.runfiles').mkdir()
+                        runfiles = binary.with_name(target + '.runfiles')
+                        (runfiles / '_main' / (target + '.xctest')).mkdir(parents=True)
+                        if target == 'ComposeRuntimeTests':
+                            (runfiles / '_main' / 'ComposeRuntimeFixtures.bundle' /
+                             'Contents/Resources/Fixtures').mkdir(parents=True)
                     log.write_text('Built all native test targets\n')
                 elif name == 'native-test-output-root':
                     log.write_text(str(output) + '\n')
@@ -503,6 +586,7 @@ class QualificationTests(unittest.TestCase):
                                            '--config=enhanced'])
             self.assertEqual(set(binaries), {'ComposeRuntimeTests', 'ComposeCoreTests',
                                              'ComposePluginTests'})
+            self.assertEqual({record['workspace'] for record in binaries.values()}, {'_main'})
             self.assertEqual(rows[-2]['name'], 'runtime-tests-build')
 
     def test_release_bound_documentation_and_package_commands(self) -> None:

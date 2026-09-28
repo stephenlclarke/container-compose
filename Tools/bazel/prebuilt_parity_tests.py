@@ -45,6 +45,18 @@ ROUTES = {RM_FILTER: ('core',), LIFECYCLE_FILTER: ('core',),
 PASS = re.compile(r'(?:Test run with|Executed) (\d+) tests? .*passed', re.IGNORECASE)
 
 
+def test_workspace(runfiles: Path, binary_name: str, fixture: str | None = None) -> str:
+    """Resolve the workspace actually materialized beside a native Bazel test."""
+    matches = [entry for entry in runfiles.iterdir()
+               if entry.is_dir() and (entry / (binary_name + '.xctest')).is_dir()]
+    if len(matches) != 1:
+        raise ValueError('Native test runfiles do not identify one workspace: ' + binary_name)
+    workspace = matches[0]
+    if fixture is not None and not (workspace / fixture / 'Contents/Resources/Fixtures').is_dir():
+        raise ValueError('Native test fixture bundle is missing: ' + fixture)
+    return workspace.name
+
+
 def run_filter(pattern: str, environment: dict[str, str]) -> dict[str, int]:
     """Never accept an unknown or zero-match filter as successful proof."""
     if pattern not in ROUTES:
@@ -59,7 +71,8 @@ def run_filter(pattern: str, environment: dict[str, str]) -> dict[str, int]:
         if not runfiles.is_dir():
             raise ValueError('Missing prebuilt ' + profile + ' test runfiles')
         test_env = dict(environment, TESTBRIDGE_TEST_ONLY=pattern,
-                        TEST_SRCDIR=str(runfiles), TEST_WORKSPACE='container_compose')
+                        TEST_SRCDIR=str(runfiles),
+                        TEST_WORKSPACE=test_workspace(runfiles, binary.name))
         completed = subprocess.run([str(binary)], env=test_env, text=True,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    timeout=300, check=False)

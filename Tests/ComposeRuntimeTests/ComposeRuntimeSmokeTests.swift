@@ -1688,7 +1688,10 @@ private var runtimeTestsEnabled: Bool {
 
 private func containerDryRun(_ arguments: String) -> String {
     let containerBinary = ProcessInfo.processInfo.environment["CONTAINER_BIN"] ?? "container"
-    return "+ \(containerBinary) \(arguments)"
+    let quotedBinary = containerBinary.allSatisfy {
+        $0.isLetter || $0.isNumber || "-_./:=,".contains($0)
+    } ? containerBinary : "'" + containerBinary.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    return "+ \(quotedBinary) \(arguments)"
 }
 
 private func runtimeProjectName() -> String {

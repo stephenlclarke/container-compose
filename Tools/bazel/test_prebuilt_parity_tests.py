@@ -41,7 +41,8 @@ class PrebuiltParityTests(unittest.TestCase):
             binary.write_text('#!/bin/sh\nprintf "%s\\n" "$TESTBRIDGE_TEST_ONLY"\nprintf "%s\\n" '
                               + repr(result) + '\n')
             binary.chmod(0o700)
-            binary.with_name(binary.name + '.runfiles').mkdir()
+            runfiles = binary.with_name(binary.name + '.runfiles')
+            (runfiles / '_main' / (binary.name + '.xctest')).mkdir(parents=True)
             environment['COMPOSE_PREBUILT_' + profile.upper() + '_TEST'] = str(binary)
         return environment
 
@@ -60,6 +61,24 @@ class PrebuiltParityTests(unittest.TestCase):
                 prebuilt.run_filter('.*', environment)
             with self.assertRaisesRegex(RuntimeError, 'matched no'):
                 prebuilt.run_filter(prebuilt.RM_FILTER, environment)
+
+    def test_workspace_requires_exact_binary_and_declared_fixture(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runfiles = root / 'test.runfiles'
+            bundle = runfiles / '_main' / 'ComposeRuntimeFixtures.bundle'
+            (runfiles / '_main' / 'ComposeRuntimeTests.xctest').mkdir(parents=True)
+            (bundle / 'Contents/Resources/Fixtures').mkdir(parents=True)
+            self.assertEqual(prebuilt.test_workspace(runfiles, 'ComposeRuntimeTests',
+                                                    'ComposeRuntimeFixtures.bundle'), '_main')
+            (runfiles / 'other' / 'ComposeRuntimeTests.xctest').mkdir(parents=True)
+            with self.assertRaisesRegex(ValueError, 'one workspace'):
+                prebuilt.test_workspace(runfiles, 'ComposeRuntimeTests')
+            (runfiles / 'other' / 'ComposeRuntimeTests.xctest').rmdir()
+            (bundle / 'Contents/Resources/Fixtures').rmdir()
+            with self.assertRaisesRegex(ValueError, 'fixture bundle is missing'):
+                prebuilt.test_workspace(runfiles, 'ComposeRuntimeTests',
+                                       'ComposeRuntimeFixtures.bundle')
 
 
 if __name__ == '__main__':
