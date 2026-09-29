@@ -38,7 +38,7 @@ remains the default for the independently installed Compose plugin. See the
 
 ## Current candidate
 
-The local development run at `091ef12b` passes and restores the first 14 original parity cases, including the corrected commit-volume cleanup. The next build-isolation case passes its assertions but overwrites a pre-existing Docker image tag, so the unchanged inventory gate rejects it. Host services are restored; the original image could not be recovered and the failed baseline remains explicitly recorded. The image-fixture correction is reviewed; another all-66 development run and complete final qualification remain required. See the [current evidence and recovery limits](docs/guides/BAZEL.md#fixed-image-collision-at-091ef12b).
+The local development run at `3d1147c6` passes 40 original parity cases, including the corrected image fixtures, then stops at a memory-swap assertion that assumes an unquoted executable name. All resources and all nine host-restoration phases pass automatically. The follow-up fixes this command-parsing assumption across the remaining affected leaves before another all-66 run; final qualification and release remain incomplete. See the [current evidence](docs/guides/BAZEL.md#command-parser-audit-at-3d1147c6) and the [earlier image-recovery limitation](docs/guides/BAZEL.md#fixed-image-collision-at-091ef12b).
 
 The unreleased Bazel development branch now forwards common host signals during prepared foreground runs and safely cancels stalled signal requests. [Signal evidence and limits](docs/guides/BAZEL.md#prepared-foreground-launch) distinguish its passing component tests from the open Docker duplicate-signal oracle and full runtime/release qualification.
 

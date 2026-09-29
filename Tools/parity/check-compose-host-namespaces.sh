@@ -797,6 +797,8 @@ validate_container_compose_dry_run() {
     local unsupported_output
 
     up_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" up net bridge pid)"
+    up_output="$(printf '%s' "$up_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label host-namespaces-up)"
     net_line="$(dry_run_line_for_service "$up_output" net)"
     bridge_line="$(dry_run_line_for_service "$up_output" bridge)"
     pid_line="$(dry_run_line_for_service "$up_output" pid)"
@@ -814,6 +816,12 @@ validate_container_compose_dry_run() {
     run_net_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" run net true)"
     run_bridge_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" run bridge true)"
     run_pid_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" run pid true)"
+    run_net_output="$(printf '%s' "$run_net_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label host-namespaces-run-net)"
+    run_bridge_output="$(printf '%s' "$run_bridge_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label host-namespaces-run-bridge)"
+    run_pid_output="$(printf '%s' "$run_pid_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label host-namespaces-run-pid)"
     run_net_line="$(dry_run_line_for_service "$run_net_output" net)"
     run_bridge_line="$(dry_run_line_for_service "$run_bridge_output" bridge)"
     run_pid_line="$(dry_run_line_for_service "$run_pid_output" pid)"

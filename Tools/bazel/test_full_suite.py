@@ -668,6 +668,52 @@ printf 'candidate=%s\\n' "$LAST_STDOUT_FILE"
             self.assertIn('+ container create --name demo-api-1', candidate.read_text())
             self.assertIn(emitted, candidate.with_suffix('').read_text())
 
+    def test_memory_swap_candidate_projection_preserves_numeric_assertions(self) -> None:
+        import shlex
+
+        selected = "/tmp/private path's/bin/container"
+        helper = full_suite.ROOT / 'Tools/parity/normalize-container-command-output.py'
+        parser = (self.parity_function('memory-swap-limit', 'dry_run_api_line') + '\n' +
+                  self.parity_function('memory-swap-limit', 'line_has_memory_swap'))
+        for command, expected in (('up', '134217728'), ('create', '134217728'),
+                                  ('run', '134217728'), ('default', '134217728'),
+                                  ('unlimited', '-1')):
+            with self.subTest(command=command):
+                project = 'compose-memory-swap-' + command
+                raw = ('+ ' + shlex.quote(selected) + ' create --name ' + project +
+                       '-api-1 --memory 67108864 --memory-swap ' + expected +
+                       ' alpine:3.20\n')
+                env = dict(os.environ, CONTAINER_BIN=selected)
+                projected = subprocess.run(
+                    ['python3', str(helper), '--label', 'memory-swap-' + command],
+                    input=raw, capture_output=True, text=True, env=env, timeout=10)
+                self.assertEqual(projected.returncode, 0, projected.stderr)
+                assertion = subprocess.run(
+                    ['/bin/bash', '-c', parser + '\n' +
+                     'line="$(dry_run_api_line "$OUTPUT" "$PROJECT")"\n' +
+                     '[[ -n "$line" ]] && line_has_memory_swap "$line" "$EXPECTED"'],
+                    env=dict(env, OUTPUT=projected.stdout, PROJECT=project,
+                             EXPECTED=expected), capture_output=True, text=True, timeout=10)
+                self.assertEqual(assertion.returncode, 0, assertion.stderr)
+                wrong = subprocess.run(
+                    ['/bin/bash', '-c', parser + '\n' +
+                     'line="$(dry_run_api_line "$OUTPUT" "$PROJECT")"\n' +
+                     'line_has_memory_swap "$line" 999'],
+                    env=dict(env, OUTPUT=projected.stdout, PROJECT=project),
+                    capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(wrong.returncode, 0)
+
+    def test_all_six_numeric_and_resource_dry_run_captures_are_projected(self) -> None:
+        # Memory-swap's explicit capture is inside its up/create/run loop.
+        expected = {'memory-swap-limit': 3, 'pids-limit': 5,
+                    'device-cgroup-rules': 3, 'devices': 3,
+                    'gpus': 3, 'host-namespaces': 4}
+        for leaf, count in expected.items():
+            with self.subTest(leaf=leaf):
+                source = (full_suite.ROOT / 'Tools/parity' /
+                          ('check-compose-' + leaf + '.sh')).read_text()
+                self.assertEqual(source.count('normalize-container-command-output.py'), count)
+
 
     def test_interrupted_case_removes_only_enrolled_delta(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
