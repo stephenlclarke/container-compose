@@ -1415,12 +1415,16 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
         if name == 'docker-compose-build-external-secret-parity':
             fixed_images.append('container-compose-external-build-secret-'
                                 + environment['IMAGE_SUFFIX'] + ':latest')
+        if name in full_suite.UNIQUE_OUTPUT_IMAGE_PREFIXES:
+            fixed_images.append(environment['PARITY_OUTPUT_IMAGE'])
+            image_prefixes = [environment['PARITY_OUTPUT_IMAGE']]
         full_suite.assert_namespace_free(baseline, name, fixed_names, fixed_images)
         ledger.begin(name, source_hash, prefixes, baseline, image_prefixes, supervised=True)
         # The private CLI changes process group, so Q's group-only watchdog
         # cannot establish that all writers have stopped before hashing logs.
         from fork_benchmark import command_lease
-        environment = dict(environment, **{cli_process.CASE_NONCE: uuid.uuid4().hex})
+        environment = dict(environment, COMPOSE_FULL_SUITE_QUALIFIED='1',
+                           **{cli_process.CASE_NONCE: uuid.uuid4().hex})
         number = len(runner.rows)
         log = runner.evidence / f'{number:03}-compose-full-suite-candidate-{name}-0.log'
         started = time.monotonic_ns()
@@ -1468,6 +1472,8 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
         case_dir.mkdir(parents=True)
         env = dict(common, PARITY_EVIDENCE_DIR=str(case_dir))
         env['PARITY_TIMING_OUTPUT'] = str(case_dir / 'timing.tsv')
+        if name in full_suite.UNIQUE_OUTPUT_IMAGE_PREFIXES:
+            env['PARITY_OUTPUT_IMAGE'] = full_suite.UNIQUE_OUTPUT_IMAGE_PREFIXES[name] + uuid.uuid4().hex
         if name in full_suite.MOUNT_JOURNAL_CASES:
             env['COMPOSE_FULL_SUITE_MOUNT_JOURNAL'] = str(case_dir / 'mounts.json')
         if name == 'docker-compose-build-external-secret-parity':
@@ -2197,6 +2203,8 @@ def recover(evidence: Path) -> dict:
             if host_module.JOURNAL.is_symlink():
                 raise RuntimeError('Shared host recovery journal is a symbolic link')
             if not host_module.JOURNAL.exists():
+                if full_suite.Ledger(evidence / 'full-suite').pending():
+                    raise RuntimeError('Parity resources remain but shared host journal is missing')
                 plugin = evidence / 'plugin-lease.json'
                 if plugin.exists() and json.loads(plugin.read_text()).get('restored') is not True:
                     raise RuntimeError('Plugin restoration is unconfirmed but shared host journal is missing')

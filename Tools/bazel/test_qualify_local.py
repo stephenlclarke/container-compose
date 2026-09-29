@@ -965,6 +965,26 @@ class QualificationTests(unittest.TestCase):
             kill.assert_called_once_with(child.pid, signal.SIGTERM)
             self.assertEqual(child.waits, 2)
 
+    def test_missing_host_journal_does_not_clear_pending_parity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            storage = root / 'storage'
+            installs = root / 'installs'
+            storage.mkdir()
+            installs.mkdir()
+            modules = {'fork_benchmark': SimpleNamespace(STORAGE=storage),
+                       'runtime_benchmark': SimpleNamespace(INSTALLS=installs),
+                       'host_lease': SimpleNamespace(LOCK=root / 'host.lock', JOURNAL=root / 'missing.json')}
+            ledger = local.full_suite.Ledger(root / 'full-suite')
+            ledger.begin('docker-compose-build-isolation-parity', 'source', [], {})
+            original = ledger.path.read_bytes()
+            with patch.object(local, 'q_modules', return_value={'modules': modules, 'hashes': {}}), \
+                 patch.object(local, 'revalidate_q_assets', return_value={}):
+                result = local.recover(root)
+            self.assertFalse(result['restored'])
+            self.assertTrue(any('Parity resources remain' in failure for failure in result['failures']))
+            self.assertEqual(ledger.path.read_bytes(), original)
+
     def test_recovery_report_failure_still_closes_shared_locks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

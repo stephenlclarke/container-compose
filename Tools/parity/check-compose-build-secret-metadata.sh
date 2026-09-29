@@ -28,6 +28,9 @@
 #                      local SwiftPM debug build at .build/debug/compose.
 #   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
 #                      "docker compose" when available, otherwise docker-compose.
+#   PARITY_OUTPUT_IMAGE  Qualifier-selected fresh case image tag; local runs
+#                      generate a unique tag and remove it after the check.
+#   COMPOSE_FULL_SUITE_QUALIFIED  Require the qualifier-selected image tag.
 #
 # This script is intentionally local-only and is not part of CI. It verifies
 # Docker Compose V2 accepts build secret uid/gid/mode metadata while omitting
@@ -46,6 +49,8 @@ STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 DOCKER_COMPOSE_COMMAND=()
 FIXTURE_DIR=""
+OUTPUT_IMAGE=""
+OUTPUT_IMAGE_ENROLLED=0
 
 # Print an informational line to stdout.
 info() {
@@ -125,6 +130,37 @@ check_tools() {
     fi
 }
 
+# Bind the real Docker build to a fresh, case-owned tag.
+select_output_image() {
+    if [[ -n "${PARITY_OUTPUT_IMAGE:-}" ]]; then
+        if [[ ! "$PARITY_OUTPUT_IMAGE" =~ ^example/api:secretmeta-cfq[0-9a-f]{32}$ ]]; then
+            error 'PARITY_OUTPUT_IMAGE is outside the qualified secret-metadata namespace'
+            return 1
+        fi
+        OUTPUT_IMAGE="$PARITY_OUTPUT_IMAGE"
+    elif [[ "${COMPOSE_FULL_SUITE_QUALIFIED:-0}" == 1 ]]; then
+        error 'qualified secret-metadata parity requires PARITY_OUTPUT_IMAGE'
+        return 1
+    else
+        OUTPUT_IMAGE="example/api:secretmeta-local-$RANDOM-$$"
+    fi
+}
+
+require_output_image_absent() {
+    # Use the successful image list rather than treating an inspect error as
+    # absence; Docker has reported listed aliases that inspect cannot resolve.
+    local refs
+    if ! refs="$(docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}')"; then
+        error 'cannot inventory Docker image tags before secret-metadata parity'
+        return 1
+    fi
+    if grep -Fx -- "$OUTPUT_IMAGE" <<<"$refs" >/dev/null; then
+        error "secret-metadata output image already exists: $OUTPUT_IMAGE"
+        return 1
+    fi
+    OUTPUT_IMAGE_ENROLLED=1
+}
+
 # Create a small Compose fixture with build secret metadata.
 create_fixture() {
     FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-build-secret-metadata.XXXXXX")"
@@ -133,10 +169,10 @@ create_fixture() {
 FROM scratch
 DOCKERFILE
     printf 'super-secret\n' >"$FIXTURE_DIR/secret.txt"
-    cat >"$FIXTURE_DIR/compose.yml" <<'YAML'
+    cat >"$FIXTURE_DIR/compose.yml" <<YAML
 services:
   api:
-    image: example/api:secretmeta
+    image: $OUTPUT_IMAGE
     build:
       context: ./api
       secrets:
@@ -151,23 +187,44 @@ secrets:
 YAML
 }
 
-# Remove the temporary Compose fixture.
+# Remove the enrolled standalone image tag and temporary Compose fixture.
 cleanup() {
+    local status=$?
+    trap - EXIT
+    if [[ "${COMPOSE_FULL_SUITE_QUALIFIED:-0}" != 1 && "$OUTPUT_IMAGE_ENROLLED" == 1 ]]; then
+        local refs
+        if ! refs="$(docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}')"; then
+            error 'cannot verify standalone secret-metadata output image for cleanup'
+            if ((status == 0)); then status=1; fi
+        elif grep -Fx -- "$OUTPUT_IMAGE" <<<"$refs" >/dev/null; then
+            if ! docker image rm "$OUTPUT_IMAGE" >/dev/null; then
+                error 'cannot remove standalone secret-metadata output image'
+                if ((status == 0)); then status=1; fi
+            elif ! refs="$(docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}')" ||
+                grep -Fx -- "$OUTPUT_IMAGE" <<<"$refs" >/dev/null; then
+                error 'standalone secret-metadata output image remains after cleanup'
+                if ((status == 0)); then status=1; fi
+            fi
+        fi
+    fi
     if [[ -n "$FIXTURE_DIR" ]]; then
         rm -rf "$FIXTURE_DIR"
     fi
+    exit "$status"
 }
 
 # Assert Docker Compose keeps metadata in config output.
 assert_docker_config_preserves_metadata() {
     local path="$1"
 
-    python3 - "$path" <<'PY'
+    python3 - "$path" "$OUTPUT_IMAGE" <<'PY'
 import json
 import pathlib
 import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+if doc.get("services", {}).get("api", {}).get("image") != sys.argv[2]:
+    raise SystemExit("Docker Compose changed the selected image tag")
 secrets = doc.get("services", {}).get("api", {}).get("build", {}).get("secrets", [])
 if len(secrets) != 1:
     raise SystemExit(f"Docker Compose rendered build secrets {secrets!r}")
@@ -190,12 +247,14 @@ assert_container_config_accepts_metadata() {
     local path="$1"
     local secret_path="$2"
 
-    python3 - "$path" "$secret_path" <<'PY'
+    python3 - "$path" "$secret_path" "$OUTPUT_IMAGE" <<'PY'
 import json
 import pathlib
 import sys
 
 doc = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+if doc.get("services", {}).get("api", {}).get("image") != sys.argv[3]:
+    raise SystemExit("container-compose changed the selected image tag")
 secret_path = pathlib.Path(sys.argv[2]).as_posix()
 build = doc.get("services", {}).get("api", {}).get("build", {})
 if build.get("unsupportedFields"):
@@ -212,7 +271,7 @@ assert_bake_ignores_metadata() {
     local source="$2"
     local secret_path="$3"
 
-    python3 - "$path" "$source" "$secret_path" <<'PY'
+    python3 - "$path" "$source" "$secret_path" "$OUTPUT_IMAGE" <<'PY'
 import json
 import pathlib
 import sys
@@ -223,6 +282,8 @@ secret_path = pathlib.Path(sys.argv[3])
 target = doc.get("target", {}).get("api")
 if not isinstance(target, dict):
     raise SystemExit(f"{source} did not render an api target")
+if target.get("tags") != [sys.argv[4]]:
+    raise SystemExit(f"{source} rendered tags {target.get('tags')!r}")
 secrets = target.get("secret")
 if not isinstance(secrets, list) or len(secrets) != 1 or not isinstance(secrets[0], str):
     raise SystemExit(f"{source} rendered bake secrets {secrets!r}")
@@ -267,6 +328,7 @@ expect_docker_behavior() {
         build --print api >"$bake_output"
     assert_bake_ignores_metadata "$bake_output" 'Docker Compose' "$FIXTURE_DIR/secret.txt"
 
+    require_output_image_absent
     "${DOCKER_COMPOSE_COMMAND[@]}" \
         --project-directory "$FIXTURE_DIR" \
         -f "$FIXTURE_DIR/compose.yml" \
@@ -311,6 +373,7 @@ main() {
     parse_args "$@"
     detect_docker_compose
     check_tools
+    select_output_image
     create_fixture
     trap cleanup EXIT
 

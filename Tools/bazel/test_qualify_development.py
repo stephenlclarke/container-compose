@@ -158,10 +158,73 @@ class DevelopmentBridgeTests(unittest.TestCase):
             for name in ('check-compose-image-volumes.sh', 'check-compose-commit.sh',
                          'check-compose-volume-labels.sh'):
                 self.assertIn('COMPOSE_FULL_SUITE_MOUNT_JOURNAL', environments[name])
+            output_tags = []
+            ledger_cases = {case['name']: case for case in json.loads(
+                (evidence / 'full-suite/resource-ledger.json').read_text())['cases']}
+            for name, prefix in local.full_suite.UNIQUE_OUTPUT_IMAGE_PREFIXES.items():
+                script = next(Path(item['script']).name for item in local.full_suite.inventory()
+                              if item['target'] == name)
+                tag = environments[script]['PARITY_OUTPUT_IMAGE']
+                self.assertTrue(tag.startswith(prefix))
+                self.assertRegex(tag[len(prefix):], '^[0-9a-f]{32}$')
+                self.assertEqual(ledger_cases[name]['owned_image_prefixes'], [tag])
+                output_tags.append(tag)
+            self.assertEqual(len(set(output_tags)), 2)
+            self.assertTrue(all(env['COMPOSE_FULL_SUITE_QUALIFIED'] == '1'
+                                for _, env, _ in commands))
             self.assertIn('COMPOSE_PARITY_KEYCHAIN_JOURNAL_DIR',
                           environments['check-compose-build-external-secret.sh'])
             self.assertFalse((evidence / 'full-suite/acceptance.json').exists())
             self.assertFalse((evidence / 'acceptance.json').exists())
+
+    def test_unique_build_image_collision_refused_before_case_ledger(self) -> None:
+        for name, prefix in local.full_suite.UNIQUE_OUTPUT_IMAGE_PREFIXES.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                evidence = root / 'evidence'
+                evidence.mkdir()
+                runner_evidence = evidence / 'runtime'
+                runner_evidence.mkdir()
+                runner = SimpleNamespace(evidence=runner_evidence, rows=[],
+                                         runtime_environment={})
+                native = {}
+                for target in ('ComposeCoreTests', 'ComposePluginTests'):
+                    binary = root / target
+                    binary.write_text('test')
+                    binary.chmod(0o755)
+                    runfiles = binary.with_name(target + '.runfiles')
+                    runfiles.mkdir()
+                    native[target] = {'path': str(binary), 'sha256': local.sha(binary),
+                                      'runfiles': str(runfiles), 'workspace': 'test-workspace'}
+                empty = {lane: {kind: {} for kind in ('containers', 'networks',
+                                                      'volumes', 'images')}
+                         for lane in ('candidate', 'docker')}
+                selected = next(item for item in local.full_suite.inventory()
+                                if item['target'] == name)
+                original_check = local.full_suite.assert_namespace_free
+                observed = []
+                def collided(baseline, case, fixed_names, fixed_images):
+                    tag = next(image for image in fixed_images if image.startswith(prefix))
+                    observed.append(tag)
+                    baseline['docker']['images'][tag + '|sha256:existing'] = tag
+                    return original_check(baseline, case, fixed_names, fixed_images)
+                with patch.object(local.subprocess, 'check_output', return_value=b'/sdk'), \
+                     patch.object(local.full_suite_scratch, 'create', return_value=root), \
+                     patch.object(local.full_suite, 'inventory', return_value=[selected]), \
+                     patch.object(local.full_suite, 'snapshot', return_value=empty), \
+                     patch.object(local.full_suite, 'assert_namespace_free', side_effect=collided), \
+                     patch.object(local, 'test_workspace', return_value='test-workspace'), \
+                     patch.object(local.cli_process, 'run', side_effect=AssertionError('case started')):
+                    with self.assertRaisesRegex(RuntimeError, 'collides with parity-owned namespace'):
+                        local.run_original_full_suite(
+                            evidence, runner, SimpleNamespace(environment=lambda lane: {}),
+                            root, root, native, lambda *args: self.fail('inventory command'),
+                            development_parity=True)
+                self.assertEqual(len(observed), 1)
+                self.assertTrue(observed[0].startswith(prefix))
+                self.assertRegex(observed[0][len(prefix):], '^[0-9a-f]{32}$')
+                self.assertFalse((evidence / 'full-suite/resource-ledger.json').exists())
+                self.assertEqual(runner.rows, [])
 
     def test_development_receipt_never_invokes_release_or_benchmark_gates(self) -> None:
         for parity, fail_live in ((False, False), (False, True),

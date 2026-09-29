@@ -30,6 +30,154 @@ import full_suite
 
 class FullSuiteTests(unittest.TestCase):
     @staticmethod
+    def parity_function(leaf: str, name: str) -> str:
+        source = (full_suite.ROOT / 'Tools/parity' /
+                  ('check-compose-' + leaf + '.sh')).read_text()
+        start = source.index('\n' + name + '() {') + 1
+        end = source.index('\n}\n', start) + 2
+        return source[start:end]
+
+    def test_qualified_build_outputs_are_unique_case_owned_and_collision_guarded(self) -> None:
+        for leaf, case in (('build-isolation', 'docker-compose-build-isolation-parity'),
+                           ('build-secret-metadata',
+                            'docker-compose-build-secret-metadata-parity')):
+            with self.subTest(leaf=leaf), tempfile.TemporaryDirectory() as temporary:
+                prefix = full_suite.UNIQUE_OUTPUT_IMAGE_PREFIXES[case]
+                tag = prefix + 'a' * 32
+                self.assertEqual(full_suite.EXTRA_IMAGE_PREFIXES[case], (prefix,))
+                baseline = self.empty()
+                baseline['docker']['images']['example/api:isolation|old'] = 'example/api:isolation'
+                baseline['docker']['images']['example/api:secretmeta|old'] = 'example/api:secretmeta'
+                full_suite.assert_namespace_free(baseline, case, fixed_images=[tag])
+                existing = self.empty()
+                existing['docker']['images'][tag + '|old'] = tag
+                with self.assertRaisesRegex(RuntimeError, 'collides'):
+                    full_suite.assert_namespace_free(existing, case, fixed_images=[tag])
+                added = self.empty()
+                added['docker']['images'].update(baseline['docker']['images'])
+                added['docker']['images'][tag + '|new'] = tag
+                self.assertEqual(len(full_suite.difference(
+                    baseline, added, [], case=case,
+                    image_prefixes=list(full_suite.EXTRA_IMAGE_PREFIXES[case]))), 1)
+                added['docker']['images']['example/api:unrelated|new'] = 'example/api:unrelated'
+                with self.assertRaisesRegex(RuntimeError, 'Unrecognized new docker images'):
+                    full_suite.difference(
+                        baseline, added, [], case=case,
+                        image_prefixes=list(full_suite.EXTRA_IMAGE_PREFIXES[case]))
+                refs = Path(temporary) / 'refs'
+                refs.write_text('example/api:isolation\nexample/api:secretmeta\n')
+                program = '''
+set -euo pipefail
+error() { printf '%s\\n' "$*" >&2; }
+docker() { cat "$REFS"; }
+''' + self.parity_function(leaf, 'select_output_image') + '\n' + \
+                    self.parity_function(leaf, 'require_output_image_absent') + '''
+select_output_image
+require_output_image_absent
+printf '%s %s\\n' "$OUTPUT_IMAGE" "$OUTPUT_IMAGE_ENROLLED"
+'''
+                env = dict(os.environ, PARITY_OUTPUT_IMAGE=tag,
+                           COMPOSE_FULL_SUITE_QUALIFIED='1', REFS=str(refs),
+                           OUTPUT_IMAGE='', OUTPUT_IMAGE_ENROLLED='0')
+                result = subprocess.run(['/bin/bash', '-c', program], env=env,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), tag + ' 1')
+                refs.write_text(tag + '\n')
+                result = subprocess.run(['/bin/bash', '-c', program], env=env,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('already exists', result.stderr)
+
+    def test_links_and_dns_reuse_preloaded_images_without_pull(self) -> None:
+        image = {'configuration': {'name': 'docker.io/library/alpine:3.20',
+                                   'descriptor': {'digest': 'sha256:' + 'a' * 64}}}
+        for leaf in ('links', 'network-service-discovery'):
+            with self.subTest(leaf=leaf), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                docker_refs, native_refs, events = (root / name for name in
+                                                   ('docker-refs', 'native-refs', 'events'))
+                docker_refs.write_text('alpine:3.20\n')
+                native_refs.write_text(json.dumps([image]))
+                program = '''
+set -euo pipefail
+REPO_ROOT="$REPOSITORY"
+FIXTURE_IMAGE=alpine:3.20
+CONTAINER_COMPOSE_LIVE=1
+CONTAINER_BINARY=/mock/container
+info() { :; }
+error() { printf '%s\\n' "$*" >&2; }
+run_bounded() {
+  printf '%s\\n' "$*" >> "$EVENTS"
+  if [[ "$1" == docker && "$2" == image && "$3" == ls ]]; then
+    cat "$DOCKER_REFS"
+  elif [[ "$1" == "$CONTAINER_BINARY" && "$2" == image && "$3" == list ]]; then
+    cat "$NATIVE_REFS"
+  fi
+}
+''' + self.parity_function(leaf, 'prepare_fixture_images') + '''
+prepare_fixture_images
+'''
+                env = dict(os.environ, REPOSITORY=str(full_suite.ROOT),
+                           DOCKER_REFS=str(docker_refs), NATIVE_REFS=str(native_refs),
+                           EVENTS=str(events), COMPOSE_FULL_SUITE_QUALIFIED='1')
+                result = subprocess.run(['/bin/bash', '-c', program], env=env,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn('pull', events.read_text())
+                events.unlink()
+                docker_refs.write_text('')
+                result = subprocess.run(['/bin/bash', '-c', program], env=env,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('qualified Docker fixture image is missing', result.stderr)
+                self.assertNotIn('pull', events.read_text())
+
+    def test_standalone_build_leaf_removes_only_new_tag_and_preserves_failure(self) -> None:
+        for leaf in ('build-isolation', 'build-secret-metadata'):
+            with self.subTest(leaf=leaf), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                refs, events = root / 'refs', root / 'events'
+                refs.write_text('example/api:isolation\nexample/api:secretmeta\n')
+                program = '''
+set -euo pipefail
+error() { printf '%s\\n' "$*" >&2; }
+docker() {
+  if [[ "$1" == image && "$2" == ls ]]; then cat "$REFS"; return; fi
+  if [[ "$1" == image && "$2" == rm ]]; then
+    printf '%s\\n' "$3" >> "$EVENTS"
+    grep -Fvx -- "$3" "$REFS" > "$REFS.next" || true
+    mv "$REFS.next" "$REFS"
+    return
+  fi
+  return 1
+}
+''' + self.parity_function(leaf, 'select_output_image') + '\n' + \
+                    self.parity_function(leaf, 'require_output_image_absent') + '\n' + \
+                    self.parity_function(leaf, 'create_fixture') + '\n' + \
+                    self.parity_function(leaf, 'cleanup') + '''
+select_output_image
+create_fixture
+grep -Fx -- "    image: $OUTPUT_IMAGE" "$FIXTURE_DIR/compose.yml" >/dev/null
+require_output_image_absent
+printf '%s\\n' "$OUTPUT_IMAGE" >> "$REFS"
+trap cleanup EXIT
+exit 7
+'''
+                env = dict(os.environ, REFS=str(refs), EVENTS=str(events),
+                           TMPDIR=str(root), OUTPUT_IMAGE='', OUTPUT_IMAGE_ENROLLED='0')
+                env.pop('PARITY_OUTPUT_IMAGE', None)
+                env.pop('COMPOSE_FULL_SUITE_QUALIFIED', None)
+                result = subprocess.run(['/bin/bash', '-c', program], env=env,
+                                        capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 7, result.stderr)
+                removed = events.read_text().splitlines()
+                self.assertEqual(len(removed), 1)
+                self.assertIn('-local-', removed[0])
+                self.assertEqual(refs.read_text().splitlines(),
+                                 ['example/api:isolation', 'example/api:secretmeta'])
+
+    @staticmethod
     def commit_function(name: str) -> str:
         source = (full_suite.ROOT / 'Tools/parity/check-compose-commit.sh').read_text()
         start = source.index('\n' + name + '() {') + 1

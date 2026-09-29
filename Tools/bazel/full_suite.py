@@ -42,6 +42,10 @@ EXTRA_PREFIXES = {
     'docker-compose-api-socket-client-parity': ('cc-api-socket-',),
     'docker-compose-build-secret-metadata-parity': ('compose-build-secret-metadata.',),
 }
+UNIQUE_OUTPUT_IMAGE_PREFIXES = {
+    'docker-compose-build-isolation-parity': 'example/api:build-isolation-cfq',
+    'docker-compose-build-secret-metadata-parity': 'example/api:secretmeta-cfq',
+}
 EXTRA_IMAGE_PREFIXES = {
     'runtime-suite': ('container-compose-named-builder:', 'registry.local/compose-ssh:',
                       'registry.local/compose-ssh-named:',
@@ -56,6 +60,10 @@ EXTRA_IMAGE_PREFIXES = {
         'container-compose-no-cache-filter:latest',),
     'docker-compose-build-external-secret-parity': (
         'container-compose-external-build-secret-cfq',),
+    'docker-compose-build-isolation-parity': (
+        UNIQUE_OUTPUT_IMAGE_PREFIXES['docker-compose-build-isolation-parity'],),
+    'docker-compose-build-secret-metadata-parity': (
+        UNIQUE_OUTPUT_IMAGE_PREFIXES['docker-compose-build-secret-metadata-parity'],),
 }
 FIXED_OUTPUT_IMAGES = {
     'docker-compose-build-external-dockerfile-parity':

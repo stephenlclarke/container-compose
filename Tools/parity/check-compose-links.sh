@@ -31,6 +31,9 @@
 #                      Path to the matching Apple container binary.
 #   CONTAINER_COMPOSE_LIVE
 #                      Set to 1 to run the live Apple runtime comparison.
+#   COMPOSE_FULL_SUITE_QUALIFIED
+#                      Set by the qualifier; requires preloaded fixture images
+#                      and never refreshes their tags after baseline capture.
 #   DOCKER_COMPOSE     Docker Compose command to compare with.
 #   PARITY_REPETITIONS Number of timed DNS lookups per scenario. Defaults to 3.
 #   PARITY_TIMEOUT_SECONDS
@@ -678,9 +681,35 @@ assert_model_projection() {
 # Pulls fixture images outside the timed workload.
 prepare_fixture_images() {
     info "Preparing fixture image outside the timed workload: $FIXTURE_IMAGE"
-    run_bounded docker image pull "$FIXTURE_IMAGE" >/dev/null
+    # Qualified runs reuse the pre-baseline image; standalone runs pull only a
+    # missing fixture rather than refreshing an existing mutable tag.
+    local docker_refs
+    docker_refs="$(run_bounded docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}')"
+    if ! grep -Fx -- "$FIXTURE_IMAGE" <<<"$docker_refs" >/dev/null; then
+        if [[ "${COMPOSE_FULL_SUITE_QUALIFIED:-0}" == 1 ]]; then
+            error "qualified Docker fixture image is missing: $FIXTURE_IMAGE"
+            return 1
+        fi
+        run_bounded docker image pull "$FIXTURE_IMAGE" >/dev/null
+    fi
     if [[ "$CONTAINER_COMPOSE_LIVE" == "1" ]]; then
-        run_bounded "$CONTAINER_BINARY" image pull "$FIXTURE_IMAGE" >/dev/null
+        local native_refs native_present
+        native_refs="$(run_bounded "$CONTAINER_BINARY" image list --format json)"
+        native_present="$(printf '%s' "$native_refs" |
+            PYTHONPATH="$REPO_ROOT/Tools/bazel${PYTHONPATH:+:$PYTHONPATH}" python3 -c '
+import sys
+import full_suite
+images = full_suite.native_images(sys.stdin.read())
+print("yes" if any(full_suite.image_reference(name) == sys.argv[1]
+                   for name in images) else "no")
+' "$FIXTURE_IMAGE")"
+        if [[ "$native_present" == no ]]; then
+            if [[ "${COMPOSE_FULL_SUITE_QUALIFIED:-0}" == 1 ]]; then
+                error "qualified native fixture image is missing: $FIXTURE_IMAGE"
+                return 1
+            fi
+            run_bounded "$CONTAINER_BINARY" image pull "$FIXTURE_IMAGE" >/dev/null
+        fi
     fi
 }
 
