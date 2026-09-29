@@ -423,6 +423,7 @@ bazel-workflow-tools-test:
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_keychain_fixture.py
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_network_parity_fixtures.py
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_qualification_lease.py
+	$(TOOL_TEST_TEMP_ENV) PYTHONPATH="Tools/ci" $(PYTHON) -m unittest -q test_python39_compatibility
 
 # Final local gate for one clean Compose checkpoint. Evidence is retained on
 # internal storage; cached Bazel build scratch stays on the enrolled SSD.

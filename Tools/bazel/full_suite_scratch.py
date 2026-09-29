@@ -62,7 +62,7 @@ def _validate(evidence: Path, record: dict, root: Path) -> Path:
     if path.is_symlink():
         raise RuntimeError('Full-suite scratch was replaced by a link')
     if path.exists():
-        info = path.stat(follow_symlinks=False)
+        info = path.lstat()
         if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
                 or (record['state'] != 'intent' and
                     (info.st_dev != record.get('device') or info.st_ino != record.get('inode')))):
@@ -97,7 +97,7 @@ def create(evidence: Path, *, root: Path = ROOT) -> Path:
         # An existing tree never becomes ours merely because its name collides.
         receipt.unlink()
         raise
-    info = path.stat(follow_symlinks=False)
+    info = path.lstat()
     record.update(state='active', device=info.st_dev, inode=info.st_ino)
     _write(receipt, record)
     return path

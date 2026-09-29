@@ -16,6 +16,8 @@
 
 """Bound CLI fixtures whose captured helper changes process group, not session."""
 
+from __future__ import annotations
+
 import os
 import signal
 import subprocess
