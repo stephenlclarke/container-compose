@@ -1925,6 +1925,67 @@ extension ComposeOrchestratorTests {
         #expect(emitted.messages == ["ready\n"])
     }
 
+    @Test("run without a TTY keeps stdin and attaches output before lifecycle start")
+    func runWithoutTTYAttachesOutputBeforeLifecycleStart() async throws {
+        let runner = RecordingRunner(responses: [
+            .success,
+            CommandResult(status: 7, stdout: "", stderr: ""),
+        ])
+        let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-job-run-abc123": 7])
+        let attachManager = RecordingContainerAttachManager(outputs: [
+            ComposeLogRecord(stream: .stdout, payload: Data("run-main\n".utf8)),
+        ])
+        let emitted = MessageRecorder()
+        let project = ComposeProject(
+            name: "demo",
+            services: [
+                "job": composeService(name: "job", image: "alpine") {
+                    $0.postStart = [ComposeServiceHook(command: ["true"])]
+                },
+            ]
+        )
+
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                options: ComposeExecutionOptions {
+                    $0.oneOffIdentifier = { "abc123" }
+                    $0.emitAttachedData = { emitted.append(String(decoding: $0, as: UTF8.self)) }
+                },
+                dependencies: orchestratorDependencies {
+                    $0.lifecycleManager = lifecycleManager
+                    $0.attachManager = attachManager
+                }
+            ).run(project: project, serviceName: "job", options: composeRunOptions(command: ["sh", "-c", "exit 7"]) {
+                $0.remove = true
+                $0.interactive = true
+                $0.noTty = true
+                $0.inputIsTerminal = false
+            })
+            Issue.record("Expected lifecycle-managed run exit status")
+        } catch let error as ComposeRunExitError {
+            #expect(error.status == 7)
+        }
+
+        let command = try #require(runner.commands.first?.arguments)
+        #expect(command.starts(with: ["container", "create"]))
+        #expect(!command.contains("--detach"))
+        #expect(!command.contains("--rm"))
+        #expect(emitted.messages == ["run-main\n"])
+        #expect(await attachManager.requests == [
+            ContainerAttachRequest(
+                id: "demo-job-run-abc123",
+                stdout: true,
+                stderr: true,
+                mode: .beforeStartWithInput,
+            ),
+        ])
+        #expect(await lifecycleManager.requests == [
+            .wait(id: "demo-job-run-abc123"),
+            .delete(id: "demo-job-run-abc123", force: false),
+        ])
+    }
+
     @Test("run foreground drains logs after the container exits")
     func runForegroundDrainsLogsAfterContainerExit() async throws {
         let emitted = MessageRecorder()
@@ -2090,8 +2151,9 @@ extension ComposeOrchestratorTests {
             project: project,
             serviceName: "job",
             options: composeRunOptions(command: ["sleep", "60"]) {
-                $0.interactive = false
+                $0.interactive = true
                 $0.noTty = true
+                $0.inputIsTerminal = false
             }
         )
 

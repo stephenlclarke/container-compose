@@ -87,13 +87,16 @@ struct ContainerAttachAPIClient: ContainerAttachAPIClienting {
 /// `ContainerClient`-backed output attachment independent of log persistence.
 public struct ContainerClientAttachManager: ComposeRuntimeAttachManaging {
     private let client: any ContainerAttachAPIClienting
+    private let input: FileHandle
 
     public init() {
         client = ContainerAttachAPIClient()
+        input = .standardInput
     }
 
-    init(client: any ContainerAttachAPIClienting) {
+    init(client: any ContainerAttachAPIClienting, input: FileHandle = .standardInput) {
         self.client = client
+        self.input = input
     }
 
     // swiftlint:disable function_body_length function_parameter_count
@@ -123,14 +126,14 @@ public struct ContainerClientAttachManager: ComposeRuntimeAttachManaging {
         }
 
         let stdio = [
-            nil,
+            mode == .beforeStartWithInput ? input : nil,
             stdoutPipe?.fileHandleForWriting,
             stderrPipe?.fileHandleForWriting,
         ]
         let session: any ContainerOutputAttachSession
         let startsPreparedProcess: Bool
         switch (container.status, mode) {
-        case (.stopped, .beforeStart):
+        case (.stopped, .beforeStart), (.stopped, .beforeStartWithInput):
             session = try await client.bootstrap(id: id, stdio: stdio)
             startsPreparedProcess = true
         case (.running, _), (.paused, _):

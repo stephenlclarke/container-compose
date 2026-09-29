@@ -508,11 +508,13 @@ public extension ComposeOrchestrator {
             service: preparation.service,
             requestedName: run.containerName,
         )
+        let managedLifecycleRun = !run.detach && hasLifecycleHooks(preparation.service)
+        // A non-TTY managed run must attach output before starting, even when
+        // Compose keeps stdin open by default. The attachment forwards stdin.
         let foregroundInteractiveRun = isForegroundInteractiveRun(
             service: preparation.service,
             options: run,
-        )
-        let managedLifecycleRun = !run.detach && hasLifecycleHooks(preparation.service)
+        ) && (!managedLifecycleRun || preparation.service.tty == true)
         let automaticRemove = run.remove && managedLifecycleRun && foregroundInteractiveRun
         try await removeRunOrphans(
             project: preparation.project,
@@ -652,10 +654,7 @@ public extension ComposeOrchestrator {
                 // Cleanup stays manual to avoid racing output collection.
                 $0.remove = run.remove
                     && (!invocation.managedLifecycleRun
-                        || isForegroundInteractiveRun(
-                            service: preparation.service,
-                            options: run,
-                        ))
+                        || invocation.foregroundInteractive)
                 $0.oneOff = true
                 $0.publishedPorts = invocation.publishedPorts
                 $0.containerNameOverride = invocation.containerName

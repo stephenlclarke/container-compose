@@ -127,6 +127,42 @@ struct ContainerAttachAdapterTests {
         #expect(events.events == ["ready", "started", "early\n"])
     }
 
+    @Test(arguments: [RuntimeStatus.stopped, .running])
+    func `input-capable attachment forwards caller bytes without closing stdin`(_ status: RuntimeStatus) async throws {
+        let input = Pipe()
+        try input.fileHandleForWriting.write(contentsOf: Data("input-data\n".utf8))
+        try input.fileHandleForWriting.close()
+        let client = try RecordingContainerAttachAPIClient(
+            container: attachContainer(status: status, terminal: false),
+            stdout: Data("output-data\n".utf8),
+        )
+        let records = AttachRecordRecorder()
+
+        try await ContainerClientAttachManager(client: client, input: input.fileHandleForReading).attachOutput(
+            id: "demo-api-1",
+            stdout: true,
+            stderr: true,
+            mode: .beforeStartWithInput,
+            onReady: {},
+            onStarted: {},
+            emit: records.append,
+        )
+
+        #expect(await client.receivedInput == Data("input-data\n".utf8))
+        #expect(await client.requestedStreams == [[true, true, true]])
+        #expect(records.records == [
+            ComposeLogRecord(stream: .stdout, payload: Data("output-data\n".utf8)),
+        ])
+        #expect(fcntl(input.fileHandleForReading.fileDescriptor, F_GETFD) >= 0)
+        if status == .stopped {
+            #expect(await client.bootstrapIDs == ["demo-api-1"])
+            #expect(await client.startCount == 1)
+        } else {
+            #expect(await client.attachIDs == ["demo-api-1"])
+            #expect(await client.startCount == 0)
+        }
+    }
+
     @Test
     func `before-start race attaches without restarting an already-running process`() async throws {
         let client = try RecordingContainerAttachAPIClient(
@@ -212,6 +248,7 @@ private actor RecordingContainerAttachAPIClient: ContainerAttachAPIClienting {
     private var streams: [[Bool]] = []
     private var attached: [String] = []
     private var bootstrapped: [String] = []
+    private var inputData: Data?
     private let disconnects = CountRecorder()
     private let starts = CountRecorder()
 
@@ -241,6 +278,10 @@ private actor RecordingContainerAttachAPIClient: ContainerAttachAPIClienting {
         bootstrapped
     }
 
+    var receivedInput: Data? {
+        inputData
+    }
+
     var disconnectCount: Int {
         disconnects.count
     }
@@ -263,6 +304,7 @@ private actor RecordingContainerAttachAPIClient: ContainerAttachAPIClienting {
     func bootstrap(id: String, stdio: [FileHandle?]) async throws -> any ContainerOutputAttachSession {
         bootstrapped.append(id)
         streams.append(stdio.map { $0 != nil })
+        inputData = try stdio[0]?.readToEnd()
         return try RecordingContainerOutputAttachSession(
             disconnects: disconnects,
             starts: starts,
@@ -272,6 +314,7 @@ private actor RecordingContainerAttachAPIClient: ContainerAttachAPIClienting {
 
     private func writeOutput(stdio: [FileHandle?]) throws {
         streams.append(stdio.map { $0 != nil })
+        inputData = try stdio[0]?.readToEnd()
         if let handle = stdio[1] {
             try handle.write(contentsOf: stdout)
             try handle.close()
