@@ -38,7 +38,7 @@ remains the default for the independently installed Compose plugin. See the
 
 ## Current candidate
 
-The local development run at `99b0de9a` passes 62 original parity cases with cleanup, including the builder ownership correction. Lifecycle-hooks then returns the expected exit code but loses early foreground output. All resources and all nine host-restoration phases complete automatically. The next correction addresses attachment ordering for non-TTY lifecycle runs while preserving stdin; final qualification and release remain incomplete. See the [current evidence](docs/guides/BAZEL.md#lifecycle-output-at-99b0de9a) and the [earlier image-recovery limitation](docs/guides/BAZEL.md#fixed-image-collision-at-091ef12b).
+The local development run at `99b0de9a` passes 62 original parity cases with cleanup, including the builder ownership correction. Lifecycle-hooks then returns the expected exit code but loses early foreground output. All resources and all nine host-restoration phases complete automatically. The next correction addresses attachment ordering for non-TTY lifecycle runs while preserving stdin; final qualification and release remain incomplete. See the [current evidence](docs/guides/BAZEL.md#api-socket-timeout-at-fbc40e81) and the [earlier image-recovery limitation](docs/guides/BAZEL.md#fixed-image-collision-at-091ef12b).
 
 The unreleased Bazel development branch now forwards common host signals during prepared foreground runs and safely cancels stalled signal requests. [Signal evidence and limits](docs/guides/BAZEL.md#prepared-foreground-launch) distinguish its passing component tests from the open Docker duplicate-signal oracle and full runtime/release qualification.
 

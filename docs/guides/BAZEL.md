@@ -2,6 +2,14 @@
 
 Status: Compose-owned implementation pending its first complete immutable-source qualification. The current Makefile uses this repository’s own `Tools/bazel/run.sh`; historical references below to the devcontainer family launcher describe earlier checkpoint evidence only.
 
+## API-socket timeout at fbc40e81
+
+Signed checkpoint `fbc40e81601c8f0c8817cbaa7522fc36ac466cf3` passes the original strict lifecycle leaf, including the foreground marker, status/removal assertions and 20 native component tests. Its focused live diagnostic restores all nine host phases. The subsequent all-66 run passes and restores its first 63 cases, including lifecycle-hooks, then API-socket-client times out during its one-off `run --rm ... root-client sh` command at the unchanged 300-second limit. Persistent root/non-root client checks, restart and recreate already completed. The two following cases are not reached.
+
+The failed command receives a finite script through stdin and has no lifecycle hooks, so it follows the unchanged direct foreground runtime path. Its empty output cannot distinguish startup/input/EOF from a guest Docker API call. The one-off probe now emits nine fixed non-secret phase markers before a product fix is selected; every original assertion, command and deadline remains intact. Removing only those marker lines reproduces the original probe byte-for-byte. Bash syntax, ShellCheck and independent review pass. A one-case diagnostic does not qualify the full suite or release.
+
+The failed run automatically restores all 64 attempted case baselines and all nine host phases, with no restoration failures. Its failed result and raw timeout log remain retained at `local-final/fbc40e81-development-parity-20260929T120604Z`; the earlier passing lifecycle diagnostic is `fbc40e81-lifecycle-focus-20260929T115900Z`. No new performance, final qualification or release claim is made.
+
 ## Lifecycle output at 99b0de9a
 
 Signed checkpoint `99b0de9a97b5b3a9939711cf01413dfa37b57290` corrects the one missing builder ownership entry. Its regression fails against the prior policy, then all 36 focused resource-management tests pass. The next all-66 development attempt stops before any case when the original API hold rejects an active or unknown service. Automatic restoration completes. Read-only observations confirm the original API continues restart attempts and returns to its approved failed state, but do not identify the precise PID at rejection. One unchanged-source attempt passes the original admission checks; no wait loop or relaxed service guard is added.
