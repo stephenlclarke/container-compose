@@ -18,6 +18,7 @@
 """Focused ownership and interruption checks for home-shared parity scratch."""
 
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -92,6 +93,30 @@ class ScratchTests(unittest.TestCase):
         (owned / 'second').write_text('second')
         (owned / 'first').unlink()
         self.assertEqual(scratch.restore(self.evidence, root=self.root)['state'], 'restored')
+
+    def test_readonly_fixtures_restore_without_changing_external_links(self) -> None:
+        owned = scratch.create(self.evidence, root=self.root)
+        external = self.base / 'external'
+        external.mkdir()
+        keep = external / 'keep'
+        keep.write_text('retained')
+        keep.chmod(0o444)
+        child = owned / 'readonly'
+        child.mkdir()
+        nested = child / 'nested'
+        nested.mkdir()
+        (nested / 'fixture').write_text('fixture')
+        (child / 'external-link').symlink_to(external, target_is_directory=True)
+        os.link(keep, child / 'hardlink')
+        for directory in (child, nested):
+            directory.chmod(0o555)
+            self.addCleanup(lambda path=directory: path.exists() and path.chmod(0o755))
+        result = scratch.restore(self.evidence, root=self.root)
+        self.assertEqual(result['state'], 'restored')
+        self.assertFalse(owned.exists())
+        self.assertEqual(keep.read_text(), 'retained')
+        self.assertEqual(keep.stat().st_mode & 0o777, 0o444)
+        self.assertEqual(external.stat().st_mode & 0o777, 0o755)
 
 
 if __name__ == '__main__':

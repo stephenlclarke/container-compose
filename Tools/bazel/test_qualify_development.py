@@ -18,8 +18,10 @@
 """Development Bridge selection and non-release receipt regressions."""
 
 from contextlib import ExitStack
+from contextlib import nullcontext
 import json
 from pathlib import Path
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -65,9 +67,106 @@ class DevelopmentBridgeTests(unittest.TestCase):
             self.assertEqual(selected, assets)
             self.assertTrue(invocation)
 
+    def test_parity_layers_prepare_core_and_plugin_without_runtime_suite(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'output'
+            output.mkdir()
+            qualified = {'source_receipt_sha256': 'source', 'release_sha256': 'runtime',
+                         'guest_sha256': 'guest', 'builder_sha256': 'builder'}
+            local.write(root / 'preflight.json', {'container': qualified})
+            assets = {'provenance': {'source_receipt_sha256': 'source'},
+                      'assets': {name: {'sha256': name} for name in ('runtime', 'guest', 'builder')}}
+            def fetch(destination, hashes):
+                destination.mkdir()
+                local.write(destination / 'q-assets.json', assets)
+                return assets
+            for name in ('ComposeCoreTests', 'ComposePluginTests'):
+                binary = output / (name + '.xctest/Contents/MacOS') / name
+                binary.parent.mkdir(parents=True)
+                binary.write_text('test')
+                binary.chmod(0o755)
+                binary.with_name(name + '.runfiles').mkdir()
+            calls = []
+            def stage(evidence, name, args, timeout, **kwargs):
+                calls.append((name, args))
+                log = root / (name + '.log')
+                log.write_text(str(output) if name == 'native-test-output-root' else
+                               'Retained Compose Bazel invocation: 12345678-1234-1234-1234-123456789abc')
+                return {'name': name, 'log': str(log), 'status': 0}
+            def chain(evidence, source, invocation):
+                local.write(root / 'compiled-sdk-chain.json', {'verified': True})
+            with patch.object(local, 'SSD', root), patch.object(local, 'stage', side_effect=stage), \
+                 patch.object(local, 'fetch_q_assets', side_effect=fetch), \
+                 patch.object(local, 'source_identity', return_value={'commit': 'a' * 40}), \
+                 patch.object(local, 'verify_source'), \
+                 patch.object(local, 'compiled_sdk_chain', side_effect=chain), \
+                 patch.object(local, 'test_workspace', return_value='test-workspace'):
+                _, _, _, native = local.run_layers(
+                    root, {'commit': 'a' * 40}, {'hashes': {}}, development_parity=True)
+            self.assertEqual(set(native), {'ComposeCoreTests', 'ComposePluginTests'})
+            build = next(args for name, args in calls if name == 'runtime-tests-build')
+            self.assertIn('//:ComposeCoreTests', build)
+            self.assertIn('//:ComposePluginTests', build)
+            self.assertNotIn('//:ComposeRuntimeTests', build)
+            self.assertNotIn('workflow-tools', [name for name, _ in calls])
+
+    def test_parity_case_selection_reuses_original_environment_and_is_not_release(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'evidence'
+            evidence.mkdir()
+            runner_evidence = evidence / 'runtime'
+            runner_evidence.mkdir()
+            runner = SimpleNamespace(evidence=runner_evidence, rows=[], runtime_environment={})
+            runtime = SimpleNamespace(environment=lambda lane: {})
+            native = {}
+            for name in ('ComposeCoreTests', 'ComposePluginTests'):
+                binary = root / name
+                binary.write_text('test')
+                binary.chmod(0o755)
+                runfiles = binary.with_name(name + '.runfiles')
+                runfiles.mkdir()
+                native[name] = {'path': str(binary), 'sha256': local.sha(binary),
+                                'runfiles': str(runfiles), 'workspace': 'test-workspace'}
+            empty = {lane: {kind: {} for kind in ('containers', 'networks', 'volumes', 'images')}
+                     for lane in ('candidate', 'docker')}
+            commands = []
+            def completed(command, *, env, on_start, on_clear, **kwargs):
+                commands.append((command, env, kwargs['timeout']))
+                on_start({'pid': 100, 'sid': 100, 'birth': 'now',
+                          'nonce': env[local.cli_process.CASE_NONCE]})
+                on_clear()
+                return 0
+            with patch.dict(sys.modules, {'fork_benchmark': SimpleNamespace(
+                     command_lease=lambda environment: nullcontext(()))}), \
+                 patch.object(local.subprocess, 'check_output', return_value=b'/sdk'), \
+                 patch.object(local.full_suite_scratch, 'create', return_value=root), \
+                 patch.object(local.full_suite, 'snapshot', return_value=empty), \
+                 patch.object(local.full_suite, 'assert_namespace_free'), \
+                 patch.object(local, 'test_workspace', return_value='test-workspace'), \
+                 patch.object(local.cli_process, 'run', side_effect=completed):
+                receipt = local.run_original_full_suite(
+                    evidence, runner, runtime, root, root, native,
+                    lambda *args: self.fail('unexpected inventory command'),
+                    development_parity=True)
+            self.assertEqual(receipt['target'], 'compose-development-parity')
+            self.assertEqual(receipt['parity_cases'], 66)
+            self.assertEqual(len(commands), 66)
+            self.assertTrue(all(timeout == 600 for _, _, timeout in commands))
+            environments = {Path(command[0]).name: env for command, env, _ in commands}
+            for name in ('check-compose-image-volumes.sh', 'check-compose-commit.sh',
+                         'check-compose-volume-labels.sh'):
+                self.assertIn('COMPOSE_FULL_SUITE_MOUNT_JOURNAL', environments[name])
+            self.assertIn('COMPOSE_PARITY_KEYCHAIN_JOURNAL_DIR',
+                          environments['check-compose-build-external-secret.sh'])
+            self.assertFalse((evidence / 'full-suite/acceptance.json').exists())
+            self.assertFalse((evidence / 'acceptance.json').exists())
+
     def test_development_receipt_never_invokes_release_or_benchmark_gates(self) -> None:
-        for fail_live in (False, True):
-            with self.subTest(fail_live=fail_live), tempfile.TemporaryDirectory() as temporary:
+        for parity, fail_live in ((False, False), (False, True),
+                                  (True, False), (True, True)):
+            with self.subTest(parity=parity, fail_live=fail_live), tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 for filename in ('preflight.json', 'compiled-sdk-chain.json', 'live.json'):
                     local.write(root/filename, {})
@@ -89,15 +188,19 @@ class DevelopmentBridgeTests(unittest.TestCase):
                     live = patches.enter_context(patch.object(local, 'run_live',
                         side_effect=RuntimeError('restoration failed') if fail_live else None,
                         return_value={'passed': True}))
+                    execute = (local.execute_development_parity if parity else
+                               local.execute_development_bridge)
                     if fail_live:
                         with self.assertRaisesRegex(RuntimeError, 'restoration failed'):
-                            local.execute_development_bridge(root)
+                            execute(root)
                     else:
-                        local.execute_development_bridge(root)
-                    self.assertTrue(preflight.call_args.kwargs['development_bridge'])
-                    self.assertTrue(live.call_args.kwargs['development_bridge'])
-                result = json.loads((root/'development-bridge.json').read_text())
-                self.assertEqual(result['target'], 'compose-development-bridge')
+                        execute(root)
+                    mode = 'development_parity' if parity else 'development_bridge'
+                    self.assertTrue(preflight.call_args.kwargs[mode])
+                    self.assertTrue(live.call_args.kwargs[mode])
+                target = 'compose-development-parity' if parity else 'compose-development-bridge'
+                result = json.loads((root / (target.removeprefix('compose-') + '.json')).read_text())
+                self.assertEqual(result['target'], target)
                 self.assertEqual(result['passed'], not fail_live)
                 self.assertFalse((root/'acceptance.json').exists())
 

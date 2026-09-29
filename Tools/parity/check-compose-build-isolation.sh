@@ -245,6 +245,8 @@ expect_container_behavior() {
         --project-directory "$FIXTURE_DIR" \
         -f "$FIXTURE_DIR/compose.yml" \
         build api)"
+    dry_run_output="$(printf '%s' "$dry_run_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label build-isolation)"
     if [[ "$dry_run_output" != *"container build"* || "$dry_run_output" == *"--isolation"* ]]; then
         error 'container-compose did not mirror Docker Compose Buildx handling for build.isolation'
         printf '%s\n' "$dry_run_output" >&2

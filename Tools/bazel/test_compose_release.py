@@ -210,12 +210,14 @@ class ComposeReleaseTests(unittest.TestCase):
                  'live_sha256': release.digest(self.evidence / 'live.json'),
                  'notarization_sha256': release.digest(self.evidence / 'notarization.json')})
 
-    def test_development_bridge_cannot_be_admitted_as_release(self) -> None:
-        acceptance = self.receipts['acceptance.json']
-        acceptance['target'] = 'compose-development-bridge'
-        self.put('acceptance.json', acceptance)
-        with self.assertRaisesRegex(RuntimeError, 'qualification'):
-            release.prepare(self.evidence, self.base / 'release')
+    def test_development_receipts_cannot_be_admitted_as_release(self) -> None:
+        for target in ('compose-development-bridge', 'compose-development-parity'):
+            with self.subTest(target=target):
+                acceptance = self.receipts['acceptance.json']
+                acceptance['target'] = target
+                self.put('acceptance.json', acceptance)
+                with self.assertRaisesRegex(RuntimeError, 'qualification'):
+                    release.prepare(self.evidence, self.base / 'release')
 
     def test_prepare_retains_unsigned_truth_and_exact_signed_assets(self) -> None:
         output = self.base / 'staged'

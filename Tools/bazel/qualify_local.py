@@ -481,7 +481,8 @@ def validate_q(q: dict) -> dict:
             'release_sha256': release['archives']['container-homebrew-arm64.tar.gz']}
 
 
-def preflight(evidence: Path, q: dict, *, development_bridge: bool = False) -> tuple[dict, dict]:
+def preflight(evidence: Path, q: dict, *, development_bridge: bool = False,
+              development_parity: bool = False) -> tuple[dict, dict]:
     identity = source_identity(ROOT)
     if identity['dirty'] or identity['commit'] != git(ROOT, 'rev-parse', 'HEAD'):
         raise RuntimeError('Qualification and development proof require one clean immutable Compose checkpoint')
@@ -492,7 +493,7 @@ def preflight(evidence: Path, q: dict, *, development_bridge: bool = False) -> t
     pending_api_hold = failed == ['apple-runtime-slot'] and config.get('failed_api_hold') is not None
     if not checks['ready'] and not pending_api_hold:
         raise RuntimeError('Runtime/signing/host preflight failed: ' + ', '.join(c['check'] for c in checks['checks'] if not c['ready']))
-    if not development_bridge:
+    if not (development_bridge or development_parity):
         profile = config.get('notary_profile')
         if not isinstance(profile, str) or not profile:
             raise RuntimeError('Notary keychain profile missing before expensive stages')
@@ -525,6 +526,7 @@ def preflight(evidence: Path, q: dict, *, development_bridge: bool = False) -> t
                               'ext4_patch_sha256': sha(ROOT / 'Tools/bazel/containerization-ext4-unaligned.patch')}
     qualified['source'] = identity
     write(evidence / 'preflight.json', {'ready': True, 'development_bridge': development_bridge,
+                                        'development_parity': development_parity,
                                         'pending_approved_api_hold': pending_api_hold,
                                         'docker_compose_version': docker_compose,
                                         'budget': budget,
@@ -639,12 +641,13 @@ def compiled_sdk_chain(evidence: Path, source: str, package_invocation: str) -> 
 
 
 def run_layers(evidence: Path, original: dict, q: dict, *,
-               development_bridge: bool = False) -> tuple[list[dict], str, dict, dict]:
+               development_bridge: bool = False,
+               development_parity: bool = False) -> tuple[list[dict], str, dict, dict]:
     rows = [stage(evidence, 'source-preflight',
                   ['make', '--no-print-directory', 'source-preflight'], 900,
                   env=dict(os.environ, CONTAINER_STACK_REPO=str(Q_ROOT)))]
     verify_source(original, source_identity(ROOT))
-    if not development_bridge:
+    if not (development_bridge or development_parity):
         rows.append(stage(evidence, 'workflow-tools',
                           ['make', '--no-print-directory', 'bazel-workflow-tools-test'], 300))
         verify_source(original, source_identity(ROOT))
@@ -664,7 +667,8 @@ def run_layers(evidence: Path, original: dict, q: dict, *,
                  'sha256': sha(evidence / 'q-assets/q-assets.json')})
     verify_source(original, source_identity(ROOT))
     package_invocation = ''
-    selected_stages = tuple(row for row in STAGES if row[0] == 'package') if development_bridge else STAGES
+    selected_stages = (tuple(row for row in STAGES if row[0] == 'package')
+                       if development_bridge or development_parity else STAGES)
     for name, command, target, profile, timeout in selected_stages:
         args = layer_command(name, command, target, profile)
         row = stage(evidence, name, args, timeout)
@@ -693,10 +697,11 @@ def run_layers(evidence: Path, original: dict, q: dict, *,
     if development_bridge:
         verify_source(original, source_identity(ROOT))
         return rows, package_invocation, assets, {}
+    test_names = (('ComposeCoreTests', 'ComposePluginTests') if development_parity else
+                  ('ComposeRuntimeTests', 'ComposeCoreTests', 'ComposePluginTests'))
     rows.append(stage(evidence, 'runtime-tests-build',
                       [str(ROOT / 'Tools/bazel/run.sh'), 'build',
-                       '//:ComposeRuntimeTests', '//:ComposeCoreTests',
-                       '//:ComposePluginTests', '--config=enhanced'], 1800))
+                       *(f'//:{name}' for name in test_names), '--config=enhanced'], 1800))
     verify_source(original, source_identity(ROOT))
     rows.append(stage(evidence, 'native-test-output-root',
                       [str(ROOT / 'Tools/bazel/run.sh'), 'info', 'bazel-bin',
@@ -705,7 +710,7 @@ def run_layers(evidence: Path, original: dict, q: dict, *,
     if not output.is_absolute() or not output.is_dir() or not output.is_relative_to(SSD / 'output'):
         raise RuntimeError('Bazel native test output root escaped the enrolled SSD')
     binaries = {}
-    for name in ('ComposeRuntimeTests', 'ComposeCoreTests', 'ComposePluginTests'):
+    for name in test_names:
         binary = output / (name + '.xctest/Contents/MacOS') / name
         runfiles = binary.with_name(name + '.runfiles')
         if not binary.is_file() or not os.access(binary, os.X_OK) or not runfiles.is_dir():
@@ -1360,7 +1365,8 @@ def preload_original_fixture_images(runtime_image: str, install: Path,
 
 def run_original_full_suite(evidence: Path, runner: object, runtime: object,
                             install: Path, plugin: Path, native_tests: dict,
-                            issue: object, *, development_bridge: bool = False) -> dict:
+                            issue: object, *, development_bridge: bool = False,
+                            development_parity: bool = False) -> dict:
     """Execute the unchanged 27/66 checks with one enrolled case at a time."""
     base = evidence / 'full-suite'
     base.mkdir()
@@ -1441,37 +1447,28 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
                        for resource in removed)
         if row['status'] or (removed and not expected):
             raise RuntimeError('Original full-suite case failed or leaked resources: ' + name)
+    if not (development_bridge or development_parity):
+        test = native_tests['ComposeRuntimeTests']
+        workspace = test['workspace']
+        run_case('runtime-suite', sources['runtime-suite'], ['ccrt-'], [test['path']],
+                 dict(common, CONTAINER_COMPOSE_RUN_RUNTIME_TESTS='1',
+                      TEST_SRCDIR=test['runfiles'], TEST_WORKSPACE=workspace), 1800,
+                 list(full_suite.EXTRA_IMAGE_PREFIXES['runtime-suite']))
+        output = Path(rows[-1]['log']).read_text(errors='replace')
+        require_runtime_test_summary(output)
+    selected = full_suite.inventory()
     if development_bridge:
-        bridge = next(item for item in full_suite.inventory()
-                      if item['target'] == 'docker-compose-bridge-parity')
-        name = bridge['target']
-        case_dir = base / 'cases' / name
-        case_dir.mkdir(parents=True)
-        environment = dict(common, PARITY_EVIDENCE_DIR=str(case_dir),
-                           PARITY_TIMING_OUTPUT=str(case_dir / 'timing.tsv'))
-        run_case(name, bridge['script_sha256'], bridge['owned_prefixes'],
-                 [bridge['script'], '--strict'], environment, 600,
-                 bridge['owned_image_prefixes'], bridge['fixed_names'])
-        receipt = {'schema': 1, 'target': 'compose-development-bridge',
-                   'passed': True, 'case': name, 'rows': rows,
-                   'ledger_sha256': sha(ledger.path)}
-        write(base / 'development-bridge.json', receipt)
-        return receipt
-    test = native_tests['ComposeRuntimeTests']
-    workspace = test['workspace']
-    run_case('runtime-suite', sources['runtime-suite'], ['ccrt-'], [test['path']],
-             dict(common, CONTAINER_COMPOSE_RUN_RUNTIME_TESTS='1',
-                  TEST_SRCDIR=test['runfiles'], TEST_WORKSPACE=workspace), 1800,
-             list(full_suite.EXTRA_IMAGE_PREFIXES['runtime-suite']))
-    output = Path(rows[-1]['log']).read_text(errors='replace')
-    require_runtime_test_summary(output)
-    for item in full_suite.inventory():
+        selected = [item for item in selected
+                    if item['target'] == 'docker-compose-bridge-parity']
+        if len(selected) != 1:
+            raise RuntimeError('Original Bridge parity case is absent from inventory')
+    for item in selected:
         name = item['target']
         case_dir = base / 'cases' / name
         case_dir.mkdir(parents=True)
         env = dict(common, PARITY_EVIDENCE_DIR=str(case_dir))
         env['PARITY_TIMING_OUTPUT'] = str(case_dir / 'timing.tsv')
-        if name == 'docker-compose-image-volumes-parity':
+        if name in full_suite.MOUNT_JOURNAL_CASES:
             env['COMPOSE_FULL_SUITE_MOUNT_JOURNAL'] = str(case_dir / 'mounts.json')
         if name == 'docker-compose-build-external-secret-parity':
             keychain = base / 'keychain/build-external-secret'
@@ -1481,6 +1478,18 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
         run_case(name, item['script_sha256'], item['owned_prefixes'],
                  [item['script'], '--strict'], env, 600,
                  item['owned_image_prefixes'], item['fixed_names'])
+    if development_bridge or development_parity:
+        target = 'compose-development-bridge' if development_bridge else 'compose-development-parity'
+        if len(rows) != (1 if development_bridge else 66):
+            raise RuntimeError('Development parity selected an incomplete original inventory')
+        receipt = {'schema': 1, 'target': target, 'passed': True,
+                   'parity_cases': len(rows), 'rows': rows,
+                   'ledger_sha256': sha(ledger.path)}
+        if development_bridge:
+            receipt['case'] = rows[0]['fixture']
+        write(base / ('development-bridge.json' if development_bridge
+                      else 'development-parity.json'), receipt)
+        return receipt
     receipt = {'passed': True, 'runtime_tests': 27, 'parity_cases': len(rows) - 1,
                'rows': rows, 'ledger_sha256': sha(ledger.path)}
     write(base / 'acceptance.json', receipt)
@@ -1489,7 +1498,8 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
 
 def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
              q_assets: dict, native_tests: dict, benchmark_reference: dict | None, *,
-             development_bridge: bool = False) -> dict:
+             development_bridge: bool = False,
+             development_parity: bool = False) -> dict:
     """Own signed Q release bytes, private plugin and exact host/command leases."""
     modules = q['modules']
     runtime = modules['runtime_benchmark']
@@ -1609,9 +1619,12 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
             issue('candidate', 'setup-version', 0, candidate + ['version'], 60)
             suite = run_original_full_suite(
                 evidence, runner, runtime, install, plugin, native_tests, issue,
-                development_bridge=development_bridge)
+                development_bridge=development_bridge,
+                development_parity=development_parity)
             if development_bridge:
                 result['development_bridge'] = suite
+            elif development_parity:
+                result['development_parity'] = suite
             else:
                 result['original_full_suite'] = suite
             time.sleep(5)
@@ -1624,7 +1637,7 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
                   {'schema': 1, 'settle_seconds': 5,
                    'inventory_sha256': hashlib.sha256(json.dumps(
                        quiet, sort_keys=True).encode()).hexdigest()})
-            if not development_bridge:
+            if not (development_bridge or development_parity):
                 image = runtime.ALPINE
                 reference = revalidate_benchmark_reference(evidence, image)
                 if reference != benchmark_reference:
@@ -2343,17 +2356,19 @@ def verify_qualified_helpers(q: dict) -> None:
             raise RuntimeError('Qualified helper changed during Compose qualification: ' + name)
 
 
-def execute_development_bridge(evidence: Path) -> dict:
-    """Prove one original Bridge case without producing release acceptance."""
-    result = {'schema': 1, 'target': 'compose-development-bridge', 'passed': False,
+def execute_development(evidence: Path, *, parity: bool) -> dict:
+    """Run selected original parity leaves without producing release acceptance."""
+    target = 'compose-development-parity' if parity else 'compose-development-bridge'
+    mode = {'development_parity': True} if parity else {'development_bridge': True}
+    result = {'schema': 1, 'target': target, 'passed': False,
               'source': None, 'q_checkpoint': Q, 'stages': [], 'failures': []}
     try:
         q = q_modules()
-        source, config = preflight(evidence, q, development_bridge=True)
+        source, config = preflight(evidence, q, **mode)
         result['source'] = source['commit']
         result['preflight_sha256'] = sha(evidence / 'preflight.json')
         result['stages'], invocation, assets, native_tests = run_layers(
-            evidence, source, q, development_bridge=True)
+            evidence, source, q, **mode)
         result['released_q_assets_sha256'] = sha(evidence / 'q-assets/q-assets.json')
         result['compiled_sdk_chain_sha256'] = sha(evidence / 'compiled-sdk-chain.json')
         verify_source(source, source_identity(ROOT))
@@ -2362,19 +2377,27 @@ def execute_development_bridge(evidence: Path) -> dict:
             'signing_identity', q['modules']['runtime_benchmark'].IDENTITY))
         result['signed_candidate'] = signed
         result['live'] = run_live(evidence, q, plugin, signed, assets, native_tests,
-                                  None, development_bridge=True)
+                                  None, **mode)
         result['live_sha256'] = sha(evidence / 'live.json')
         verify_source(source, source_identity(ROOT))
         verify_qualified_helpers(q)
         result['passed'] = result['live'].get('passed') is True
         if not result['passed']:
-            raise RuntimeError('Bridge development proof or restoration did not pass')
+            raise RuntimeError('Development parity proof or restoration did not pass')
     except BaseException as error:
         result['failures'].append(str(error))
         raise
     finally:
-        write(evidence / 'development-bridge.json', result)
+        write(evidence / ('development-parity.json' if parity else 'development-bridge.json'), result)
     return result
+
+
+def execute_development_bridge(evidence: Path) -> dict:
+    return execute_development(evidence, parity=False)
+
+
+def execute_development_parity(evidence: Path) -> dict:
+    return execute_development(evidence, parity=True)
 
 
 def main() -> None:
@@ -2388,8 +2411,11 @@ def main() -> None:
                         help='Capture one released Docker reference without building Compose')
     action.add_argument('--development-bridge', action='store_true',
                         help='Build and sign a local candidate, run only original Bridge parity, and restore the host; not release qualification')
+    action.add_argument('--development-parity', action='store_true',
+                        help='Build and sign a local candidate, run all 66 original parity cases, and restore the host; not release qualification')
     args = parser.parse_args()
-    if args.previous_candidate_lock and (args.recover or args.capture_reference or args.development_bridge):
+    if args.previous_candidate_lock and (args.recover or args.capture_reference
+                                         or args.development_bridge or args.development_parity):
         parser.error('Historical Compose comparison applies only to full qualification')
     evidence = args.evidence.resolve()
     allowed = (OUTPUT, CAPTURE_OUTPUT) if args.recover else (
@@ -2418,6 +2444,10 @@ def main() -> None:
         return
     if args.development_bridge:
         outcome = execute_development_bridge(evidence)
+        print(json.dumps(outcome, indent=2))
+        return
+    if args.development_parity:
+        outcome = execute_development_parity(evidence)
         print(json.dumps(outcome, indent=2))
         return
     result = {'schema': 1, 'target': 'compose-only-qualify', 'passed': False,

@@ -103,6 +103,26 @@ def create(evidence: Path, *, root: Path = ROOT) -> Path:
     return path
 
 
+def _writable_directories(descriptor: int, device: int) -> None:
+    """Permit removal of owned read-only fixtures without following their links."""
+    info = os.fstat(descriptor)
+    if info.st_uid != os.getuid() or info.st_dev != device:
+        raise RuntimeError('Full-suite scratch child ownership/filesystem changed')
+    # Tests can leave 0555 directories. Files need no chmod to unlink, which
+    # also preserves permissions of any hard-linked files outside the tree.
+    os.fchmod(descriptor, stat.S_IMODE(info.st_mode) | stat.S_IRWXU)
+    with os.scandir(descriptor) as entries:
+        for entry in entries:
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+            child = os.open(entry.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                            dir_fd=descriptor)
+            try:
+                _writable_directories(child, device)
+            finally:
+                os.close(child)
+
+
 def restore(evidence: Path, *, root: Path = ROOT) -> dict:
     """Remove only this recorded tree after exclusive command and runtime idle checks."""
     evidence = evidence.resolve(strict=True)
@@ -119,6 +139,15 @@ def restore(evidence: Path, *, root: Path = ROOT) -> dict:
             raise RuntimeError('Restored full-suite scratch reappeared')
         return record
     if path.exists():
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            info = os.fstat(descriptor)
+            if (record['state'] != 'intent' and
+                    (info.st_dev != record['device'] or info.st_ino != record['inode'])):
+                raise RuntimeError('Full-suite scratch directory identity changed')
+            _writable_directories(descriptor, info.st_dev)
+        finally:
+            os.close(descriptor)
         shutil.rmtree(path)
     record['state'] = 'restored'
     _write(receipt, record)

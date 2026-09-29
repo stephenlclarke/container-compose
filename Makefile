@@ -408,7 +408,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 
 .PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint actions-lint
 .PHONY: worktree-audit worktree-audit-strict
-.PHONY: bazel-compose-qualify bazel-compose-development-bridge bazel-compose-capture-reference bazel-workflow-tools-test
+.PHONY: bazel-compose-qualify bazel-compose-development-bridge bazel-compose-development-parity bazel-compose-capture-reference bazel-workflow-tools-test
 .PHONY: bazel-compose-release-prepare bazel-compose-release-publish bazel-compose-release-verify
 
 # Cheap, no-runtime regressions for the retained launcher, hosted admission,
@@ -422,6 +422,7 @@ bazel-workflow-tools-test:
 		discover -s Tools/bazel/artifacts -p 'test_*.py' -q
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_keychain_fixture.py
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_network_parity_fixtures.py
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_normalize_container_command_output.py
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_qualification_lease.py
 	$(TOOL_TEST_TEMP_ENV) PYTHONPATH="Tools/ci" $(PYTHON) -m unittest -q test_python39_compatibility
 
@@ -443,6 +444,13 @@ bazel-compose-development-bridge:
 	sha="$$(git rev-parse --short=8 HEAD)"; \
 	$(PYTHON) Tools/bazel/qualify_local.py --development-bridge \
 	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/local-final/$$sha-development-bridge-$$stamp"
+
+# All original parity leaves against the signed candidate, without release acceptance.
+bazel-compose-development-parity:
+	@stamp="$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	sha="$$(git rev-parse --short=8 HEAD)"; \
+	$(PYTHON) Tools/bazel/qualify_local.py --development-parity \
+	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/local-final/$$sha-development-parity-$$stamp"
 
 # One explicit first-reference capture; never builds or runs an older Compose candidate.
 bazel-compose-capture-reference:

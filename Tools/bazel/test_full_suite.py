@@ -29,6 +29,27 @@ import full_suite
 
 
 class FullSuiteTests(unittest.TestCase):
+    @staticmethod
+    def commit_function(name: str) -> str:
+        source = (full_suite.ROOT / 'Tools/parity/check-compose-commit.sh').read_text()
+        start = source.index('\n' + name + '() {') + 1
+        end = source.index('\n}\n', start) + 2
+        return source[start:end]
+
+    @staticmethod
+    def volume_labels_function(name: str) -> str:
+        source = (full_suite.ROOT / 'Tools/parity/check-compose-volume-labels.sh').read_text()
+        start = source.index('\n' + name + '() {') + 1
+        end = source.index('\n}\n', start) + 2
+        return source[start:end]
+
+    @staticmethod
+    def up_menu_function(name: str) -> str:
+        source = (full_suite.ROOT / 'Tools/parity/check-compose-up-menu.sh').read_text()
+        start = source.index('\n' + name + '() {') + 1
+        end = source.index('\n}\n', start) + 2
+        return source[start:end]
+
     def empty(self):
         return {lane: {kind: {} for kind in ('containers', 'networks', 'volumes', 'images')}
                 for lane in ('candidate', 'docker')}
@@ -236,6 +257,269 @@ class FullSuiteTests(unittest.TestCase):
                               side_effect=['owned-id\n', json.dumps([record])]):
                 full_suite.record_image_volume_mounts(project, path, allow_partial=True)
             self.assertEqual(json.loads(path.read_text())['volumes'], ['a' * 64])
+
+    def test_commit_mount_hook_enrolls_exact_single_container(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'mounts.json'
+            project = 'container-compose-commit-docker-123-456'
+            record = {'Id': 'owned-id', 'Name': '/' + project + '-api-1',
+                      'Config': {'Labels': {'com.docker.compose.project': project}},
+                      'Mounts': [{'Type': 'volume', 'Name': 'a' * 64},
+                                 {'Type': 'volume', 'Name': 'b' * 64}]}
+            with patch.object(full_suite.subprocess, 'check_output',
+                              side_effect=['owned-id\n', json.dumps([record])]):
+                full_suite.record_image_volume_mounts(project, path)
+            self.assertEqual(json.loads(path.read_text())['volumes'], ['a' * 64, 'b' * 64])
+
+    def test_commit_partial_up_and_cross_case_journal_refusal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = 'container-compose-commit-docker-123-456'
+            path = root / 'cases/docker-compose-commit-parity/mounts.json'
+            path.parent.mkdir(parents=True)
+            with patch.object(full_suite.subprocess, 'check_output', return_value=''):
+                with self.assertRaisesRegex(RuntimeError, 'invalid owned container count'):
+                    full_suite.record_image_volume_mounts(project, path)
+            with patch.object(full_suite.subprocess, 'check_output', return_value=''):
+                full_suite.record_image_volume_mounts(project, path, allow_partial=True)
+            self.assertEqual(json.loads(path.read_text())['container_ids'], [])
+            baseline, orphaned = self.empty(), self.empty()
+            orphaned['docker']['volumes']['a' * 64] = 'a' * 64
+            full_suite.write(path, {'schema': 1, 'project': project,
+                                    'container_ids': ['owned-id'], 'volumes': ['a' * 64]})
+            ledger = full_suite.Ledger(root)
+            name = 'docker-compose-commit-parity'
+            ledger.begin(name, 'a' * 64, ['container-compose-commit-'], baseline)
+            commands = []
+            with patch.object(full_suite, 'snapshot', side_effect=[orphaned, baseline, baseline]):
+                ledger.recover(lambda lane, kind, args: commands.append(args) or '',
+                               {name: 'a' * 64})
+            self.assertIn(['docker', '--context', 'colima', 'volume', 'rm', 'a' * 64], commands)
+            wrong = json.loads(path.read_text())
+            wrong['project'] = 'container-compose-image-volumes-123-456'
+            full_suite.write(path, wrong)
+            other = full_suite.Ledger(root / 'other')
+            (other.directory / 'cases' / name).mkdir(parents=True)
+            full_suite.write(other.directory / 'cases' / name / 'mounts.json', wrong)
+            other.begin(name, 'a' * 64, ['container-compose-commit-'], baseline)
+            with patch.object(full_suite, 'snapshot', return_value=orphaned):
+                with self.assertRaisesRegex(RuntimeError, 'mount journal is malformed'):
+                    other.recover(lambda lane, kind, args: '', {name: 'a' * 64})
+
+    def test_commit_exit_capture_precedes_both_volume_downs_and_retains_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = root / 'fixture'
+            fixture.mkdir()
+            (fixture / 'compose.yml').write_text('services: {}\n')
+            journal = root / 'mounts.json'
+            events = root / 'events'
+            program = '''
+set -euo pipefail
+REPO_ROOT=/unused
+DOCKER_PROJECT_NAME=container-compose-commit-docker-123-456
+CONTAINER_PROJECT_NAME=container-compose-commit-runtime-123-456
+DOCKER_BASE_IMAGE=example/docker-base:latest
+CONTAINER_BASE_IMAGE=example/runtime-base:latest
+DOCKER_IMAGE=example/docker:latest
+CONTAINER_IMAGE=example/runtime:latest
+CONTAINER_BINARY=container
+CONTAINER_COMPOSE=compose
+CLEANUP_TIMEOUT_SECONDS=30
+DOCKER_COMPOSE_COMMAND=(docker compose)
+run_bounded_for() { printf 'command %s\\n' "$*" >> "$EVENTS"; }
+python3() {
+  printf 'journal %s\\n' "$*" >> "$EVENTS"
+  if [[ "$JOURNAL_FAILURE" == 1 ]]; then return 1; fi
+  : > "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL"
+}
+error() { :; }
+''' + self.commit_function('cleanup') + '''
+trap cleanup EXIT
+exit "$INITIAL_STATUS"
+'''
+            environment = dict(os.environ, FIXTURE_DIR=str(fixture), EVENTS=str(events),
+                               COMPOSE_FULL_SUITE_MOUNT_JOURNAL=str(journal),
+                               JOURNAL_FAILURE='0', INITIAL_STATUS='7')
+            result = subprocess.run(['/bin/bash', '-c', program], env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 7, result.stderr)
+            lines = events.read_text().splitlines()
+            self.assertIn('record-mounts --allow-partial', lines[0])
+            downs = [line for line in lines if ' down --volumes --remove-orphans' in line]
+            self.assertEqual(len(downs), 2)
+            self.assertFalse(fixture.exists())
+
+    def test_commit_exit_capture_failure_preserves_mounting_container_fixture(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = root / 'fixture'
+            fixture.mkdir()
+            (fixture / 'compose.yml').write_text('services: {}\n')
+            journal = root / 'mounts.json'
+            events = root / 'events'
+            program = '''
+set -euo pipefail
+REPO_ROOT=/unused
+DOCKER_PROJECT_NAME=container-compose-commit-docker-123-456
+CONTAINER_PROJECT_NAME=container-compose-commit-runtime-123-456
+DOCKER_BASE_IMAGE=example/docker-base:latest
+CONTAINER_BASE_IMAGE=example/runtime-base:latest
+DOCKER_IMAGE=example/docker:latest
+CONTAINER_IMAGE=example/runtime:latest
+CONTAINER_BINARY=container
+CONTAINER_COMPOSE=compose
+CLEANUP_TIMEOUT_SECONDS=30
+DOCKER_COMPOSE_COMMAND=(docker compose)
+run_bounded_for() { printf 'command %s\\n' "$*" >> "$EVENTS"; }
+python3() { printf 'journal %s\\n' "$*" >> "$EVENTS"; return 1; }
+error() { :; }
+''' + self.commit_function('cleanup') + '''
+trap cleanup EXIT
+exit 0
+'''
+            environment = dict(os.environ, FIXTURE_DIR=str(fixture), EVENTS=str(events),
+                               COMPOSE_FULL_SUITE_MOUNT_JOURNAL=str(journal))
+            result = subprocess.run(['/bin/bash', '-c', program], env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(len(events.read_text().splitlines()), 1)
+            self.assertTrue(fixture.is_dir())
+            self.assertFalse(journal.exists())
+
+    def test_commit_records_mounts_after_up_before_committing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = root / 'fixture'
+            fixture.mkdir()
+            journal = root / 'mounts.json'
+            events = root / 'events'
+            program = '''
+set -euo pipefail
+REPO_ROOT=/unused
+DOCKER_PROJECT_NAME=container-compose-commit-docker-123-456
+DOCKER_BASE_IMAGE=example/docker-base:latest
+DOCKER_IMAGE=example/docker:latest
+DOCKER_COMPOSE_COMMAND=(docker compose)
+run_bounded() { printf 'command %s\\n' "$*" >> "$EVENTS"; }
+python3() { printf 'journal %s\\n' "$*" >> "$EVENTS"; : > "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL"; }
+''' + self.commit_function('commit_with_docker_compose') + '''
+commit_with_docker_compose
+'''
+            environment = dict(os.environ, FIXTURE_DIR=str(fixture), EVENTS=str(events),
+                               COMPOSE_FULL_SUITE_MOUNT_JOURNAL=str(journal))
+            result = subprocess.run(['/bin/bash', '-c', program], env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lines = events.read_text().splitlines()
+            self.assertIn(' up -d --quiet-pull api', lines[0])
+            self.assertIn('record-mounts --project ', lines[1])
+            self.assertIn(' commit --pause=false ', lines[2])
+
+    def test_volume_labels_enrolls_four_containers_and_orphaned_mount(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / 'cases/docker-compose-volume-labels-parity/mounts.json'
+            path.parent.mkdir(parents=True)
+            project = 'cc-volume-labels-123'
+            ids = [f'owned-{index}' for index in range(4)]
+            rows = [{'Id': identity, 'Name': '/' + project + '-' + str(index),
+                     'Config': {'Labels': {'com.docker.compose.project': project}},
+                     'Mounts': [{'Type': 'volume', 'Name': 'a' * 64}]}
+                    for index, identity in enumerate(ids)]
+            with patch.object(full_suite.subprocess, 'check_output',
+                              side_effect=['\n'.join(ids) + '\n', json.dumps(rows)]):
+                full_suite.record_image_volume_mounts(project, path)
+            self.assertEqual(json.loads(path.read_text())['volumes'], ['a' * 64])
+            baseline, orphaned = self.empty(), self.empty()
+            orphaned['docker']['volumes']['a' * 64] = 'a' * 64
+            ledger = full_suite.Ledger(root)
+            name = 'docker-compose-volume-labels-parity'
+            ledger.begin(name, 'a' * 64, ['cc-volume-labels-'], baseline)
+            commands = []
+            with patch.object(full_suite, 'snapshot', side_effect=[orphaned, baseline, baseline]):
+                ledger.recover(lambda lane, kind, args: commands.append(args) or '',
+                               {name: 'a' * 64})
+            self.assertIn(['docker', '--context', 'colima', 'volume', 'rm', 'a' * 64], commands)
+
+    def test_volume_labels_exit_mount_capture_before_exact_removal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            fixture = root / 'fixture'
+            fixture.mkdir()
+            journal = root / 'mounts.json'
+            events = root / 'events'
+            program = '''
+set -euo pipefail
+REPO_ROOT=/unused
+PROJECT_NAME=cc-volume-labels-123
+ONE_OFF_NAME=cc-volume-labels-123-oneoff
+DOCKER_COMPOSE_COMMAND=(docker compose)
+docker() { printf 'docker %s\\n' "$*" >> "$EVENTS"; }
+python3() {
+  printf 'journal %s\\n' "$*" >> "$EVENTS"
+  if [[ "$JOURNAL_FAILURE" == 1 ]]; then return 1; fi
+  : > "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL"
+}
+error() { :; }
+''' + self.volume_labels_function('cleanup') + '''
+trap cleanup EXIT
+exit "$INITIAL_STATUS"
+'''
+            environment = dict(os.environ, FIXTURE_DIR=str(fixture), EVENTS=str(events),
+                               COMPOSE_FULL_SUITE_MOUNT_JOURNAL=str(journal),
+                               JOURNAL_FAILURE='0', INITIAL_STATUS='7')
+            result = subprocess.run(['/bin/bash', '-c', program], env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 7, result.stderr)
+            lines = events.read_text().splitlines()
+            self.assertIn('record-mounts --allow-partial', lines[0])
+            self.assertEqual(lines[1], 'docker rm --force --volumes cc-volume-labels-123-oneoff')
+            self.assertIn('down -v --remove-orphans', lines[2])
+            self.assertFalse(fixture.exists())
+            journal.unlink()
+            fixture.mkdir()
+            events.unlink()
+            environment['JOURNAL_FAILURE'] = '1'
+            environment['INITIAL_STATUS'] = '0'
+            result = subprocess.run(['/bin/bash', '-c', program], env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertEqual(len(events.read_text().splitlines()), 1)
+            self.assertTrue(fixture.is_dir())
+
+    def test_up_menu_normalizes_only_successful_candidate_capture(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            selected = "/tmp/private path's/bin/container"
+            emitted = '+ ' + __import__('shlex').quote(selected) + ' create --name demo-api-1'
+            program = '''
+set -euo pipefail
+REPO_ROOT="$REPOSITORY"
+FIXTURE_DIR="$FIXTURE"
+error() { :; }
+reference() { printf '+ docker compose up\\n'; }
+candidate() { printf '%s\\n' "$EMITTED"; }
+''' + self.up_menu_function('expect_status') + '''
+expect_status 'Docker Compose accepts dry-run' 0 reference
+printf 'reference=%s\\n' "$LAST_STDOUT_FILE"
+expect_status 'container-compose accepts dry-run' 0 candidate
+printf 'candidate=%s\\n' "$LAST_STDOUT_FILE"
+'''
+            environment = dict(os.environ, REPOSITORY=str(full_suite.ROOT),
+                               FIXTURE=str(root), CONTAINER_BIN=selected,
+                               EMITTED=emitted)
+            result = subprocess.run(['/bin/bash', '-c', program], env=environment,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            rows = dict(line.split('=', 1) for line in result.stdout.splitlines())
+            reference = Path(rows['reference'])
+            candidate = Path(rows['candidate'])
+            self.assertEqual(reference.read_text(), '+ docker compose up\n')
+            self.assertTrue(candidate.name.endswith('.assertions'))
+            self.assertIn('+ container create --name demo-api-1', candidate.read_text())
+            self.assertIn(emitted, candidate.with_suffix('').read_text())
+
 
     def test_interrupted_case_removes_only_enrolled_delta(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

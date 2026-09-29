@@ -75,6 +75,14 @@ BUILD_CASES = {
 }
 NAMED_RUNTIME_BUILDER = re.compile(
     r'buildkit-compose-runtime-[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\Z')
+MOUNT_JOURNAL_CASES = {
+    'docker-compose-image-volumes-parity':
+        (re.compile(r'container-compose-image-volumes-[0-9]+-[0-9]+\Z'), 10),
+    'docker-compose-commit-parity':
+        (re.compile(r'container-compose-commit-docker-[0-9]+-[0-9]+\Z'), 1),
+    'docker-compose-volume-labels-parity':
+        (re.compile(r'cc-volume-labels-[0-9]+\Z'), 4),
+}
 
 
 def authorized_builder(name: str, case: str) -> bool:
@@ -101,14 +109,17 @@ def write(path: Path, data: dict) -> None:
 def record_image_volume_mounts(project: str, destination: Path,
                                *, allow_partial: bool = False) -> None:
     """Persist Docker's exact project volume mounts before the leaf can down."""
-    if (not re.fullmatch(r'container-compose-image-volumes-[0-9]+-[0-9]+', project)
+    match = next(((name, expected) for name, (pattern, expected) in MOUNT_JOURNAL_CASES.items()
+                  if pattern.fullmatch(project)), None)
+    if (match is None
             or not destination.is_absolute() or not destination.parent.is_dir()
             or destination.exists() or destination.is_symlink()):
         raise RuntimeError('Image-volume mount journal path/project is not fresh and exact')
+    _, expected = match
     ids = subprocess.check_output(
         ['docker', '--context', 'colima', 'ps', '-aq', '--filter',
          'label=com.docker.compose.project=' + project], text=True, timeout=30).splitlines()
-    if ((not allow_partial and len(ids) != 10) or len(ids) > 10
+    if ((not allow_partial and len(ids) != expected) or len(ids) > expected
             or len(set(ids)) != len(ids)):
         raise RuntimeError('Image-volume mount journal found an invalid owned container count')
     rows = (json.loads(subprocess.check_output(
@@ -475,17 +486,25 @@ class Ledger:
             if row.get('session') and row['session'].get('cleared') is not True:
                 raise RuntimeError('Full-suite process session remains active: ' + row['name'])
             observed = snapshot(invoke)
-            if row['name'] == 'docker-compose-image-volumes-parity':
+            if row['name'] in MOUNT_JOURNAL_CASES:
                 journal = self.directory / 'cases' / row['name'] / 'mounts.json'
                 if journal.is_symlink():
                     raise RuntimeError('Image-volume mount journal is a symbolic link')
                 if journal.exists():
                     mounted = json.loads(journal.read_text())
+                    pattern, expected = MOUNT_JOURNAL_CASES[row['name']]
+                    ids = mounted.get('container_ids')
                     if (mounted.get('schema') != 1 or
-                            not mounted.get('project', '').startswith(
-                                'container-compose-image-volumes-') or
+                            not isinstance(mounted.get('project'), str) or
+                            pattern.fullmatch(mounted['project']) is None or
+                            not any(mounted['project'].startswith(prefix)
+                                    for prefix in row['owned_prefixes']) or
+                            not isinstance(ids, list) or len(ids) > expected or
+                            any(not isinstance(value, str) or not NAME.fullmatch(value)
+                                for value in ids) or len(ids) != len(set(ids)) or
                             not isinstance(mounted.get('volumes'), list) or
-                            any(not NAME.fullmatch(value) for value in mounted['volumes'])):
+                            any(not isinstance(value, str) or not NAME.fullmatch(value)
+                                for value in mounted['volumes'])):
                         raise RuntimeError('Image-volume mount journal is malformed')
                     for volume in mounted['volumes']:
                         if (volume not in row['baseline']['docker']['volumes'] and
