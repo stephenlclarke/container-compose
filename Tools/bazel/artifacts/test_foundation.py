@@ -21,6 +21,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import foundation
 from foundation import (archive_bytes, compiled_c_header_sources, digest, group_pins,
@@ -52,21 +53,37 @@ cc_library(
 
 
 class FoundationTests(unittest.TestCase):
+    def q_only_documents(self, original: Path) -> tuple[bytes, bytes]:
+        pins = foundation.source_pins(original)
+        q = pins['container'].encode()
+        containerization = pins['containerization'].encode()
+        old_containerization = b'5ed9bc7490aa30c76337bd5b3d8ff251b63c678f'
+        self.assertIn(containerization, (old_containerization,
+                                         b'6db16197bbad8196a78132f86529daa89125aafb'))
+        documents = []
+        for name in ('Package.swift', 'Package.resolved'):
+            document = (original / name).read_bytes()
+            self.assertEqual(document.count(q), 1)
+            self.assertEqual(document.count(containerization), 1)
+            documents.append(document.replace(q, b'a' * 40).replace(containerization,
+                                                                    old_containerization))
+        return documents[0], documents[1]
+
     def test_published_lower_layers_accept_only_the_exact_container_pin_substitution(self) -> None:
         original = Path(__file__).resolve().parents[3]
-        old_q = '15361ce5f55a6b8ab3242e89650a188766b47581'
-        next_q = 'a' * 40
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             producer = root / 'Tools/bazel/artifacts/foundation.py'
             producer.parent.mkdir(parents=True)
             producer.write_bytes(Path(foundation.__file__).read_bytes())
-            (root / 'Package.swift').write_bytes(
-                (original / 'Package.swift').read_bytes().replace(old_q.encode(), next_q.encode()))
-            (root / 'Package.resolved').write_bytes(
-                (original / 'Package.resolved').read_bytes().replace(old_q.encode(), next_q.encode()))
+            manifest, resolved = self.q_only_documents(original)
+            (root / 'Package.swift').write_bytes(manifest)
+            (root / 'Package.resolved').write_bytes(resolved)
             locks = original / 'Tools/bazel/artifacts/layer-locks'
-            for profile, groups in (('enhanced', ('foundation', 'containerization', 'engine-api')),
+            old_c = json.loads((locks / 'engine-api-enhanced.json').read_text())
+            old_c['recipeSHA256']['containerizationPatch'] = foundation.file_digest(
+                original / 'Tools/bazel/containerization-ext4-unaligned.patch')
+            for profile, groups in (('enhanced', ('foundation', 'engine-api')),
                                     ('stock', ('foundation', 'containerization', 'engine-api', 'container-sdk'))):
                 for group in groups:
                     lock = json.loads((locks / f'{group}-{profile}.json').read_text())
@@ -77,12 +94,16 @@ class FoundationTests(unittest.TestCase):
                     drifted = dict(current, rootBuild='0' * 64)
                     self.assertFalse(foundation._legacy_recipe_compatible(lock, root, profile, group, drifted))
 
-            enhanced_sdk = json.loads((locks / 'container-sdk-enhanced.json').read_text())
-            current = dict(enhanced_sdk['recipeSHA256'],
+            current_c = dict(old_c['recipeSHA256'], producer=foundation.file_digest(producer),
+                             swiftPackageManifest=foundation.file_digest(root / 'Package.swift'))
+            self.assertTrue(foundation._legacy_recipe_compatible(
+                old_c, root, 'enhanced', 'containerization', current_c))
+
+            current = dict(old_c['recipeSHA256'],
                            producer=foundation.file_digest(producer),
                            swiftPackageManifest=foundation.file_digest(root / 'Package.swift'))
             self.assertFalse(foundation._legacy_recipe_compatible(
-                enhanced_sdk, root, 'enhanced', 'container-sdk', current))
+                old_c, root, 'enhanced', 'container-sdk', current))
             foundation_lock = json.loads((locks / 'foundation-enhanced.json').read_text())
             foundation_current = dict(foundation_lock['recipeSHA256'],
                                       producer=foundation.file_digest(producer),
@@ -98,19 +119,19 @@ class FoundationTests(unittest.TestCase):
 
     def test_published_lower_compatibility_rejects_producer_ast_drift(self) -> None:
         original = Path(__file__).resolve().parents[3]
-        old_q = '15361ce5f55a6b8ab3242e89650a188766b47581'
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             producer = root / 'Tools/bazel/artifacts/foundation.py'
             producer.parent.mkdir(parents=True)
             producer.write_bytes(Path(foundation.__file__).read_bytes())
-            (root / 'Package.swift').write_bytes(
-                (original / 'Package.swift').read_bytes().replace(old_q.encode(), b'a' * 40))
-            (root / 'Package.resolved').write_bytes(
-                (original / 'Package.resolved').read_bytes().replace(old_q.encode(), b'a' * 40))
+            manifest, resolved = self.q_only_documents(original)
+            (root / 'Package.swift').write_bytes(manifest)
+            (root / 'Package.resolved').write_bytes(resolved)
             lock = json.loads((original / 'Tools/bazel/artifacts/layer-locks/foundation-enhanced.json').read_text())
             current = dict(lock['recipeSHA256'], producer=foundation.file_digest(producer),
                            swiftPackageManifest=foundation.file_digest(root / 'Package.swift'))
+            self.assertTrue(foundation._legacy_recipe_compatible(
+                lock, root, 'enhanced', 'foundation', current))
             producer.write_text(producer.read_text().replace(
                 'def produce(root: Path, output: Path,', 'def produce_changed(root: Path, output: Path,'))
             self.assertFalse(foundation._legacy_recipe_compatible(
@@ -120,6 +141,104 @@ class FoundationTests(unittest.TestCase):
                 '@unexpected_decorator\ndef produce(root: Path, output: Path,'))
             self.assertFalse(foundation._legacy_recipe_compatible(
                 lock, root, 'enhanced', 'foundation', current))
+
+    def test_published_lower_layers_accept_only_the_exact_two_pin_transition(self) -> None:
+        original = Path(__file__).resolve().parents[3]
+        new_q = b'4d82da2c571d0924bd97569249a5d200ca764a13'
+        old_containerization = b'5ed9bc7490aa30c76337bd5b3d8ff251b63c678f'
+        new_containerization = b'6db16197bbad8196a78132f86529daa89125aafb'
+        selected_pins = foundation.source_pins(original)
+        selected_q = selected_pins['container'].encode()
+        selected_containerization = selected_pins['containerization'].encode()
+        self.assertIn(selected_q, (b'6fe80db1bad6abff5dfa22f02bdf8bc403ad48bc', new_q))
+        self.assertIn(selected_containerization, (old_containerization, new_containerization))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            producer = root / 'Tools/bazel/artifacts/foundation.py'
+            producer.parent.mkdir(parents=True)
+            producer.write_bytes(Path(foundation.__file__).read_bytes())
+            manifest = (original / 'Package.swift').read_bytes().replace(selected_q, new_q).replace(
+                selected_containerization, new_containerization)
+            resolved = (original / 'Package.resolved').read_bytes().replace(selected_q, new_q).replace(
+                selected_containerization, new_containerization)
+            self.assertEqual(manifest.count(new_q), 1)
+            self.assertEqual(manifest.count(new_containerization), 1)
+            self.assertEqual(resolved.count(new_q), 1)
+            self.assertEqual(resolved.count(new_containerization), 1)
+            (root / 'Package.swift').write_bytes(manifest)
+            (root / 'Package.resolved').write_bytes(resolved)
+            locks = original / 'Tools/bazel/artifacts/layer-locks'
+
+            def compatible(profile: str, group: str) -> bool:
+                lock = json.loads((locks / f'{group}-{profile}.json').read_text())
+                current = dict(lock['recipeSHA256'], producer=foundation.file_digest(producer),
+                               swiftPackageManifest=foundation.file_digest(root / 'Package.swift'))
+                return foundation._legacy_recipe_compatible(lock, root, profile, group, current)
+
+            for profile, groups in (('enhanced', ('foundation', 'engine-api')),
+                                    ('stock', foundation.GROUPS)):
+                for group in groups:
+                    self.assertTrue(compatible(profile, group), f'{group}-{profile}')
+            historical = json.loads((locks / 'engine-api-enhanced.json').read_text())
+            current = dict(historical['recipeSHA256'], producer=foundation.file_digest(producer),
+                           swiftPackageManifest=foundation.file_digest(root / 'Package.swift'))
+            for group in ('containerization', 'container-sdk'):
+                self.assertFalse(foundation._legacy_recipe_compatible(
+                    historical, root, 'enhanced', group, current), group)
+
+            for other_q, other_containerization in ((b'a' * 40, new_containerization),
+                                                       (new_q, b'b' * 40)):
+                (root / 'Package.swift').write_bytes(manifest.replace(new_q, other_q).replace(
+                    new_containerization, other_containerization))
+                (root / 'Package.resolved').write_bytes(resolved.replace(new_q, other_q).replace(
+                    new_containerization, other_containerization))
+                self.assertFalse(compatible('enhanced', 'foundation'))
+            (root / 'Package.swift').write_bytes(manifest)
+            (root / 'Package.resolved').write_bytes(resolved)
+
+            for changed_manifest, changed_resolved in (
+                    (manifest + b'// unrelated recipe change\n', resolved),
+                    (manifest.replace(b'https://github.com/', b'https://example.com/', 1), resolved),
+                    (manifest, resolved.replace(b'https://github.com/', b'https://example.com/', 1)),
+                    (manifest, resolved + b'\n'),
+                    (manifest + new_q, resolved)):
+                (root / 'Package.swift').write_bytes(changed_manifest)
+                (root / 'Package.resolved').write_bytes(changed_resolved)
+                self.assertFalse(compatible('enhanced', 'foundation'))
+
+            (root / 'Package.swift').write_bytes(manifest)
+            duplicated = json.loads(resolved)
+            reordered = dict(duplicated, pins=list(reversed(duplicated['pins'])))
+            (root / 'Package.resolved').write_text(json.dumps(reordered))
+            self.assertFalse(compatible('enhanced', 'foundation'))
+            duplicated['pins'].append(duplicated['pins'][0])
+            (root / 'Package.resolved').write_text(json.dumps(duplicated))
+            with self.assertRaisesRegex(ValueError, 'pins are incomplete'):
+                compatible('enhanced', 'foundation')
+            (root / 'Package.resolved').write_bytes(resolved.replace(new_containerization,
+                                                                      old_containerization))
+            self.assertFalse(compatible('enhanced', 'foundation'))
+
+    def test_outer_consumer_keeps_source_and_lower_guards_before_recipe_compatibility(self) -> None:
+        original = Path(__file__).resolve().parents[3]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'Package.resolved').write_bytes((original / 'Package.resolved').read_bytes())
+            source = original / 'Tools/bazel/artifacts/layer-locks/foundation-enhanced.json'
+            lock = json.loads(source.read_text())
+            target = root / 'lock.json'
+            with mock.patch.object(foundation, 'lower_records', return_value=lock['lower']), \
+                    mock.patch.object(foundation, 'recipe_identity', side_effect=AssertionError('recipe reached')):
+                changed = json.loads(source.read_text())
+                changed['sourcePins']['swift-log'] = '0' * 40
+                target.write_text(json.dumps(changed))
+                with self.assertRaisesRegex(ValueError, 'source pins or lower layer'):
+                    foundation.verify_consumer(target, root, None, {})
+                changed = json.loads(source.read_text())
+                changed['lower'] = {}
+                target.write_text(json.dumps(changed))
+                with self.assertRaisesRegex(ValueError, 'source pins or lower layer'):
+                    foundation.verify_consumer(target, root, None, {})
 
     def test_generated_build_replaces_compilers_and_keeps_other_rules(self) -> None:
         result = transformed_build(BUILD)

@@ -427,7 +427,7 @@ def proof_lock(receipt_path: Path, root: Path, output: Path) -> dict:
 
 def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
                               current: dict[str, str]) -> bool:
-    """Admit only the published lower recipe across one Container pin change.
+    """Admit unchanged published groups across exact upper pin changes.
 
     The old producer bytes remain authenticated by the published lock. The
     canonical AST check proves this file changed only in this consumer check;
@@ -436,8 +436,12 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
     import ast
 
     old_container = b"15361ce5f55a6b8ab3242e89650a188766b47581"
+    old_containerization = b"5ed9bc7490aa30c76337bd5b3d8ff251b63c678f"
+    changed_container = b"4d82da2c571d0924bd97569249a5d200ca764a13"
+    changed_containerization = b"6db16197bbad8196a78132f86529daa89125aafb"
     old_producer = "fc84c316dc42f7c978cadf8a89208bcf5f1984aeb270eab5276442cb494bb678"
     old_manifest = "459a721a03f96978259620ec8ab278c809e0fec182ed08a13f76cbe432e81ac1"
+    old_resolved = "6bf3d07b02f5e6a03df82efa7a08c5103fc0f044096dd4a9a48ca3436945e6ad"
     old_producer_source = "9414f170ff95287d40ed0517af4a4e0307c065ce7a38332b253db1e49de0aeca"
     if not ((profile == "enhanced" and group in {"foundation", "containerization", "engine-api"})
             or (profile == "stock" and group in GROUPS)):
@@ -478,12 +482,30 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
                                  separators=(",", ":")).encode()) != old_producer_source):
         return False
 
-    selected = source_pins(root, "enhanced").get("container", "").encode()
+    selected_pins = source_pins(root, "enhanced")
+    selected = selected_pins.get("container", "").encode()
+    selected_containerization = selected_pins.get("containerization", "").encode()
     manifest = (root / "Package.swift").read_bytes()
+    resolved = (root / "Package.resolved").read_bytes()
     if (not re.fullmatch(rb"[0-9a-f]{40}", selected) or selected == old_container
-            or manifest.count(selected) != 1 or old_container in manifest):
+            or manifest.count(selected) != 1 or resolved.count(selected) != 1
+            or old_container in manifest or old_container in resolved):
         return False
-    return digest(manifest.replace(selected, old_container)) == old_manifest
+    if selected_containerization == old_containerization:
+        if manifest.count(old_containerization) != 1 or resolved.count(old_containerization) != 1:
+            return False
+    elif (selected == changed_container and selected_containerization == changed_containerization
+          and ((profile == "enhanced" and group in {"foundation", "engine-api"})
+               or (profile == "stock" and group in GROUPS))
+          and manifest.count(selected_containerization) == 1
+          and resolved.count(selected_containerization) == 1
+          and old_containerization not in manifest and old_containerization not in resolved):
+        manifest = manifest.replace(selected_containerization, old_containerization)
+        resolved = resolved.replace(selected_containerization, old_containerization)
+    else:
+        return False
+    return (digest(manifest.replace(selected, old_container)) == old_manifest
+            and digest(resolved.replace(selected, old_container)) == old_resolved)
 
 
 def verify_consumer(lock_path: Path, root: Path, mirror: Path | None,

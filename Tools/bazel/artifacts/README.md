@@ -64,6 +64,15 @@ current minimum-macOS transitions and reuses Bazel's action cache; it may
 still visit already-built upper targets. A dirty checkout needs the explicit
 `--development-proof` flag and cannot be published.
 
+The consumer can reuse original published lower archives across only the
+authenticated Container-only pin change, or the exact Container `4d82da2c`
+and Containerization `6db16197` pair. The latter permits the unchanged
+enhanced foundation and Engine API and four stock groups; enhanced
+Containerization and Container SDK need new qualified archives. The original
+manifest and resolved lock must be recovered exactly after the allowed pin
+substitutions, with all other source, recipe, lower-layer and toolchain checks
+intact. A future pin pair needs a new proof or a rebuild.
+
 On a clean producer checkpoint, run the two source-mode optimized CLI targets
 with the appropriate published lower configs, then use
 `layer_release.py write-evidence` with the producer receipt and that admitted
