@@ -425,6 +425,67 @@ def proof_lock(receipt_path: Path, root: Path, output: Path) -> dict:
     return lock
 
 
+def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
+                              current: dict[str, str]) -> bool:
+    """Admit only the published lower recipe across one Container pin change.
+
+    The old producer bytes remain authenticated by the published lock. The
+    canonical AST check proves this file changed only in this consumer check;
+    production, import, archive sealing, and configuration logic are unchanged.
+    """
+    import ast
+
+    old_container = b"15361ce5f55a6b8ab3242e89650a188766b47581"
+    old_producer = "fc84c316dc42f7c978cadf8a89208bcf5f1984aeb270eab5276442cb494bb678"
+    old_manifest = "459a721a03f96978259620ec8ab278c809e0fec182ed08a13f76cbe432e81ac1"
+    old_producer_source = "9414f170ff95287d40ed0517af4a4e0307c065ce7a38332b253db1e49de0aeca"
+    if not ((profile == "enhanced" and group in {"foundation", "containerization", "engine-api"})
+            or (profile == "stock" and group in GROUPS)):
+        return False
+    historical = lock.get("recipeSHA256")
+    if (lock.get("developmentProof") is not False or not isinstance(historical, dict)
+            or set(historical) != set(current)
+            or historical.get("producer") != old_producer
+            or historical.get("swiftPackageManifest") != old_manifest
+            or any(historical[key] != value for key, value in current.items()
+                   if key not in {"producer", "swiftPackageManifest"})):
+        return False
+
+    source = (root / "Tools/bazel/artifacts/foundation.py").read_text()
+    module = ast.parse(source)
+    excluded = {"verify_consumer", "_legacy_recipe_compatible"}
+    functions = [node for node in module.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    definitions = {node.name: node for node in functions if node.name in excluded}
+    verifier_defaults = definitions.get("verify_consumer").args.defaults if "verify_consumer" in definitions else []
+    if (len(definitions) != len(excluded) or len(functions) != len({node.name for node in functions})
+            or any(node.decorator_list for node in module.body
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
+            or definitions["_legacy_recipe_compatible"].args.defaults
+            or any(value is not None for value in definitions["_legacy_recipe_compatible"].args.kw_defaults)
+            or len(verifier_defaults) != 2
+            or not all(isinstance(value, ast.Constant) for value in verifier_defaults)
+            or [value.value for value in verifier_defaults] != ["enhanced", "foundation"]
+            or any(value is not None for value in definitions["verify_consumer"].args.kw_defaults)):
+        return False
+    # ast.dump changes when a Python release adds AST fields. Bind exact
+    # source bytes for each retained top-level production node instead.
+    production = [(type(node).__name__, ast.get_source_segment(source, node))
+                  for node in module.body
+                  if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  or node.name not in excluded]
+    if (any(segment is None for _, segment in production)
+            or digest(json.dumps(production, ensure_ascii=False,
+                                 separators=(",", ":")).encode()) != old_producer_source):
+        return False
+
+    selected = source_pins(root, "enhanced").get("container", "").encode()
+    manifest = (root / "Package.swift").read_bytes()
+    if (not re.fullmatch(rb"[0-9a-f]{40}", selected) or selected == old_container
+            or manifest.count(selected) != 1 or old_container in manifest):
+        return False
+    return digest(manifest.replace(selected, old_container)) == old_manifest
+
+
 def verify_consumer(lock_path: Path, root: Path, mirror: Path | None,
                     environment: dict[str, str], profile: str = "enhanced",
                     group: str = "foundation") -> dict:
@@ -434,7 +495,9 @@ def verify_consumer(lock_path: Path, root: Path, mirror: Path | None,
             or lock.get("sourcePins") != group_pins(source_pins(root, profile), group)
             or lock.get("lower") != lower_records(root, profile, group)):
         raise ValueError("foundational bundle differs from enhanced source pins or lower layer")
-    if lock.get("recipeSHA256") != recipe_identity(root, profile, group):
+    current_recipe = recipe_identity(root, profile, group)
+    if (lock.get("recipeSHA256") != current_recipe
+            and not _legacy_recipe_compatible(lock, root, profile, group, current_recipe)):
         raise ValueError("foundational bundle exporter, importer or source patch changed")
     packages = lock.get("reachedSources", {})
     records = source_records(root, profile)

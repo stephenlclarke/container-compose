@@ -204,6 +204,10 @@ In this unreleased candidate, `config --output` (including `--variables`) and `c
 
 The enhanced native runtime suite also checks image metadata, platform selection, healthchecks, volume declarations and transformer references without starting services. These component tests exercise the production projection; they do not replace live runtime or registry qualification.
 
+The reduced build [reuses authenticated unchanged lower layers across a Container-only pin update](docs/guides/BAZEL.md#reusing-unchanged-layers-after-a-container-update), while requiring a new enhanced Container SDK release.
+
+The enhanced pre-start input adapter also carries Container's explicit buffered EOF policy for non-TTY foreground input; [live qualification and updated dependency release status](docs/guides/BAZEL.md#primary-input-eof-correction) remain pending.
+
 The unreleased one-off `run` command now keeps stdin open by default, matching Docker Compose. Use `--interactive=false` (or `--no-interactive`) to close it explicitly, including when a service declares `stdin_open: true`. This also changes `ComposeRunOptions`' default; detached mode controls host attachment, not the container's stdin configuration. [Regression and live-test status](docs/guides/BAZEL.md#prepared-foreground-launch) remains separate from stable support.
 
 For one-off runs, `--quiet` suppresses Compose progress while preserving guest input and output, matching the observed Docker Compose 5.3.1 behavior. The unreleased legacy launcher no longer closes stdin merely because quiet mode was requested.

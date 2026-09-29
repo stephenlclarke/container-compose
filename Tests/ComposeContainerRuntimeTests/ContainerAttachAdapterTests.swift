@@ -123,11 +123,12 @@ struct ContainerAttachAdapterTests {
 
         #expect(await client.attachIDs.isEmpty)
         #expect(await client.bootstrapIDs == ["demo-api-1"])
+        #expect(await client.bootstrapEOFPolicies == [false])
         #expect(await client.startCount == 1)
         #expect(events.events == ["ready", "started", "early\n"])
     }
 
-    @Test(arguments: [RuntimeStatus.stopped, .running])
+    @Test(arguments: [RuntimeStatus.stopped, .running, .paused])
     func `input-capable attachment forwards caller bytes without closing stdin`(_ status: RuntimeStatus) async throws {
         let input = Pipe()
         try input.fileHandleForWriting.write(contentsOf: Data("input-data\n".utf8))
@@ -156,11 +157,38 @@ struct ContainerAttachAdapterTests {
         #expect(fcntl(input.fileHandleForReading.fileDescriptor, F_GETFD) >= 0)
         if status == .stopped {
             #expect(await client.bootstrapIDs == ["demo-api-1"])
+            #expect(await client.bootstrapEOFPolicies == [true])
             #expect(await client.startCount == 1)
         } else {
             #expect(await client.attachIDs == ["demo-api-1"])
+            #expect(await client.bootstrapEOFPolicies.isEmpty)
             #expect(await client.startCount == 0)
         }
+    }
+
+    @Test
+    func `terminal input keeps stdin open after caller EOF`() async throws {
+        let input = Pipe()
+        try input.fileHandleForWriting.write(contentsOf: Data("terminal-input\n".utf8))
+        try input.fileHandleForWriting.close()
+        let client = try RecordingContainerAttachAPIClient(
+            container: attachContainer(status: .stopped, terminal: true),
+            stdout: Data("terminal-output\n".utf8),
+        )
+
+        try await ContainerClientAttachManager(client: client, input: input.fileHandleForReading).attachOutput(
+            id: "demo-api-1",
+            stdout: true,
+            stderr: true,
+            mode: .beforeStartWithInput,
+            onReady: {},
+            onStarted: {},
+            emit: { _ in },
+        )
+
+        #expect(await client.receivedInput == Data("terminal-input\n".utf8))
+        #expect(await client.bootstrapEOFPolicies == [false])
+        #expect(fcntl(input.fileHandleForReading.fileDescriptor, F_GETFD) >= 0)
     }
 
     @Test
@@ -248,6 +276,7 @@ private actor RecordingContainerAttachAPIClient: ContainerAttachAPIClienting {
     private var streams: [[Bool]] = []
     private var attached: [String] = []
     private var bootstrapped: [String] = []
+    private var eofPolicies: [Bool] = []
     private var inputData: Data?
     private let disconnects = CountRecorder()
     private let starts = CountRecorder()
@@ -278,6 +307,10 @@ private actor RecordingContainerAttachAPIClient: ContainerAttachAPIClienting {
         bootstrapped
     }
 
+    var bootstrapEOFPolicies: [Bool] {
+        eofPolicies
+    }
+
     var receivedInput: Data? {
         inputData
     }
@@ -301,8 +334,13 @@ private actor RecordingContainerAttachAPIClient: ContainerAttachAPIClienting {
         return RecordingContainerOutputAttachSession(disconnects: disconnects, starts: starts)
     }
 
-    func bootstrap(id: String, stdio: [FileHandle?]) async throws -> any ContainerOutputAttachSession {
+    func bootstrap(
+        id: String,
+        stdio: [FileHandle?],
+        closeStdinOnEOF: Bool,
+    ) async throws -> any ContainerOutputAttachSession {
         bootstrapped.append(id)
+        eofPolicies.append(closeStdinOnEOF)
         streams.append(stdio.map { $0 != nil })
         inputData = try stdio[0]?.readToEnd()
         return try RecordingContainerOutputAttachSession(

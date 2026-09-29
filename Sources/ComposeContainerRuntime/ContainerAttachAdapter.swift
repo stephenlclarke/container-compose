@@ -31,7 +31,11 @@ protocol ContainerOutputAttachSession: Sendable {
 protocol ContainerAttachAPIClienting: Sendable {
     func getContainer(id: String) async throws -> ContainerSnapshot
     func attach(id: String, stdio: [FileHandle?]) async throws -> any ContainerOutputAttachSession
-    func bootstrap(id: String, stdio: [FileHandle?]) async throws -> any ContainerOutputAttachSession
+    func bootstrap(
+        id: String,
+        stdio: [FileHandle?],
+        closeStdinOnEOF: Bool,
+    ) async throws -> any ContainerOutputAttachSession
 }
 
 private struct ContainerClientOutputAttachSession: ContainerOutputAttachSession {
@@ -69,17 +73,31 @@ struct ContainerAttachAPIClient: ContainerAttachAPIClienting {
         )
     }
 
-    func bootstrap(id: String, stdio: [FileHandle?]) async throws -> any ContainerOutputAttachSession {
+    func bootstrap(
+        id: String,
+        stdio: [FileHandle?],
+        closeStdinOnEOF: Bool,
+    ) async throws -> any ContainerOutputAttachSession {
         var dynamicEnvironment: [String: String] = [:]
         if let sshAuthSocket = ProcessInfo.processInfo.environment["SSH_AUTH_SOCK"] {
             dynamicEnvironment["SSH_AUTH_SOCK"] = sshAuthSocket
         }
-        return try await ContainerClientOutputAttachSession(
-            process: makeSessionClient().bootstrap(
+        #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
+            let process = try await makeSessionClient().bootstrap(
                 id: id,
                 stdio: stdio,
                 dynamicEnv: dynamicEnvironment,
-            ),
+                closeStdinOnEOF: closeStdinOnEOF,
+            )
+        #else
+            let process = try await makeSessionClient().bootstrap(
+                id: id,
+                stdio: stdio,
+                dynamicEnv: dynamicEnvironment,
+            )
+        #endif
+        return ContainerClientOutputAttachSession(
+            process: process,
         )
     }
 }
@@ -134,7 +152,11 @@ public struct ContainerClientAttachManager: ComposeRuntimeAttachManaging {
         let startsPreparedProcess: Bool
         switch (container.status, mode) {
         case (.stopped, .beforeStart), (.stopped, .beforeStartWithInput):
-            session = try await client.bootstrap(id: id, stdio: stdio)
+            session = try await client.bootstrap(
+                id: id,
+                stdio: stdio,
+                closeStdinOnEOF: mode == .beforeStartWithInput && !terminal,
+            )
             startsPreparedProcess = true
         case (.running, _), (.paused, _):
             session = try await client.attach(id: id, stdio: stdio)
