@@ -735,7 +735,12 @@ jobs:
             --data-urlencode 'keys=sonar.leak.period,sonar.leak.period.type' \
             https://sonarcloud.io/api/settings/values)"
           jq -e '[.settings[] | select(.key == "sonar.leak.period" or .key == "sonar.leak.period.type") | .value] | length == 2 and all(. == "previous_version")' <<< "$settings" >/dev/null
-          sonar-scanner \
+          python3 Tools/ci/sonar-pr-transport.py scan \
+            --source-sha "$EXPECTED_SHA" \
+            --pull-request "$PR_NUMBER" \
+            --report .scannerwork/report-task.txt \
+            --log-dir "${RUNNER_TEMP}/sonar-pr-transport" \
+            -- sonar-scanner \
             -Dsonar.projectVersion="$EXPECTED_SHA" \
             -Dsonar.scm.revision="$EXPECTED_SHA" \
             -Dsonar.buildString="$EXPECTED_SHA" \
@@ -743,6 +748,14 @@ jobs:
             -Dsonar.pullrequest.branch="$PR_BRANCH" \
             -Dsonar.pullrequest.base=main \
             -Dsonar.qualitygate.wait=true
+
+      - name: Retain Sonar pull request transport attempts
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: sonar-pr-attempts-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sonar-pr-transport/
+          if-no-files-found: ignore
 
       - name: Record exact Sonar pull request gate
         if: github.event_name == 'pull_request'
@@ -761,8 +774,11 @@ jobs:
           project_key="$(awk -F= '$1 == "projectKey" { print $2 }' "$report")"
           [[ "$project_key" == 'stephenlclarke_container-compose2' ]]
           [[ "$task_id" =~ ^[A-Za-z0-9_-]+$ ]]
-          task="$(curl --fail --silent --show-error --user "$SONAR_TOKEN:" --get \
-            --data-urlencode "id=$task_id" https://sonarcloud.io/api/ce/task)"
+          task="$(python3 Tools/ci/sonar-pr-transport.py wait-task \
+            --source-sha "$EXPECTED_SHA" \
+            --pull-request "$PR_NUMBER" \
+            --report "$report" \
+            --log-dir "${RUNNER_TEMP}/sonar-pr-transport")"
           jq -e --arg project "$project_key" \
             '.task.status == "SUCCESS" and .task.componentKey == $project and (.task.analysisId | type == "string")' \
             <<< "$task" >/dev/null
