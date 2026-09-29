@@ -211,12 +211,12 @@ prepare_fixture_images
 set -euo pipefail
 error() { printf '%s\\n' "$*" >&2; }
 docker() {
-  if [[ "$1" == image && "$2" == ls ]]; then cat "$REFS"; return; fi
+  if [[ "$1" == image && "$2" == ls ]]; then cat "$REFS"; return $?; fi
   if [[ "$1" == image && "$2" == rm ]]; then
     printf '%s\\n' "$3" >> "$EVENTS"
     grep -Fvx -- "$3" "$REFS" > "$REFS.next" || true
     mv "$REFS.next" "$REFS"
-    return
+    return $?
   fi
   return 1
 }
@@ -239,6 +239,7 @@ exit 7
                 result = subprocess.run(['/bin/bash', '-c', program], env=env,
                                         capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, 7, result.stderr)
+                self.assertTrue(events.is_file(), result.stderr)
                 removed = events.read_text().splitlines()
                 self.assertEqual(len(removed), 1)
                 self.assertIn('-local-', removed[0])
