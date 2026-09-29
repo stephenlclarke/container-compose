@@ -133,6 +133,74 @@ prepare_fixture_images
                 self.assertIn('qualified Docker fixture image is missing', result.stderr)
                 self.assertNotIn('pull', events.read_text())
 
+    def test_host_namespaces_reuses_qualified_image_and_preserves_standalone_pulls(self) -> None:
+        image = {'configuration': {'name': 'docker.io/library/alpine:3.20',
+                                   'descriptor': {'digest': 'sha256:' + 'a' * 64}}}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            docker_refs, native_refs, events = (root / name for name in
+                                               ('docker-refs', 'native-refs', 'events'))
+            program = '''
+set -euo pipefail
+REPO_ROOT="$REPOSITORY"
+CONTAINER_BINARY=container
+CONTAINER_COMPOSE=compose
+DOCKER_COMPOSE_COMMAND=(docker --context colima compose)
+DOCKER_PROJECT_NAME=docker-project
+CONTAINER_PROJECT_NAME=native-project
+COMPOSE_FILE=/fixture/compose.yml
+error() { printf '%s\\n' "$*" >&2; }
+docker() {
+  printf 'docker %s\\n' "$*" >> "$EVENTS"
+  if [[ "$1" == image && "$2" == ls ]]; then cat "$DOCKER_REFS"; return; fi
+  if [[ "$1" == --context && "$2" == colima && "$3" == compose ]]; then return; fi
+  return 1
+}
+container() {
+  printf 'container %s\\n' "$*" >> "$EVENTS"
+  if [[ "$1" == image && "$2" == list ]]; then cat "$NATIVE_REFS"; return; fi
+  return 1
+}
+compose() { printf 'compose %s\\n' "$*" >> "$EVENTS"; }
+''' + self.parity_function('host-namespaces', 'prepare_fixture_images') + '''
+prepare_fixture_images
+'''
+            env = dict(os.environ, REPOSITORY=str(full_suite.ROOT),
+                       DOCKER_REFS=str(docker_refs), NATIVE_REFS=str(native_refs),
+                       EVENTS=str(events), COMPOSE_FULL_SUITE_QUALIFIED='1')
+
+            docker_refs.write_text('alpine:3.20\n')
+            native_refs.write_text(json.dumps([image]))
+            result = subprocess.run(['/bin/bash', '-c', program], env=env,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(events.read_text().splitlines(), [
+                'docker image ls --no-trunc --format {{.Repository}}:{{.Tag}}',
+                'container image list --format json'])
+
+            for missing_lane in ('docker', 'native'):
+                with self.subTest(missing_lane=missing_lane):
+                    events.unlink()
+                    docker_refs.write_text('' if missing_lane == 'docker' else 'alpine:3.20\n')
+                    native_refs.write_text('[]' if missing_lane == 'native' else json.dumps([image]))
+                    result = subprocess.run(['/bin/bash', '-c', program], env=env,
+                                            capture_output=True, text=True, timeout=10)
+                    self.assertNotEqual(result.returncode, 0)
+                    lane_label = 'Docker' if missing_lane == 'docker' else 'native'
+                    self.assertIn(f'qualified {lane_label} fixture image is missing',
+                                  result.stderr)
+                    self.assertNotIn('pull', events.read_text())
+
+            events.unlink()
+            standalone = dict(env)
+            standalone.pop('COMPOSE_FULL_SUITE_QUALIFIED')
+            result = subprocess.run(['/bin/bash', '-c', program], env=standalone,
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(events.read_text().splitlines(), [
+                'docker --context colima compose -p docker-project -f /fixture/compose.yml pull --quiet bridge',
+                'compose --ansi never -p native-project -f /fixture/compose.yml pull --quiet bridge'])
+
     def test_standalone_build_leaf_removes_only_new_tag_and_preserves_failure(self) -> None:
         for leaf in ('build-isolation', 'build-secret-metadata'):
             with self.subTest(leaf=leaf), tempfile.TemporaryDirectory() as temporary:

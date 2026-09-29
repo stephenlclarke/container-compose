@@ -2,6 +2,14 @@
 
 Status: Compose-owned implementation pending its first complete immutable-source qualification. The current Makefile uses this repository’s own `Tools/bazel/run.sh`; historical references below to the devcontainer family launcher describe earlier checkpoint evidence only.
 
+## Current qualification checkpoint
+
+Compose `966d1eb2` consumes the published Q6fe Container SDK through verified GitHub asset downloads. All three consumer checks pass, and the configured action query contains no imported dependency compilation. The original strict API-socket EOF diagnostic passes in 62.21 seconds with exact baseline and host restoration. These are separate development proofs; complete Compose release qualification remains outstanding.
+
+The subsequent all-66 development run passes 56 cases, then host-namespaces fails with `HTTPClientError.readTimeout` during an unconditional candidate Alpine pull before its timing checks begin. Both runtimes already contain the preloaded fixture. All 57 enrolled cases and all nine host cleanup phases restore successfully, and the final inventory matches the original baseline. The failed result remains retained at `local-final/966d1eb2-development-parity-20260929T193913Z`; its local failure marker is preserved and does not indicate an outstanding shared host lease.
+
+Qualified host-namespace preparation now verifies the existing fixture in both runtimes and fails if either copy is missing. It does not refresh the image through the registry. Standalone preparation retains the original Compose pull commands. Namespace assertions, operation deadlines and the three-repetition timing comparison are unchanged. The corrected strict leaf, all-66 run and final release gates still require fresh passing evidence. Earlier checkpoint sections below preserve historical failures and their dispositions.
+
 ## Fixture download limit at 8a2b5b4e
 
 The focused API diagnostic at `8a2b5b4ea3b93a817eab32550eacf29800c84e58` stops during fixture preparation: Docker Hub returns HTTP 429 while the native pull requests an Alpine attestation outside the Mac's ARM64 workload. No API case executes. All nine cleanup phases complete, and the host, runtime, plugin and Colima are restored. Evidence remains failed at `local-final/8a2b5b4e-api-socket-focus-20260929T123740Z`.

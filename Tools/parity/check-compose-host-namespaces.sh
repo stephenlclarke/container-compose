@@ -30,6 +30,8 @@
 #                                inspection. Defaults to container from PATH.
 #   CONTAINER_COMPOSE_LIVE       Set to 1 when an isolated matching Apple
 #                                runtime is running.
+#   COMPOSE_FULL_SUITE_QUALIFIED Require the preloaded fixture image on both
+#                                runtimes; never pull it during a qualified run.
 #   DOCKER_COMPOSE               Docker Compose command to compare with.
 #   PARITY_EVIDENCE_DIR          Directory for raw timing, JUnit, fingerprints,
 #                                and the human comparison matrix.
@@ -433,6 +435,40 @@ PY
     fi
 }
 
+# Prepare the warm bridge fixture without refreshing a qualified suite image.
+prepare_fixture_images() {
+    local fixture_image='alpine:3.20'
+    local docker_refs
+    local native_refs
+    local native_present
+
+    if [[ "${COMPOSE_FULL_SUITE_QUALIFIED:-0}" != 1 ]]; then
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" pull --quiet bridge >/dev/null
+        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" pull --quiet bridge >/dev/null
+        return
+    fi
+
+    docker_refs="$(docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}')"
+    if ! grep -Fx -- "$fixture_image" <<<"$docker_refs" >/dev/null; then
+        error "qualified Docker fixture image is missing: $fixture_image"
+        return 1
+    fi
+
+    native_refs="$("$CONTAINER_BINARY" image list --format json)"
+    native_present="$(printf '%s' "$native_refs" |
+        PYTHONPATH="$REPO_ROOT/Tools/bazel${PYTHONPATH:+:$PYTHONPATH}" python3 -c '
+import sys
+import full_suite
+images = full_suite.native_images(sys.stdin.read())
+print("yes" if any(full_suite.image_reference(name) == sys.argv[1]
+                   for name in images) else "no")
+' "$fixture_image")"
+    if [[ "$native_present" == no ]]; then
+        error "qualified native fixture image is missing: $fixture_image"
+        return 1
+    fi
+}
+
 # Initialize raw timing evidence and exact runtime fingerprints.
 initialize_timing_evidence() {
     local docker_compose_version
@@ -720,8 +756,7 @@ validate_live_bridge_parity_and_timing() {
 
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
     "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
-    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" pull --quiet bridge >/dev/null
-    "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" pull --quiet bridge >/dev/null
+    prepare_fixture_images
     initialize_timing_evidence
     TIMING_INITIALIZED=1
 
