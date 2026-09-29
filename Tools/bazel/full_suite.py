@@ -80,6 +80,7 @@ BUILD_CASES = {
     'docker-compose-build-isolation-parity',
     'docker-compose-build-no-cache-filter-parity',
     'docker-compose-build-secret-metadata-parity',
+    'docker-compose-empty-process-overrides-parity',
 }
 NAMED_RUNTIME_BUILDER = re.compile(
     r'buildkit-compose-runtime-[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\Z')

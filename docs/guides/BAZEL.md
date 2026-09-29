@@ -2,6 +2,14 @@
 
 Status: Compose-owned implementation pending its first complete immutable-source qualification. The current Makefile uses this repository’s own `Tools/bazel/run.sh`; historical references below to the devcontainer family launcher describe earlier checkpoint evidence only.
 
+## Builder ownership at 29264036
+
+Signed checkpoint `292640365fbfd8968506a615c8833220e9fc88b9` passes 53 original parity cases with their resource baselines restored. The next leaf, empty-process-overrides, returns success after its actual candidate `up --build`, but the coordinator rejects the new `buildkit` container because this case was missing from the finite builder ownership policy. The successful leaf is not accepted as a complete case until cleanup succeeds, and this development run remains failed.
+
+Fresh inspection under all three shared locks and the exclusive command lease proves exactly one new qualified builder and the two project-owned output images. The recorded case began at 11:00:18 UTC; the builder was created at 11:00:19 with the pinned builder-shim image, and the case process session is already cleared. A reviewed external helper removes only that exact builder and verifies the complete inventory and unchanged original ledger. Standard recovery then removes the owned images and restores all 54 case baselines, all nine cleanup phases, runtime, plugin, Colima and original workers. The original failed result remains false. Evidence is retained in `local-final/29264036-development-parity-20260929T104434Z` and `~/Documents/devcontainer/pr-708-final-handoff-20260928/buildkit-29264036-recovery/`.
+
+The all-66 source audit finds only this missing builder enrollment. The correction admits the exact default builder for empty-process-overrides, preserving rejection of pre-existing builders and unrelated names. Focused regression evidence and the next complete run must prove that policy before final qualification, benchmarks and release publication.
+
 ## Command parser audit at 3d1147c6
 
 Signed checkpoint `3d1147c6bbf1d83d40b102247aa9479c873909d9` passes 185 workflow checks and the first 40 original parity cases in its all-66 development run. Both repaired image-build fixtures pass with their pre-existing image identities preserved; image-volume ownership and cleanup also pass. The memory-swap case then fails its dry-run assertion: the emitted create command contains the expected `--memory-swap 134217728`, but its `container (run|create)` regular expression does not match the quoted private executable. The earlier 26-leaf capture audit missed regular-expression alternatives; this is a failed development run, not a product memory-limit failure or complete qualification.

@@ -343,6 +343,36 @@ exit 7
             baseline, current, ['container-compose-image-volumes-'],
             case='docker-compose-image-volumes-parity')), 1)
 
+    def test_empty_process_buildkit_is_owned_only_for_its_build_case(self) -> None:
+        case = 'docker-compose-empty-process-overrides-parity'
+        source = 'a' * 64
+        baseline, built = self.empty(), self.empty()
+        built['candidate']['containers']['buildkit'] = 'buildkit'
+
+        with tempfile.TemporaryDirectory() as temporary:
+            ledger = full_suite.Ledger(Path(temporary))
+            ledger.begin(case, source, ['container-compose-empty-process-runtime-'],
+                         baseline)
+            commands = []
+            with patch.object(full_suite, 'snapshot',
+                              side_effect=[built, baseline, baseline]):
+                removed = ledger.recover(
+                    lambda lane, kind, command: commands.append(command) or '',
+                    {case: source})
+            self.assertEqual(removed, [{'lane': 'candidate', 'kind': 'containers',
+                                        'id': 'buildkit', 'name': 'buildkit'}])
+            self.assertEqual(commands, [['container', 'delete', '--force', 'buildkit']])
+            self.assertFalse(full_suite.Ledger(Path(temporary)).pending())
+
+        with self.assertRaisesRegex(RuntimeError, 'collides'):
+            full_suite.assert_namespace_free(built, case)
+        with self.assertRaisesRegex(RuntimeError, 'Unrecognized new'):
+            full_suite.difference(baseline, built, [], case='docker-compose-up-menu-parity')
+        unrelated = self.empty()
+        unrelated['candidate']['containers']['user-id'] = 'buildkit-unrelated'
+        with self.assertRaisesRegex(RuntimeError, 'Unrecognized new'):
+            full_suite.difference(baseline, unrelated, [], case=case)
+
     def test_native_image_digest_replacement_refuses_cleanup(self) -> None:
         baseline = self.empty()
         baseline['candidate']['images']['alpine:3.20'] = 'sha256:' + 'a' * 64
