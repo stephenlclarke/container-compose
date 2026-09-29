@@ -408,7 +408,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 
 .PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint actions-lint
 .PHONY: worktree-audit worktree-audit-strict
-.PHONY: bazel-compose-qualify bazel-compose-capture-reference bazel-workflow-tools-test
+.PHONY: bazel-compose-qualify bazel-compose-development-bridge bazel-compose-capture-reference bazel-workflow-tools-test
 .PHONY: bazel-compose-release-prepare bazel-compose-release-publish bazel-compose-release-verify
 
 # Cheap, no-runtime regressions for the retained launcher, hosted admission,
@@ -416,8 +416,8 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 # remain in their declared Bazel targets and need actual built artifacts.
 bazel-workflow-tools-test:
 	$(TOOL_TEST_TEMP_ENV) PYTHONPATH="Tools/bazel:Tools/bazel/artifacts" $(PYTHON) -m unittest -q \
-		test_local_launcher test_hosted_quality test_qualify_local test_benchmark_evidence test_q_assets \
-		test_prebuilt_parity_tests test_full_suite test_compose_release
+		test_local_launcher test_hosted_quality test_qualify_local test_qualify_development test_benchmark_evidence test_q_assets \
+		test_prebuilt_parity_tests test_full_suite test_full_suite_scratch test_qualified_process test_compose_release
 	$(TOOL_TEST_TEMP_ENV) PYTHONPATH="Tools/bazel:Tools/bazel/artifacts" $(PYTHON) -m unittest \
 		discover -s Tools/bazel/artifacts -p 'test_*.py' -q
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_keychain_fixture.py
@@ -434,6 +434,14 @@ bazel-compose-qualify:
 	else set --; fi; \
 	$(PYTHON) Tools/bazel/qualify_local.py \
 	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/local-final/$$sha-$$stamp" "$$@"
+
+# One original live case for an unpushed clean checkpoint, with normal recovery.
+# Its development receipt cannot qualify a product release.
+bazel-compose-development-bridge:
+	@stamp="$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	sha="$$(git rev-parse --short=8 HEAD)"; \
+	$(PYTHON) Tools/bazel/qualify_local.py --development-bridge \
+	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/local-final/$$sha-development-bridge-$$stamp"
 
 # One explicit first-reference capture; never builds or runs an older Compose candidate.
 bazel-compose-capture-reference:

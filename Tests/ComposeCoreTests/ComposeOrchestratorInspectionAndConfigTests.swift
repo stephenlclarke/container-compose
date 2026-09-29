@@ -2318,7 +2318,9 @@ extension ComposeOrchestratorTests {
             .pullMissing("example/bridge-transformer:latest"),
         ])
         let command = try #require(runner.commands.last?.arguments)
-        #expect(command.starts(with: ["container", "run", "--rm"]))
+        #expect(command.starts(with: ["container", "run", "--rm", "--name"]))
+        let containerName = try #require(command.dropFirst(4).first)
+        #expect(containerName.range(of: #"^compose-bridge-[0-9a-f]{12}$"#, options: .regularExpression) != nil)
         #expect(command.contains("LICENSE_AGREEMENT=true"))
         let mountedOutput = try #require(runner.outputDirectories.last)
         #expect(command.contains("\(mountedOutput):/out"))

@@ -43,8 +43,10 @@ from xml.etree import ElementTree
 
 from hosted_quality import admit as admit_hosted, current_context
 import benchmark_evidence
+import cli_process
 import compose_release
 import full_suite
+import full_suite_scratch
 from artifacts.release_asset import cached_fetch, read_lock, release_asset as published_release_asset
 from input_identity import source_identity, verify as verify_source
 from q_assets import fetch_assets as fetch_q_assets, revalidate as revalidate_q_assets
@@ -58,7 +60,7 @@ Q_EVIDENCE = Path.home() / 'Library/Application Support/ContainerFamily/retained
 OUTPUT = RETAINED / 'local-final'
 CAPTURE_OUTPUT = RETAINED / 'benchmark-reference-capture'
 TRIALS = 7
-ORIGINAL_FIXTURE_IMAGES = ('alpine:3.20', 'alpine:3.21',
+ORIGINAL_FIXTURE_IMAGES = ('alpine:3.20', 'alpine:3.21', 'alpine:latest',
                            'ghcr.io/linuxcontainers/alpine:3.20', 'busybox:latest',
                            'docker/compose-bridge-kubernetes@sha256:'
                            '4ffd3f23f377b1fdd9d0195732980e7534a8975c8a210a12681dc803c002f761',
@@ -479,10 +481,10 @@ def validate_q(q: dict) -> dict:
             'release_sha256': release['archives']['container-homebrew-arm64.tar.gz']}
 
 
-def preflight(evidence: Path, q: dict) -> tuple[dict, dict]:
+def preflight(evidence: Path, q: dict, *, development_bridge: bool = False) -> tuple[dict, dict]:
     identity = source_identity(ROOT)
     if identity['dirty'] or identity['commit'] != git(ROOT, 'rev-parse', 'HEAD'):
-        raise RuntimeError('Final qualification requires one clean immutable Compose checkpoint')
+        raise RuntimeError('Qualification and development proof require one clean immutable Compose checkpoint')
     config_path = q['modules']['preflight'].CONFIG
     config = json.loads(config_path.read_text())
     checks = q['modules']['preflight'].check('runtime', config)
@@ -490,17 +492,18 @@ def preflight(evidence: Path, q: dict) -> tuple[dict, dict]:
     pending_api_hold = failed == ['apple-runtime-slot'] and config.get('failed_api_hold') is not None
     if not checks['ready'] and not pending_api_hold:
         raise RuntimeError('Runtime/signing/host preflight failed: ' + ', '.join(c['check'] for c in checks['checks'] if not c['ready']))
-    profile = config.get('notary_profile')
-    if not isinstance(profile, str) or not profile:
-        raise RuntimeError('Notary keychain profile missing before expensive stages')
-    subprocess.run(['/usr/bin/xcrun', 'notarytool', 'history', '--keychain-profile', profile,
-                    '--output-format', 'json'], check=True, stdout=subprocess.DEVNULL,
-                   stderr=subprocess.DEVNULL, timeout=30)
-    context = subprocess.run(['gh', 'api', 'user'], env={k:v for k,v in os.environ.items() if k not in ('GH_TOKEN','GITHUB_TOKEN')},
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-    if context.returncode:
-        raise RuntimeError('GitHub quality access unavailable')
-    current_context(identity['commit'])
+    if not development_bridge:
+        profile = config.get('notary_profile')
+        if not isinstance(profile, str) or not profile:
+            raise RuntimeError('Notary keychain profile missing before expensive stages')
+        subprocess.run(['/usr/bin/xcrun', 'notarytool', 'history', '--keychain-profile', profile,
+                        '--output-format', 'json'], check=True, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=30)
+        context = subprocess.run(['gh', 'api', 'user'], env={k:v for k,v in os.environ.items() if k not in ('GH_TOKEN','GITHUB_TOKEN')},
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+        if context.returncode:
+            raise RuntimeError('GitHub quality access unavailable')
+        current_context(identity['commit'])
     docker_compose = subprocess.check_output(['docker', 'compose', 'version', '--short'],
                                              text=True, timeout=20).strip().lstrip('v')
     if docker_compose != DOCKER_COMPOSE_VERSION:
@@ -521,7 +524,8 @@ def preflight(evidence: Path, q: dict) -> tuple[dict, dict]:
                               'zstd_patch_sha256': sha(ROOT / 'Tools/bazel/zstd-public-module.patch'),
                               'ext4_patch_sha256': sha(ROOT / 'Tools/bazel/containerization-ext4-unaligned.patch')}
     qualified['source'] = identity
-    write(evidence / 'preflight.json', {'ready': True, 'pending_approved_api_hold': pending_api_hold,
+    write(evidence / 'preflight.json', {'ready': True, 'development_bridge': development_bridge,
+                                        'pending_approved_api_hold': pending_api_hold,
                                         'docker_compose_version': docker_compose,
                                         'budget': budget,
                                         'container': qualified, 'host_checks': checks})
@@ -634,14 +638,16 @@ def compiled_sdk_chain(evidence: Path, source: str, package_invocation: str) -> 
     return receipt
 
 
-def run_layers(evidence: Path, original: dict, q: dict) -> tuple[list[dict], str, dict, dict]:
+def run_layers(evidence: Path, original: dict, q: dict, *,
+               development_bridge: bool = False) -> tuple[list[dict], str, dict, dict]:
     rows = [stage(evidence, 'source-preflight',
                   ['make', '--no-print-directory', 'source-preflight'], 900,
                   env=dict(os.environ, CONTAINER_STACK_REPO=str(Q_ROOT)))]
     verify_source(original, source_identity(ROOT))
-    rows.append(stage(evidence, 'workflow-tools',
-                      ['make', '--no-print-directory', 'bazel-workflow-tools-test'], 300))
-    verify_source(original, source_identity(ROOT))
+    if not development_bridge:
+        rows.append(stage(evidence, 'workflow-tools',
+                          ['make', '--no-print-directory', 'bazel-workflow-tools-test'], 300))
+        verify_source(original, source_identity(ROOT))
     rows.append(stage(evidence, 'original-parity-fixtures',
                       ['make', '--no-print-directory', 'docker-compose-e2e-fixtures'], 900))
     verify_source(original, source_identity(ROOT))
@@ -658,7 +664,8 @@ def run_layers(evidence: Path, original: dict, q: dict) -> tuple[list[dict], str
                  'sha256': sha(evidence / 'q-assets/q-assets.json')})
     verify_source(original, source_identity(ROOT))
     package_invocation = ''
-    for name, command, target, profile, timeout in STAGES:
+    selected_stages = tuple(row for row in STAGES if row[0] == 'package') if development_bridge else STAGES
+    for name, command, target, profile, timeout in selected_stages:
         args = layer_command(name, command, target, profile)
         row = stage(evidence, name, args, timeout)
         rows.append(row)
@@ -683,6 +690,9 @@ def run_layers(evidence: Path, original: dict, q: dict) -> tuple[list[dict], str
     rows.append({'name': 'compiled-sdk-chain', 'status': 0,
                  'receipt': str(evidence / 'compiled-sdk-chain.json'),
                  'sha256': sha(evidence / 'compiled-sdk-chain.json')})
+    if development_bridge:
+        verify_source(original, source_identity(ROOT))
+        return rows, package_invocation, assets, {}
     rows.append(stage(evidence, 'runtime-tests-build',
                       [str(ROOT / 'Tools/bazel/run.sh'), 'build',
                        '//:ComposeRuntimeTests', '//:ComposeCoreTests',
@@ -1350,7 +1360,7 @@ def preload_original_fixture_images(runtime_image: str, install: Path,
 
 def run_original_full_suite(evidence: Path, runner: object, runtime: object,
                             install: Path, plugin: Path, native_tests: dict,
-                            issue: object) -> dict:
+                            issue: object, *, development_bridge: bool = False) -> dict:
     """Execute the unchanged 27/66 checks with one enrolled case at a time."""
     base = evidence / 'full-suite'
     base.mkdir()
@@ -1366,8 +1376,7 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
         return Path(row['log']).read_text(errors='replace')
     sdk = subprocess.check_output(['/usr/bin/xcrun', '--sdk', 'macosx', '--show-sdk-path'],
                                   text=True, timeout=20).strip()
-    scratch = SSD / 't' / ('compose-full-suite-' + str(os.getpid()))
-    scratch.mkdir(parents=True, exist_ok=False)
+    scratch = full_suite_scratch.create(evidence)
     common = dict(runtime.environment('fork'), **runner.runtime_environment,
                   DOCKER_CONTEXT='colima', DOCKER_COMPOSE='docker --context colima compose',
                   CONTAINER_COMPOSE=str(plugin / 'bin/compose'),
@@ -1377,10 +1386,11 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
                   CONTAINER_COMPOSE_NORMALIZER=str(plugin / 'resources/compose-normalizer'),
                   CONTAINER_COMPOSE_LIVE='1', CONTAINER_COMPOSE_BUILD_CHECK_LIVE='1',
                   COMPOSE_PARITY_TEST_RUNNER=str(ROOT / 'Tools/bazel/prebuilt_parity_tests.py'),
-                  COMPOSE_PREBUILT_CORE_TEST=native_tests['ComposeCoreTests']['path'],
-                  COMPOSE_PREBUILT_PLUGIN_TEST=native_tests['ComposePluginTests']['path'],
                   PARITY_TIMEOUT_SECONDS='300', SDKROOT=sdk,
                   TEST_TMPDIR=str(scratch), TMPDIR=str(scratch) + '/')
+    if not development_bridge:
+        common.update(COMPOSE_PREBUILT_CORE_TEST=native_tests['ComposeCoreTests']['path'],
+                      COMPOSE_PREBUILT_PLUGIN_TEST=native_tests['ComposePluginTests']['path'])
     for name, record in native_tests.items():
         path = Path(record['path'])
         if (not path.is_file() or sha(path) != record['sha256']
@@ -1400,9 +1410,28 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
             fixed_images.append('container-compose-external-build-secret-'
                                 + environment['IMAGE_SUFFIX'] + ':latest')
         full_suite.assert_namespace_free(baseline, name, fixed_names, fixed_images)
-        ledger.begin(name, source_hash, prefixes, baseline, image_prefixes)
-        runner.env = environment
-        row = runner.run('compose-full-suite', 'candidate', name, 0, args, ROOT, timeout)
+        ledger.begin(name, source_hash, prefixes, baseline, image_prefixes, supervised=True)
+        # The private CLI changes process group, so Q's group-only watchdog
+        # cannot establish that all writers have stopped before hashing logs.
+        from fork_benchmark import command_lease
+        environment = dict(environment, **{cli_process.CASE_NONCE: uuid.uuid4().hex})
+        number = len(runner.rows)
+        log = runner.evidence / f'{number:03}-compose-full-suite-candidate-{name}-0.log'
+        started = time.monotonic_ns()
+        with command_lease(environment) as descriptors, log.open('w') as stream:
+            try:
+                status = cli_process.run(
+                    args, cwd=ROOT, env=environment, stdout=stream,
+                    stderr=subprocess.STDOUT, timeout=timeout, pass_fds=descriptors,
+                    on_start=lambda session: ledger.claim_session(name, source_hash, session),
+                    on_clear=lambda: ledger.clear_session(name))
+            except subprocess.TimeoutExpired:
+                status = 124
+        row = {'component': 'compose-full-suite', 'lane': 'candidate', 'fixture': name,
+               'trial': 0, 'seconds': (time.monotonic_ns() - started) / 1e9,
+               'status': status, 'command': [str(arg) for arg in args], 'log': str(log)}
+        runner.rows.append(row)
+        write(runner.evidence / 'results.json', runner.rows)
         rows.append(row)
         write(base / (name + '.json'), {'name': name, 'source_sha256': source_hash,
                                         'status': row['status'], 'log': row['log'],
@@ -1412,6 +1441,22 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
                        for resource in removed)
         if row['status'] or (removed and not expected):
             raise RuntimeError('Original full-suite case failed or leaked resources: ' + name)
+    if development_bridge:
+        bridge = next(item for item in full_suite.inventory()
+                      if item['target'] == 'docker-compose-bridge-parity')
+        name = bridge['target']
+        case_dir = base / 'cases' / name
+        case_dir.mkdir(parents=True)
+        environment = dict(common, PARITY_EVIDENCE_DIR=str(case_dir),
+                           PARITY_TIMING_OUTPUT=str(case_dir / 'timing.tsv'))
+        run_case(name, bridge['script_sha256'], bridge['owned_prefixes'],
+                 [bridge['script'], '--strict'], environment, 600,
+                 bridge['owned_image_prefixes'], bridge['fixed_names'])
+        receipt = {'schema': 1, 'target': 'compose-development-bridge',
+                   'passed': True, 'case': name, 'rows': rows,
+                   'ledger_sha256': sha(ledger.path)}
+        write(base / 'development-bridge.json', receipt)
+        return receipt
     test = native_tests['ComposeRuntimeTests']
     workspace = test['workspace']
     run_case('runtime-suite', sources['runtime-suite'], ['ccrt-'], [test['path']],
@@ -1443,7 +1488,8 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
 
 
 def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
-             q_assets: dict, native_tests: dict, benchmark_reference: dict) -> dict:
+             q_assets: dict, native_tests: dict, benchmark_reference: dict | None, *,
+             development_bridge: bool = False) -> dict:
     """Own signed Q release bytes, private plugin and exact host/command leases."""
     modules = q['modules']
     runtime = modules['runtime_benchmark']
@@ -1561,8 +1607,13 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
                    'docker.io/library/docker:29.2.1-cli@sha256:'
                    'cab69e2d0a1a2ea9a1ce1060252f439e83483ae41ec09317aecb33b08a0656a5'], 300)
             issue('candidate', 'setup-version', 0, candidate + ['version'], 60)
-            result['original_full_suite'] = run_original_full_suite(
-                evidence, runner, runtime, install, plugin, native_tests, issue)
+            suite = run_original_full_suite(
+                evidence, runner, runtime, install, plugin, native_tests, issue,
+                development_bridge=development_bridge)
+            if development_bridge:
+                result['development_bridge'] = suite
+            else:
+                result['original_full_suite'] = suite
             time.sleep(5)
             quiet = full_suite.Ledger(evidence / 'full-suite').verify_quiet(
                 lambda lane, kind, args: Path(issue(
@@ -1573,28 +1624,29 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
                   {'schema': 1, 'settle_seconds': 5,
                    'inventory_sha256': hashlib.sha256(json.dumps(
                        quiet, sort_keys=True).encode()).hexdigest()})
-            image = runtime.ALPINE
-            reference = revalidate_benchmark_reference(evidence, image)
-            if reference != benchmark_reference:
-                raise RuntimeError('Published historical benchmark changed before live measurements')
-            fixtures = evidence / 'fixtures'
-            fixtures.mkdir()
-            for count in (1, 3):
-                fixture(fixtures / f'{count}.yml', count, image)
-            result['fixture_sha256'] = {str(count): sha(fixtures / f'{count}.yml') for count in (1, 3)}
-            if result['fixture_sha256'] != reference['workload']['fixtureSHA256']:
-                raise RuntimeError('Current fixture bytes differ from the published reference')
-            result['budget'] = {**host_budget(), 'service_memory_max_mib': 384, 'trials': TRIALS}
-            # Only the current signed candidate is timed; Docker rows are immutable evidence.
-            write(runtime_evidence / 'benchmark-host-before.json', benchmark_host_snapshot())
-            measured, warmups = measure_lane(
-                'candidate', candidate, fixtures, ledger, issue,
-                runtime_evidence / 'compose-operations.json')
-            write(runtime_evidence / 'benchmark-host-after.json', benchmark_host_snapshot())
-            historical = [{**row, 'historical_reference': True} for row in reference['samples']]
-            result['benchmark_reference'] = json.loads((evidence / 'benchmark-reference.json').read_text())
-            result['benchmark_candidate_warmups'] = warmups
-            result['benchmarks'] = compare(measured + historical, runtime_evidence)
+            if not development_bridge:
+                image = runtime.ALPINE
+                reference = revalidate_benchmark_reference(evidence, image)
+                if reference != benchmark_reference:
+                    raise RuntimeError('Published historical benchmark changed before live measurements')
+                fixtures = evidence / 'fixtures'
+                fixtures.mkdir()
+                for count in (1, 3):
+                    fixture(fixtures / f'{count}.yml', count, image)
+                result['fixture_sha256'] = {str(count): sha(fixtures / f'{count}.yml') for count in (1, 3)}
+                if result['fixture_sha256'] != reference['workload']['fixtureSHA256']:
+                    raise RuntimeError('Current fixture bytes differ from the published reference')
+                result['budget'] = {**host_budget(), 'service_memory_max_mib': 384, 'trials': TRIALS}
+                # Only the current signed candidate is timed; Docker rows are immutable evidence.
+                write(runtime_evidence / 'benchmark-host-before.json', benchmark_host_snapshot())
+                measured, warmups = measure_lane(
+                    'candidate', candidate, fixtures, ledger, issue,
+                    runtime_evidence / 'compose-operations.json')
+                write(runtime_evidence / 'benchmark-host-after.json', benchmark_host_snapshot())
+                historical = [{**row, 'historical_reference': True} for row in reference['samples']]
+                result['benchmark_reference'] = json.loads((evidence / 'benchmark-reference.json').read_text())
+                result['benchmark_candidate_warmups'] = warmups
+                result['benchmarks'] = compare(measured + historical, runtime_evidence)
             result['passed'] = True
         except BaseException as error:
             result['failures'].append(str(error))
@@ -1631,6 +1683,7 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
                         if host_acquired:
                             runtime.stop_owned('fork')
                         modules['runtime_coverage'].require_idle(install)
+                        full_suite_scratch.restore(evidence)
                         runtime_idle = True
                         phases.mark('runtime')
                     except BaseException as error:
@@ -1875,6 +1928,18 @@ def ensure_full_suite_cleared(evidence: Path, q: dict, descriptors: tuple[int, .
         full_suite.write(ledger.path, ledger.data)
     removed = []
     if ledger.data['cases']:
+        for row in ledger.pending():
+            if source_hashes.get(row['name']) != row['source_sha256']:
+                raise RuntimeError('Full-suite source changed before process recovery: ' + row['name'])
+            session = row.get('session')
+            if not session and row.get('supervised') is True:
+                # The exec gate cannot release until its session claim is durable.
+                continue
+            if not session:
+                raise RuntimeError('Pending full-suite case lacks process ownership: ' + row['name'])
+            if session.get('cleared') is not True:
+                cli_process.recover_session(session)
+                ledger.clear_session(row['name'])
         runtime = q['modules']['runtime_benchmark']
         install = runtime.INSTALLS / 'fork/install'
         sequence = 0
@@ -2173,6 +2238,7 @@ def recover(evidence: Path) -> dict:
                 if not phases.has('runtime'):
                     runtime.stop_owned('fork')
                 modules['runtime_coverage'].require_idle(runtime.INSTALLS / 'fork/install')
+                full_suite_scratch.restore(evidence)
                 phases.mark('runtime')
                 runtime_record = evidence / 'runtime-install.json'
                 if runtime_record.exists():
@@ -2269,6 +2335,48 @@ def recover(evidence: Path) -> dict:
                     os.close(fd)
 
 
+def verify_qualified_helpers(q: dict) -> None:
+    if git(Q_ROOT, 'rev-parse', 'HEAD') != Q or git(Q_ROOT, 'status', '--porcelain'):
+        raise RuntimeError('Qualified helper source changed during Compose qualification')
+    for name, expected in q['hashes'].items():
+        if sha(Q_ROOT / 'Tools/bazel' / name) != expected:
+            raise RuntimeError('Qualified helper changed during Compose qualification: ' + name)
+
+
+def execute_development_bridge(evidence: Path) -> dict:
+    """Prove one original Bridge case without producing release acceptance."""
+    result = {'schema': 1, 'target': 'compose-development-bridge', 'passed': False,
+              'source': None, 'q_checkpoint': Q, 'stages': [], 'failures': []}
+    try:
+        q = q_modules()
+        source, config = preflight(evidence, q, development_bridge=True)
+        result['source'] = source['commit']
+        result['preflight_sha256'] = sha(evidence / 'preflight.json')
+        result['stages'], invocation, assets, native_tests = run_layers(
+            evidence, source, q, development_bridge=True)
+        result['released_q_assets_sha256'] = sha(evidence / 'q-assets/q-assets.json')
+        result['compiled_sdk_chain_sha256'] = sha(evidence / 'compiled-sdk-chain.json')
+        verify_source(source, source_identity(ROOT))
+        plugin = unpack_candidate(evidence, invocation)
+        signed = sign(evidence, plugin, config.get(
+            'signing_identity', q['modules']['runtime_benchmark'].IDENTITY))
+        result['signed_candidate'] = signed
+        result['live'] = run_live(evidence, q, plugin, signed, assets, native_tests,
+                                  None, development_bridge=True)
+        result['live_sha256'] = sha(evidence / 'live.json')
+        verify_source(source, source_identity(ROOT))
+        verify_qualified_helpers(q)
+        result['passed'] = result['live'].get('passed') is True
+        if not result['passed']:
+            raise RuntimeError('Bridge development proof or restoration did not pass')
+    except BaseException as error:
+        result['failures'].append(str(error))
+        raise
+    finally:
+        write(evidence / 'development-bridge.json', result)
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence', type=Path, required=True, help='Fresh internal retained directory')
@@ -2278,8 +2386,10 @@ def main() -> None:
     action.add_argument('--recover', action='store_true', help='Recover a previously interrupted Compose host lease')
     action.add_argument('--capture-reference', action='store_true',
                         help='Capture one released Docker reference without building Compose')
+    action.add_argument('--development-bridge', action='store_true',
+                        help='Build and sign a local candidate, run only original Bridge parity, and restore the host; not release qualification')
     args = parser.parse_args()
-    if args.previous_candidate_lock and (args.recover or args.capture_reference):
+    if args.previous_candidate_lock and (args.recover or args.capture_reference or args.development_bridge):
         parser.error('Historical Compose comparison applies only to full qualification')
     evidence = args.evidence.resolve()
     allowed = (OUTPUT, CAPTURE_OUTPUT) if args.recover else (
@@ -2304,6 +2414,10 @@ def main() -> None:
     evidence.mkdir(parents=True)
     if args.capture_reference:
         outcome = execute_capture(evidence)
+        print(json.dumps(outcome, indent=2))
+        return
+    if args.development_bridge:
+        outcome = execute_development_bridge(evidence)
         print(json.dumps(outcome, indent=2))
         return
     result = {'schema': 1, 'target': 'compose-only-qualify', 'passed': False,
@@ -2343,11 +2457,7 @@ def main() -> None:
                            q['modules']['runtime_benchmark'].ALPINE)
         result['portable_benchmark_sha256'] = sha(evidence / 'portable-benchmark.json')
         verify_source(source, source_identity(ROOT))
-        if git(Q_ROOT, 'rev-parse', 'HEAD') != Q or git(Q_ROOT, 'status', '--porcelain'):
-            raise RuntimeError('Qualified helper source changed during Compose qualification')
-        for name, expected in q['hashes'].items():
-            if sha(Q_ROOT / 'Tools/bazel' / name) != expected:
-                raise RuntimeError('Qualified helper changed during Compose qualification: ' + name)
+        verify_qualified_helpers(q)
         result['passed'] = True
     except BaseException as error:
         result['failures'].append(str(error))

@@ -62,7 +62,7 @@ class QualificationTests(unittest.TestCase):
         self.assertIn('docker/compose-bridge-kubernetes@sha256:', bridge_source)
         self.assertIn('docker/compose-bridge-helm@sha256:', bridge_source)
         self.assertEqual(set(local.ORIGINAL_FIXTURE_IMAGES),
-                         {'alpine:3.20', 'alpine:3.21',
+                         {'alpine:3.20', 'alpine:3.21', 'alpine:latest',
                           'ghcr.io/linuxcontainers/alpine:3.20',
                           'busybox:latest',
                           'docker/compose-bridge-kubernetes@sha256:'
@@ -80,9 +80,9 @@ class QualificationTests(unittest.TestCase):
                 return image == 'busybox:latest'
             rows = local.preload_original_fixture_images(
                 'docker.io/library/alpine@sha256:' + 'a' * 64, install, issue, present)
-            self.assertEqual(len(rows), 16)
-            self.assertEqual(len(issued), 14)
-            self.assertEqual(len(inspected), 12)
+            self.assertEqual(len(rows), 18)
+            self.assertEqual(len(issued), 16)
+            self.assertEqual(len(inspected), 14)
             self.assertEqual([row['image'] for row in rows if row['already_present']],
                              ['busybox:latest', 'busybox:latest'])
             self.assertIn(('candidate', 'setup-original-fixture-image',

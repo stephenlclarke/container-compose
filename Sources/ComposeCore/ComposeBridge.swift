@@ -308,6 +308,7 @@ extension ComposeOrchestrator {
         var arguments = [
             "run",
             "--rm",
+            "--name", "compose-bridge-\(options.oneOffIdentifier())",
             "--env", "LICENSE_AGREEMENT=true",
             "--volume", "\(input):/in",
             "--volume", "\(output):/out",

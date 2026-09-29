@@ -83,6 +83,11 @@ def authorized_builder(name: str, case: str) -> bool:
                                      NAMED_RUNTIME_BUILDER.fullmatch(name) is not None)))
 
 
+def authorized_bridge(name: str, case: str) -> bool:
+    return (case == 'docker-compose-bridge-parity' and
+            re.fullmatch(r'compose-bridge-[0-9a-f]{12}', name) is not None)
+
+
 def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -279,7 +284,7 @@ def assert_namespace_free(baseline: dict, case: str,
                              value == fixed or value.startswith(fixed + '-')
                              for fixed in (fixed_names or []))) or (
                          (lane == 'candidate' and kind == 'containers'
-                          and authorized_builder(name, case)))
+                          and (authorized_builder(name, case) or authorized_bridge(name, case))))
                 if owned:
                     raise RuntimeError('Original ' + lane + ' ' + kind +
                                        ' collides with parity-owned namespace: ' + value)
@@ -354,7 +359,7 @@ def difference(before: dict, after: dict, prefixes: list[str],
                         image_owned or
                         volume_owned or
                         (lane == 'candidate' and kind == 'containers'
-                         and authorized_builder(name, case))
+                         and (authorized_builder(name, case) or authorized_bridge(name, case)))
                         or any(name.startswith(prefix) for prefix in prefixes)):
                     raise RuntimeError('Unrecognized new ' + lane + ' ' + kind + ': ' + name)
                 additions.append({'lane': lane, 'kind': kind, 'id': identity, 'name': name})
@@ -403,21 +408,40 @@ class Ledger:
             'schema': 1, 'cases': []}
 
     def begin(self, name: str, source_sha256: str, prefixes: list[str], baseline: dict,
-              image_prefixes: list[str] | None = None) -> None:
+              image_prefixes: list[str] | None = None, *, supervised: bool = False) -> None:
         if self.pending() or any(row['name'] == name for row in self.data['cases']):
             raise RuntimeError('Parity case was already enrolled: ' + name)
         self.data['cases'].append({'name': name, 'source_sha256': source_sha256,
                                    'owned_prefixes': prefixes, 'baseline': baseline,
                                    'owned_image_prefixes': image_prefixes or [],
-                                   'enrolled_volumes': [], 'restored': False})
+                                   'enrolled_volumes': [], 'restored': False,
+                                   'supervised': supervised})
         self.directory.mkdir(parents=True, exist_ok=True)
         write(self.path, self.data)
 
     def pending(self) -> list[dict]:
         return [row for row in self.data['cases'] if not row['restored']]
 
+    def claim_session(self, name: str, source_sha256: str, session: dict) -> None:
+        row = next(item for item in self.pending() if item['name'] == name)
+        if (row['source_sha256'] != source_sha256 or 'session' in row
+                or type(session.get('pid')) is not int or session.get('sid') != session['pid']
+                or not session.get('birth') or not session.get('nonce')):
+            raise RuntimeError('Invalid full-suite session claim: ' + name)
+        row['session'] = dict(session, cleared=False)
+        write(self.path, self.data)
+
+    def clear_session(self, name: str) -> None:
+        row = next(item for item in self.pending() if item['name'] == name)
+        if not row.get('session') or row['session']['cleared']:
+            raise RuntimeError('Full-suite session was not claimed: ' + name)
+        row['session']['cleared'] = True
+        write(self.path, self.data)
+
     def finish(self, name: str, current: dict) -> None:
         row = next(item for item in self.pending() if item['name'] == name)
+        if row.get('session') and row['session'].get('cleared') is not True:
+            raise RuntimeError('Full-suite process session remains active: ' + name)
         if difference(row['baseline'], current, row['owned_prefixes'],
                       row['enrolled_volumes'], row['name'],
                       row['owned_image_prefixes']):
@@ -448,6 +472,8 @@ class Ledger:
         for row in self.pending():
             if sources.get(row['name']) != row['source_sha256']:
                 raise RuntimeError('Parity case source changed before recovery: ' + row['name'])
+            if row.get('session') and row['session'].get('cleared') is not True:
+                raise RuntimeError('Full-suite process session remains active: ' + row['name'])
             observed = snapshot(invoke)
             if row['name'] == 'docker-compose-image-volumes-parity':
                 journal = self.directory / 'cases' / row['name'] / 'mounts.json'

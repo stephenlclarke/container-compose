@@ -33,6 +33,30 @@ class FullSuiteTests(unittest.TestCase):
         return {lane: {kind: {} for kind in ('containers', 'networks', 'volumes', 'images')}
                 for lane in ('candidate', 'docker')}
 
+    def test_bridge_ownership_is_exact_candidate_container_and_case_only(self) -> None:
+        baseline = self.empty()
+        name = 'compose-bridge-012345abcdef'
+        for lane in ('candidate', 'docker'):
+            for kind in ('containers', 'networks', 'volumes', 'images'):
+                current = self.empty()
+                current[lane][kind]['owned-id'] = name
+                if lane == 'candidate' and kind == 'containers':
+                    additions = full_suite.difference(baseline, current, [],
+                                                      case='docker-compose-bridge-parity')
+                    self.assertEqual(additions[0]['id'], 'owned-id')
+                    with self.assertRaisesRegex(RuntimeError, 'collides'):
+                        full_suite.assert_namespace_free(current, 'docker-compose-bridge-parity')
+                else:
+                    with self.assertRaisesRegex(RuntimeError, 'Unrecognized'):
+                        full_suite.difference(baseline, current, [],
+                                              case='docker-compose-bridge-parity')
+        for invalid in (name + '0', name.upper(), 'compose-bridge-user', 'unrelated'):
+            current = self.empty()
+            current['candidate']['containers']['id'] = invalid
+            with self.assertRaisesRegex(RuntimeError, 'Unrecognized'):
+                full_suite.difference(baseline, current, [], case='docker-compose-bridge-parity')
+        self.assertFalse(full_suite.authorized_bridge(name, 'runtime-suite'))
+
     def test_all_original_parity_leaves_have_one_script(self) -> None:
         rows = full_suite.inventory()
         self.assertEqual(len(rows), 66)
