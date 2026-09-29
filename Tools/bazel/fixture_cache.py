@@ -17,10 +17,10 @@
 
 """Retain selected Q image-store blobs across the qualified private reset.
 
-This is bound to Q 15361ce5 and Containerization 5ed9bc74's on-disk image
-store. Only fixture image references and their original index plus the
-linux/arm64 manifest closure are copied. No services, snapshots, or runtime
-configuration are cached.
+This is bound to Q 6fe80db1 and Containerization 5ed9bc74's on-disk image
+store. The exact historical Q 15361ce5 receipts remain reusable only when the
+24-file image-store source contract is unchanged; their provenance is not
+rewritten. Only the original index and linux/arm64 closure are copied.
 """
 
 from __future__ import annotations
@@ -35,7 +35,14 @@ import stat
 import tempfile
 
 SCHEMA = 1
-Q_SOURCE = '15361ce5f55a6b8ab3242e89650a188766b47581'
+Q_SOURCE = '6fe80db1bad6abff5dfa22f02bdf8bc403ad48bc'
+LEGACY_Q_SOURCE = '15361ce5f55a6b8ab3242e89650a188766b47581'
+Q_ROOT = Path('/Users/sclarke/github/container-bazel-minimal')
+IMAGE_FORMAT_CONTRACT_SHA256 = 'f3c6f8fcb3132eb41dcaf48254f6e18e65f47fe15875261cde90931bce6f33ee'
+IMAGE_FORMAT_DIRS = ('Sources/Plugins/CoreImages', 'Sources/Services/ContainerImagesService',
+                     'Sources/ContainerCommands/Image')
+IMAGE_FORMAT_FILES = ('Sources/Services/ContainerAPIService/Client/ClientImage.swift',
+                      'Sources/ContainerPlugin/ApplicationRoot.swift', 'Package.resolved')
 CONTAINERIZATION_SOURCE = '5ed9bc7490aa30c76337bd5b3d8ff251b63c678f'
 INDEX_TYPES = {'application/vnd.oci.image.index.v1+json',
                'application/vnd.docker.distribution.manifest.list.v2+json'}
@@ -144,10 +151,32 @@ def closure(root: Path, descriptor: dict, reference: str) -> dict:
             'blobs': [{'digest': key, 'size': value} for key, value in sorted(unique.items())]}
 
 
+def image_store_contract(root: Path) -> str:
+    """Bind the complete Q image-service source and unchanged 5ed dependency graph."""
+    names = list(IMAGE_FORMAT_FILES)
+    for directory_name in IMAGE_FORMAT_DIRS:
+        directory_path = root / directory_name
+        if directory_path.is_symlink() or not directory_path.is_dir():
+            raise RuntimeError('Q image-store source directory changed')
+        names.extend(str(path.relative_to(root)) for path in directory_path.rglob('*.swift'))
+    rows = {}
+    for name in sorted(names):
+        path = root / name
+        rows[name] = hashlib.sha256(regular(path)).hexdigest()
+    return hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def legacy_format_compatible(root: Path | None = None) -> bool:
+    return image_store_contract(root or Q_ROOT) == IMAGE_FORMAT_CONTRACT_SHA256
+
+
 def receipt(entry: Path, reference: str) -> dict:
     directory(entry)
     value = json.loads(regular(entry / 'receipt.json'))
-    if (value.get('schema') != SCHEMA or value.get('q_source') != Q_SOURCE
+    recorded_q = value.get('q_source')
+    if (value.get('schema') != SCHEMA
+            or recorded_q not in (Q_SOURCE, LEGACY_Q_SOURCE)
+            or (recorded_q == LEGACY_Q_SOURCE and not legacy_format_compatible())
             or value.get('containerization_source') != CONTAINERIZATION_SOURCE
             or value.get('reference') != reference
             or not isinstance(value.get('stored_reference'), str)):

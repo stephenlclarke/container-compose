@@ -23,6 +23,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import fixture_cache as cache
 
@@ -71,6 +72,52 @@ class FixtureCacheTests(unittest.TestCase):
             self.assertEqual(json.loads((target / 'state.json').read_text()), {reference: root})
             self.assertEqual(len(list((target / 'content/blobs/sha256').iterdir())), 4)
             self.assertEqual(cache.capture(source, retained, ('alpine:3.20',)), captured)
+
+    def test_historical_receipt_reuse_keeps_producer_and_requires_exact_format(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            source = base / 'source'
+            source.mkdir()
+            fixture(source)
+            retained = base / 'retained'
+            captured = cache.capture(source, retained, ('alpine:3.20',))[0]
+            entry = cache.entry_path(retained, captured['reference'])
+            path = entry / 'receipt.json'
+            historical = json.loads(path.read_text())
+            historical['q_source'] = cache.LEGACY_Q_SOURCE
+            path.write_text(json.dumps(historical, sort_keys=True) + '\n')
+            original = path.read_bytes()
+            target = base / 'target'
+            target.mkdir()
+            with patch.object(cache, 'legacy_format_compatible', return_value=False):
+                with self.assertRaisesRegex(RuntimeError, 'identity changed'):
+                    cache.restore(target, retained, ('alpine:3.20',))
+            self.assertFalse((target / 'state.json').exists())
+            with patch.object(cache, 'legacy_format_compatible', return_value=True):
+                restored = cache.restore(target, retained, ('alpine:3.20',))
+            self.assertEqual(restored[0]['q_source'], cache.LEGACY_Q_SOURCE)
+            self.assertEqual(path.read_bytes(), original)
+            self.assertEqual(restored[0]['root'], captured['root'])
+            historical['q_source'] = '0' * 40
+            path.write_text(json.dumps(historical, sort_keys=True) + '\n')
+            with patch.object(cache, 'legacy_format_compatible', return_value=True):
+                with self.assertRaisesRegex(RuntimeError, 'identity changed'):
+                    cache.receipt(entry, captured['reference'])
+
+    def test_image_store_contract_detects_source_or_pin_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in cache.IMAGE_FORMAT_FILES:
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'original')
+            for name in cache.IMAGE_FORMAT_DIRS:
+                path = root / name / 'Image.swift'
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'original')
+            original = cache.image_store_contract(root)
+            (root / 'Package.resolved').write_bytes(b'changed')
+            self.assertNotEqual(cache.image_store_contract(root), original)
 
     def test_missing_or_corrupt_cache_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

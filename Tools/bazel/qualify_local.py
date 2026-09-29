@@ -55,9 +55,9 @@ from prebuilt_parity_tests import test_workspace
 from run import RETAINED, ROOT, SSD
 from retain_evidence import restore_candidate
 
-Q = '15361ce5f55a6b8ab3242e89650a188766b47581'
+Q = '6fe80db1bad6abff5dfa22f02bdf8bc403ad48bc'
 Q_ROOT = Path('/Users/sclarke/github/container-bazel-minimal')
-Q_EVIDENCE = Path.home() / 'Library/Application Support/ContainerFamily/retained/container-only/local-final/15361ce5-20260928T090931Z'
+Q_EVIDENCE = Path.home() / 'Library/Application Support/ContainerFamily/retained/container-only/local-final/6fe80db1-20260929T172600Z'
 OUTPUT = RETAINED / 'local-final'
 CAPTURE_OUTPUT = RETAINED / 'benchmark-reference-capture'
 TRIALS = 7
