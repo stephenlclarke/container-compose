@@ -33,6 +33,32 @@ import qualify_local as local
 
 
 class QualificationTests(unittest.TestCase):
+    def test_fixture_app_allows_cold_state_but_checks_parent_before_ownership(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            state = base / 'state'
+            retained = base / 'retained'
+            retained.mkdir()
+            calls = []
+            def own(path, lane):
+                calls.append((path, lane))
+                path.mkdir(parents=True, exist_ok=True)
+            runtime = SimpleNamespace(own=own)
+            app = local._checked_fixture_app(runtime, state, retained, require_app=False)
+            self.assertEqual(app, state / 'fork/app')
+            self.assertEqual(calls, [(state / 'fork', 'fork')])
+            with self.assertRaisesRegex(RuntimeError, 'app changed'):
+                local._checked_fixture_app(runtime, state, retained, require_app=True)
+            app.mkdir()
+            self.assertEqual(local._checked_fixture_app(runtime, state, retained,
+                                                        require_app=True), app)
+            (base / 'linked-state').symlink_to(state, target_is_directory=True)
+            calls.clear()
+            with self.assertRaisesRegex(RuntimeError, 'directory changed'):
+                local._checked_fixture_app(runtime, base / 'linked-state', retained,
+                                           require_app=False)
+            self.assertEqual(calls, [])
+
     def test_runtime_summary_accepts_real_swift_testing_suite_wording(self) -> None:
         for summary in ('✔ Test run with 27 tests in 2 suites passed after 0.364 seconds.',
                         '✔ Test run with 27 tests passed after 10.52 seconds.'):
@@ -82,14 +108,16 @@ class QualificationTests(unittest.TestCase):
                 'docker.io/library/alpine@sha256:' + 'a' * 64, install, issue, present)
             self.assertEqual(len(rows), 18)
             self.assertEqual(len(issued), 16)
-            self.assertEqual(len(inspected), 14)
+            self.assertEqual(len(inspected), 18)
             self.assertEqual([row['image'] for row in rows if row['already_present']],
                              ['busybox:latest', 'busybox:latest'])
             self.assertIn(('candidate', 'setup-original-fixture-image',
                            [str(install / 'bin/container'), 'image', 'pull', '--progress',
-                            'none', 'ghcr.io/linuxcontainers/alpine:3.20']), issued)
+                            'none', '--platform', 'linux/arm64',
+                            'ghcr.io/linuxcontainers/alpine:3.20']), issued)
             self.assertIn(('docker', 'setup-original-fixture-image',
-                           ['docker', '--context', 'colima', 'pull', 'alpine:3.20']), issued)
+                           ['docker', '--context', 'colima', 'pull', '--platform',
+                            'linux/arm64', 'alpine:3.20']), issued)
 
     def test_journald_preload_requires_exact_signed_payload(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -2,6 +2,14 @@
 
 Status: Compose-owned implementation pending its first complete immutable-source qualification. The current Makefile uses this repository’s own `Tools/bazel/run.sh`; historical references below to the devcontainer family launcher describe earlier checkpoint evidence only.
 
+## Fixture download limit at 8a2b5b4e
+
+The focused API diagnostic at `8a2b5b4ea3b93a817eab32550eacf29800c84e58` stops during fixture preparation: Docker Hub returns HTTP 429 while the native pull requests an Alpine attestation outside the Mac's ARM64 workload. No API case executes. All nine cleanup phases complete, and the host, runtime, plugin and Colima are restored. Evidence remains failed at `local-final/8a2b5b4e-api-socket-focus-20260929T123740Z`.
+
+The workflow correction retains only verified fixture image references and content across resets of the marked private test store, and restricts cold downloads to `linux/arm64`. Cache entries must retain the original root index digest and a complete hash-verified ARM64 manifest, configuration and layer closure. The store format is bound to the released Q checkpoint. Only a fresh private store may receive cached content before services start; no containers, snapshots or service state are restored. Native inspection must confirm restored image identities before the test baseline is captured. Offline validation passes capture, restore and unchanged reuse of four real native image references, and lookup against all ten retained native fixtures and the 912-row Docker inventory. Focused tests cover tagged/digest aliases, unsupported background registry names, corrupted content and fresh-store boundaries. The original API diagnostic remains required before a successful runtime claim.
+
+A separate read-only Docker export preserves an existing `alpine:latest` archive but finds an incomplete multi-platform graph. Its ARM64 data is complete, but its tag revision differs from the preceding native run. That archive is retained as diagnostic evidence and is not substituted into the fixture cache. The pinned benchmark image and historical reference measurements remain unchanged.
+
 ## API-socket timeout at fbc40e81
 
 Signed checkpoint `fbc40e81601c8f0c8817cbaa7522fc36ac466cf3` passes the original strict lifecycle leaf, including the foreground marker, status/removal assertions and 20 native component tests. Its focused live diagnostic restores all nine host phases. The subsequent all-66 run passes and restores its first 63 cases, including lifecycle-hooks, then API-socket-client times out during its one-off `run --rm ... root-client sh` command at the unchanged 300-second limit. Persistent root/non-root client checks, restart and recreate already completed. The two following cases are not reached.

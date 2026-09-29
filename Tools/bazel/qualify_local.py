@@ -45,6 +45,7 @@ from hosted_quality import admit as admit_hosted, current_context
 import benchmark_evidence
 import cli_process
 import compose_release
+import fixture_cache
 import full_suite
 import full_suite_scratch
 from artifacts.release_asset import cached_fetch, read_lock, release_asset as published_release_asset
@@ -66,6 +67,9 @@ ORIGINAL_FIXTURE_IMAGES = ('alpine:3.20', 'alpine:3.21', 'alpine:latest',
                            '4ffd3f23f377b1fdd9d0195732980e7534a8975c8a210a12681dc803c002f761',
                            'docker/compose-bridge-helm@sha256:'
                            '7aeee453c13045dcec87b92cb13973871ed8c72d5ca1e9365886487782ea2b09')
+API_SOCKET_IMAGE = ('docker.io/library/docker:29.2.1-cli@sha256:'
+                    'cab69e2d0a1a2ea9a1ce1060252f439e83483ae41ec09317aecb33b08a0656a5')
+FIXTURE_CACHE = RETAINED / 'fixture-image-cache-q153-5ed'
 BENCHMARK_LOCK = ROOT / 'Tools/bazel/artifacts/benchmark-reference.lock.json'
 BENCHMARK_CACHE = RETAINED / 'release-asset-cache'
 DOCKER_COMPOSE_VERSION = '5.5.1'
@@ -1350,17 +1354,44 @@ def preload_original_fixture_images(runtime_image: str, install: Path,
     rows = []
     for image in (runtime_image, 'alpine:3.22', *ORIGINAL_FIXTURE_IMAGES):
         for lane in ('candidate', 'docker'):
-            pinned = image in (runtime_image, 'alpine:3.22')
-            if not pinned and present(lane, image):
+            if present(lane, image):
                 rows.append({'lane': lane, 'image': image, 'already_present': True})
                 continue
             base = ([str(install / 'bin/container')] if lane == 'candidate'
                     else ['docker', '--context', 'colima'])
-            args = (['image', 'pull', '--progress', 'none', image] if lane == 'candidate'
-                    else ['pull', image])
+            args = (['image', 'pull', '--progress', 'none', '--platform', 'linux/arm64', image]
+                    if lane == 'candidate' else ['pull', '--platform', 'linux/arm64', image])
             issue(lane, 'setup-original-fixture-image', 0, base + args, 300)
             rows.append({'lane': lane, 'image': image, 'already_present': False})
     return rows
+
+
+def qualified_fixture_app(runtime: object, *, require_app: bool = True) -> Path:
+    """Bind direct image-store seeding to Q's owned private, idle app tree."""
+    state = Path('/private/tmp') / f'cfb-{os.getuid()}'
+    if runtime.STATE != state:
+        raise RuntimeError('Qualified Q fixture cache root changed')
+    return _checked_fixture_app(runtime, state, RETAINED, require_app=require_app)
+
+
+def _checked_fixture_app(runtime: object, state: Path, retained: Path,
+                         *, require_app: bool) -> Path:
+    fork = state / 'fork'
+    for path in (state, fork, retained):
+        if path.is_symlink() or (path.exists() and not path.is_dir()) \
+                or (path == retained and not path.is_dir()):
+            raise RuntimeError('Qualified fixture cache directory changed: ' + str(path))
+        if path.exists() and path.stat().st_uid != os.getuid():
+            raise RuntimeError('Qualified fixture cache owner changed: ' + str(path))
+    app = fork / 'app'
+    if app.is_symlink() or (app.exists() and not app.is_dir()) or (require_app and not app.is_dir()):
+        raise RuntimeError('Qualified fixture cache app changed: ' + str(app))
+    if app.is_dir() and app.stat().st_uid != os.getuid():
+        raise RuntimeError('Qualified fixture cache app owner changed: ' + str(app))
+    runtime.own(fork, 'fork')
+    if fork.is_symlink() or fork.stat().st_uid != os.getuid():
+        raise RuntimeError('Qualified fixture cache owner changed: ' + str(fork))
+    return app
 
 
 def run_original_full_suite(evidence: Path, runner: object, runtime: object,
@@ -1587,8 +1618,21 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
             colima.command_descriptors = ()
             runtime_lease.acquire(modules['release_install'].checked_payload,
                                   runtime, modules['runtime_coverage'])
+            private_app = qualified_fixture_app(runtime, require_app=False)
+            fixture_references = (runtime.ALPINE, 'alpine:3.22',
+                                  *ORIGINAL_FIXTURE_IMAGES, API_SOCKET_IMAGE)
+            cached_before_reset = fixture_cache.capture(
+                private_app, FIXTURE_CACHE, fixture_references)
+            write(runtime_evidence / 'fixture-cache-before-reset.json',
+                  {'schema': 1, 'references': [row['reference'] for row in cached_before_reset],
+                   'roots': {row['reference']: row['root']['digest'] for row in cached_before_reset}})
             if runtime.reset_state('fork', fingerprint['init_image'], fingerprint['builder_image']) != fingerprint['kernel_sha256']:
                 raise RuntimeError('Released Q private runtime kernel changed')
+            qualified_fixture_app(runtime)
+            restored_fixtures = fixture_cache.restore(private_app, FIXTURE_CACHE, fixture_references)
+            write(runtime_evidence / 'fixture-cache-restored.json',
+                  {'schema': 1, 'references': [row['reference'] for row in restored_fixtures],
+                   'roots': {row['reference']: row['root']['digest'] for row in restored_fixtures}})
             plugin_lease.acquire(plugin)
             runtime.start_lane(runner, 'fork')
             journald_archive, journald_identity = verified_journald_archive(
@@ -1611,17 +1655,69 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
                     output = Path(listed['log']).read_text(errors='replace')
                     images = (full_suite.native_images(output) if lane == 'candidate'
                               else full_suite.docker_images(output))
-                    fixture_inventories[lane] = {full_suite.image_reference(identity)
-                                                 for identity in images}
-                return full_suite.image_reference(image) in fixture_inventories[lane]
+                    if lane == 'candidate':
+                        fixture_inventories[lane] = {
+                            row['configuration']['name']: row for row in json.loads(output)}
+                    else:
+                        fixture_inventories[lane] = images
+                reference = fixture_cache.normalized(image) if lane == 'candidate' else full_suite.image_reference(image)
+                if lane == 'candidate':
+                    rows = fixture_inventories[lane]
+                    row = fixture_cache.native_record(rows, reference)
+                    if row is None:
+                        return False
+                    observed = row['configuration']['descriptor']['digest']
+                    cached = fixture_cache.entry_path(FIXTURE_CACHE, reference)
+                    if cached.exists() or cached.is_symlink():
+                        cached_receipt = fixture_cache.receipt(cached, reference)
+                        expected = cached_receipt['root']['digest']
+                        if observed != expected:
+                            raise RuntimeError('Qualified cached fixture image changed: ' + reference)
+                        arm64 = [variant for variant in row['variants']
+                                 if variant.get('platform', {}).get('os') == 'linux'
+                                 and variant.get('platform', {}).get('architecture') == 'arm64']
+                        if len(arm64) != 1 or arm64[0]['digest'] != cached_receipt['arm64_manifest']:
+                            raise RuntimeError('Qualified cached fixture arm64 variant changed: ' + reference)
+                    if '@sha256:' in reference and observed != reference.split('@', 1)[1]:
+                        raise RuntimeError('Qualified pinned fixture image changed: ' + reference)
+                    return True
+                if '@sha256:' not in reference:
+                    return reference in {full_suite.image_reference(identity)
+                                         for identity in fixture_inventories[lane]}
+                candidates = fixture_cache.docker_pinned_candidates(
+                    fixture_inventories[lane], image)
+                for identity in sorted(candidates):
+                    inspected = issue('docker', 'setup-pinned-fixture-image-inspect', 0,
+                                      ['docker', '--context', 'colima', 'image', 'inspect',
+                                       '--format', '{{.Os}}|{{.Architecture}}|{{.Variant}}|{{json .RepoDigests}}',
+                                       identity], 90)
+                    if fixture_cache.docker_pinned_metadata_matches(
+                            Path(inspected['log']).read_text(), image):
+                        return True
+                return False
             fixture_rows = preload_original_fixture_images(
                 runtime.ALPINE, install, issue, fixture_image_present)
+            if not fixture_image_present('candidate', API_SOCKET_IMAGE):
+                issue('candidate', 'setup-api-socket-image', 0,
+                      [str(install / 'bin/container'), 'image', 'pull', '--progress', 'none',
+                       '--platform', 'linux/arm64', API_SOCKET_IMAGE], 300)
+            cached_after_setup = fixture_cache.capture(
+                private_app, FIXTURE_CACHE, fixture_references)
+            expected_fixture_refs = {fixture_cache.normalized(image) for image in fixture_references}
+            if {row['reference'] for row in cached_after_setup} != expected_fixture_refs:
+                raise RuntimeError('Prepared Q fixture cache omitted a required image')
+            fixture_inventories.pop('candidate', None)
+            for image in fixture_references:
+                reference = fixture_cache.normalized(image)
+                cached_entry = fixture_cache.entry_path(FIXTURE_CACHE, reference)
+                if cached_entry.exists() or cached_entry.is_symlink():
+                    if not fixture_image_present('candidate', image):
+                        raise RuntimeError('Prepared Q fixture image disappeared: ' + reference)
+            write(runtime_evidence / 'fixture-cache-after-setup.json',
+                  {'schema': 1, 'references': [row['reference'] for row in cached_after_setup],
+                   'roots': {row['reference']: row['root']['digest'] for row in cached_after_setup}})
             write(runtime_evidence / 'fixture-image-preload.json',
                   {'schema': 1, 'images': fixture_rows})
-            issue('candidate', 'setup-api-socket-image', 0,
-                  [str(install / 'bin/container'), 'image', 'pull', '--progress', 'none',
-                   'docker.io/library/docker:29.2.1-cli@sha256:'
-                   'cab69e2d0a1a2ea9a1ce1060252f439e83483ae41ec09317aecb33b08a0656a5'], 300)
             issue('candidate', 'setup-version', 0, candidate + ['version'], 60)
             suite = run_original_full_suite(
                 evidence, runner, runtime, install, plugin, native_tests, issue,

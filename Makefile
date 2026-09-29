@@ -417,7 +417,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 bazel-workflow-tools-test:
 	$(TOOL_TEST_TEMP_ENV) PYTHONPATH="Tools/bazel:Tools/bazel/artifacts" $(PYTHON) -m unittest -q \
 		test_local_launcher test_hosted_quality test_qualify_local test_qualify_development test_benchmark_evidence test_q_assets \
-		test_prebuilt_parity_tests test_full_suite test_full_suite_scratch test_qualified_process test_compose_release
+		test_prebuilt_parity_tests test_full_suite test_full_suite_scratch test_fixture_cache test_qualified_process test_compose_release
 	$(TOOL_TEST_TEMP_ENV) PYTHONPATH="Tools/bazel:Tools/bazel/artifacts" $(PYTHON) -m unittest \
 		discover -s Tools/bazel/artifacts -p 'test_*.py' -q
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_keychain_fixture.py
