@@ -1,9 +1,9 @@
 {
-  "archiveSHA256": "8c6c3a2f7ca241e7f8d92a0d2b2bfb22e849966474d7e215863602f1d7ea62dd",
+  "archiveSHA256": "ac06b4042cf7bbb746410874881c75c20058a10f4c7200818bc2fb72cf3c65c7",
   "asset": "containerization-enhanced-darwin-arm64-opt.tar.gz",
   "developmentProof": false,
   "evidenceAsset": "evidence.json",
-  "evidenceSHA256": "d6974b734497910ff1ec4bff4eed5427d3168ef6909c2e913cc949bd3317b35b",
+  "evidenceSHA256": "d8b4608037e74c751c1d87cfcf2349921cf73305d4e66f36c036fe7f82dde81a",
   "group": "containerization",
   "lower": {
     "argument-parser": {
@@ -17,12 +17,12 @@
       "tag": "layer-foundation-enhanced-2c0f42b6902f5b4e1a55"
     }
   },
-  "producerCommit": "5d501fbd94602cb81104fd41565295a50274e2f5",
+  "producerCommit": "c5d9897f028a7b47295a84901f5203a383037839",
   "profile": "enhanced",
   "reachedSources": {
     "containerization": {
       "repository": "swiftpkg_containerization",
-      "sourceCommit": "5ed9bc7490aa30c76337bd5b3d8ff251b63c678f",
+      "sourceCommit": "6db16197bbad8196a78132f86529daa89125aafb",
       "sourceLocation": "https://github.com/stephenlclarke/containerization.git"
     }
   },
@@ -35,18 +35,18 @@
     "launcher": "d8a3bde435faa1c481d3408da99b934f387022664267e736cc7ee436750b0dfc",
     "moduleGraph": "6c2a999d2b7e3d333dabf3dfd1dc43912afdcad7059da82dea77782293f0ccd6",
     "moduleRules": "c2cda92b2dd22bb47987e1619458693db0c5e83f3bbeb6e21f28877e22b4ba01",
-    "producer": "fc84c316dc42f7c978cadf8a89208bcf5f1984aeb270eab5276442cb494bb678",
+    "producer": "04d05caa6d3b4803ef128751487a1499855e8e68d9482a1fec761d4bc756ce87",
     "rootBuild": "0ea5ae98c5f8045a44dd89bdd2f8680b96c79aef5974079d267e99ec5d64594d",
     "sourceIdentity": "d4d4eec1f9d86086b4a31e0f39236bdbc5567911b098d17611f6835c83878e34",
-    "swiftPackageManifest": "459a721a03f96978259620ec8ab278c809e0fec182ed08a13f76cbe432e81ac1"
+    "swiftPackageManifest": "652a12c05b520123dfe14106d3722e78dca46ecce4290f2ce170e1ce6c509760"
   },
   "repository": "stephenlclarke/containerization",
   "schema": 1,
   "sourcePins": {
-    "containerization": "5ed9bc7490aa30c76337bd5b3d8ff251b63c678f"
+    "containerization": "6db16197bbad8196a78132f86529daa89125aafb"
   },
-  "tag": "layer-containerization-enhanced-8c6c3a2f7ca241e7f8d9",
-  "targetCommit": "5ed9bc7490aa30c76337bd5b3d8ff251b63c678f",
+  "tag": "layer-containerization-enhanced-ac06b4042cf7bbb74641",
+  "targetCommit": "6db16197bbad8196a78132f86529daa89125aafb",
   "toolchain": {
     "bazelVersion": "8.8.0",
     "sdkSettingsSHA256": "7b93ad7e534cc4b31c6a4e39d19b5e0288acf2168c2649479a796d1cb51939fb",
