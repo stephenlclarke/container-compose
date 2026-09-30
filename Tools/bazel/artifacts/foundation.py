@@ -385,6 +385,8 @@ def inspect(path: Path, expected_sha: str | None = None) -> dict:
         raise ValueError("foundational archive checksum differs from lock")
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as tar:
         names = tar.getnames()
+        if any(any(component in {"", ".", ".."} for component in name.split("/")) for name in names):
+            raise ValueError("foundational archive member is not a canonical POSIX path")
         if len(names) != len(set(names)) or any(not m.isfile() or m.issym() or m.islnk() for m in tar):
             raise ValueError("foundational archive has duplicate or non-file members")
         roots = {name.split("/", 1)[0] for name in names}
@@ -430,8 +432,9 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
     """Admit unchanged published groups across exact upper pin changes.
 
     The old producer bytes remain authenticated by the published lock. The
-    canonical AST check proves this file changed only in this consumer check;
-    production, import, archive sealing, and configuration logic are unchanged.
+    canonical AST check admits only the original production nodes or the
+    exact stricter archive reader; compilation, import, archive generation,
+    and configuration logic remain unchanged.
     """
     import ast
 
@@ -442,7 +445,10 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
     old_producer = "fc84c316dc42f7c978cadf8a89208bcf5f1984aeb270eab5276442cb494bb678"
     old_manifest = "459a721a03f96978259620ec8ab278c809e0fec182ed08a13f76cbe432e81ac1"
     old_resolved = "6bf3d07b02f5e6a03df82efa7a08c5103fc0f044096dd4a9a48ca3436945e6ad"
-    old_producer_source = "9414f170ff95287d40ed0517af4a4e0307c065ce7a38332b253db1e49de0aeca"
+    admitted_producer_sources = {
+        "9414f170ff95287d40ed0517af4a4e0307c065ce7a38332b253db1e49de0aeca",
+        "40ae4e4adf4462dac81521cde0d666a423ff7840912914d75153a33d12c7192d",
+    }
     if not ((profile == "enhanced" and group in {"foundation", "containerization", "engine-api"})
             or (profile == "stock" and group in GROUPS)):
         return False
@@ -479,7 +485,7 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
                   or node.name not in excluded]
     if (any(segment is None for _, segment in production)
             or digest(json.dumps(production, ensure_ascii=False,
-                                 separators=(",", ":")).encode()) != old_producer_source):
+                                 separators=(",", ":")).encode()) not in admitted_producer_sources):
         return False
 
     selected_pins = source_pins(root, "enhanced")

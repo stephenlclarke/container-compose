@@ -141,6 +141,10 @@ class FoundationTests(unittest.TestCase):
                 '@unexpected_decorator\ndef produce(root: Path, output: Path,'))
             self.assertFalse(foundation._legacy_recipe_compatible(
                 lock, root, 'enhanced', 'foundation', current))
+            producer.write_text(Path(foundation.__file__).read_text().replace(
+                'component in {"", ".", ".."}', 'component in {"", ".."}'))
+            self.assertFalse(foundation._legacy_recipe_compatible(
+                lock, root, 'enhanced', 'foundation', current))
 
     def test_published_lower_layers_accept_only_the_exact_two_pin_transition(self) -> None:
         original = Path(__file__).resolve().parents[3]
@@ -309,6 +313,25 @@ cc_library(
             archive.write_bytes(archive_bytes({"foundation/swiftpkg_example/BUILD.bazel": b"changed"}, manifest))
             with self.assertRaises(ValueError):
                 inspect(archive)
+
+    def test_archive_rejects_noncanonical_member_aliases(self) -> None:
+        canonical = "foundation/swiftpkg_example/BUILD.bazel"
+        aliases = (
+            "foundation/swiftpkg_example/./BUILD.bazel",
+            "foundation/swiftpkg_example//BUILD.bazel",
+            "foundation/swiftpkg_example/../swiftpkg_example/BUILD.bazel",
+            "/foundation/swiftpkg_example/BUILD.bazel",
+            "foundation/swiftpkg_example/BUILD.bazel/",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            archive = Path(directory) / "layer.tar.gz"
+            for alias in aliases:
+                files = {canonical: b"original", alias: b"alias"}
+                manifest = {"schema": 1, "group": "foundation", "profile": "enhanced",
+                            "files": {name: digest(data) for name, data in files.items()}}
+                archive.write_bytes(archive_bytes(files, manifest))
+                with self.subTest(alias=alias), self.assertRaisesRegex(ValueError, "canonical"):
+                    inspect(archive)
 
     def test_recipe_identity_changes_with_applied_source_patch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
