@@ -438,20 +438,23 @@ jobs:
           set -euo pipefail
           cp Package.resolved "${RUNNER_TEMP}/quality-lock-before.json"
           swift package resolve
-          python3 - <<'PYCODE'
-          import json
-          import os
-          from pathlib import Path
+          swift package show-dependencies --format json > "${RUNNER_TEMP}/quality-graph.json"
+          cp Package.resolved "${RUNNER_TEMP}/quality-lock-after.json"
+          python3 Tools/ci/verify_swiftpm_overrides.py \
+            --before "${RUNNER_TEMP}/quality-lock-before.json" \
+            --after "${RUNNER_TEMP}/quality-lock-after.json" --profile enhanced \
+            --graph "${RUNNER_TEMP}/quality-graph.json"
 
-          before = json.loads((Path(os.environ["RUNNER_TEMP"]) / "quality-lock-before.json").read_text())
-          after = json.loads(Path("Package.resolved").read_text())
-          old = {pin["identity"]: pin for pin in before["pins"]}
-          new = {pin["identity"]: pin for pin in after["pins"]}
-          expected_removed = {"container", "containerization", "zstd"}
-          if set(old) - set(new) != expected_removed or set(new) - set(old) or any(old[key] != new[key] for key in new):
-              raise SystemExit("SwiftPM quality resolution changed remote pins beyond three reviewed local overrides")
-          print("Resolved exact Q Container and two patched dependencies without changing other remote pins")
-          PYCODE
+      - name: Retain SwiftPM quality resolution evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: swiftpm-quality-resolution-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/quality-lock-before.json
+            ${{ runner.temp }}/quality-lock-after.json
+            ${{ runner.temp }}/quality-graph.json
+          if-no-files-found: warn
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -1113,20 +1116,15 @@ jobs:
           set -euo pipefail
           cp Package.resolved "${RUNNER_TEMP}/codeql-lock-before.json"
           swift package resolve
-          python3 - <<'PYCODE'
-          import json
-          import os
-          from pathlib import Path
-
-          before = json.loads((Path(os.environ["RUNNER_TEMP"]) / "codeql-lock-before.json").read_text())
-          after = json.loads(Path("Package.resolved").read_text())
-          old = {pin["identity"]: pin for pin in before["pins"]}
-          new = {pin["identity"]: pin for pin in after["pins"]}
-          expected_removed = {"container", "containerization", "zstd"} if os.environ["CONTAINER_COMPOSE_BUILD_PROFILE"] == "enhanced" else set()
-          if set(old) - set(new) != expected_removed or set(new) - set(old) or any(old[key] != new[key] for key in new):
-              raise SystemExit("SwiftPM resolution changed remote pins beyond the declared local source overrides")
-          print(f"Resolved {os.environ['CONTAINER_COMPOSE_BUILD_PROFILE']} profile; local overrides: {sorted(expected_removed)}")
-          PYCODE
+          check_args=(--before "${RUNNER_TEMP}/codeql-lock-before.json"
+                      --after "${RUNNER_TEMP}/codeql-lock-after.json"
+                      --profile "${CONTAINER_COMPOSE_BUILD_PROFILE}")
+          if [ "${CONTAINER_COMPOSE_BUILD_PROFILE}" = enhanced ]; then
+            swift package show-dependencies --format json > "${RUNNER_TEMP}/codeql-graph.json"
+            check_args+=(--graph "${RUNNER_TEMP}/codeql-graph.json")
+          fi
+          cp Package.resolved "${RUNNER_TEMP}/codeql-lock-after.json"
+          python3 Tools/ci/verify_swiftpm_overrides.py "${check_args[@]}"
 
       - name: Initialize CodeQL Swift
         uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
@@ -1191,6 +1189,9 @@ jobs:
             ${{ runner.temp }}/swift-extraction-${{ matrix.profile }}.json
             ${{ runner.temp }}/swift-source-inventory.txt
             ${{ runner.temp }}/compose-codeql-dependencies/receipt.json
+            ${{ runner.temp }}/codeql-lock-before.json
+            ${{ runner.temp }}/codeql-lock-after.json
+            ${{ runner.temp }}/codeql-graph.json
             ${{ runner.temp }}/swift-${{ matrix.profile }}.sarif
           if-no-files-found: warn
           overwrite: true
