@@ -40,6 +40,8 @@ Its lock uses `schema`, `repository`, `tag`, `targetCommit`, `asset`, and
 `sha256`; it records a `fetch-receipt.json` after verifying the published tag,
 unique asset, downloaded bytes, and unchanged release identity.
 
+For Container releases after the explicit `6fe80db1` legacy source, the qualified runtime sidecar must also carry its native dependency chain. Admission checks the four published dependency releases, release and coverage build identities, original executable hashes, signed distribution hashes, and benchmark asset links. Coverage metadata actions are distinguished from dependency compilation. Any admitted verifier-only recipe transition retains its exact old/new hashes and policy identity in both release and coverage evidence; a missing chain or inconsistent provenance fails admission. This validation does not rebuild the dependencies or regenerate historical benchmarks.
+
 ## Package-group layers
 
 `foundation.py` applies the same binary import contract to four package
