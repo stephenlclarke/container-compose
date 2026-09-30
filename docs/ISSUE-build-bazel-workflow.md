@@ -60,7 +60,7 @@ Sonar input warnings must be resolved in maintained source rather than hidden wi
 
 Every added fixture must also satisfy the existing licence-header policy. The full Apache-2.0 header replaces the rejected abbreviated header in the help-dispatch test; no source-check exclusion is permitted.
 
-Current admission uses this repository’s `Tools/bazel/run.sh` and source-identity/evidence checks. The local heavy gate separately verifies qualified Container `6fe80db1` and its selected helper hashes before acquiring runtime ownership. The earlier 30-file devcontainer helper-lock requirement records a historical launcher integration; it is not the active launcher or a substitute for exact-source hosted and local qualification.
+Current admission uses this repository’s `Tools/bazel/run.sh` and source-identity/evidence checks. The local heavy gate separately verifies qualified Container `db240b6c` and its selected helper hashes before acquiring runtime ownership. The earlier 30-file devcontainer helper-lock requirement records a historical launcher integration; it is not the active launcher or a substitute for exact-source hosted and local qualification.
 
 Portable test extraction must pass the unchanged source-style gate in addition to executing in both runtime profiles. Hosted run `35334813508` exposed oversized copy/filesystem fixtures; private literal constructors and wrapped calls fix that without changing test data or assertions. Exact-error assertions retain all three port validation failures. Focused native proof and independent review are recorded in PR 708; no product or compatibility claim changes.
 

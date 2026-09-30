@@ -55,9 +55,9 @@ from prebuilt_parity_tests import test_workspace
 from run import RETAINED, ROOT, SSD
 from retain_evidence import restore_candidate
 
-Q = '6fe80db1bad6abff5dfa22f02bdf8bc403ad48bc'
-Q_ROOT = Path('/Users/sclarke/github/container-bazel-minimal')
-Q_EVIDENCE = Path.home() / 'Library/Application Support/ContainerFamily/retained/container-only/local-final/6fe80db1-20260929T172600Z'
+Q = 'db240b6c2e40ffcd10a6ff50a62f121777fc3bb5'
+Q_ROOT = Path('/Users/sclarke/github/container-logging-readiness-20260929')
+Q_EVIDENCE = Path.home() / 'Library/Application Support/ContainerFamily/retained/container-only/local-final/db240b6c-20260930-final'
 OUTPUT = RETAINED / 'local-final'
 CAPTURE_OUTPUT = RETAINED / 'benchmark-reference-capture'
 TRIALS = 7
@@ -69,7 +69,7 @@ ORIGINAL_FIXTURE_IMAGES = ('alpine:3.20', 'alpine:3.21', 'alpine:latest',
                            '7aeee453c13045dcec87b92cb13973871ed8c72d5ca1e9365886487782ea2b09')
 API_SOCKET_IMAGE = ('docker.io/library/docker:29.2.1-cli@sha256:'
                     'cab69e2d0a1a2ea9a1ce1060252f439e83483ae41ec09317aecb33b08a0656a5')
-FIXTURE_CACHE = RETAINED / 'fixture-image-cache-q153-5ed'
+FIXTURE_CACHE = RETAINED / 'fixture-image-cache-qdb240-c6db'
 BENCHMARK_LOCK = ROOT / 'Tools/bazel/artifacts/benchmark-reference.lock.json'
 BENCHMARK_CACHE = RETAINED / 'release-asset-cache'
 DOCKER_COMPOSE_VERSION = '5.5.1'
@@ -523,7 +523,7 @@ def preflight(evidence: Path, q: dict, *, development_bridge: bool = False,
     qualified = validate_q(q)
     pins = json.loads((ROOT / 'Package.resolved').read_text())['pins']
     selected = {row['identity']: row['state']['revision'] for row in pins}
-    if selected.get('container') != Q or selected.get('containerization') != '5ed9bc7490aa30c76337bd5b3d8ff251b63c678f':
+    if selected.get('container') != Q or selected.get('containerization') != '6db16197bbad8196a78132f86529daa89125aafb':
         raise RuntimeError('Enhanced consumer dependency graph does not match Q runtime family')
     qualified['sdk_graph'] = {'lock_sha256': sha(ROOT / 'Package.resolved'),
                               'zstd_patch_sha256': sha(ROOT / 'Tools/bazel/zstd-public-module.patch'),

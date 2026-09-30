@@ -17,7 +17,7 @@
 
 """Retain selected Q image-store blobs across the qualified private reset.
 
-This is bound to Q 6fe80db1 and Containerization 5ed9bc74's on-disk image
+This is bound to Q db240b6c and Containerization 6db16197's on-disk image
 store. The exact historical Q 15361ce5 receipts remain reusable only when the
 24-file image-store source contract is unchanged; their provenance is not
 rewritten. Only the original index and linux/arm64 closure are copied.
@@ -35,15 +35,15 @@ import stat
 import tempfile
 
 SCHEMA = 1
-Q_SOURCE = '6fe80db1bad6abff5dfa22f02bdf8bc403ad48bc'
+Q_SOURCE = 'db240b6c2e40ffcd10a6ff50a62f121777fc3bb5'
 LEGACY_Q_SOURCE = '15361ce5f55a6b8ab3242e89650a188766b47581'
-Q_ROOT = Path('/Users/sclarke/github/container-bazel-minimal')
+Q_ROOT = Path('/Users/sclarke/github/container-logging-readiness-20260929')
 IMAGE_FORMAT_CONTRACT_SHA256 = 'f3c6f8fcb3132eb41dcaf48254f6e18e65f47fe15875261cde90931bce6f33ee'
 IMAGE_FORMAT_DIRS = ('Sources/Plugins/CoreImages', 'Sources/Services/ContainerImagesService',
                      'Sources/ContainerCommands/Image')
 IMAGE_FORMAT_FILES = ('Sources/Services/ContainerAPIService/Client/ClientImage.swift',
                       'Sources/ContainerPlugin/ApplicationRoot.swift', 'Package.resolved')
-CONTAINERIZATION_SOURCE = '5ed9bc7490aa30c76337bd5b3d8ff251b63c678f'
+CONTAINERIZATION_SOURCE = '6db16197bbad8196a78132f86529daa89125aafb'
 INDEX_TYPES = {'application/vnd.oci.image.index.v1+json',
                'application/vnd.docker.distribution.manifest.list.v2+json'}
 MANIFEST_TYPES = {'application/vnd.oci.image.manifest.v1+json',

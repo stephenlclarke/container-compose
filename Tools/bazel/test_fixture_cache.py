@@ -104,6 +104,26 @@ class FixtureCacheTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'identity changed'):
                     cache.receipt(entry, captured['reference'])
 
+    def test_new_source_requires_fresh_capture_instead_of_relabeling_old_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            source = base / 'source'
+            source.mkdir()
+            fixture(source)
+            retained = base / 'retained'
+            captured = cache.capture(source, retained, ('alpine:3.20',))[0]
+            entry = cache.entry_path(retained, captured['reference'])
+            receipt_path = entry / 'receipt.json'
+            current = receipt_path.read_bytes()
+            self.assertEqual(cache.receipt(entry, captured['reference'])['q_source'], cache.Q_SOURCE)
+            old = json.loads(current)
+            old['q_source'] = '6fe80db1bad6abff5dfa22f02bdf8bc403ad48bc'
+            old['containerization_source'] = '5ed9bc7490aa30c76337bd5b3d8ff251b63c678f'
+            receipt_path.write_text(json.dumps(old, sort_keys=True) + '\n')
+            with self.assertRaisesRegex(RuntimeError, 'identity changed'):
+                cache.receipt(entry, captured['reference'])
+            self.assertEqual(json.loads(receipt_path.read_text()), old)
+
     def test_image_store_contract_detects_source_or_pin_drift(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

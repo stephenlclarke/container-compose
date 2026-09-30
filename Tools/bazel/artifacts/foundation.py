@@ -442,6 +442,8 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
     old_containerization = b"5ed9bc7490aa30c76337bd5b3d8ff251b63c678f"
     changed_container = b"db240b6c2e40ffcd10a6ff50a62f121777fc3bb5"
     changed_containerization = b"6db16197bbad8196a78132f86529daa89125aafb"
+    old_origin = b"7dfcaa910d3e70aa962fbb9e8fd08746b1d3e4efe096056f1e4e2c070f9609de"
+    changed_origin = b"652a12c05b520123dfe14106d3722e78dca46ecce4290f2ce170e1ce6c509760"
     old_producer = "fc84c316dc42f7c978cadf8a89208bcf5f1984aeb270eab5276442cb494bb678"
     old_manifest = "459a721a03f96978259620ec8ab278c809e0fec182ed08a13f76cbe432e81ac1"
     old_resolved = "6bf3d07b02f5e6a03df82efa7a08c5103fc0f044096dd4a9a48ca3436945e6ad"
@@ -505,9 +507,11 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
                or (profile == "stock" and group in GROUPS))
           and manifest.count(selected_containerization) == 1
           and resolved.count(selected_containerization) == 1
+          and resolved.count(changed_origin) == 1
           and old_containerization not in manifest and old_containerization not in resolved):
         manifest = manifest.replace(selected_containerization, old_containerization)
-        resolved = resolved.replace(selected_containerization, old_containerization)
+        resolved = resolved.replace(selected_containerization, old_containerization).replace(
+            changed_origin, old_origin)
     else:
         return False
     return (digest(manifest.replace(selected, old_container)) == old_manifest

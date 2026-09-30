@@ -65,8 +65,13 @@ class FoundationTests(unittest.TestCase):
             document = (original / name).read_bytes()
             self.assertEqual(document.count(q), 1)
             self.assertEqual(document.count(containerization), 1)
-            documents.append(document.replace(q, b'a' * 40).replace(containerization,
-                                                                    old_containerization))
+            normalized = document.replace(q, b'a' * 40).replace(containerization,
+                                                                 old_containerization)
+            if name == 'Package.resolved':
+                current_origin = json.loads(document)['originHash'].encode()
+                normalized = normalized.replace(current_origin,
+                    b'7dfcaa910d3e70aa962fbb9e8fd08746b1d3e4efe096056f1e4e2c070f9609de')
+            documents.append(normalized)
         return documents[0], documents[1]
 
     def test_published_lower_layers_accept_only_the_exact_container_pin_substitution(self) -> None:
@@ -149,6 +154,7 @@ class FoundationTests(unittest.TestCase):
     def test_published_lower_layers_accept_only_the_exact_two_pin_transition(self) -> None:
         original = Path(__file__).resolve().parents[3]
         new_q = b'db240b6c2e40ffcd10a6ff50a62f121777fc3bb5'
+        new_origin = b'652a12c05b520123dfe14106d3722e78dca46ecce4290f2ce170e1ce6c509760'
         old_containerization = b'5ed9bc7490aa30c76337bd5b3d8ff251b63c678f'
         new_containerization = b'6db16197bbad8196a78132f86529daa89125aafb'
         selected_pins = foundation.source_pins(original)
@@ -165,6 +171,8 @@ class FoundationTests(unittest.TestCase):
                 selected_containerization, new_containerization)
             resolved = (original / 'Package.resolved').read_bytes().replace(selected_q, new_q).replace(
                 selected_containerization, new_containerization)
+            current_origin = json.loads((original / 'Package.resolved').read_text())['originHash'].encode()
+            resolved = resolved.replace(current_origin, new_origin)
             self.assertEqual(manifest.count(new_q), 1)
             self.assertEqual(manifest.count(new_containerization), 1)
             self.assertEqual(resolved.count(new_q), 1)
@@ -214,6 +222,10 @@ class FoundationTests(unittest.TestCase):
                     (manifest + b'// unrelated recipe change\n', resolved),
                     (manifest.replace(b'https://github.com/', b'https://example.com/', 1), resolved),
                     (manifest, resolved.replace(b'https://github.com/', b'https://example.com/', 1)),
+                    (manifest, resolved.replace(new_origin, b'0' * 64)),
+                    (manifest, resolved.replace(b'"originHash"', b'"otherHash"')),
+                    (manifest, resolved.replace(b'"originHash" : ',
+                        b'"originHash" : "' + new_origin + b'",\n  "originHash" : ')),
                     (manifest, resolved + b'\n'),
                     (manifest + new_q, resolved)):
                 (root / 'Package.swift').write_bytes(changed_manifest)

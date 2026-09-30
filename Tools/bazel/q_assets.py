@@ -29,8 +29,8 @@ from typing import Callable
 
 from artifacts.release_asset import read_lock
 
-Q = '6fe80db1bad6abff5dfa22f02bdf8bc403ad48bc'
-GUEST = '5ed9bc7490aa30c76337bd5b3d8ff251b63c678f'
+Q = 'db240b6c2e40ffcd10a6ff50a62f121777fc3bb5'
+GUEST = '6db16197bbad8196a78132f86529daa89125aafb'
 BUILDER = '016040197215684db474181b444767eb58797cfa'
 NAMES = {'runtime': 'container-homebrew-arm64.tar.gz',
          'guest': 'guest.oci.tar', 'builder': 'builder.oci.tar',

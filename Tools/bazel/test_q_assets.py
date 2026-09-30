@@ -29,6 +29,19 @@ import q_assets
 
 
 class QAssetTests(unittest.TestCase):
+    def test_selected_graph_and_published_locks_agree(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        pins = {row['identity']: row['state']['revision']
+                for row in json.loads((root / 'Package.resolved').read_text())['pins']}
+        self.assertEqual(pins['container'], q_assets.Q)
+        self.assertEqual(pins['containerization'], q_assets.GUEST)
+        locks = {name: q_assets.read_lock(q_assets.LOCKS / (name + '.lock.json'))
+                 for name in q_assets.NAMES}
+        for name, lock in locks.items():
+            self.assertEqual((lock['repository'], lock['targetCommit']), q_assets.SOURCES[name])
+            self.assertEqual(lock['asset'], q_assets.NAMES[name])
+        self.assertEqual(locks['runtime']['tag'], locks['provenance']['tag'])
+
     def fixture(self):
         # Keep the production schema test self-contained; no local Q checkout
         # or unpublished draft is an admission input.
@@ -57,10 +70,19 @@ class QAssetTests(unittest.TestCase):
 
     def test_complete_same_release_provenance(self) -> None:
         bundle, locks = self.fixture()
-        q_assets.validate(bundle, locks, bundle['qualified_helpers_sha256'])
+        self.legacy(bundle)
+        with patch.object(q_assets, 'Q', q_assets.LEGACY_Q), \
+             patch.object(q_assets, 'GUEST', bundle['guest']['source']):
+            q_assets.validate(bundle, locks, bundle['qualified_helpers_sha256'])
+
+    def test_selected_source_requires_native_chain(self) -> None:
+        bundle, locks = self.fixture()
+        with self.assertRaisesRegex(RuntimeError, 'native chain is malformed'):
+            q_assets.validate(bundle, locks, bundle['qualified_helpers_sha256'])
 
     def test_tamper_and_missing_product_fail(self) -> None:
         bundle, locks = self.fixture()
+        self.legacy(bundle)
         for mutation in ('archive', 'payload', 'notary', 'guest', 'helper', 'missing'):
             changed = copy.deepcopy(bundle)
             if mutation == 'archive':
@@ -75,8 +97,17 @@ class QAssetTests(unittest.TestCase):
                 changed['qualified_helpers_sha256']['helper.py'] = 'b' * 64
             else:
                 del changed['assets']['builder']
-            with self.subTest(mutation=mutation), self.assertRaises(RuntimeError):
+            with self.subTest(mutation=mutation), patch.object(q_assets, 'Q', q_assets.LEGACY_Q), \
+                 patch.object(q_assets, 'GUEST', bundle['guest']['source']), self.assertRaises(RuntimeError):
                 q_assets.validate(changed, locks, bundle['qualified_helpers_sha256'])
+
+    @staticmethod
+    def legacy(bundle: dict) -> None:
+        bundle['qualified_container_source'] = q_assets.LEGACY_Q
+        bundle['assets']['runtime']['source'] = q_assets.LEGACY_Q
+        guest = '5ed9bc7490aa30c76337bd5b3d8ff251b63c678f'
+        bundle['assets']['guest']['source'] = guest
+        bundle['guest']['source'] = guest
 
     def test_missing_or_mixed_release_locks_fail_before_fetch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
