@@ -2,7 +2,7 @@
   "asset": "container-homebrew-arm64.tar.gz",
   "repository": "stephenlclarke/container",
   "schema": 1,
-  "sha256": "f02cdf492fb4c4644ced2bab7e5b52ec61b2d23665b78e984e9f0e87549ccd4a",
-  "tag": "layer-runtime-db240b6c2e40-f02cdf492fb4",
-  "targetCommit": "db240b6c2e40ffcd10a6ff50a62f121777fc3bb5"
+  "sha256": "e5affa4ea9ae2482f172172db5f387b8a210b62bacd1c26e22c91c78539b5d2b",
+  "tag": "layer-runtime-a1effeeaf8c7-e5affa4ea9ae",
+  "targetCommit": "a1effeeaf8c7c1d48b4773262a2d5218dcd5817d"
 }

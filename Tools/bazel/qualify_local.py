@@ -55,9 +55,9 @@ from prebuilt_parity_tests import test_workspace
 from run import RETAINED, ROOT, SSD
 from retain_evidence import restore_candidate
 
-Q = 'db240b6c2e40ffcd10a6ff50a62f121777fc3bb5'
+Q = 'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d'
 Q_ROOT = Path('/Users/sclarke/github/container-logging-readiness-20260929')
-Q_EVIDENCE = Path.home() / 'Library/Application Support/ContainerFamily/retained/container-only/local-final/db240b6c-20260930-final'
+Q_EVIDENCE = Path.home() / 'Library/Application Support/ContainerFamily/retained/container-only/local-final/a1effeea-20260930-final'
 OUTPUT = RETAINED / 'local-final'
 CAPTURE_OUTPUT = RETAINED / 'benchmark-reference-capture'
 TRIALS = 7
@@ -69,7 +69,7 @@ ORIGINAL_FIXTURE_IMAGES = ('alpine:3.20', 'alpine:3.21', 'alpine:latest',
                            '7aeee453c13045dcec87b92cb13973871ed8c72d5ca1e9365886487782ea2b09')
 API_SOCKET_IMAGE = ('docker.io/library/docker:29.2.1-cli@sha256:'
                     'cab69e2d0a1a2ea9a1ce1060252f439e83483ae41ec09317aecb33b08a0656a5')
-FIXTURE_CACHE = RETAINED / 'fixture-image-cache-qdb240-c6db'
+FIXTURE_CACHE = RETAINED / 'fixture-image-cache-qa1effeea-c6db'
 BENCHMARK_LOCK = ROOT / 'Tools/bazel/artifacts/benchmark-reference.lock.json'
 BENCHMARK_CACHE = RETAINED / 'release-asset-cache'
 DOCKER_COMPOSE_VERSION = '5.5.1'

@@ -441,24 +441,35 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
     old_container = b"15361ce5f55a6b8ab3242e89650a188766b47581"
     old_containerization = b"5ed9bc7490aa30c76337bd5b3d8ff251b63c678f"
     changed_container = b"db240b6c2e40ffcd10a6ff50a62f121777fc3bb5"
+    selected_container = b"a1effeeaf8c7c1d48b4773262a2d5218dcd5817d"
     changed_containerization = b"6db16197bbad8196a78132f86529daa89125aafb"
     old_origin = b"7dfcaa910d3e70aa962fbb9e8fd08746b1d3e4efe096056f1e4e2c070f9609de"
     changed_origin = b"652a12c05b520123dfe14106d3722e78dca46ecce4290f2ce170e1ce6c509760"
+    selected_origin = b"4a6202074d1f23673218cde75e94b693f10e6b15772fee784074a66ba6d1ab16"
     old_producer = "fc84c316dc42f7c978cadf8a89208bcf5f1984aeb270eab5276442cb494bb678"
+    containerization_producer = "04d05caa6d3b4803ef128751487a1499855e8e68d9482a1fec761d4bc756ce87"
     old_manifest = "459a721a03f96978259620ec8ab278c809e0fec182ed08a13f76cbe432e81ac1"
     old_resolved = "6bf3d07b02f5e6a03df82efa7a08c5103fc0f044096dd4a9a48ca3436945e6ad"
+    containerization_manifest = "652a12c05b520123dfe14106d3722e78dca46ecce4290f2ce170e1ce6c509760"
+    containerization_resolved = "a12a2c566e78da604931ce8df7d8a7c311989a2e142c97e6d4a9dcb8a7b9f6da"
+    containerization_lock = "4ac252e1dab0ee39b399abb87a414de0b6d10d520e3278d5e5ac85ac46d498bd"
     admitted_producer_sources = {
         "9414f170ff95287d40ed0517af4a4e0307c065ce7a38332b253db1e49de0aeca",
         "40ae4e4adf4462dac81521cde0d666a423ff7840912914d75153a33d12c7192d",
     }
-    if not ((profile == "enhanced" and group in {"foundation", "containerization", "engine-api"})
-            or (profile == "stock" and group in GROUPS)):
+    historical_group = ((profile == "enhanced" and group in {"foundation", "containerization", "engine-api"})
+                        or (profile == "stock" and group in GROUPS))
+    released_containerization = (profile == "enhanced" and group == "containerization"
+        and digest((json.dumps(lock, indent=2, sort_keys=True) + "\n").encode()) == containerization_lock)
+    if not (historical_group or released_containerization):
         return False
     historical = lock.get("recipeSHA256")
+    retained_producer = containerization_producer if released_containerization else old_producer
+    retained_manifest = containerization_manifest if released_containerization else old_manifest
     if (lock.get("developmentProof") is not False or not isinstance(historical, dict)
             or set(historical) != set(current)
-            or historical.get("producer") != old_producer
-            or historical.get("swiftPackageManifest") != old_manifest
+            or historical.get("producer") != retained_producer
+            or historical.get("swiftPackageManifest") != retained_manifest
             or any(historical[key] != value for key, value in current.items()
                    if key not in {"producer", "swiftPackageManifest"})):
         return False
@@ -499,10 +510,11 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
             or manifest.count(selected) != 1 or resolved.count(selected) != 1
             or old_container in manifest or old_container in resolved):
         return False
-    if selected_containerization == old_containerization:
+    if selected_containerization == old_containerization and not released_containerization:
         if manifest.count(old_containerization) != 1 or resolved.count(old_containerization) != 1:
             return False
     elif (selected == changed_container and selected_containerization == changed_containerization
+          and not released_containerization
           and ((profile == "enhanced" and group in {"foundation", "engine-api"})
                or (profile == "stock" and group in GROUPS))
           and manifest.count(selected_containerization) == 1
@@ -512,6 +524,24 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
         manifest = manifest.replace(selected_containerization, old_containerization)
         resolved = resolved.replace(selected_containerization, old_containerization).replace(
             changed_origin, old_origin)
+    elif (selected == selected_container and selected_containerization == changed_containerization
+          and manifest.count(selected_containerization) == 1
+          and resolved.count(selected_containerization) == 1
+          and resolved.count(selected_origin) == 1
+          and old_containerization not in manifest and old_containerization not in resolved):
+        manifest = manifest.replace(selected_container, changed_container)
+        resolved = resolved.replace(selected_container, changed_container).replace(
+            selected_origin, changed_origin)
+        if released_containerization:
+            return (digest(manifest) == containerization_manifest
+                    and digest(resolved) == containerization_resolved)
+        if not ((profile == "enhanced" and group in {"foundation", "engine-api"})
+                or (profile == "stock" and group in GROUPS)):
+            return False
+        manifest = manifest.replace(changed_containerization, old_containerization)
+        resolved = resolved.replace(changed_containerization, old_containerization).replace(
+            changed_origin, old_origin)
+        selected = changed_container
     else:
         return False
     return (digest(manifest.replace(selected, old_container)) == old_manifest
@@ -528,9 +558,13 @@ def verify_consumer(lock_path: Path, root: Path, mirror: Path | None,
             or lock.get("lower") != lower_records(root, profile, group)):
         raise ValueError("foundational bundle differs from enhanced source pins or lower layer")
     current_recipe = recipe_identity(root, profile, group)
-    if (lock.get("recipeSHA256") != current_recipe
-            and not _legacy_recipe_compatible(lock, root, profile, group, current_recipe)):
-        raise ValueError("foundational bundle exporter, importer or source patch changed")
+    if lock.get("recipeSHA256") != current_recipe:
+        if (profile == "enhanced" and group == "containerization"
+                and source_pins(root, profile).get("container") == "a1effeeaf8c7c1d48b4773262a2d5218dcd5817d"
+                and file_digest(lock_path) != "4ac252e1dab0ee39b399abb87a414de0b6d10d520e3278d5e5ac85ac46d498bd"):
+            raise ValueError("released Containerization lock bytes changed")
+        if not _legacy_recipe_compatible(lock, root, profile, group, current_recipe):
+            raise ValueError("foundational bundle exporter, importer or source patch changed")
     packages = lock.get("reachedSources", {})
     records = source_records(root, profile)
     if (not isinstance(packages, dict) or not packages or

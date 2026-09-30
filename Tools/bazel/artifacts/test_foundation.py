@@ -160,7 +160,8 @@ class FoundationTests(unittest.TestCase):
         selected_pins = foundation.source_pins(original)
         selected_q = selected_pins['container'].encode()
         selected_containerization = selected_pins['containerization'].encode()
-        self.assertIn(selected_q, (b'6fe80db1bad6abff5dfa22f02bdf8bc403ad48bc', new_q))
+        self.assertIn(selected_q, (b'6fe80db1bad6abff5dfa22f02bdf8bc403ad48bc', new_q,
+                                   b'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d'))
         self.assertIn(selected_containerization, (old_containerization, new_containerization))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -244,6 +245,81 @@ class FoundationTests(unittest.TestCase):
             (root / 'Package.resolved').write_bytes(resolved.replace(new_containerization,
                                                                       old_containerization))
             self.assertFalse(compatible('enhanced', 'foundation'))
+
+    def test_released_a1_containerization_and_unchanged_groups_use_only_exact_recipes(self) -> None:
+        original = Path(__file__).resolve().parents[3]
+        q = b'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d'
+        c = b'6db16197bbad8196a78132f86529daa89125aafb'
+        origin = b'4a6202074d1f23673218cde75e94b693f10e6b15772fee784074a66ba6d1ab16'
+        manifest = (original / 'Package.swift').read_bytes()
+        resolved = (original / 'Package.resolved').read_bytes()
+        self.assertEqual((digest(manifest), digest(resolved)), (
+            '4a6202074d1f23673218cde75e94b693f10e6b15772fee784074a66ba6d1ab16',
+            'fa6b13d82dff6b04a766eac277c4d8a22c04f79416826b67bf2c60d178e56bab'))
+        locks = original / 'Tools/bazel/artifacts/layer-locks'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            producer = root / 'Tools/bazel/artifacts/foundation.py'
+            producer.parent.mkdir(parents=True)
+            producer.write_bytes(Path(foundation.__file__).read_bytes())
+            (root / 'Package.swift').write_bytes(manifest)
+            (root / 'Package.resolved').write_bytes(resolved)
+
+            def admitted(profile: str, group: str, lock: dict | None = None,
+                         change: dict | None = None) -> bool:
+                if lock is None:
+                    lock = json.loads((locks / f'{group}-{profile}.json').read_text())
+                current = dict(lock['recipeSHA256'], producer=foundation.file_digest(producer),
+                               swiftPackageManifest=foundation.file_digest(root / 'Package.swift'))
+                current.update(change or {})
+                return foundation._legacy_recipe_compatible(lock, root, profile, group, current)
+
+            for profile, groups in (('enhanced', ('foundation', 'containerization', 'engine-api')),
+                                    ('stock', foundation.GROUPS)):
+                for group in groups:
+                    self.assertTrue(admitted(profile, group), f'{group}-{profile}')
+            self.assertFalse(admitted('enhanced', 'container-sdk'))
+
+            c_lock = json.loads((locks / 'containerization-enhanced.json').read_text())
+            for field, changed in (('archiveSHA256', '0' * 64),
+                                   ('evidenceSHA256', '0' * 64),
+                                   ('producerCommit', '0' * 40),
+                                   ('tag', 'wrong-release')):
+                altered = json.loads(json.dumps(c_lock))
+                altered[field] = changed
+                self.assertFalse(admitted('enhanced', 'containerization', altered), field)
+            altered = json.loads(json.dumps(c_lock))
+            altered['toolchain']['sdkVersion'] = 'wrong-sdk'
+            self.assertFalse(admitted('enhanced', 'containerization', altered))
+            self.assertFalse(admitted('enhanced', 'containerization', change={'moduleRules': '0' * 64}))
+            self.assertFalse(admitted('enhanced', 'foundation', change={'moduleRules': '0' * 64}))
+
+            for changed_manifest, changed_resolved in (
+                    (manifest.replace(q, b'b' * 40), resolved.replace(q, b'b' * 40)),
+                    (manifest.replace(c, b'b' * 40), resolved.replace(c, b'b' * 40)),
+                    (manifest, resolved.replace(origin, b'652a12c05b520123dfe14106d3722e78dca46ecce4290f2ce170e1ce6c509760')),
+                    (manifest, resolved.replace(origin, b'0' * 64)),
+                    (manifest, resolved.replace(b'"originHash" : ', b'"originHash" : "' + origin + b'",\n  "originHash" : ')),
+                    (manifest + b'// unrelated\n', resolved),
+                    (manifest, resolved + b'\n')):
+                (root / 'Package.swift').write_bytes(changed_manifest)
+                (root / 'Package.resolved').write_bytes(changed_resolved)
+                self.assertFalse(admitted('enhanced', 'containerization'))
+                self.assertFalse(admitted('enhanced', 'foundation'))
+
+    def test_reused_containerization_requires_original_published_lock_bytes(self) -> None:
+        root = Path(__file__).resolve().parents[3]
+        original = root / 'Tools/bazel/artifacts/layer-locks/containerization-enhanced.json'
+        lock = json.loads(original.read_text())
+        current = dict(lock['recipeSHA256'], producer=foundation.file_digest(root / 'Tools/bazel/artifacts/foundation.py'),
+                       swiftPackageManifest=foundation.file_digest(root / 'Package.swift'))
+        with tempfile.TemporaryDirectory() as directory:
+            changed = Path(directory) / 'lock.json'
+            changed.write_bytes(original.read_bytes() + b'\n')
+            with mock.patch.object(foundation, 'lower_records', return_value=lock['lower']), \
+                    mock.patch.object(foundation, 'recipe_identity', return_value=current):
+                with self.assertRaisesRegex(ValueError, 'lock bytes changed'):
+                    foundation.verify_consumer(changed, root, None, {}, 'enhanced', 'containerization')
 
     def test_outer_consumer_keeps_source_and_lower_guards_before_recipe_compatibility(self) -> None:
         original = Path(__file__).resolve().parents[3]

@@ -29,7 +29,7 @@ from typing import Callable
 
 from artifacts.release_asset import read_lock
 
-Q = 'db240b6c2e40ffcd10a6ff50a62f121777fc3bb5'
+Q = 'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d'
 GUEST = '6db16197bbad8196a78132f86529daa89125aafb'
 BUILDER = '016040197215684db474181b444767eb58797cfa'
 NAMES = {'runtime': 'container-homebrew-arm64.tar.gz',
