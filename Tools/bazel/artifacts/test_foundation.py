@@ -148,7 +148,7 @@ class FoundationTests(unittest.TestCase):
 
     def test_published_lower_layers_accept_only_the_exact_two_pin_transition(self) -> None:
         original = Path(__file__).resolve().parents[3]
-        new_q = b'db4088b1dada6880f77787c828508dd720009b6b'
+        new_q = b'ed65682c1f9cce3fef5d9d8b40efe3f906917296'
         old_containerization = b'5ed9bc7490aa30c76337bd5b3d8ff251b63c678f'
         new_containerization = b'6db16197bbad8196a78132f86529daa89125aafb'
         selected_pins = foundation.source_pins(original)
@@ -190,7 +190,9 @@ class FoundationTests(unittest.TestCase):
                 self.assertFalse(foundation._legacy_recipe_compatible(
                     historical, root, 'enhanced', group, current), group)
 
-            for other_q, other_containerization in ((b'4d82da2c571d0924bd97569249a5d200ca764a13',
+            for other_q, other_containerization in ((b'db4088b1dada6880f77787c828508dd720009b6b',
+                                                       new_containerization),
+                                                      (b'4d82da2c571d0924bd97569249a5d200ca764a13',
                                                        new_containerization),
                                                       (b'a' * 40, new_containerization),
                                                        (new_q, b'b' * 40)):

@@ -440,7 +440,7 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
 
     old_container = b"15361ce5f55a6b8ab3242e89650a188766b47581"
     old_containerization = b"5ed9bc7490aa30c76337bd5b3d8ff251b63c678f"
-    changed_container = b"db4088b1dada6880f77787c828508dd720009b6b"
+    changed_container = b"ed65682c1f9cce3fef5d9d8b40efe3f906917296"
     changed_containerization = b"6db16197bbad8196a78132f86529daa89125aafb"
     old_producer = "fc84c316dc42f7c978cadf8a89208bcf5f1984aeb270eab5276442cb494bb678"
     old_manifest = "459a721a03f96978259620ec8ab278c809e0fec182ed08a13f76cbe432e81ac1"
