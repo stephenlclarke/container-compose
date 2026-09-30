@@ -65,7 +65,7 @@ still visit already-built upper targets. A dirty checkout needs the explicit
 `--development-proof` flag and cannot be published.
 
 The consumer can reuse original published lower archives across only the
-authenticated Container-only pin change, or the exact Container `4d82da2c`
+authenticated Container-only pin change, or the exact Container `db4088b1`
 and Containerization `6db16197` pair. The latter permits the unchanged
 enhanced foundation and Engine API and four stock groups; enhanced
 Containerization and Container SDK need new qualified archives. The original
