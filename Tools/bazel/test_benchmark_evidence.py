@@ -56,11 +56,26 @@ def samples(trial: int | None = None) -> list[dict]:
 class BenchmarkEvidenceTests(unittest.TestCase):
     def test_exact_reference_round_trip(self) -> None:
         workload = evidence.workload(IMAGE)
+        self.assertEqual(evidence.SERVICE_MEMORY_MIB, 256)
+        self.assertEqual(workload['serviceMemoryMiB'], evidence.SERVICE_MEMORY_MIB)
+        self.assertEqual(evidence.fixture_text(3, IMAGE).count('mem_limit: 256m'), 3)
         document = evidence.reference_document(
             workload, ENVIRONMENT, BINARY, samples(), samples(0), CAPTURE)
         self.assertEqual(evidence.validate_reference(document, workload, ENVIRONMENT), document["samples"])
         self.assertEqual(workload["fixtureSHA256"]["3"], hashlib.sha256(
             evidence.fixture_text(3, IMAGE).encode()).hexdigest())
+
+    def test_old_128_mib_reference_cannot_be_admitted_as_256_mib_workload(self) -> None:
+        workload = evidence.workload(IMAGE)
+        old = {**workload, 'serviceMemoryMiB': 128,
+               'fixtureSHA256': {str(count): hashlib.sha256(
+                   evidence.fixture_text(count, IMAGE).replace('mem_limit: 256m',
+                                                               'mem_limit: 128m').encode()).hexdigest()
+                   for count in evidence.COUNTS}}
+        old_document = evidence.reference_document(
+            old, ENVIRONMENT, BINARY, samples(), samples(0), CAPTURE)
+        with self.assertRaisesRegex(ValueError, 'incompatible workload'):
+            evidence.validate_reference(old_document, workload, ENVIRONMENT)
 
     def test_reference_rejects_missing_failed_duplicate_and_nonfinite_samples(self) -> None:
         workload = evidence.workload(IMAGE)

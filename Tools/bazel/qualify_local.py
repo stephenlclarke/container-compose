@@ -131,11 +131,20 @@ def host_budget() -> dict:
         raise RuntimeError('Existing Docker workloads prevent isolated qualification')
     return {'host_bytes': memory, 'colima_bytes': colima['memory'],
             'runtime_envelope_bytes': RUNTIME_VM_BUDGET,
-            'benchmark_services_max': 3, 'benchmark_service_memory_mib': 128,
+            'benchmark_services_max': 3,
+            'benchmark_service_memory_mib': benchmark_evidence.SERVICE_MEMORY_MIB,
             'full_suite_services_max': 10, 'full_suite_service_memory_mib': 256,
             'builder_memory_mib': 2048,
             'minimum_free_budget_bytes': 8 * 1024**3,
-            'services_max': 3, 'memory_per_service_mib': 128}
+            'services_max': 3,
+            'memory_per_service_mib': benchmark_evidence.SERVICE_MEMORY_MIB}
+
+
+def benchmark_budget() -> dict:
+    return {**host_budget(),
+            'service_memory_max_mib': max(benchmark_evidence.COUNTS)
+            * benchmark_evidence.SERVICE_MEMORY_MIB,
+            'trials': TRIALS}
 
 
 def benchmark_host_snapshot() -> dict:
@@ -1772,7 +1781,7 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
                 result['fixture_sha256'] = {str(count): sha(fixtures / f'{count}.yml') for count in (1, 3)}
                 if result['fixture_sha256'] != reference['workload']['fixtureSHA256']:
                     raise RuntimeError('Current fixture bytes differ from the published reference')
-                result['budget'] = {**host_budget(), 'service_memory_max_mib': 384, 'trials': TRIALS}
+                result['budget'] = benchmark_budget()
                 # Only the current signed candidate is timed; Docker rows are immutable evidence.
                 write(runtime_evidence / 'benchmark-host-before.json', benchmark_host_snapshot())
                 measured, warmups = measure_lane(

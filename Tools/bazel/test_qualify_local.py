@@ -691,10 +691,24 @@ class QualificationTests(unittest.TestCase):
             path = Path(temporary) / 'fixture.yml'
             local.fixture(path, 3, 'example.invalid/alpine@sha256:' + 'a' * 64)
             value = path.read_text()
-            self.assertEqual(value.count('mem_limit: 128m'), 3)
+            self.assertEqual(value.count('mem_limit: 256m'), 3)
             self.assertEqual(value.count('network_mode: none'), 3)
             with self.assertRaises(ValueError):
                 local.fixture(path, 50, 'example.invalid/alpine')
+        def output(command, **_options):
+            if command[:2] == ['sysctl', '-n']:
+                return str(32 * 1024**3)
+            if command[:2] == ['colima', 'list']:
+                return json.dumps({'name': 'default', 'arch': 'aarch64',
+                                   'runtime': 'docker', 'status': 'Stopped',
+                                   'memory': 8 * 1024**3}) + '\n'
+            raise AssertionError(command)
+        with patch.object(local.subprocess, 'check_output', side_effect=output):
+            budget = local.benchmark_budget()
+        self.assertEqual(budget['service_memory_max_mib'], 3 * local.benchmark_evidence.SERVICE_MEMORY_MIB)
+        self.assertEqual(budget['benchmark_service_memory_mib'], 256)
+        self.assertEqual(budget['memory_per_service_mib'], 256)
+        self.assertEqual(budget['trials'], 7)
         rows = [{'fixture': f'{count}-services-{operation}', 'lane': lane,
                  'trial': trial, 'seconds': 2 if lane == 'candidate' else 1}
                 for count in (1, 3) for operation in ('up', 'down')

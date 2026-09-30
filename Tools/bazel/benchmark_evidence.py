@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 
 COUNTS = (1, 3)
 TRIALS = 7
+SERVICE_MEMORY_MIB = 256
 OPERATIONS = {
     "config": ["config", "--services"],
     "up": ["up", "--detach", "--wait", "--wait-timeout", "120", "--pull", "never"],
@@ -94,7 +95,7 @@ def fixture_text(count: int, image: str) -> str:
     for index in range(1, count + 1):
         lines += [f"  worker{index:02d}:", f"    image: {image}",
                   '    command: ["sh", "-c", "sleep 120"]',
-                  "    mem_limit: 128m", "    cpus: 1.0", "    stop_grace_period: 1s",
+                  f"    mem_limit: {SERVICE_MEMORY_MIB}m", "    cpus: 1.0", "    stop_grace_period: 1s",
                   "    network_mode: none"]
     return "\n".join(lines) + "\n"
 
@@ -108,7 +109,7 @@ def workload(image: str) -> dict:
     return {"schema": 1, "kind": "compose-one-three-service-benchmark",
             "platform": "darwin-arm64", "image": image, "fixtureSHA256": fixtures,
             "counts": list(COUNTS), "warmupTrials": 1, "measuredTrials": TRIALS,
-            "serviceMemoryMiB": 128, "serviceCPUs": 1,
+            "serviceMemoryMiB": SERVICE_MEMORY_MIB, "serviceCPUs": 1,
             "projectPattern": "cfq{pid}-{count}-{trial}-{lane}",
             "composePrefix": ["-p", "{project}", "-f", "{fixture}"],
             "operations": OPERATIONS, "timeoutsSeconds": TIMEOUTS,
