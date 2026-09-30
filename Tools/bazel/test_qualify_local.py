@@ -33,6 +33,61 @@ import qualify_local as local
 
 
 class QualificationTests(unittest.TestCase):
+    def test_candidate_benchmark_environment_pins_private_cli_without_changing_measured_progress(self) -> None:
+        install = Path('/private/qualified/install')
+        runtime = SimpleNamespace(environment=lambda lane: {
+            'PATH': '/host/older/bin', 'COMPOSE_PROGRESS': 'plain',
+            'CONTAINER_COMPOSE_CONTAINER': '/host/older/bin/container',
+            'CONTAINER_BIN': '/host/older/bin/container'})
+        poisoned = {'CONTAINER_COMPOSE_CONTAINER': '/another/container',
+                    'CONTAINER_BIN': '/another/container'}
+        for operation in ('up', 'down'):
+            environment = local.benchmark_issue_environment(
+                'candidate', '1-services-' + operation, runtime, install, poisoned)
+            self.assertEqual(environment['CONTAINER_COMPOSE_CONTAINER'],
+                             str(install / 'bin/container'))
+            self.assertEqual(environment['CONTAINER_BIN'], str(install / 'bin/container'))
+            self.assertEqual(environment['COMPOSE_PROGRESS'], 'plain')
+            self.assertEqual(environment['PATH'], '/host/older/bin')
+        for operation in ('ps', 'absent'):
+            environment = local.benchmark_issue_environment(
+                'candidate', '1-services-' + operation, runtime, install, poisoned)
+            self.assertEqual(environment['CONTAINER_COMPOSE_CONTAINER'],
+                             str(install / 'bin/container'))
+            self.assertEqual(environment['COMPOSE_PROGRESS'], 'quiet')
+        with patch.dict(os.environ, {'PATH': '/docker/path'}, clear=True):
+            environment = local.benchmark_issue_environment(
+                'docker', '1-services-up', runtime, install, {'LOCK': 'owned'})
+        self.assertEqual(environment, {'PATH': '/docker/path', 'LOCK': 'owned'})
+
+    def test_owned_project_recovery_pins_private_cli_and_quiets_only_observation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'fixtures').mkdir()
+            fixture = root / 'fixtures/1.yml'
+            fixture.write_text('services: {}\n')
+            ledger = local.ProjectLedger(root)
+            ledger.begin('cfq123-1-0-candidate', 'candidate', fixture)
+            runtime = SimpleNamespace(INSTALLS=root / 'runtime', environment=lambda lane: {
+                'PATH': '/host/older/bin', 'COMPOSE_PROGRESS': 'plain',
+                'CONTAINER_COMPOSE_CONTAINER': '/host/older/bin/container'})
+            calls = []
+            def command(_evidence, name, args, environment, *_rest):
+                calls.append((name, args, environment))
+                return ''
+            with patch.object(local, 'recover_command', side_effect=command):
+                local.recover_projects(root, ledger, {'modules': {'runtime_benchmark': runtime}}, (7,))
+            self.assertFalse(ledger.active())
+            self.assertEqual([name.rsplit('-', 1)[-1] for name, *_ in calls], ['down', 'ps'])
+            for name, args, environment in calls:
+                self.assertEqual(environment['CONTAINER_COMPOSE_CONTAINER'],
+                                 str(root / 'runtime/fork/install/bin/container'))
+                self.assertEqual(environment['CONTAINER_BIN'],
+                                 str(root / 'runtime/fork/install/bin/container'))
+                self.assertEqual(args[0], str(root / 'runtime/fork/install/bin/container'))
+                self.assertEqual(environment['COMPOSE_PROGRESS'],
+                                 'quiet' if name.endswith('-ps') else 'plain')
+
     def test_fixture_app_allows_cold_state_but_checks_parent_before_ownership(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)

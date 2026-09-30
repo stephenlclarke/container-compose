@@ -38,6 +38,8 @@ remains the default for the independently installed Compose plugin. See the
 
 ## Current candidate
 
+The `c52ac624` qualification passes all 66 original parity cases, then stops at the first fresh candidate benchmark setup because Compose selects an older host `container` binary. Guarded recovery restores the private runtime, Colima and original services. Candidate and recovery commands now select the exact qualified private binary; a fresh full qualification remains required before release.
+
 The local development run at `fbc40e81` passes and restores 63 original parity cases, including the repaired lifecycle foreground-output behavior. The API-socket one-off command then times out; the remaining two cases are not reached. All nine host-restoration phases complete. The focused diagnostic at `8a2b5b4e` is stopped earlier by Docker Hub rate limiting, so it supplies no new API result. Verified fixture reuse and ARM64-only downloads are the current workflow correction; final qualification and release remain incomplete. See the [current evidence](docs/guides/BAZEL.md#fixture-download-limit-at-8a2b5b4e) and the [earlier image-recovery limitation](docs/guides/BAZEL.md#fixed-image-collision-at-091ef12b).
 
 The unreleased Bazel development branch now forwards common host signals during prepared foreground runs and safely cancels stalled signal requests. [Signal evidence and limits](docs/guides/BAZEL.md#prepared-foreground-launch) distinguish its passing component tests from the open Docker duplicate-signal oracle and full runtime/release qualification.

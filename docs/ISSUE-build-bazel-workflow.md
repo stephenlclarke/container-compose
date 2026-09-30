@@ -50,6 +50,8 @@ Native DocC generation now reuses optimized ComposeCore/ComposeRuntimeSPI module
 
 The operator requested a Bazel-owned build/test workflow shared with devcontainer: eliminate duplicate work, retain evidence for recovery, keep disposable files on the external SSD and long-lived assets internally, and ultimately publish qualified stable releases. The legacy build/test/release entry points remain until the complete native graph and acceptance gates replace them.
 
+The `c52ac624` full run passes the original 66 parity cases but fails at the first candidate benchmark setup: the nested Compose compatibility check resolves an older host `container` binary rather than the selected qualified private runtime. Cleanup reaches the same guard, and its machine-readable project check initially sees progress text. Guarded recovery with the exact private binary and quiet progress verifies zero owned project resources and restores the private installation, Colima, services and host lease. Candidate and recovery commands must pin the private binary; only unmeasured observation commands should quiet progress. The failed run remains failed and requires a fresh full qualification.
+
 ## Compose compatibility impact
 
 Internal implementation improvement. Package.swift and the existing stock/enhanced lockfiles remain the product contract. No Docker parity scope, runtime API visibility, dependency pin or release gate is relaxed.

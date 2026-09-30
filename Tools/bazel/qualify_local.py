@@ -1079,6 +1079,26 @@ def fixture(path: Path, count: int, image: str) -> None:
     path.write_text(benchmark_evidence.fixture_text(count, image))
 
 
+def candidate_environment(runtime: object, install: Path, additional: dict | None = None,
+                          *, machine_output: bool = False) -> dict:
+    """Select the signed private CLI even when the host has another Container on PATH."""
+    environment = dict(runtime.environment('fork'), **(additional or {}))
+    executable = str(install / 'bin/container')
+    environment.update(CONTAINER_COMPOSE_CONTAINER=executable, CONTAINER_BIN=executable)
+    if machine_output:
+        environment['COMPOSE_PROGRESS'] = 'quiet'
+    return environment
+
+
+def benchmark_issue_environment(lane: str, fixture_name: str, runtime: object,
+                                install: Path, additional: dict) -> dict:
+    if lane == 'candidate':
+        machine_output = fixture_name.endswith(('-services-ps', '-services-absent'))
+        return candidate_environment(runtime, install, additional,
+                                     machine_output=machine_output)
+    return dict(os.environ, **additional)
+
+
 def measure_lane(lane: str, base: list[str], fixtures: Path, ledger: ProjectLedger,
                  issue: object, progress: Path) -> tuple[list[dict], list[dict]]:
     """Run only the requested lane with the exact published workload commands."""
@@ -1414,7 +1434,7 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
     sdk = subprocess.check_output(['/usr/bin/xcrun', '--sdk', 'macosx', '--show-sdk-path'],
                                   text=True, timeout=20).strip()
     scratch = full_suite_scratch.create(evidence)
-    common = dict(runtime.environment('fork'), **runner.runtime_environment,
+    common = dict(candidate_environment(runtime, install, runner.runtime_environment),
                   DOCKER_CONTEXT='colima', DOCKER_COMPOSE='docker --context colima compose',
                   CONTAINER_COMPOSE=str(plugin / 'bin/compose'),
                   COMPOSE_TEST_BINARY=str(plugin / 'bin/compose'),
@@ -1573,7 +1593,8 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
     ledger = ProjectLedger(evidence)
     candidate = [str(install / 'bin/container'), 'compose']
     def issue(lane: str, fixture_name: str, trial: int, command: list[str], timeout: int = 180) -> dict:
-        runner.env = dict(runtime.environment('fork'), **runner.runtime_environment) if lane == 'candidate' else dict(os.environ, **runner.runtime_environment)
+        runner.env = benchmark_issue_environment(lane, fixture_name, runtime, install,
+                                                 runner.runtime_environment)
         row = runner.run('compose', lane, fixture_name, trial, command, ROOT, timeout)
         if row['status']:
             raise RuntimeError(f'{lane}/{fixture_name}/{trial} failed; see {row["log"]}')
@@ -1960,11 +1981,15 @@ def recover_projects(evidence: Path, ledger: ProjectLedger, q: dict,
             raise RuntimeError('Owned project recovery record is malformed')
         base = ([str(install / 'bin/container'), 'compose'] if record['lane'] == 'candidate'
                 else ['docker', '--context', 'colima', 'compose'])
-        environment = runtime.environment('fork') if record['lane'] == 'candidate' else dict(os.environ)
+        environment = (candidate_environment(runtime, install) if record['lane'] == 'candidate'
+                       else dict(os.environ))
+        observation_environment = (candidate_environment(runtime, install, machine_output=True)
+                                   if record['lane'] == 'candidate' else environment)
         prefix = base + ['-p', project, '-f', str(fixture_path)]
         if not record['active']:
             prior = recover_command(evidence, 'recovery-' + project + '-precheck',
-                                    prefix + ['ps', '--all', '--quiet'], environment, descriptors, 60)
+                                    prefix + ['ps', '--all', '--quiet'], observation_environment,
+                                    descriptors, 60)
             if record['lane'] == 'docker':
                 prior += recover_command(evidence, 'recovery-' + project + '-precheck-docker',
                                          ['docker', '--context', 'colima', 'ps', '-aq', '--filter',
@@ -1977,7 +2002,8 @@ def recover_projects(evidence: Path, ledger: ProjectLedger, q: dict,
             recover_command(evidence, 'recovery-' + project + '-down',
                             prefix + ['down', '--remove-orphans', '--timeout', '10'], environment, descriptors, 120)
         present = recover_command(evidence, 'recovery-' + project + '-ps',
-                                  prefix + ['ps', '--all', '--quiet'], environment, descriptors, 60)
+                                    prefix + ['ps', '--all', '--quiet'], observation_environment,
+                                    descriptors, 60)
         if present.strip():
             raise RuntimeError('Owned project survived recovery down: ' + project)
         if record['lane'] == 'docker' and recover_command(
@@ -2063,8 +2089,8 @@ def ensure_full_suite_cleared(evidence: Path, q: dict, descriptors: tuple[int, .
             sequence += 1
             command = [str(install / 'bin/container') if args[0] == 'container'
                        else args[0], *args[1:]]
-            environment = (runtime.environment('fork') if lane == 'candidate'
-                           else dict(os.environ))
+            environment = (candidate_environment(runtime, install, machine_output=True)
+                           if lane == 'candidate' else dict(os.environ))
             return recover_command(evidence, f'full-suite-recovery-{sequence}-{kind}',
                                    command, environment, descriptors, 90)
         removed = ledger.recover(invoke, source_hashes)
