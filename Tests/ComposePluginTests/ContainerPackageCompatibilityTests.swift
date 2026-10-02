@@ -315,8 +315,7 @@ struct ContainerPackageCompatibilityTests {
     let failure = try await ContainerPackageCompatibility.compatibilityFailure(
       arguments: ["up"],
       lane: "main",
-      runtimeProfile: .enhanced,
-      runtimeBackend: .engine,
+      runtimeSelection: .init(profile: .enhanced, backend: .engine),
       expectedRevisions: .init(
         container: "matched-container",
         containerization: "matched-containerization"
@@ -348,8 +347,7 @@ struct ContainerPackageCompatibilityTests {
     let failure = try await ContainerPackageCompatibility.compatibilityFailure(
       arguments: ["up"],
       lane: "stock",
-      runtimeProfile: .stock,
-      runtimeBackend: .engine,
+      runtimeSelection: .init(profile: .stock, backend: .engine),
       stockRuntimeCapabilities: overlay,
       onCompatibleRuntime: { selection.replace(with: $0) },
       run: { arguments in
@@ -372,7 +370,7 @@ struct ContainerPackageCompatibilityTests {
     let failure = try await ContainerPackageCompatibility.compatibilityFailure(
       arguments: ["up"],
       lane: "main",
-      runtimeProfile: .enhanced,
+      runtimeSelection: .init(profile: .enhanced),
       onCompatibleRuntime: { selection.replace(with: $0) },
       run: { arguments in
         if arguments == ["system", "version", "--format", "json"] {
@@ -527,7 +525,7 @@ struct ContainerPackageCompatibilityTests {
       try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
-        runtimeProfile: .enhanced,
+        runtimeSelection: .init(profile: .enhanced),
         run: { _ in
           throw ContainerPackageCompatibilityError.commandFailed("container: command not found")
         }
@@ -551,8 +549,7 @@ struct ContainerSystemServiceReadinessTests {
       try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
-        runtimeProfile: .enhanced,
-        runtimeBackend: .engine,
+        runtimeSelection: .init(profile: .enhanced, backend: .engine),
         run: { arguments in
           calls.append(arguments)
           return Data(appleSystemVersionJSON.utf8)
@@ -572,8 +569,7 @@ struct ContainerSystemServiceReadinessTests {
       try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
-        runtimeProfile: .enhanced,
-        runtimeBackend: .engine,
+        runtimeSelection: .init(profile: .enhanced, backend: .engine),
         expectedRevisions: .init(
           container: "matched-container",
           containerization: "matched-containerization"
@@ -609,8 +605,7 @@ struct ContainerSystemServiceReadinessTests {
     let message = try await ContainerPackageCompatibility.compatibilityFailure(
       arguments: ["up"],
       lane: "main",
-      runtimeProfile: .enhanced,
-        runtimeBackend: .engine,
+      runtimeSelection: .init(profile: .enhanced, backend: .engine),
       expectedRevisions: .init(
         container: "matched-container",
         containerization: "matched-containerization"
@@ -634,8 +629,7 @@ struct ContainerSystemServiceReadinessTests {
       try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
-        runtimeProfile: .enhanced,
-        runtimeBackend: .engine,
+        runtimeSelection: .init(profile: .enhanced, backend: .engine),
         run: { _ in
           throw CancellationError()
         }
@@ -649,8 +643,7 @@ struct ContainerSystemServiceReadinessTests {
       try await ContainerPackageCompatibility.compatibilityFailure(
         arguments: ["up"],
         lane: "main",
-        runtimeProfile: .enhanced,
-        runtimeBackend: .engine,
+        runtimeSelection: .init(profile: .enhanced, backend: .engine),
         expectedRevisions: .init(
           container: "matched-container",
           containerization: "matched-containerization"

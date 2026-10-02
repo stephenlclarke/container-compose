@@ -89,6 +89,17 @@ enum ContainerPackageCompatibility {
         #endif
     }
 
+    /// Metadata selection is independent of the compiled runtime transport.
+    struct RuntimeSelection {
+        let profile: RuntimeProfile?
+        let backend: RuntimeBackend
+
+        init(profile: RuntimeProfile? = nil, backend: RuntimeBackend = compiledRuntimeBackend) {
+            self.profile = profile
+            self.backend = backend
+        }
+    }
+
     struct ExpectedRuntimeRevisions: Sendable {
         let container: String?
         let containerization: String?
@@ -210,8 +221,7 @@ extension ContainerPackageCompatibility {
     static func compatibilityFailure(
         arguments: [String],
         lane: String,
-        runtimeProfile requestedRuntimeProfile: RuntimeProfile? = nil,
-        runtimeBackend: RuntimeBackend = compiledRuntimeBackend,
+        runtimeSelection: RuntimeSelection = .init(),
         expectedRevisions: ExpectedRuntimeRevisions = .init(),
         stockRuntimeCapabilities: [String] = [],
         onCompatibleRuntime: @escaping @Sendable (ComposeRuntimeCapabilities) -> Void = { _ in
@@ -226,8 +236,8 @@ extension ContainerPackageCompatibility {
         do {
             let data = try await run(["system", "version", "--format", "json"])
             let components = try decodeComponents(from: data)
-            let runtimeProfile = try requestedRuntimeProfile ?? selectedRuntimeProfile()
-            if let failure = runtimeProfileFailure(runtimeProfile, backend: runtimeBackend, lane: lane) {
+            let runtimeProfile = try runtimeSelection.profile ?? selectedRuntimeProfile()
+            if let failure = runtimeProfileFailure(runtimeProfile, backend: runtimeSelection.backend, lane: lane) {
                 return failure
             }
             if let failure = compatibilityFailure(
@@ -241,7 +251,7 @@ extension ContainerPackageCompatibility {
             }
             if let failure = try await runtimeReadinessFailure(
                 components: components, lane: lane, runtimeProfile: runtimeProfile,
-                runtimeBackend: runtimeBackend, run: run,
+                runtimeBackend: runtimeSelection.backend, run: run,
             ) {
                 return failure
             }
@@ -254,7 +264,7 @@ extension ContainerPackageCompatibility {
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            if (requestedRuntimeProfile ?? compiledRuntimeProfile) == .stock {
+            if (runtimeSelection.profile ?? compiledRuntimeProfile) == .stock {
                 return stockInstallGuidance(
                     lane: lane,
                     detected: [

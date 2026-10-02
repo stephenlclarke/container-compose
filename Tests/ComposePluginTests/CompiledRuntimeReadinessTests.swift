@@ -29,13 +29,39 @@ struct CompiledRuntimeReadinessTests {
         #endif
     }
 
+    @Test("default production selection retains the compiled backend")
+    func defaultProductionSelection() async throws {
+        let selection = ContainerPackageCompatibility.RuntimeSelection()
+        #expect(selection.profile == nil)
+        #expect(selection.backend == ContainerPackageCompatibility.compiledRuntimeBackend)
+        var calls: [[String]] = []
+        let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+            arguments: ["up"], lane: "main",
+            run: { arguments in
+                calls.append(arguments)
+                #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
+                    return try Self.versionData()
+                #else
+                    return try Self.versionData(mutation: "stock-client")
+                #endif
+            },
+        )
+        #expect(failure == nil)
+        #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
+            #expect(calls == [["system", "version", "--format", "json"]])
+        #else
+            #expect(calls == [["system", "version", "--format", "json"], ["system", "status"]])
+        #endif
+    }
+
     @Test("native live API passes without a gateway and with nonconcrete package pins",
           arguments: [nil, "main", "unspecified", "780a86b995ac4cb0985db97f38875fdc6e33d16b"])
     func liveAPI(expected: String?) async throws {
         var calls: [[String]] = []
         let failure = try await ContainerPackageCompatibility.compatibilityFailure(
-            arguments: ["up"], lane: "main", runtimeProfile: .enhanced,
-            runtimeBackend: .nativeAPI, expectedRevisions: .init(container: expected),
+            arguments: ["up"], lane: "main",
+            runtimeSelection: .init(profile: .enhanced, backend: .nativeAPI),
+            expectedRevisions: .init(container: expected),
             run: { arguments in
                 calls.append(arguments)
                 #expect(arguments == ["system", "version", "--format", "json"])
@@ -57,8 +83,7 @@ struct CompiledRuntimeReadinessTests {
     func rejectsInvalidLiveAPI(mutation: String) async throws {
         var calls: [[String]] = []
         let failure = try await ContainerPackageCompatibility.compatibilityFailure(
-            arguments: ["up"], lane: "main", runtimeProfile: .enhanced,
-            runtimeBackend: .nativeAPI,
+            arguments: ["up"], lane: "main", runtimeSelection: .init(profile: .enhanced, backend: .nativeAPI),
             run: { arguments in
                 calls.append(arguments)
                 return try Self.versionData(mutation: mutation)
@@ -73,8 +98,7 @@ struct CompiledRuntimeReadinessTests {
                       "missing-capabilities", "wrong-schema", "wrong-pin"])
     func preservesPackageAdmission(mutation: String) async throws {
         let failure = try await ContainerPackageCompatibility.compatibilityFailure(
-            arguments: ["up"], lane: "main", runtimeProfile: .enhanced,
-            runtimeBackend: .nativeAPI,
+            arguments: ["up"], lane: "main", runtimeSelection: .init(profile: .enhanced, backend: .nativeAPI),
             expectedRevisions: .init(
                 container: "780a86b995ac4cb0985db97f38875fdc6e33d16b",
                 containerization: "matched-containerization",
@@ -87,8 +111,7 @@ struct CompiledRuntimeReadinessTests {
     @Test("stock profile cannot change native readiness or admit Apple metadata")
     func stockProfileCannotChangeNativeBackend() async throws {
         let failure = try await ContainerPackageCompatibility.compatibilityFailure(
-            arguments: ["up"], lane: "main", runtimeProfile: .stock,
-            runtimeBackend: .nativeAPI,
+            arguments: ["up"], lane: "main", runtimeSelection: .init(profile: .stock, backend: .nativeAPI),
             run: { _ in try Self.versionData(mutation: "wrong-source") },
         )
         #expect(failure?.contains("stock cannot select the compiled native API backend") == true)
@@ -97,8 +120,7 @@ struct CompiledRuntimeReadinessTests {
     @Test("offline commands skip every backend check", arguments: [["config"], ["version"], ["--dry-run", "up"], ["build", "--print"]])
     func offlineCommands(arguments: [String]) async throws {
         let failure = try await ContainerPackageCompatibility.compatibilityFailure(
-            arguments: arguments, lane: "main", runtimeProfile: .stock,
-            runtimeBackend: .nativeAPI,
+            arguments: arguments, lane: "main", runtimeSelection: .init(profile: .stock, backend: .nativeAPI),
             run: { _ in
                 Issue.record("Offline command must not query runtime")
                 throw CancellationError()
@@ -111,8 +133,7 @@ struct CompiledRuntimeReadinessTests {
     func propagatesCancellation() async {
         await #expect(throws: CancellationError.self) {
             try await ContainerPackageCompatibility.compatibilityFailure(
-                arguments: ["up"], lane: "main", runtimeProfile: .enhanced,
-                runtimeBackend: .nativeAPI,
+                arguments: ["up"], lane: "main", runtimeSelection: .init(profile: .enhanced, backend: .nativeAPI),
                 run: { _ in throw CancellationError() },
             )
         }
@@ -122,8 +143,7 @@ struct CompiledRuntimeReadinessTests {
     func propagatesSignal() async {
         do {
             _ = try await ContainerPackageCompatibility.compatibilityFailure(
-                arguments: ["up"], lane: "main", runtimeProfile: .enhanced,
-                runtimeBackend: .nativeAPI,
+                arguments: ["up"], lane: "main", runtimeSelection: .init(profile: .enhanced, backend: .nativeAPI),
                 run: { _ in throw ContainerPackagePreflightInterruption(signal: "SIGINT") },
             )
             Issue.record("Expected host signal propagation")
@@ -190,6 +210,10 @@ struct CompiledRuntimeReadinessTests {
         case "missing-build": server.removeValue(forKey: "buildType")
         case "wrong-build": server["buildType"] = "invalid"
         case "malformed-commit": server["commit"] = 123
+        case "stock-client":
+            client["source"] = "apple/container"
+            client["distribution"] = "apple"
+            client["containerization"] = "apple/containerization@stock-containerization"
         case "wrong-source": client["source"] = "apple/container"
         case "wrong-distribution": client["distribution"] = "apple"
         case "wrong-containerization": client["containerization"] = "apple/containerization@matched-containerization"

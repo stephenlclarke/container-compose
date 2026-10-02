@@ -19,10 +19,10 @@ The existing enhanced compile flag selects both `ComposeContainerRuntime` and na
 
 - [x] Added/updated deterministic compatibility and readiness tests.
 - [x] Added/updated installation and README documentation.
-- [x] Focused local compatibility/readiness tests: both stock and enhanced pass 43 test functions in 6 suites against final maintained Swift source.
+- [x] Focused local compatibility/readiness tests: both stock and enhanced pass 44 test functions in 6 suites against the final typed-selection source; the original 43-function proof is retained below.
 - [ ] Release-owner validation of the corrected exact Compose asset in isolated E13.
 
-Final source evidence uses the repository-owned Bazel launcher and its cached debug source graph, with only `ComposePluginTests` and the compatibility/readiness filter selected:
+Original native-readiness implementation evidence uses the repository-owned Bazel launcher and its cached debug source graph, with only `ComposePluginTests` and the compatibility/readiness filter selected:
 
 | Profile | Invocation | Suite / target duration | Result |
 | --- | --- | --- | --- |
@@ -44,3 +44,23 @@ This changes only preflight. No runtime lifecycle, socket, namespace, transport,
 - [x] Runtime review notes included; root owns release and live evidence.
 - [ ] Signed Conventional Commit and user-facing release-note trailer: deferred to the release owner.
 - [x] No credentials or private runtime data included.
+
+## Hosted Quality Integration Follow-up
+
+The implementation plus registry head `2610b0fa51ef0b6243ff88556a6cf26c990e611e` passed both hosted unit/coverage profiles and Sonar analysis `15670e2f-abb3-4769-bbaf-790d0b5584cc` with quality status `OK` and no unreviewed PR/project hotspots. Validate Runtime still failed its stricter zero-unresolved-PR-issues check: `swift:S107`, issue `AaD72R_v78bo7UMLlcqE`, rejected the eight-parameter async preflight boundary. No runtime fixture failed.
+
+The boundary now has seven parameters. `RuntimeSelection` groups requested metadata profile and the actual compiled/injected backend, retaining independent selection semantics. The production caller uses the same default as before; all explicit asynchronous test callers use the typed selection. A new regression exercises default production selection in both builds. No rule waiver, readiness weakening, environment bypass or new transport is introduced.
+
+Focused correction evidence is recorded below. Root review, commit, publication and a fresh exact-head hosted Sonar analysis remain pending; the local arity check is not a replacement for that analysis.
+
+- [x] Strict SwiftLint and SwiftFormat on touched Swift source/tests.
+- [x] Static maximum-seven parameter check, counting default parameters; original source fails at eight, corrected source passes.
+- [x] Final focused stock/enhanced compatibility results: 44 test functions in 6 suites pass in each build.
+- [ ] New exact-head hosted Sonar analysis confirms `swift:S107` is resolved.
+
+| Correction profile | Invocation | Suite / target duration | Result |
+| --- | --- | --- | --- |
+| Enhanced | `3b0e8053-e3fe-4fb3-9ee9-8948ca5cf0bc` | 2.027s / 3.0s | 44 functions in 6 suites passed |
+| Stock | `76e7790a-338b-42a7-81ea-a422d8218209` | 1.753s / 2.5s | 44 functions in 6 suites passed |
+
+The correction uses the same repository launcher, debug cached-source target and compatibility/readiness filter as the original proof. Exact raw logs and arity-before/after evidence are retained under `R/native-compose-2610b0fa/hosted-runtime-triage` in the release-owner handoff. Scoped Markdown lint and `git diff --check` pass.

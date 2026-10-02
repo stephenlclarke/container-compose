@@ -26,3 +26,9 @@ This correction changes Compose admission only. It adds no gateway startup, bypa
 ## Linked work
 
 - [Pull-request details](PR-native-api-readiness.md).
+
+## Hosted Quality Integration Follow-up
+
+CI run `36985804843` at implementation plus registry head `2610b0fa51ef0b6243ff88556a6cf26c990e611e` passed enhanced and stock unit/coverage gates and the Sonar quality gate. Its exact PR-admission step nevertheless failed because Sonar issue `AaD72R_v78bo7UMLlcqE` (`swift:S107`) found eight parameters at `ContainerPackageCompatibility.compatibilityFailure`; the permitted limit is seven. This is a maintained-source quality defect introduced by the backend test injection, not a runtime fixture failure.
+
+The correction groups requested compatibility profile and compiled/injected backend in one typed `RuntimeSelection`. The default backend still comes from the build flag; environment metadata cannot select a transport. Native health identity, Engine readiness, package/capability admission, offline exemptions and interruption propagation are unchanged. A regression invokes the same omitted-selection default as the production caller in both builds. Root owns the reviewed follow-up commit and new exact-head hosted analysis; the failed `2610b0fa` evidence remains retained.
