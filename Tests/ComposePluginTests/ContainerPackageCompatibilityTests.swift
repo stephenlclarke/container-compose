@@ -86,6 +86,12 @@ private let matchingSystemVersionJSON = """
       ],
       "source": "stephenlclarke/container",
       "version": "homebrew-main"
+    },
+    {
+      "appName": "container-apiserver",
+      "buildType": "release",
+      "commit": "matched-container",
+      "version": "homebrew-main"
     }
   ]
   """
@@ -310,6 +316,7 @@ struct ContainerPackageCompatibilityTests {
       arguments: ["up"],
       lane: "main",
       runtimeProfile: .enhanced,
+      runtimeBackend: .engine,
       expectedRevisions: .init(
         container: "matched-container",
         containerization: "matched-containerization"
@@ -342,6 +349,7 @@ struct ContainerPackageCompatibilityTests {
       arguments: ["up"],
       lane: "stock",
       runtimeProfile: .stock,
+      runtimeBackend: .engine,
       stockRuntimeCapabilities: overlay,
       onCompatibleRuntime: { selection.replace(with: $0) },
       run: { arguments in
@@ -544,6 +552,7 @@ struct ContainerSystemServiceReadinessTests {
         arguments: ["up"],
         lane: "main",
         runtimeProfile: .enhanced,
+        runtimeBackend: .engine,
         run: { arguments in
           calls.append(arguments)
           return Data(appleSystemVersionJSON.utf8)
@@ -564,6 +573,7 @@ struct ContainerSystemServiceReadinessTests {
         arguments: ["up"],
         lane: "main",
         runtimeProfile: .enhanced,
+        runtimeBackend: .engine,
         expectedRevisions: .init(
           container: "matched-container",
           containerization: "matched-containerization"
@@ -600,6 +610,7 @@ struct ContainerSystemServiceReadinessTests {
       arguments: ["up"],
       lane: "main",
       runtimeProfile: .enhanced,
+        runtimeBackend: .engine,
       expectedRevisions: .init(
         container: "matched-container",
         containerization: "matched-containerization"
@@ -624,6 +635,7 @@ struct ContainerSystemServiceReadinessTests {
         arguments: ["up"],
         lane: "main",
         runtimeProfile: .enhanced,
+        runtimeBackend: .engine,
         run: { _ in
           throw CancellationError()
         }
@@ -638,6 +650,7 @@ struct ContainerSystemServiceReadinessTests {
         arguments: ["up"],
         lane: "main",
         runtimeProfile: .enhanced,
+        runtimeBackend: .engine,
         expectedRevisions: .init(
           container: "matched-container",
           containerization: "matched-containerization"
