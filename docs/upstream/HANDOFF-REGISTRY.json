@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-09-15",
+  "generatedAt": "2026-10-02",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -8998,6 +8998,27 @@
         }
       ],
       "upstream": "https://github.com/stephenlclarke/container-compose/pull/705"
+    },
+    {
+      "id": "container-compose-708",
+      "owner": "stephenlclarke/container-compose",
+      "title": "fix(compose): bind native readiness to the compiled backend",
+      "state": "submitted",
+      "lastVerified": "2026-10-02",
+      "commits": [
+        "2920b1610371199f68ee1e3b5286aea5b509c8b2"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-native-api-readiness.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-native-api-readiness.md"
+        }
+      ],
+      "upstream": "https://github.com/stephenlclarke/container-compose/pull/708"
     },
     {
       "id": "process-list-compose-top-process-list",
