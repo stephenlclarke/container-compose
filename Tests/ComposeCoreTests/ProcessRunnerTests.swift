@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 @testable import ComposeCore
+import ComposeTestStorage
 import Foundation
 import Testing
 #if canImport(Darwin)
@@ -49,7 +50,7 @@ struct ForegroundRestorationFailureCase: Sendable {
 struct ProcessRunnerTests {
     @Test
     func `process runner captures stdout stderr status input env and cwd`() async throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
         let script = "printf \"%s:%s\" \"$PROCESS_RUNNER_VALUE\" \"$(pwd)\"; cat; printf err >&2"
         let result = try await ProcessRunner().run(
             "/bin/sh",
@@ -83,7 +84,7 @@ struct ProcessRunnerTests {
 
     @Test
     func `process runner captures stdout while inheriting prompt streams`() async throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
         let result = try await ProcessRunner().run(
             "/bin/sh",
             ["-c", "printf '%s:%s' \"$PROCESS_RUNNER_VALUE\" \"$(pwd)\""],
@@ -154,7 +155,7 @@ struct ProcessRunnerTests {
 
     @Test
     func `process runner applies working directory and environment to inherited IO`() async throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -311,7 +312,7 @@ struct ProcessRunnerTests {
     @Test
     func `process runner does not launch an already cancelled task`() async throws {
         for io in [CommandIO.captured(input: Data()), .capturedOutputInheritingInputAndError, .inherited] {
-            let marker = FileManager.default.temporaryDirectory
+            let marker = TestStorage.temporaryDirectory
                 .appendingPathComponent(UUID().uuidString)
             defer {
                 try? FileManager.default.removeItem(at: marker)
@@ -800,7 +801,7 @@ extension ProcessRunnerTests {
 extension ProcessRunnerTests {
     @Test
     func `stdin write failure terminates and reaps its child`() async throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -856,7 +857,7 @@ extension ProcessRunnerTests {
                 withExtension: "yml",
             ),
         )
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -873,11 +874,11 @@ extension ProcessRunnerTests {
           normalizer-child "\(childPIDFile.path)" &
         trap '' TERM
         wait
-        """.write(to: launcher, atomically: true, encoding: .utf8)
+        """.writeFixture(to: launcher, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: launcher.path)
 
         let task = Task {
-            _ = try await ComposeNormalizer(fallbackLauncher: launcher.path).normalize(
+            _ = try await ComposeNormalizer(fallbackLauncher: launcher.path, helperEnvironment: [:]).normalize(
                 options: ComposeOptions(files: [composeFile.path]),
             )
         }
@@ -900,7 +901,7 @@ extension ProcessRunnerTests {
 
 /// Proves cancellation waits for bounded child termination in one I/O mode.
 private func assertCancellationKillsChild(io: CommandIO) async throws {
-    let directory = FileManager.default.temporaryDirectory
+    let directory = TestStorage.temporaryDirectory
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer {
@@ -909,8 +910,9 @@ private func assertCancellationKillsChild(io: CommandIO) async throws {
 
     let pidFile = directory.appendingPathComponent("child.pid")
     let descendantPIDFile = directory.appendingPathComponent("descendant.pid")
+    let trace = ProcessCancellationTrace()
     let task = Task {
-        try await ProcessRunner().run(
+        try await ProcessRunner(observe: trace.record).run(
             "/bin/sh",
             [
                 "-c",
@@ -939,20 +941,25 @@ private func assertCancellationKillsChild(io: CommandIO) async throws {
     task.cancel()
     task.cancel()
 
-    var observedCancellation = false
+    let observedCancellation = await observeCancellation(task, io: io)
+    let cancellationElapsed = clock.now - cancellationStarted
+    #expect(observedCancellation)
+    try trace.expectCancellation(since: cancellationStarted, elapsed: cancellationElapsed, io: io)
+    expectProcessDoesNotExist(processIdentifier)
+    expectProcessDoesNotExist(descendantProcessIdentifier)
+}
+
+/// Preserve unexpected errors while measuring cancellation independently of diagnostics.
+private func observeCancellation(_ task: Task<CommandResult, Error>, io: CommandIO) async -> Bool {
     do {
         _ = try await task.value
         Issue.record("Expected cancellation for \(io)")
     } catch is CancellationError {
-        observedCancellation = true
+        return true
     } catch {
         Issue.record("Expected CancellationError for \(io), received \(error)")
     }
-
-    #expect(observedCancellation)
-    #expect(clock.now - cancellationStarted < .seconds(2))
-    expectProcessDoesNotExist(processIdentifier)
-    expectProcessDoesNotExist(descendantProcessIdentifier)
+    return false
 }
 
 /// Requires a previously owned PID to be absent after command completion.

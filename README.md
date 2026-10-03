@@ -38,6 +38,14 @@ remains the default for the independently installed Compose plugin. See the
 
 ## Current candidate
 
+The `c52ac624` qualification passes all 66 original parity cases, then stops at the first fresh candidate benchmark setup because Compose selects an older host `container` binary. Guarded recovery restores the private runtime, Colima and original services. Candidate and recovery commands now select the exact qualified private binary; a fresh full qualification remains required before release.
+
+At `f0c0479a`, the corrected selection passes all 66 cases again, but the first benchmark warmup exposes an older 128 MiB fixture below the Container runtime's 200 MiB minimum. The benchmark workload now requests 256 MiB per service; the matching Docker Compose 5.5.1 reference is now published from a separately reviewed 28-sample capture with complete restoration. The published 128 MiB reference remains intact as historical evidence; fresh full qualification is still required.
+
+The local development run at `fbc40e81` passes and restores 63 original parity cases, including the repaired lifecycle foreground-output behavior. The API-socket one-off command then times out; the remaining two cases are not reached. All nine host-restoration phases complete. The focused diagnostic at `8a2b5b4e` is stopped earlier by Docker Hub rate limiting, so it supplies no new API result. Verified fixture reuse and ARM64-only downloads are the current workflow correction; final qualification and release remain incomplete. See the [current evidence](docs/guides/BAZEL.md#fixture-download-limit-at-8a2b5b4e) and the [earlier image-recovery limitation](docs/guides/BAZEL.md#fixed-image-collision-at-091ef12b).
+
+The unreleased Bazel development branch now forwards common host signals during prepared foreground runs and safely cancels stalled signal requests. [Signal evidence and limits](docs/guides/BAZEL.md#prepared-foreground-launch) distinguish its passing component tests from the open Docker duplicate-signal oracle and full runtime/release qualification.
+
 The [latest stable release](https://github.com/stephenlclarke/container-compose/releases/latest)
 is the default macOS arm64 lane. The [Current release feed](https://github.com/stephenlclarke/container-compose/releases)
 contains immutable `current-<full-sha>` prereleases; the two Current Homebrew
@@ -188,6 +196,30 @@ option for that command is green.
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 
+In the unreleased Bazel candidate, `run` and `exec` preserve guest-command options such as `--help`, `--user` and `--workdir`: place Compose options before `SERVICE`, followed by the guest command and its arguments. `container compose run --help` displays Compose help; `container compose run web echo --help` passes `--help` to `echo`. See the [CLI boundary evidence](docs/guides/BAZEL.md#guest-command-argument-boundary) for tested scope; this is not a claim about the currently published stable binary.
+
+The unreleased stock Engine adapter also preserves digest-qualified image spelling for descriptor-verified devcontainer inspection and records logical network keys independently of custom native names. Matched live C01 now passes all original observations and cleanup with devcontainer `aa56f00` and Compose `1fe36f56`; enhanced qualification and stable release gates remain open. These changes add no Docker dependency and are not present in the currently published stable binary. See the [Bazel guide](docs/guides/BAZEL.md).
+
+The unreleased candidate also records the logical Compose volume key in native and dry-run creation, including custom volume names, and rejects contradictory Docker volume labels before creation. This lets the matching devcontainer API expose and filter volume ownership consistently. [Failing-before/passing-after tests and C03 qualification status](docs/guides/BAZEL.md#compose-volume-ownership) distinguish this correction from a release or measured speed improvement.
+
+The opt-in Bazel `coverage` target now measures all unit targets plus a 42-case no-runtime CLI harness, with an explicitly identified `unit-cli` receipt and matching 90% gate. Forty cases exercise the native executable; two check harness process cleanup. Tests cover guest arguments, replica/service selection, lifecycle order, build paths, image dependencies, configuration output and declared build provenance. Unit-only measurement remains separate. Neither report replaces live integration or parity; see [coverage scope and retained evidence](docs/guides/BAZEL.md#validated-coverage-evidence).
+
+In this unreleased candidate, `config --output` (including `--variables`) and `convert --output` publish through a private temporary sibling of the destination, then atomically replace the requested file with owner-only permissions (`0600`). This keeps temporary output on the destination volume and protects interpolated configuration values. See [output-file regression evidence](docs/guides/BAZEL.md#configuration-output-on-ssd).
+
+The enhanced native runtime suite also checks image metadata, platform selection, healthchecks, volume declarations and transformer references without starting services. These component tests exercise the production projection; they do not replace live runtime or registry qualification.
+
+The reduced build [reuses authenticated unchanged lower layers across a Container-only pin update](docs/guides/BAZEL.md#reusing-unchanged-layers-after-a-container-update). The enhanced Container SDK for the current pin is now [published and download-verified](docs/guides/BAZEL.md#qualified-container-sdk-consumption); the Compose consumer and product qualification remain separate gates.
+
+The enhanced pre-start input adapter also carries Container's explicit buffered EOF policy for non-TTY foreground input; [live qualification and updated dependency release status](docs/guides/BAZEL.md#primary-input-eof-correction) remain pending.
+
+The unreleased one-off `run` command now keeps stdin open by default, matching Docker Compose. Use `--interactive=false` (or `--no-interactive`) to close it explicitly, including when a service declares `stdin_open: true`. This also changes `ComposeRunOptions`' default; detached mode controls host attachment, not the container's stdin configuration. [Regression and live-test status](docs/guides/BAZEL.md#prepared-foreground-launch) remains separate from stable support.
+
+For one-off runs, `--quiet` suppresses Compose progress while preserving guest input and output, matching the observed Docker Compose 5.3.1 behavior. The unreleased legacy launcher no longer closes stdin merely because quiet mode was requested.
+
+The unreleased CLI now auto-detects one-off terminal allocation from host input/output instead of inheriting the service's `tty` value. `-T` disables allocation; explicit `--tty` and `--no-tty` values retain their presence and cannot be combined, even when both are false. Swift callers supply the resolved choice using `ComposeRunOptions.noTty`; `false` explicitly requests a terminal and `true` disables it. Callers with redirected input also set `inputIsTerminal=false`; its default preserves terminal-input embedding behavior, while the CLI supplies the actual detected state. Invalid interactive TTY input is rejected after dependency startup and before one-off image/resource preparation, including detached runs. Dependencies use the same prepared Engine requests as the job. Packaged stock E11 and E12 pass the redirected-input and post-rejection-state regressions against the Docker reference, with zero owned residue. Enhanced qualification, full terminal-size and signal parity remain under development.
+
+The unreleased stock candidate negotiates the health-policy and image-declaration capabilities with the matching devcontainer gateway before resource creation. Packaged stock C02 invocation `1d5b7c55` passes startup DNS, running DNS, dependency health and selected-service assertions with zero owned residue. Stock E09 invocation `7ab7395e` now also proves the actual packaged Compose CLI's piped input, separate output streams, exact guest exit and automatic removal without Docker or a CLI fallback. See [the current contract and evidence](docs/guides/BAZEL.md#prepared-foreground-launch); enhanced qualification, complete foreground/terminal parity, quiet benchmarks and stable release remain open.
+
 Use [STATUS.md](docs/project/STATUS.md) for the current stable functionality and
 [BACKLOG.md](docs/project/BACKLOG.md) for the remaining 1.0 parity contracts. The live
 source of backlog state is the cross-repository GitHub hierarchy rooted at
@@ -208,11 +240,17 @@ become implicit exceptions.
 <!-- Separate GitHub callouts. -->
 
 > [!NOTE]
-> CodeQL is release-only. Current and stable package publication analyzes the
-> exact Go normalizer source after the fail-fast Homebrew preflight and before
-> native package construction. The standalone workflow recovers an already
-> published release only. This does not claim Swift CodeQL coverage, and a
-> missing or failed release analysis is not a pass.
+> The candidate GitHub workflow runs stock and enhanced Swift unit coverage in
+> isolated builds, unions exact-source line observations, and retains Go unit
+> coverage under the existing thresholds before scanning the exact pull-request
+> head with SonarQube. Production-only CodeQL builds cover both Swift runtime profiles
+> and the shipped Linux and Darwin Go source sets; retained SARIF and extraction
+> inventories must account for the maintained sources. VM-backed integration,
+> Docker parity, quiet benchmarks, packaging, and install qualification remain
+> local work bound to the same source revision. Current and stable package
+> publication require explicit dispatch rather than following CI automatically.
+> The new hosted quality route still needs its first exact-head run before these
+> checks can be reported as passing for this candidate.
 
 On macOS, `container-compose` honors the active pull policy, prepares missing default-pull images when needed, then reads image metadata before `up`, `create`, and one-off `run`. It creates deterministic implicit Dockerfile-declared volumes and seeds an empty local volume from the selected image path for both declared and ordinary local volume mounts (including inherited external volumes), preserving the selected directory's ownership and mode on the volume root. `volume.nocopy: true`, a pre-existing `volume.subpath`, and a mount at a missing image path remain empty; populated volumes are preserved across `down`/`up`, matching Docker. Service `pre_start` helpers inherit service runtime context and gate startup, while `post_start` and `pre_stop` cover detached, foreground, and interactive one-off lifecycle paths with Docker-compatible detach and exit-status behavior. Foreground `up --exit-code-from SERVICE` returns the selected service's terminal status even when teardown closes attached log streams. The matched runtime encodes foreground attach signals by Linux-resolvable name, returns complete long records at backward-read tail boundaries, and keeps persistent log capture alive after an attached client disconnects; the committed signal/log reliability fixture verifies all three behaviors against Docker Compose V2.
 
@@ -251,7 +289,15 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 
 ![container help output showing the compose plugin recognised](docs/images/container-help-compose-plugin.png)
 
+Benchmark data and provenance are GitHub release assets. The Bazel release path publishes the signed binary, qualification provenance and `compose-qualified-evidence-v1.zip` containing raw measurements and parity outcomes. Later compatible comparisons reuse the old release evidence and measure only the new candidate; a missing or incompatible baseline fails before expensive work. Historical data is retained on the [0.14.2](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.2) and [0.13.1](https://github.com/stephenlclarke/container-compose/releases/tag/0.13.1) releases. See the [qualification workflow](docs/guides/BAZEL.md) for compatibility checks and remaining release gates.
+
+Qualified Container runtime assets use a separate staged producer: prepare the exact-source candidate, independently review its provenance and parity archive, then publish and verify downloads with the `bazel-q-runtime-release-*` targets. The producer keeps its resumable release journal in the private output directory and temporary work on the enrolled SSD; see [artifact production](Tools/bazel/artifacts/README.md#qualified-container-runtime-release). The current five-asset Q runtime release is `layer-runtime-f86fea2236fa-d4a9bd8e9d33` (release `402268062`); its exact-source downloads have been verified.
+
 ## Documentation
+
+Runtime preflight follows the compiled Compose backend: enhanced builds require a live matching native API server, while stock Engine builds retain their system-status readiness gate. See [installation and readiness](docs/guides/INSTALL.md) for the exact admission checks.
+
+The [native Bazel workflow](docs/guides/BAZEL.md) is being qualified alongside the existing build system. Stock/enhanced Swift products, the Go parser and both Linux volume initializers build natively. Provider-specific unit suites use declared fixtures, SSD scratch and validated retained test/coverage/timing evidence; both profiles now run the runtime-neutral Core tests, while provider-coupled Core tests still require enhanced pins. The repository-owned SSD launcher removes the required external devcontainer checkout. The opt-in Makefile provides `coverage`, `coverage-report` and `coverage-check`; export reuses retained bytes without rebuilding, and the 90% check binds the current source/profile/consumer identity. Historical coverage receipts with invalid compiler counters are rejected. Atomic instrumentation and sandboxed Swift compilation address the reproduced defect. At source `8cfaf885`, both complete unit/CLI inventories pass: **90.8959% stock** and **90.1833% enhanced**. [Exact coverage scope and evidence](docs/guides/BAZEL.md#validated-coverage-evidence) keep these measurements separate from live parity and SonarQube certification. `test-asan`, `test-tsan` and the separate `test-go-race` retain native sanitizer results, with the enhanced EXT4 and zstd importer patches pending fresh consumer qualification. The opt-in `docs` target generates and tests a standalone DocC site from optimized native modules without a SwiftPM rebuild. Native unsigned packages include version/dependency metadata, hashed dependency notices (including reviewed embedded-data and source-header attributions) and bundled-helper smoke tests, with authenticated restore rather than rebuilding. They are not distribution-ready: complete vendored-licence closure, live integration/parity and signed release migration remain unfinished; existing release gates are unchanged.
 
 - [Container developer API collection](https://stephenlclarke.github.io/api/): browse the unified documentation for `container-engine-api`, `container`, `containerization`, `container-k8s`, `container-builder-shim`, `container-compose`, and `devcontainer`.
 - [container-compose API reference](https://stephenlclarke.github.io/api/container-compose/): browse the Compose plugin API reference generated from the Swift source.

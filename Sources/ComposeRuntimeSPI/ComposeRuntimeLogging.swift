@@ -109,6 +109,8 @@ public enum ComposeOutputAttachmentMode: Equatable, Sendable {
     /// Bootstrap a stopped container's process so the caller can start it only
     /// after the attachment readiness callback has fired.
     case beforeStart
+    /// Bootstrap with caller stdin as well as output for non-TTY foreground runs.
+    case beforeStartWithInput
 }
 
 // The attachment contract keeps stream selection and its two lifecycle barriers

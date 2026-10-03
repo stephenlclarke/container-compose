@@ -18,7 +18,7 @@ import ComposeCore
 import ContainerUnixHTTPClient
 import Foundation
 
-private struct EngineImagePlatformQuery: Encodable {
+struct EngineImagePlatformQuery: Encodable {
     let operatingSystem: String
     let architecture: String
     let variant: String?
@@ -202,7 +202,7 @@ extension EngineRuntimeProvider: ComposeRuntimeImageManaging {
         return image
     }
 
-    private static func validateImagePlatform(
+    static func validateImagePlatform(
         _ image: EngineImageInspect,
         requested: EngineImagePlatformQuery,
         argument: String

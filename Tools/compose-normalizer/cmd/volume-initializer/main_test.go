@@ -30,8 +30,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const testTransactionID = "01234567-89ab-cdef-0123-456789abcdef"
-
 func TestInitializeCopiesMetadataLinksAndFiles(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -148,45 +146,6 @@ func TestCopyExtendedAttributesReplacesInheritedAttributes(t *testing.T) {
 	if _, exists := attributes[inheritedName]; exists {
 		t.Fatalf("inherited attribute survived replacement: %v", attributes)
 	}
-}
-
-func TestInitializePreservesSpecialPermissionBits(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	source := filepath.Join(root, "source")
-	destination := filepath.Join(root, "destination")
-	mustMkdir(t, source, 0o750)
-	mustMkdir(t, destination, 0o700)
-	executable := filepath.Join(source, "privileged")
-	mustWrite(t, executable, "executable\n", 0o750)
-	shared := filepath.Join(source, "shared")
-	mustMkdir(t, shared, 0o770)
-	if err := os.Chmod(source, 0o750|os.ModeSetgid); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(executable, 0o750|os.ModeSetuid|os.ModeSetgid); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(shared, 0o770|os.ModeSticky|os.ModeSetgid); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := initialize(source, destination, testTransactionID, t.TempDir()); err != nil {
-		t.Fatal(err)
-	}
-	assertMode := func(path string, expected os.FileMode) {
-		t.Helper()
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if actual := preservedMode(info.Mode()); actual != expected {
-			t.Fatalf("unexpected mode for %s: got %v, want %v", path, actual, expected)
-		}
-	}
-	assertMode(destination, 0o750|os.ModeSetgid)
-	assertMode(filepath.Join(destination, "privileged"), 0o750|os.ModeSetuid|os.ModeSetgid)
-	assertMode(filepath.Join(destination, "shared"), 0o770|os.ModeSticky|os.ModeSetgid)
 }
 
 func TestInitializePreservesExistingDestination(t *testing.T) {
@@ -1193,20 +1152,6 @@ type fileInfoWithoutSystemMetadata struct {
 
 func (fileInfoWithoutSystemMetadata) Sys() any {
 	return nil
-}
-
-func mustMkdir(t *testing.T, path string, mode os.FileMode) {
-	t.Helper()
-	if err := os.Mkdir(path, mode); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func mustWrite(t *testing.T, path, value string, mode os.FileMode) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(value), mode); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func mustJournalEntry(t *testing.T, path, name string) transactionJournalEntry {

@@ -1147,7 +1147,8 @@ struct ComposeCLIHelpTests {
                 #expect(command.services == ["api"])
             }),
             (["exec"], ["--detach", "--dry-run", "--env", "--index", "--no-tty", "--privileged", "--user", "--workdir"], {
-                let command = try Exec.parse([
+                let arguments = ComposeArgumentRewriter.argumentsForParsing([
+                    "exec",
                     "--dry-run",
                     "--detach",
                     "--env", "A=B",
@@ -1161,6 +1162,7 @@ struct ComposeCLIHelpTests {
                     "-lc",
                     "true",
                 ])
+                let command = try #require(ComposePlugin.parseAsRoot(arguments) as? Exec)
 
                 #expect(command.global.dryRun)
                 #expect(command.detach)
@@ -1324,7 +1326,8 @@ struct ComposeCLIHelpTests {
                 "--label", "--name", "--no-tty", "--no-deps", "--publish", "--pull", "--quiet", "--quiet-build", "--quiet-pull",
                 "--remove-orphans", "--rm", "--service-ports", "--use-aliases", "--user", "--volume", "--workdir",
             ], {
-                let command = try Run.parse([
+                let arguments = ComposeArgumentRewriter.argumentsForParsing([
+                    "run",
                     "--dry-run",
                     "--build",
                     "--cap-add", "NET_ADMIN",
@@ -1354,6 +1357,7 @@ struct ComposeCLIHelpTests {
                     "echo",
                     "ok",
                 ])
+                let command = try #require(ComposePlugin.parseAsRoot(arguments) as? Run)
 
                 #expect(command.global.dryRun)
                 #expect(command.build)
@@ -1363,10 +1367,10 @@ struct ComposeCLIHelpTests {
                 #expect(command.entrypoint == "/bin/sh")
                 #expect(command.environment == ["A=B"])
                 #expect(command.envFiles == [".env"])
-                #expect(command.interactive)
+                #expect(command.interactive == true)
                 #expect(command.labels == ["x=y"])
                 #expect(command.name == "oneoff")
-                #expect(command.noTty)
+                #expect(command.noTty == true)
                 #expect(command.noDeps)
                 #expect(command.publish == ["127.0.0.1:8080:80"])
                 #expect(command.pull == "always")

@@ -14,25 +14,25 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import Foundation
+package main
 
-/// Runtime defaults shared by typed Compose projections.
-public enum ComposeRuntimeDefaults {
-    public static var shellExecutable: String {
-        ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_SHELL"]
-            ?? ["", "bin", "sh"].joined(separator: "/")
-    }
+import (
+	"os"
+	"testing"
+)
 
-    public static var workingDirectory: String {
-        ["", ""].joined(separator: "/")
-    }
+const testTransactionID = "01234567-89ab-cdef-0123-456789abcdef"
 
-    public static func shellProcess() -> ComposeProcessConfiguration {
-        ComposeProcessConfiguration(
-            executable: shellExecutable,
-            arguments: [],
-            environment: [],
-            workingDirectory: workingDirectory,
-        )
-    }
+func mustMkdir(t *testing.T, path string, mode os.FileMode) {
+	t.Helper()
+	if err := os.Mkdir(path, mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustWrite(t *testing.T, path, value string, mode os.FileMode) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(value), mode); err != nil {
+		t.Fatal(err)
+	}
 }

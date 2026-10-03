@@ -363,6 +363,8 @@ validate_container_compose_dry_run() {
     local dry_run_output
 
     dry_run_output="$("$CONTAINER_COMPOSE" --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" create --build --force-recreate)"
+    dry_run_output="$(printf '%s' "$dry_run_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label create-options)"
 
     require_dry_run_fragment() {
         local expected="$1"

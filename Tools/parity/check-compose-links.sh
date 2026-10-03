@@ -31,6 +31,9 @@
 #                      Path to the matching Apple container binary.
 #   CONTAINER_COMPOSE_LIVE
 #                      Set to 1 to run the live Apple runtime comparison.
+#   COMPOSE_FULL_SUITE_QUALIFIED
+#                      Set by the qualifier; requires preloaded fixture images
+#                      and never refreshes their tags after baseline capture.
 #   DOCKER_COMPOSE     Docker Compose command to compare with.
 #   PARITY_REPETITIONS Number of timed DNS lookups per scenario. Defaults to 3.
 #   PARITY_TIMEOUT_SECONDS
@@ -52,7 +55,9 @@ readonly SCRIPT_NAME
 REPO_ROOT="$(cd "$(dirname "$SELF_PATH")/../.." && pwd)"
 readonly REPO_ROOT
 
+# Bound both parity lanes equally, including scaled and one-off services.
 readonly FIXTURE_IMAGE="alpine:3.20"
+readonly FIXTURE_MEMORY="256m"
 STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
@@ -169,6 +174,7 @@ write_fixture() {
 services:
   pool:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     networks:
@@ -176,6 +182,7 @@ services:
       - secondary
   linked:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     links:
@@ -185,12 +192,14 @@ services:
       - secondary
   peer:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     networks:
       - backend
   external-client:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     external_links:
@@ -200,6 +209,7 @@ services:
       - secondary
   moving:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     networks:
@@ -207,6 +217,7 @@ services:
         ipv4_address: ${subnet_prefix}.10
   watcher:
     image: ${FIXTURE_IMAGE}
+    mem_limit: ${FIXTURE_MEMORY}
     command: ["sh", "-c", "sleep 900"]
     stop_grace_period: 1s
     links:
@@ -241,6 +252,7 @@ create_fixtures() {
         printf '# timeout_seconds=%s\n' "$PARITY_TIMEOUT_SECONDS"
         printf '# material_slowdown=max_ratio:%s\n' "$PARITY_TIMING_MAX_RATIO"
         printf '# fixture_image=%s\n' "$FIXTURE_IMAGE"
+        printf '# fixture_memory=%s\n' "$FIXTURE_MEMORY"
         printf '# image_preparation=pulled outside the timed startup workload\n'
         printf 'implementation\toperation\trepetition\tseconds\n'
     } >"$TIMING_FILE"
@@ -250,14 +262,16 @@ create_fixtures() {
 run_bounded_for() {
     local timeout="$1"
     shift
-    python3 -c '
+    PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c '
 import os
 import signal
 import subprocess
 import sys
+from Tools.parity.qualification_lease import child_command_lease
 
 timeout = float(sys.argv[1])
-process = subprocess.Popen(sys.argv[2:], start_new_session=True)
+with child_command_lease() as command_fds:
+    process = subprocess.Popen(sys.argv[2:], start_new_session=True, pass_fds=command_fds)
 try:
     raise SystemExit(process.wait(timeout=timeout))
 except subprocess.TimeoutExpired:
@@ -567,11 +581,11 @@ run_live_suite() {
     }
     if [[ "$implementation" == "docker" ]]; then
         measure_capture "$implementation" external_secondary_create 1 \
-            docker run --detach --name "$external_target" --network "${project}_secondary" \
+            docker run --detach --memory "$FIXTURE_MEMORY" --name "$external_target" --network "${project}_secondary" \
             "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
     else
         measure_capture "$implementation" external_secondary_create 1 \
-            "$CONTAINER_BINARY" run --detach --name "$external_target" \
+            "$CONTAINER_BINARY" run --detach --memory "$FIXTURE_MEMORY" --name "$external_target" \
             --network "${project}_secondary" "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
     fi
     assert_timed_address_count "$implementation" external-client external-db 1 external_secondary_lookup
@@ -585,11 +599,11 @@ run_live_suite() {
     assert_alias_unavailable "$implementation" external-client external-db external_post_remove_lookup
     if [[ "$implementation" == "docker" ]]; then
         measure_capture "$implementation" external_backend_create 1 \
-            docker run --detach --name "$external_target" --network "${project}_backend" \
+            docker run --detach --memory "$FIXTURE_MEMORY" --name "$external_target" --network "${project}_backend" \
             "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
     else
         measure_capture "$implementation" external_backend_create 1 \
-            "$CONTAINER_BINARY" run --detach --name "$external_target" \
+            "$CONTAINER_BINARY" run --detach --memory "$FIXTURE_MEMORY" --name "$external_target" \
             --network "${project}_backend" "$FIXTURE_IMAGE" sh -c 'sleep 900' >/dev/null
     fi
     assert_timed_address_count "$implementation" external-client external-db 1 external_backend_lookup
@@ -667,9 +681,35 @@ assert_model_projection() {
 # Pulls fixture images outside the timed workload.
 prepare_fixture_images() {
     info "Preparing fixture image outside the timed workload: $FIXTURE_IMAGE"
-    run_bounded docker image pull "$FIXTURE_IMAGE" >/dev/null
+    # Qualified runs reuse the pre-baseline image; standalone runs pull only a
+    # missing fixture rather than refreshing an existing mutable tag.
+    local docker_refs
+    docker_refs="$(run_bounded docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}')"
+    if ! grep -Fx -- "$FIXTURE_IMAGE" <<<"$docker_refs" >/dev/null; then
+        if [[ "${COMPOSE_FULL_SUITE_QUALIFIED:-0}" == 1 ]]; then
+            error "qualified Docker fixture image is missing: $FIXTURE_IMAGE"
+            return 1
+        fi
+        run_bounded docker image pull "$FIXTURE_IMAGE" >/dev/null
+    fi
     if [[ "$CONTAINER_COMPOSE_LIVE" == "1" ]]; then
-        run_bounded "$CONTAINER_BINARY" image pull "$FIXTURE_IMAGE" >/dev/null
+        local native_refs native_present
+        native_refs="$(run_bounded "$CONTAINER_BINARY" image list --format json)"
+        native_present="$(printf '%s' "$native_refs" |
+            PYTHONPATH="$REPO_ROOT/Tools/bazel${PYTHONPATH:+:$PYTHONPATH}" python3 -c '
+import sys
+import full_suite
+images = full_suite.native_images(sys.stdin.read())
+print("yes" if any(full_suite.image_reference(name) == sys.argv[1]
+                   for name in images) else "no")
+' "$FIXTURE_IMAGE")"
+        if [[ "$native_present" == no ]]; then
+            if [[ "${COMPOSE_FULL_SUITE_QUALIFIED:-0}" == 1 ]]; then
+                error "qualified native fixture image is missing: $FIXTURE_IMAGE"
+                return 1
+            fi
+            run_bounded "$CONTAINER_BINARY" image pull "$FIXTURE_IMAGE" >/dev/null
+        fi
     fi
 }
 
@@ -722,9 +762,26 @@ PY
     info "Timing evidence written to $PARITY_TIMING_OUTPUT"
 }
 
-# Removes runtime resources and temporary fixtures.
+# Retains partial timings without replacing an earlier report on failure.
+retain_partial_timings() {
+    [[ -f "$TIMING_FILE" ]] || return 0
+    mkdir -p "$(dirname "$PARITY_TIMING_OUTPUT")" || return 1
+    if [[ ! -e "$PARITY_TIMING_OUTPUT" && ! -L "$PARITY_TIMING_OUTPUT" ]]; then
+        (set -o noclobber; cat "$TIMING_FILE" >"$PARITY_TIMING_OUTPUT") || return 1
+    fi
+    [[ -f "$PARITY_TIMING_OUTPUT" && ! -L "$PARITY_TIMING_OUTPUT" ]] &&
+        cmp -s "$TIMING_FILE" "$PARITY_TIMING_OUTPUT"
+}
+
+# Removes runtime resources while preserving failed timing evidence.
 cleanup() {
     local status=$?
+    local preserve_fixture=0
+    if ! retain_partial_timings; then
+        warning "could not retain timings without changing $PARITY_TIMING_OUTPUT; preserving $FIXTURE_DIR"
+        preserve_fixture=1
+        ((status != 0)) || status=1
+    fi
     if [[ -n "$FIXTURE_DIR" ]]; then
         docker rm --force "$DOCKER_EXTERNAL_TARGET" >/dev/null 2>&1 || true
         if [[ -f "$DOCKER_FILE" ]]; then
@@ -737,7 +794,9 @@ cleanup() {
                 "$CONTAINER_COMPOSE" --ansi never --project-name "$CONTAINER_PROJECT" --file "$CONTAINER_FILE" \
                 down --remove-orphans >/dev/null 2>&1 || true
         fi
-        rm -rf "$FIXTURE_DIR"
+        if ((preserve_fixture == 0)); then
+            rm -rf "$FIXTURE_DIR"
+        fi
     fi
     exit "$status"
 }
@@ -769,4 +828,6 @@ main() {
     info 'Docker Compose V2 and container-compose links parity passed.'
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

@@ -14,13 +14,10 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ComposeContainerRuntime
 @testable import ComposeCore
 import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 #if canImport(Darwin)
     import Darwin
 #elseif canImport(Glibc)
@@ -404,6 +401,7 @@ extension ComposeOrchestratorTests {
         #expect(await resourceManager.requests == [
             .createVolume(ComposeVolumeCreateRequest(name: "demo_cache", labels: [
                 "com.apple.container.compose.project": "demo",
+                "com.apple.container.compose.volume": "cache",
                 "com.apple.container.compose.version": "1",
                 "com.apple.container.compose.project.working-directory": FileManager.default.currentDirectoryPath,
                 "com.apple.container.compose.project.config-files": "",

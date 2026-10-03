@@ -52,7 +52,7 @@ package enum ComposeCommitImageArchive {
         service: ComposeService,
         options: ComposeCommitOptions,
         metadata: Metadata = Metadata(),
-        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        temporaryDirectory: URL = ComposeTemporaryFiles.defaultDirectory,
     ) throws {
         let tempDirectory = try ComposeTemporaryFiles.createDirectory(
             in: temporaryDirectory,

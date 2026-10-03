@@ -158,6 +158,7 @@ expect_container_behavior() {
     "$CONTAINER_COMPOSE" --ansi never --project-directory "$FIXTURE_DIR" -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" config --format json >"$config_output"
     assert_config_preserves_user_namespaces 'container-compose' "$config_output"
     "$CONTAINER_COMPOSE" --ansi never --dry-run --project-directory "$FIXTURE_DIR" -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up --no-start host private >"$dry_run_output" 2>&1
+    dry_run_output="$(python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --file "$dry_run_output")"
     local host_command private_command
     host_command="$(grep -F "container create --name $PROJECT_NAME-host-1" "$dry_run_output" || true)"
     private_command="$(grep -F "container create --name $PROJECT_NAME-private-1" "$dry_run_output" || true)"

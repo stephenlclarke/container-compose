@@ -1,0 +1,57 @@
+{
+  "archiveSHA256": "62d739a4318f87db4980e7deaae6404d8dd1b1cacf569ded03d5a5e4b773b701",
+  "asset": "containerization-stock-darwin-arm64-opt.tar.gz",
+  "developmentProof": false,
+  "evidenceAsset": "evidence.json",
+  "evidenceSHA256": "d645b8232efe2ffddd150709506004aba2b63480e70ae9884844c48c1567149d",
+  "group": "containerization",
+  "lower": {
+    "argument-parser": {
+      "archiveSHA256": "05390252b4cb98ad15e5e14578c2549efc882bfb424bd827080aa11d640cc003",
+      "evidenceSHA256": "6898336341bc81b5b693d3daaf28422089cf742927d3f04ba23d8939d3a58399",
+      "tag": "layer-argument-parser-6a52f3251125-ef5a65929c858802"
+    },
+    "foundation": {
+      "archiveSHA256": "ee64f2a1fb8e0c7ba54816ebeaf77d2a35368c085ed7915e5254d14f1a23a6af",
+      "evidenceSHA256": "8942dc55efc98c78ca5e1413d6c53b8f21cf5ef13842d3e4614b573cc4a91177",
+      "tag": "layer-foundation-stock-ee64f2a1fb8e0c7ba548"
+    }
+  },
+  "producerCommit": "5d501fbd94602cb81104fd41565295a50274e2f5",
+  "profile": "stock",
+  "reachedSources": {
+    "containerization": {
+      "repository": "swiftpkg_containerization",
+      "sourceCommit": "9eacc197d7c3663eb29cbab6d51244ede6d1cd7d",
+      "sourceLocation": "https://github.com/apple/containerization.git"
+    }
+  },
+  "recipeSHA256": {
+    "bazelConfiguration": "f038a75ea10af057b227b63b37934a64243b5ca70e0ba8cadc3a64486ebb321e",
+    "configuredOutputs": "f24f9358d18b2f074c1dda677b8c3c0081d9aa977cb1a822cefd3ac4918ade41",
+    "dependencyExtension": "526170ea357efd25e8e05631e45254f25286144a5913b32db4ead4e4c227730b",
+    "importer": "ab6cf862d45ed991abd4bbb3a83963b1cb8ea30d103d8d92a4b0178036ec6003",
+    "launcher": "d8a3bde435faa1c481d3408da99b934f387022664267e736cc7ee436750b0dfc",
+    "moduleGraph": "6c2a999d2b7e3d333dabf3dfd1dc43912afdcad7059da82dea77782293f0ccd6",
+    "moduleRules": "c2cda92b2dd22bb47987e1619458693db0c5e83f3bbeb6e21f28877e22b4ba01",
+    "producer": "fc84c316dc42f7c978cadf8a89208bcf5f1984aeb270eab5276442cb494bb678",
+    "rootBuild": "0ea5ae98c5f8045a44dd89bdd2f8680b96c79aef5974079d267e99ec5d64594d",
+    "sourceIdentity": "d4d4eec1f9d86086b4a31e0f39236bdbc5567911b098d17611f6835c83878e34",
+    "swiftPackageManifest": "459a721a03f96978259620ec8ab278c809e0fec182ed08a13f76cbe432e81ac1"
+  },
+  "repository": "stephenlclarke/containerization",
+  "schema": 1,
+  "sourcePins": {
+    "containerization": "9eacc197d7c3663eb29cbab6d51244ede6d1cd7d"
+  },
+  "tag": "layer-containerization-stock-62d739a4318f87db4980",
+  "targetCommit": "9eacc197d7c3663eb29cbab6d51244ede6d1cd7d",
+  "toolchain": {
+    "bazelVersion": "8.8.0",
+    "sdkSettingsSHA256": "7b93ad7e534cc4b31c6a4e39d19b5e0288acf2168c2649479a796d1cb51939fb",
+    "sdkVersion": "27.0",
+    "swiftVersion": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx27.0.0",
+    "swiftcSHA256": "cf81104bf554eef05e28a8bb5285c763f1323b4511b944d755d8bdd6cb8db717",
+    "xcodeVersion": "Xcode 27.0\nBuild version 27A266a"
+  }
+}

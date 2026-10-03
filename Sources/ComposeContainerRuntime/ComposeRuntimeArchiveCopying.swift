@@ -33,7 +33,7 @@ public extension ComposeRuntimeCopying {
             archive: archive,
             destination: destination,
             options: options,
-            temporaryDirectory: FileManager.default.temporaryDirectory,
+            temporaryDirectory: ComposeTemporaryFiles.defaultDirectory,
         )
     }
 
@@ -70,7 +70,7 @@ public extension ComposeRuntimeCopying {
             archive: archiveFile,
             destination: destination,
             options: options,
-            temporaryDirectory: FileManager.default.temporaryDirectory,
+            temporaryDirectory: ComposeTemporaryFiles.defaultDirectory,
         )
     }
 
@@ -124,7 +124,7 @@ public extension ComposeRuntimeCopying {
             archive: archive,
             copyContents: copyContents,
             options: options,
-            temporaryDirectory: FileManager.default.temporaryDirectory,
+            temporaryDirectory: ComposeTemporaryFiles.defaultDirectory,
         )
     }
 
