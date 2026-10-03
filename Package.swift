@@ -40,7 +40,7 @@ let containerDependency: Package.Dependency = {
     return enhancedRuntime
         ? .package(
             url: "https://github.com/stephenlclarke/container.git",
-            revision: "a1effeeaf8c7c1d48b4773262a2d5218dcd5817d",
+            revision: "f86fea2236fab118c0e0c6f8be5eb7672df894e2",
         )
         : .package(url: "https://github.com/apple/container.git", exact: "1.4.1")
 }()

@@ -471,7 +471,7 @@ class QRuntimeReleaseTests(unittest.TestCase):
         bundle = {'qualified_container_source': '3' * 40}
         with self.assertRaisesRegex(RuntimeError, 'wrong qualification'):
             q_assets.validate(bundle, {}, {}, qualified_source=source)
-        self.assertEqual(q_assets.Q, 'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d')
+        self.assertEqual(q_assets.Q, 'f86fea2236fab118c0e0c6f8be5eb7672df894e2')
 
     def test_complete_native_provenance_validates_for_explicit_future_source(self):
         fixture = asset_tests.NativeQAssetTests()

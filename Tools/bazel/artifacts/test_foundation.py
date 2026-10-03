@@ -425,7 +425,11 @@ class FoundationTests(unittest.TestCase):
 
     def test_reused_containerization_requires_original_published_lock_bytes(self) -> None:
         root = Path(__file__).resolve().parents[3]
+        current_container = foundation.source_pins(root, 'enhanced')['container']
+        self.assertNotEqual(current_container, 'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d')
         original = root / 'Tools/bazel/artifacts/layer-locks/containerization-enhanced.json'
+        self.assertEqual(foundation.file_digest(original),
+                         '4ac252e1dab0ee39b399abb87a414de0b6d10d520e3278d5e5ac85ac46d498bd')
         lock = json.loads(original.read_text())
         current = dict(lock['recipeSHA256'], producer=foundation.file_digest(root / 'Tools/bazel/artifacts/foundation.py'),
                        swiftPackageManifest=foundation.file_digest(root / 'Package.swift'))

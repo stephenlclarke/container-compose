@@ -17,7 +17,7 @@
 
 """Retain selected Q image-store blobs across the qualified private reset.
 
-This is bound to Q a1effeea and Containerization 6db16197's on-disk image
+This is bound to Q f86fea22 and Containerization 6db16197's on-disk image
 store. The exact historical Q 15361ce5 receipts remain reusable only when the
 24-file image-store source contract is unchanged; their provenance is not
 rewritten. Only the original index and linux/arm64 closure are copied.
@@ -35,7 +35,7 @@ import stat
 import tempfile
 
 SCHEMA = 1
-Q_SOURCE = 'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d'
+Q_SOURCE = 'f86fea2236fab118c0e0c6f8be5eb7672df894e2'
 LEGACY_Q_SOURCE = '15361ce5f55a6b8ab3242e89650a188766b47581'
 IMAGE_FORMAT_CONTRACT_SHA256 = 'f3c6f8fcb3132eb41dcaf48254f6e18e65f47fe15875261cde90931bce6f33ee'
 IMAGE_FORMAT_DIRS = ('Sources/Plugins/CoreImages', 'Sources/Services/ContainerImagesService',

@@ -592,7 +592,6 @@ def verify_consumer(lock_path: Path, root: Path, mirror: Path | None,
     current_recipe = recipe_identity(root, profile, group)
     if lock.get("recipeSHA256") != current_recipe:
         if (profile == "enhanced" and group == "containerization"
-                and source_pins(root, profile).get("container") == "a1effeeaf8c7c1d48b4773262a2d5218dcd5817d"
                 and file_digest(lock_path) != "4ac252e1dab0ee39b399abb87a414de0b6d10d520e3278d5e5ac85ac46d498bd"):
             raise ValueError("released Containerization lock bytes changed")
         if not _legacy_recipe_compatible(lock, root, profile, group, current_recipe):
