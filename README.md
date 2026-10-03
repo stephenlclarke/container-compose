@@ -208,7 +208,7 @@ In this unreleased candidate, `config --output` (including `--variables`) and `c
 
 The enhanced native runtime suite also checks image metadata, platform selection, healthchecks, volume declarations and transformer references without starting services. These component tests exercise the production projection; they do not replace live runtime or registry qualification.
 
-The reduced build [reuses authenticated unchanged lower layers across a Container-only pin update](docs/guides/BAZEL.md#reusing-unchanged-layers-after-a-container-update), while requiring a new enhanced Container SDK release.
+The reduced build [reuses authenticated unchanged lower layers across a Container-only pin update](docs/guides/BAZEL.md#reusing-unchanged-layers-after-a-container-update). The enhanced Container SDK for the current pin is now [published and download-verified](docs/guides/BAZEL.md#qualified-container-sdk-consumption); the Compose consumer and product qualification remain separate gates.
 
 The enhanced pre-start input adapter also carries Container's explicit buffered EOF policy for non-TTY foreground input; [live qualification and updated dependency release status](docs/guides/BAZEL.md#primary-input-eof-correction) remain pending.
 

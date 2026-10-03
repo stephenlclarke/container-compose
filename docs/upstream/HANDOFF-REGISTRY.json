@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-10-02",
+  "generatedAt": "2026-10-03",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -7115,9 +7115,9 @@
         "722953ff5069f11602a549ca978bd35f0a72fcc8",
         "89572c904dabb3240f5200b8168f86258cdb0531",
         "5e574a15777b4568382a8078f1fb81b2ecfdac3c",
-    "60ff9c13d9fcb38c6359dd310c79a4cdf11b7363",
-    "0e7dbc3693493c4632053b0740341722a0bc44a8",
-    "e258cdec59b7ce30fb5f9dca1b0e72013a4a003b",
+        "60ff9c13d9fcb38c6359dd310c79a4cdf11b7363",
+        "0e7dbc3693493c4632053b0740341722a0bc44a8",
+        "e258cdec59b7ce30fb5f9dca1b0e72013a4a003b",
         "a316d628316b2e206dbce231da8d7625670795aa",
         "18c7d0c071dde6d7f16e6462e8d5802c628f37d7",
         "75ce16dd5c435538b8d89b3e1632afbf18b22b95",
@@ -9043,6 +9043,46 @@
         {
           "kind": "pull-request",
           "archive": "https://github.com/stephenlclarke/container-compose/blob/3d77ec228c7f55a04f689d5e1453752fc0c27f72/docs/upstream/process-list/PR-compose-top-process-list.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-BS03-portable-qualified-container-inputs",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Make qualified Container inputs explicit",
+      "state": "active-draft",
+      "lastVerified": "2026-10-03",
+      "commits": [
+        "c6bf56f57b8b38c6b331851749db1242ff76075e"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-BS03-portable-qualified-container-inputs.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-BS03-portable-qualified-container-inputs.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-qualified-container-runtime-release",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Produce a qualified Container runtime release from complete evidence",
+      "state": "active-draft",
+      "lastVerified": "2026-10-03",
+      "commits": [
+        "c6bf56f57b8b38c6b331851749db1242ff76075e"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-qualified-container-runtime-release.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-qualified-container-runtime-release.md"
         }
       ]
     }
