@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import hashlib
 import os
 import signal
 import sys
@@ -30,9 +31,140 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import qualify_local as local
+import q_assets
 
 
 class QualificationTests(unittest.TestCase):
+    def make_q_recovery_fixture(self, root: Path) -> tuple[Path, Path, dict]:
+        container_root = root / 'container'
+        q_evidence = root / 'q-evidence'
+        installs = root / 'installs'
+        container_root.mkdir()
+        q_evidence.mkdir()
+        (q_evidence / 'runtime-smoke').mkdir()
+        (q_evidence / 'release').mkdir()
+        (installs / 'fork/install/bin').mkdir(parents=True)
+        (installs / 'fork/install/bin/container').write_text('displaced runtime')
+        local.write(q_evidence / 'acceptance.json', {'passed': True, 'target': 'bazel-qualify'})
+        local.write(q_evidence / 'runtime-smoke/acceptance.json', {'passed': True})
+        local.write(q_evidence / 'runtime-smoke/fork-fingerprint.json', {
+            'workspace': str(container_root), 'binaries': {'bin/container': '0' * 64}})
+        for name in ('guest', 'builder'):
+            local.write(q_evidence / f'runtime-smoke/{name}-artifact.json', {
+                'archive_sha256': ('1' if name == 'guest' else '2') * 64})
+        local.write(q_evidence / 'release/release-artifact.json', {
+            'passed': True, 'source': local.Q,
+            'archives': {'container-homebrew-arm64.tar.gz': '3' * 64}})
+        q = {'modules': {'runtime_benchmark': SimpleNamespace(INSTALLS=installs)},
+             'hashes': {'runtime_benchmark.py': '4' * 64}}
+        return container_root, q_evidence, q
+
+    def admit_q_recovery_fixture(self, container_root: Path, q_evidence: Path,
+                                 q: dict, evidence: Path) -> None:
+        with patch.object(local, 'Q_ROOT', container_root), \
+             patch.object(local, 'Q_EVIDENCE', q_evidence):
+            admitted = local.validate_q(q, verify_install=False)
+        local.write(evidence / 'preflight.json', {'ready': True, 'container': admitted})
+
+    def test_validate_q_keeps_released_five_receipt_contract_and_binds_runtime_acceptance(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            container_root, q_evidence, q = self.make_q_recovery_fixture(root)
+            with patch.object(local, 'Q_ROOT', container_root), \
+                 patch.object(local, 'Q_EVIDENCE', q_evidence):
+                admitted = local.validate_q(q, verify_install=False)
+            self.assertEqual(set(admitted['source_receipt_sha256']), q_assets.RECEIPTS)
+            runtime_acceptance = (q_evidence / 'runtime-smoke/acceptance.json').read_bytes()
+            self.assertEqual(admitted['runtime_acceptance_sha256'],
+                             hashlib.sha256(runtime_acceptance).hexdigest())
+            fingerprint = (q_evidence / 'runtime-smoke/fork-fingerprint.json').read_bytes()
+            self.assertEqual(admitted['runtime_fingerprint_sha256'],
+                             hashlib.sha256(fingerprint).hexdigest())
+
+    def test_recovery_admission_rejects_unbound_q_receipts_before_any_action(self) -> None:
+        for failure in ('empty-preflight', 'changed-receipt', 'symlink-child'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                evidence = root / 'evidence'
+                evidence.mkdir()
+                container_root, q_evidence, q = self.make_q_recovery_fixture(root)
+                self.admit_q_recovery_fixture(container_root, q_evidence, q, evidence)
+                if failure == 'empty-preflight':
+                    local.write(evidence / 'preflight.json', {'ready': True})
+                elif failure == 'changed-receipt':
+                    local.write(q_evidence / 'acceptance.json', {
+                        'passed': True, 'target': 'bazel-qualify', 'unexpected': True})
+                else:
+                    outside = root / 'acceptance.json'
+                    outside.write_bytes((q_evidence / 'acceptance.json').read_bytes())
+                    (q_evidence / 'acceptance.json').unlink()
+                    (q_evidence / 'acceptance.json').symlink_to(outside)
+                modules = {
+                    'fork_benchmark': SimpleNamespace(STORAGE=root / 'storage'),
+                    'runtime_benchmark': q['modules']['runtime_benchmark'],
+                    'host_lease': SimpleNamespace(LOCK=root / 'host.lock',
+                                                  JOURNAL=root / 'host.journal')}
+                (root / 'storage').mkdir()
+                q['modules'].update(modules)
+                with patch.object(local, 'Q_ROOT', container_root), \
+                     patch.object(local, 'Q_EVIDENCE', q_evidence), \
+                     patch.object(local, 'q_modules', return_value=q), \
+                     patch.object(local, 'revalidate_q_assets') as asset_admission:
+                    with self.assertRaises(RuntimeError):
+                        local.recover(evidence)
+                asset_admission.assert_not_called()
+                self.assertFalse((root / 'storage/qualification.lock').exists())
+                self.assertFalse((root / 'host.lock').exists())
+
+    def test_recovery_admits_matching_q_receipts_after_private_install_displacement(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'evidence'
+            evidence.mkdir()
+            container_root, q_evidence, q = self.make_q_recovery_fixture(root)
+            self.admit_q_recovery_fixture(container_root, q_evidence, q, evidence)
+            storage = root / 'storage'
+            storage.mkdir()
+            q['modules'].update({
+                'fork_benchmark': SimpleNamespace(STORAGE=storage),
+                'host_lease': SimpleNamespace(LOCK=root / 'host.lock',
+                                              JOURNAL=root / 'host.journal')})
+            with patch.object(local, 'Q_ROOT', container_root), \
+                 patch.object(local, 'Q_EVIDENCE', q_evidence), \
+                 patch.object(local, 'q_modules', return_value=q), \
+                 patch.object(local, 'revalidate_q_assets', return_value={}):
+                result = local.recover(evidence)
+            self.assertTrue(result['restored'])
+            self.assertTrue((root / 'host.lock').is_file())
+            self.assertEqual((q['modules']['runtime_benchmark'].INSTALLS /
+                              'fork/install/bin/container').read_text(), 'displaced runtime')
+
+    def test_reference_recovery_rejects_changed_q_receipt_before_lock_creation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'evidence'
+            evidence.mkdir()
+            container_root, q_evidence, q = self.make_q_recovery_fixture(root)
+            with patch.object(local, 'Q_ROOT', container_root), \
+                 patch.object(local, 'Q_EVIDENCE', q_evidence):
+                admitted = local.validate_q(q, verify_install=False)
+            local.write(evidence / 'reference-preflight.json', {
+                'ready': True, 'qualified_runtime': local.Q, 'container': admitted})
+            local.write(q_evidence / 'release/release-artifact.json', {
+                'passed': True, 'source': local.Q,
+                'archives': {'container-homebrew-arm64.tar.gz': '4' * 64}})
+            with patch.object(local, 'Q_ROOT', container_root), \
+                 patch.object(local, 'Q_EVIDENCE', q_evidence), \
+                 patch.object(local, 'q_modules', return_value=q):
+                with self.assertRaisesRegex(RuntimeError, 'differs from the original'):
+                    local.recover_reference(evidence)
+            self.assertFalse((root / 'fork.lock').exists())
+            self.assertFalse((root / 'host.lock').exists())
+
+    def test_fixture_cache_directory_tracks_exact_runtime_source_pins(self) -> None:
+        self.assertEqual(local.FIXTURE_CACHE.name,
+                         f'fixture-image-cache-q{local.Q[:8]}-c{local.CONTAINERIZATION[:4]}')
+
     def test_candidate_benchmark_environment_pins_private_cli_without_changing_measured_progress(self) -> None:
         install = Path('/private/qualified/install')
         runtime = SimpleNamespace(environment=lambda lane: {
@@ -218,6 +350,32 @@ class QualificationTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'already exists'):
                     local.reference_preflight(root, q)
 
+    def test_reference_preflight_retains_q_receipt_identity_for_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'evidence'
+            evidence.mkdir()
+            lock = root / 'benchmark.lock.json'
+            image = 'docker.io/library/alpine@sha256:' + 'a' * 64
+            admitted = {'checkpoint': local.Q, 'runtime_fingerprint_sha256': '1' * 64,
+                        'source_receipt_sha256': {'acceptance.json': '2' * 64}}
+            q = {'modules': {
+                'runtime_benchmark': SimpleNamespace(ALPINE=image, INSTALLS=root / 'installs'),
+                'runtime_coverage': SimpleNamespace(require_idle=lambda _path: None),
+                'host_lease': SimpleNamespace(JOURNAL=root / 'missing-host-journal')}}
+            with patch.object(local, 'BENCHMARK_LOCK', lock), \
+                 patch.object(local, 'source_identity', return_value={'dirty': False,
+                                                                      'commit': 'a' * 40}), \
+                 patch.object(local, 'git', return_value='a' * 40), \
+                 patch.object(local, 'host_budget'), \
+                 patch.object(local.subprocess, 'check_output', return_value='5.5.1'), \
+                 patch.object(local, 'docker_compose_binary_identity'), \
+                 patch.object(local, 'benchmark_environment', return_value={'host': 'same'}), \
+                 patch.object(local, 'validate_q', return_value=admitted):
+                local.reference_preflight(evidence, q)
+            receipt = json.loads((evidence / 'reference-preflight.json').read_text())
+            self.assertEqual(receipt['container'], admitted)
+
     def test_reference_recovery_report_failure_cannot_signal_restored(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -241,11 +399,13 @@ class QualificationTests(unittest.TestCase):
                     raise OSError('retained report failed')
                 original_write(path, value)
             with patch.object(local, 'q_modules', return_value=q), \
+                 patch.object(local, 'admit_recovery_q', return_value={}), \
                  patch.object(local, 'write', side_effect=failed_report):
                 result = local.recover_reference(evidence)
             self.assertFalse(result['restored'])
             self.assertIn('retained report failed', result['failures'][0])
-            with patch.object(local, 'q_modules', return_value=q):
+            with patch.object(local, 'q_modules', return_value=q), \
+                 patch.object(local, 'admit_recovery_q', return_value={}):
                 recovered = local.recover_reference(evidence)
             self.assertTrue(recovered['restored'])
             self.assertTrue((evidence / 'reference-restoration.json').is_file())
@@ -294,6 +454,7 @@ class QualificationTests(unittest.TestCase):
                                _command_lock, **_kwargs):
                 original_write(evidence / 'projects-cleared.json', {'cleared': True})
             with patch.object(local, 'q_modules', return_value=q), \
+                 patch.object(local, 'admit_recovery_q', return_value={}), \
                  patch.object(local, 'ensure_projects_cleared', side_effect=clear_projects), \
                  patch.object(local, 'write', side_effect=failed_report):
                 outcome = local.recover_reference(evidence)
@@ -399,13 +560,25 @@ class QualificationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             evidence = root / 'fresh'
+            container_root = root / 'container'
+            q_evidence = root / 'q-evidence'
+            container_root.mkdir()
+            q_evidence.mkdir()
             runtime = SimpleNamespace(ALPINE='docker.io/library/alpine@sha256:' + 'a' * 64)
+            selected = {}
             def cheap_preflight(destination, _q):
                 local.write(destination / 'preflight.json', {'container': {}})
                 return {'commit': 'a' * 40}, {}
+            def selected_q_modules():
+                selected['container_root'] = local.Q_ROOT
+                selected['q_evidence'] = local.Q_EVIDENCE
+                return {'modules': {'runtime_benchmark': runtime}}
             with patch.object(local, 'OUTPUT', root), \
-                 patch.object(sys, 'argv', ['qualify_local.py', '--evidence', str(evidence)]), \
-                 patch.object(local, 'q_modules', return_value={'modules': {'runtime_benchmark': runtime}}), \
+                 patch.object(local, 'Q_ROOT', None), patch.object(local, 'Q_EVIDENCE', None), \
+                 patch.object(sys, 'argv', ['qualify_local.py', '--evidence', str(evidence),
+                                            '--container-root', str(container_root),
+                                            '--q-evidence', str(q_evidence)]), \
+                 patch.object(local, 'q_modules', side_effect=selected_q_modules), \
                  patch.object(local, 'preflight', side_effect=cheap_preflight), \
                  patch.object(local, 'admit_benchmark_reference', side_effect=RuntimeError('missing baseline')), \
                  patch.object(local, 'admit_hosted') as hosted, \
@@ -416,6 +589,64 @@ class QualificationTests(unittest.TestCase):
             hosted.assert_not_called()
             layers.assert_not_called()
             live.assert_not_called()
+            self.assertEqual(selected['container_root'], container_root)
+            self.assertEqual(selected['q_evidence'], q_evidence)
+
+    def test_cli_requires_q_paths_and_rejects_symlink_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            evidence = root / 'fresh'
+            container_root = root / 'container'
+            q_evidence = root / 'q-evidence'
+            container_root.mkdir()
+            q_evidence.mkdir()
+            with patch.object(local, 'Q_ROOT', None), patch.object(local, 'Q_EVIDENCE', None), \
+                 patch.object(sys, 'argv', ['qualify_local.py', '--evidence', str(evidence)]):
+                with self.assertRaises(SystemExit) as missing:
+                    local.main()
+            self.assertEqual(missing.exception.code, 2)
+
+            container_alias = root / 'container-alias'
+            q_evidence_alias = root / 'q-evidence-alias'
+            container_alias.symlink_to(container_root, target_is_directory=True)
+            q_evidence_alias.symlink_to(q_evidence, target_is_directory=True)
+            for option, value in (('--container-root', container_alias),
+                                  ('--q-evidence', q_evidence_alias)):
+                args = ['qualify_local.py', '--evidence', str(evidence),
+                        '--container-root', str(container_root),
+                        '--q-evidence', str(q_evidence)]
+                args[args.index(option) + 1] = str(value)
+                with self.subTest(option=option), \
+                     patch.object(local, 'Q_ROOT', None), patch.object(local, 'Q_EVIDENCE', None), \
+                     patch.object(sys, 'argv', args):
+                    with self.assertRaises(SystemExit) as invalid:
+                        local.main()
+                self.assertEqual(invalid.exception.code, 2)
+
+    def test_recovery_uses_the_explicit_container_and_q_evidence_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            output = root / 'output'
+            evidence = output / 'interrupted'
+            container_root = root / 'container'
+            q_evidence = root / 'q-evidence'
+            evidence.mkdir(parents=True)
+            container_root.mkdir()
+            q_evidence.mkdir()
+            observed = {}
+            def recover(selected_evidence):
+                observed.update(evidence=selected_evidence, container_root=local.Q_ROOT,
+                                q_evidence=local.Q_EVIDENCE)
+                return {'restored': True}
+            args = ['qualify_local.py', '--recover', '--evidence', str(evidence),
+                    '--container-root', str(container_root), '--q-evidence', str(q_evidence)]
+            with patch.object(local, 'OUTPUT', output), \
+                 patch.object(local, 'Q_ROOT', None), patch.object(local, 'Q_EVIDENCE', None), \
+                 patch.object(sys, 'argv', args), patch.object(local, 'recover', side_effect=recover), \
+                 patch.object(signal, 'signal'), patch('builtins.print'):
+                local.main()
+            self.assertEqual(observed, {'evidence': evidence, 'container_root': container_root,
+                                        'q_evidence': q_evidence})
 
     def test_reference_capture_route_never_enters_candidate_pipeline(self) -> None:
         with patch.object(local, 'q_modules', return_value={'modules': {}}) as modules, \
@@ -585,8 +816,10 @@ class QualificationTests(unittest.TestCase):
                 self.assertFalse((prior / 'new.txt').exists())
 
     def test_cheap_source_preflight_precedes_bazel_layers(self) -> None:
+        container_root = Path('/qualified/container')
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(local, 'STAGES', ()), \
+             patch.object(local, 'Q_ROOT', container_root), \
              patch.object(local, 'stage', return_value={'name': 'source-preflight'}) as run, \
              patch.object(local, 'fetch_q_assets', return_value={
                  'provenance': {'source_receipt_sha256': {}},
@@ -602,7 +835,7 @@ class QualificationTests(unittest.TestCase):
         args, kwargs = run.call_args_list[0]
         self.assertEqual(args[1:3], ('source-preflight',
                                     ['make', '--no-print-directory', 'source-preflight']))
-        self.assertEqual(kwargs['env']['CONTAINER_STACK_REPO'], str(local.Q_ROOT))
+        self.assertEqual(kwargs['env']['CONTAINER_STACK_REPO'], str(container_root))
         self.assertEqual(run.call_args_list[1].args[1:3],
                          ('workflow-tools', ['make', '--no-print-directory',
                                              'bazel-workflow-tools-test']))
@@ -1076,6 +1309,7 @@ class QualificationTests(unittest.TestCase):
             ledger.begin('docker-compose-build-isolation-parity', 'source', [], {})
             original = ledger.path.read_bytes()
             with patch.object(local, 'q_modules', return_value={'modules': modules, 'hashes': {}}), \
+                 patch.object(local, 'admit_recovery_q', return_value={'fingerprint': {'binaries': {}}}), \
                  patch.object(local, 'revalidate_q_assets', return_value={}):
                 result = local.recover(root)
             self.assertFalse(result['restored'])
@@ -1098,6 +1332,7 @@ class QualificationTests(unittest.TestCase):
                 closed.append(fd)
                 original_close(fd)
             with patch.object(local, 'q_modules', return_value={'modules': modules, 'hashes': {}}), \
+                 patch.object(local, 'admit_recovery_q', return_value={'fingerprint': {'binaries': {}}}), \
                  patch.object(local, 'revalidate_q_assets', return_value={}), \
                  patch.object(local, 'write', side_effect=OSError('disk full')), \
                  patch.object(local.os, 'close', side_effect=close):

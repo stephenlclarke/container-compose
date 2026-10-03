@@ -160,20 +160,34 @@ class FoundationTests(unittest.TestCase):
         selected_pins = foundation.source_pins(original)
         selected_q = selected_pins['container'].encode()
         selected_containerization = selected_pins['containerization'].encode()
-        self.assertIn(selected_q, (b'6fe80db1bad6abff5dfa22f02bdf8bc403ad48bc', new_q,
-                                   b'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d'))
-        self.assertIn(selected_containerization, (old_containerization, new_containerization))
+        source_manifest = (original / 'Package.swift').read_bytes()
+        source_resolved = (original / 'Package.resolved').read_bytes()
+        self.assertEqual(source_manifest.count(selected_q), 1)
+        self.assertEqual(source_resolved.count(selected_q), 1)
+        self.assertEqual(selected_containerization, new_containerization)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             producer = root / 'Tools/bazel/artifacts/foundation.py'
             producer.parent.mkdir(parents=True)
             producer.write_bytes(Path(foundation.__file__).read_bytes())
-            manifest = (original / 'Package.swift').read_bytes().replace(selected_q, new_q).replace(
-                selected_containerization, new_containerization)
-            resolved = (original / 'Package.resolved').read_bytes().replace(selected_q, new_q).replace(
-                selected_containerization, new_containerization)
-            current_origin = json.loads((original / 'Package.resolved').read_text())['originHash'].encode()
-            resolved = resolved.replace(current_origin, new_origin)
+            current_origin = json.loads(source_resolved)['originHash'].encode()
+            self.assertEqual(current_origin, digest(source_manifest).encode())
+            baseline_manifest = source_manifest.replace(
+                selected_q, b'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d')
+            baseline_resolved = source_resolved.replace(
+                selected_q, b'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d').replace(
+                    current_origin, digest(baseline_manifest).encode())
+            self.assertEqual(digest(baseline_manifest),
+                             '4a6202074d1f23673218cde75e94b693f10e6b15772fee784074a66ba6d1ab16')
+            self.assertEqual(digest(baseline_resolved),
+                             'fa6b13d82dff6b04a766eac277c4d8a22c04f79416826b67bf2c60d178e56bab')
+            manifest = baseline_manifest.replace(
+                b'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d', new_q).replace(
+                    selected_containerization, new_containerization)
+            resolved = baseline_resolved.replace(
+                b'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d', new_q).replace(
+                    selected_containerization, new_containerization)
+            resolved = resolved.replace(digest(baseline_manifest).encode(), new_origin)
             self.assertEqual(manifest.count(new_q), 1)
             self.assertEqual(manifest.count(new_containerization), 1)
             self.assertEqual(resolved.count(new_q), 1)
@@ -251,8 +265,15 @@ class FoundationTests(unittest.TestCase):
         q = b'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d'
         c = b'6db16197bbad8196a78132f86529daa89125aafb'
         origin = b'4a6202074d1f23673218cde75e94b693f10e6b15772fee784074a66ba6d1ab16'
-        manifest = (original / 'Package.swift').read_bytes()
-        resolved = (original / 'Package.resolved').read_bytes()
+        source_manifest = (original / 'Package.swift').read_bytes()
+        source_resolved = (original / 'Package.resolved').read_bytes()
+        source_q = foundation.source_pins(original)['container'].encode()
+        source_origin = json.loads(source_resolved)['originHash'].encode()
+        self.assertEqual(source_manifest.count(source_q), 1)
+        self.assertEqual(source_resolved.count(source_q), 1)
+        self.assertEqual(source_origin, digest(source_manifest).encode())
+        manifest = source_manifest.replace(source_q, q)
+        resolved = source_resolved.replace(source_q, q).replace(source_origin, digest(manifest).encode())
         self.assertEqual((digest(manifest), digest(resolved)), (
             '4a6202074d1f23673218cde75e94b693f10e6b15772fee784074a66ba6d1ab16',
             'fa6b13d82dff6b04a766eac277c4d8a22c04f79416826b67bf2c60d178e56bab'))
@@ -306,6 +327,101 @@ class FoundationTests(unittest.TestCase):
                 (root / 'Package.resolved').write_bytes(changed_resolved)
                 self.assertFalse(admitted('enhanced', 'containerization'))
                 self.assertFalse(admitted('enhanced', 'foundation'))
+
+    def test_new_container_pin_normalizes_only_with_exact_origin_and_containerization(self) -> None:
+        original = Path(__file__).resolve().parents[3]
+        old_container = b'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d'
+        containerization = b'6db16197bbad8196a78132f86529daa89125aafb'
+        selected_container = b'c' * 40
+        actual_manifest = (original / 'Package.swift').read_bytes()
+        actual_resolved = (original / 'Package.resolved').read_bytes()
+        actual_container = foundation.source_pins(original)['container'].encode()
+        actual_origin = json.loads(actual_resolved)['originHash'].encode()
+        self.assertEqual(actual_origin, digest(actual_manifest).encode())
+        source_manifest = actual_manifest.replace(actual_container, old_container)
+        source_resolved = actual_resolved.replace(actual_container, old_container).replace(
+            actual_origin, digest(source_manifest).encode())
+        self.assertEqual(digest(source_manifest),
+                         '4a6202074d1f23673218cde75e94b693f10e6b15772fee784074a66ba6d1ab16')
+        self.assertEqual(digest(source_resolved),
+                         'fa6b13d82dff6b04a766eac277c4d8a22c04f79416826b67bf2c60d178e56bab')
+        baseline_origin = digest(source_manifest).encode()
+
+        def q_documents(pin: bytes = selected_container,
+                        lower: bytes = containerization) -> tuple[bytes, bytes]:
+            manifest = source_manifest.replace(old_container, pin).replace(containerization, lower)
+            resolved = source_resolved.replace(old_container, pin).replace(containerization, lower)
+            new_origin = digest(manifest).encode()
+            resolved = resolved.replace(baseline_origin, new_origin)
+            return manifest, resolved
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            producer = root / 'Tools/bazel/artifacts/foundation.py'
+            producer.parent.mkdir(parents=True)
+            producer.write_bytes(Path(foundation.__file__).read_bytes())
+            locks = original / 'Tools/bazel/artifacts/layer-locks'
+
+            def compatible(profile: str, group: str, manifest: bytes,
+                           resolved: bytes) -> bool:
+                (root / 'Package.swift').write_bytes(manifest)
+                (root / 'Package.resolved').write_bytes(resolved)
+                lock = json.loads((locks / f'{group}-{profile}.json').read_text())
+                current = dict(lock['recipeSHA256'], producer=foundation.file_digest(producer),
+                               swiftPackageManifest=foundation.file_digest(root / 'Package.swift'))
+                return foundation._legacy_recipe_compatible(lock, root, profile, group, current)
+
+            manifest, resolved = q_documents()
+            for profile, groups in (('enhanced', ('foundation', 'containerization', 'engine-api')),
+                                    ('stock', foundation.GROUPS)):
+                for group in groups:
+                    self.assertTrue(compatible(profile, group, manifest, resolved),
+                                    f'{group}-{profile}')
+
+            # A syntactically valid extra source dependency is outside the exact
+            # historic manifest bytes even when the selected pin origin is current.
+            extra_manifest = manifest.replace(
+                b'dependencies: [',
+                b'dependencies: [\n        .package(url: "https://example.com/extra.git", revision: "'
+                + b'd' * 40 + b'"),', 1)
+            extra_resolved_record = json.loads(resolved)
+            extra_resolved_record['pins'].append({
+                'identity': 'extra', 'kind': 'remoteSourceControl',
+                'location': 'https://example.com/extra.git',
+                'state': {'revision': 'd' * 40},
+            })
+            extra_resolved = json.dumps(extra_resolved_record, indent=2).encode() + b'\n'
+            extra_resolved = extra_resolved.replace(
+                json.loads(extra_resolved)['originHash'].encode(), digest(extra_manifest).encode())
+            self.assertFalse(compatible('enhanced', 'foundation', extra_manifest, extra_resolved))
+
+            bad_origin = resolved.replace(digest(manifest).encode(), b'0' * 64)
+            self.assertFalse(compatible('enhanced', 'foundation', manifest, bad_origin))
+
+            duplicate_resolved_record = json.loads(resolved)
+            container_pin = next(pin for pin in duplicate_resolved_record['pins']
+                                 if pin['identity'] == 'container')
+            duplicate_resolved_record['pins'].append(container_pin)
+            duplicate_resolved = json.dumps(duplicate_resolved_record, indent=2).encode() + b'\n'
+            duplicate_resolved = duplicate_resolved.replace(
+                json.loads(duplicate_resolved)['originHash'].encode(), digest(manifest).encode())
+            with self.assertRaisesRegex(ValueError, 'source pins are incomplete'):
+                compatible('enhanced', 'foundation', manifest, duplicate_resolved)
+
+            wrong_lower_manifest, wrong_lower_resolved = q_documents(lower=b'e' * 40)
+            self.assertFalse(compatible('enhanced', 'foundation', wrong_lower_manifest,
+                                        wrong_lower_resolved))
+
+            sdk_lock = locks / 'container-sdk-enhanced.json'
+            sdk_lock_copy = root / 'container-sdk-enhanced.json'
+            sdk_lock_copy.write_bytes(sdk_lock.read_bytes())
+            (root / 'Package.swift').write_bytes(manifest)
+            (root / 'Package.resolved').write_bytes(resolved)
+            with mock.patch.object(foundation, 'recipe_identity',
+                                   side_effect=AssertionError('source-pin guard was bypassed')):
+                with self.assertRaisesRegex(ValueError, 'source pins or lower layer'):
+                    foundation.verify_consumer(sdk_lock_copy, root, None, {},
+                                               'enhanced', 'container-sdk')
 
     def test_reused_containerization_requires_original_published_lock_bytes(self) -> None:
         root = Path(__file__).resolve().parents[3]

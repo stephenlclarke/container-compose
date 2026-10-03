@@ -55,9 +55,10 @@ from prebuilt_parity_tests import test_workspace
 from run import RETAINED, ROOT, SSD
 from retain_evidence import restore_candidate
 
-Q = 'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d'
-Q_ROOT = Path('/Users/sclarke/github/container-logging-readiness-20260929')
-Q_EVIDENCE = Path.home() / 'Library/Application Support/ContainerFamily/retained/container-only/local-final/a1effeea-20260930-final'
+Q = fixture_cache.Q_SOURCE
+CONTAINERIZATION = fixture_cache.CONTAINERIZATION_SOURCE
+Q_ROOT: Path | None = None
+Q_EVIDENCE: Path | None = None
 OUTPUT = RETAINED / 'local-final'
 CAPTURE_OUTPUT = RETAINED / 'benchmark-reference-capture'
 TRIALS = 7
@@ -69,7 +70,7 @@ ORIGINAL_FIXTURE_IMAGES = ('alpine:3.20', 'alpine:3.21', 'alpine:latest',
                            '7aeee453c13045dcec87b92cb13973871ed8c72d5ca1e9365886487782ea2b09')
 API_SOCKET_IMAGE = ('docker.io/library/docker:29.2.1-cli@sha256:'
                     'cab69e2d0a1a2ea9a1ce1060252f439e83483ae41ec09317aecb33b08a0656a5')
-FIXTURE_CACHE = RETAINED / 'fixture-image-cache-qa1effeea-c6db'
+FIXTURE_CACHE = RETAINED / f'fixture-image-cache-q{Q[:8]}-c{CONTAINERIZATION[:4]}'
 BENCHMARK_LOCK = ROOT / 'Tools/bazel/artifacts/benchmark-reference.lock.json'
 BENCHMARK_CACHE = RETAINED / 'release-asset-cache'
 DOCKER_COMPOSE_VERSION = '5.5.1'
@@ -112,6 +113,18 @@ def write(path: Path, value: dict) -> None:
 
 def git(root: Path, *args: str) -> str:
     return subprocess.check_output(['git', '-C', str(root), *args], text=True, timeout=30).strip()
+
+
+def existing_directory(parser: argparse.ArgumentParser, option: str, value: Path) -> Path:
+    """Resolve an explicitly selected real directory, rejecting symlink paths."""
+    try:
+        resolved = value.resolve(strict=True)
+    except OSError:
+        parser.error(f'{option} must name an existing directory')
+    if (not resolved.is_dir() or resolved.is_symlink()
+            or resolved != Path(os.path.abspath(value))):
+        parser.error(f'{option} must name an existing non-symlink directory')
+    return resolved
 
 
 def host_budget() -> dict:
@@ -460,26 +473,53 @@ def q_modules() -> dict:
     return {'modules': modules, 'hashes': digests}
 
 
-def validate_q(q: dict) -> dict:
-    acceptance = json.loads((Q_EVIDENCE / 'acceptance.json').read_text())
+def q_evidence_file(relative: str) -> Path:
+    if Q_EVIDENCE is None:
+        raise RuntimeError('Qualified Container evidence directory was not selected')
+    if Q_EVIDENCE.is_symlink() or not Q_EVIDENCE.is_dir():
+        raise RuntimeError('Qualified Container evidence directory is missing or unsafe')
+    path = Q_EVIDENCE
+    parts = Path(relative).parts
+    if Path(relative).is_absolute() or any(part in {'', '.', '..'} for part in parts):
+        raise RuntimeError('Invalid qualified Container receipt path')
+    for part in parts[:-1]:
+        path /= part
+        if path.is_symlink() or not path.is_dir():
+            raise RuntimeError('Qualified Container receipt parent is missing or unsafe: ' + relative)
+    path /= parts[-1]
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError('Qualified Container receipt is missing or unsafe: ' + relative)
+    return path
+
+
+def validate_q(q: dict, *, verify_install: bool = True) -> dict:
+    acceptance = json.loads(q_evidence_file('acceptance.json').read_text())
     if acceptance.get('passed') is not True or acceptance.get('target') != 'bazel-qualify':
         raise RuntimeError('Qualified Container final acceptance is absent')
-    if json.loads((Q_EVIDENCE / 'runtime-smoke/acceptance.json').read_text()).get('passed') is not True:
+    runtime_acceptance_path = q_evidence_file('runtime-smoke/acceptance.json')
+    runtime_acceptance_bytes = runtime_acceptance_path.read_bytes()
+    runtime_acceptance = json.loads(runtime_acceptance_bytes)
+    if runtime_acceptance.get('passed') is not True:
         raise RuntimeError('Qualified Container runtime preparation did not pass')
-    fingerprint = json.loads((Q_EVIDENCE / 'runtime-smoke/fork-fingerprint.json').read_text())
+    fingerprint_path = q_evidence_file('runtime-smoke/fork-fingerprint.json')
+    fingerprint_bytes = fingerprint_path.read_bytes()
+    fingerprint = json.loads(fingerprint_bytes)
+    if not isinstance(fingerprint.get('binaries'), dict):
+        raise RuntimeError('Qualified runtime fingerprint has no binary identity')
     runtime = q['modules']['runtime_benchmark']
     if fingerprint.get('workspace') != str(Q_ROOT):
         raise RuntimeError('Qualified runtime fingerprint has a different source workspace')
     install = runtime.INSTALLS / 'fork/install'
-    for relative, expected in fingerprint['binaries'].items():
-        if sha(install / relative) != expected:
-            raise RuntimeError('Qualified private runtime binary changed: ' + relative)
-    products = {name: json.loads((Q_EVIDENCE / f'runtime-smoke/{name}-artifact.json').read_text())
+    if verify_install:
+        for relative, expected in fingerprint['binaries'].items():
+            if sha(install / relative) != expected:
+                raise RuntimeError('Qualified private runtime binary changed: ' + relative)
+    products = {name: json.loads(q_evidence_file(f'runtime-smoke/{name}-artifact.json').read_text())
                 for name in ('guest', 'builder')}
     if any(not re.fullmatch(r'[0-9a-f]{64}', record.get('archive_sha256', ''))
            for record in products.values()):
         raise RuntimeError('Qualified Container OCI receipt is malformed')
-    release = json.loads((Q_EVIDENCE / 'release/release-artifact.json').read_text())
+    release = json.loads(q_evidence_file('release/release-artifact.json').read_text())
     if (release.get('passed') is not True or release.get('source') != Q
             or not re.fullmatch(r'[0-9a-f]{64}', release.get('archives', {}).get('container-homebrew-arm64.tar.gz', ''))):
         raise RuntimeError('Qualified Container release receipt is malformed')
@@ -487,11 +527,40 @@ def validate_q(q: dict) -> dict:
                      'runtime-smoke/fork-fingerprint.json',
                      'runtime-smoke/guest-artifact.json', 'runtime-smoke/builder-artifact.json')
     return {'checkpoint': Q, 'evidence': str(Q_EVIDENCE), 'helpers': q['hashes'],
-            'runtime_fingerprint_sha256': sha(Q_EVIDENCE / 'runtime-smoke/fork-fingerprint.json'),
-            'source_receipt_sha256': {name: sha(Q_EVIDENCE / name) for name in receipt_paths},
+            'runtime_fingerprint_sha256': hashlib.sha256(fingerprint_bytes).hexdigest(),
+            'runtime_acceptance_sha256': hashlib.sha256(runtime_acceptance_bytes).hexdigest(),
+            'source_receipt_sha256': {name: sha(q_evidence_file(name)) for name in receipt_paths},
             'guest_sha256': products['guest']['archive_sha256'],
             'builder_sha256': products['builder']['archive_sha256'],
             'release_sha256': release['archives']['container-homebrew-arm64.tar.gz']}
+
+
+def admit_recovery_q(evidence: Path, q: dict, *, preflight_name: str) -> dict:
+    """Bind recovery to the Q source receipts admitted before host ownership."""
+    preflight_path = evidence / preflight_name
+    if (evidence.is_symlink() or not evidence.is_dir()
+            or preflight_path.is_symlink() or not preflight_path.is_file()):
+        raise RuntimeError('Original Q preflight receipt is missing or unsafe')
+    preflight = json.loads(preflight_path.read_text())
+    if preflight.get('ready') is not True:
+        raise RuntimeError('Original Q preflight did not admit recovery')
+    if preflight_name == 'reference-preflight.json':
+        if preflight.get('qualified_runtime') != Q:
+            raise RuntimeError('Reference recovery Q checkpoint changed')
+    elif preflight_name != 'preflight.json':
+        raise RuntimeError('Unsupported original Q preflight receipt')
+    admitted = preflight.get('container')
+    if not isinstance(admitted, dict):
+        raise RuntimeError('Original preflight has no Q receipt identity')
+    current = validate_q(q, verify_install=False)
+    if any(admitted.get(key) != value for key, value in current.items()):
+        raise RuntimeError('Selected Q evidence differs from the original preflight receipts')
+    fingerprint_path = q_evidence_file('runtime-smoke/fork-fingerprint.json')
+    fingerprint_bytes = fingerprint_path.read_bytes()
+    fingerprint = json.loads(fingerprint_bytes)
+    if hashlib.sha256(fingerprint_bytes).hexdigest() != current['runtime_fingerprint_sha256']:
+        raise RuntimeError('Selected Q runtime fingerprint changed during recovery admission')
+    return {'container': current, 'fingerprint': fingerprint}
 
 
 def preflight(evidence: Path, q: dict, *, development_bridge: bool = False,
@@ -532,7 +601,7 @@ def preflight(evidence: Path, q: dict, *, development_bridge: bool = False,
     qualified = validate_q(q)
     pins = json.loads((ROOT / 'Package.resolved').read_text())['pins']
     selected = {row['identity']: row['state']['revision'] for row in pins}
-    if selected.get('container') != Q or selected.get('containerization') != '6db16197bbad8196a78132f86529daa89125aafb':
+    if selected.get('container') != Q or selected.get('containerization') != CONTAINERIZATION:
         raise RuntimeError('Enhanced consumer dependency graph does not match Q runtime family')
     qualified['sdk_graph'] = {'lock_sha256': sha(ROOT / 'Package.resolved'),
                               'zstd_patch_sha256': sha(ROOT / 'Tools/bazel/zstd-public-module.patch'),
@@ -569,10 +638,11 @@ def reference_preflight(evidence: Path, q: dict) -> None:
     q['modules']['runtime_coverage'].require_idle(runtime.INSTALLS / 'fork/install')
     if q['modules']['host_lease'].JOURNAL.exists():
         raise RuntimeError('Prior shared host restoration is incomplete')
-    validate_q(q)
+    qualified = validate_q(q)
     write(evidence / 'reference-preflight.json', {'schema': 1, 'ready': True,
                                                   'source': identity['commit'],
-                                                  'qualified_runtime': Q})
+                                                  'qualified_runtime': Q,
+                                                  'container': qualified})
 
 
 def execute_capture(evidence: Path) -> dict:
@@ -1652,14 +1722,15 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
             fixture_references = (runtime.ALPINE, 'alpine:3.22',
                                   *ORIGINAL_FIXTURE_IMAGES, API_SOCKET_IMAGE)
             cached_before_reset = fixture_cache.capture(
-                private_app, FIXTURE_CACHE, fixture_references)
+                private_app, FIXTURE_CACHE, fixture_references, container_root=Q_ROOT)
             write(runtime_evidence / 'fixture-cache-before-reset.json',
                   {'schema': 1, 'references': [row['reference'] for row in cached_before_reset],
                    'roots': {row['reference']: row['root']['digest'] for row in cached_before_reset}})
             if runtime.reset_state('fork', fingerprint['init_image'], fingerprint['builder_image']) != fingerprint['kernel_sha256']:
                 raise RuntimeError('Released Q private runtime kernel changed')
             qualified_fixture_app(runtime)
-            restored_fixtures = fixture_cache.restore(private_app, FIXTURE_CACHE, fixture_references)
+            restored_fixtures = fixture_cache.restore(
+                private_app, FIXTURE_CACHE, fixture_references, container_root=Q_ROOT)
             write(runtime_evidence / 'fixture-cache-restored.json',
                   {'schema': 1, 'references': [row['reference'] for row in restored_fixtures],
                    'roots': {row['reference']: row['root']['digest'] for row in restored_fixtures}})
@@ -1699,7 +1770,7 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
                     observed = row['configuration']['descriptor']['digest']
                     cached = fixture_cache.entry_path(FIXTURE_CACHE, reference)
                     if cached.exists() or cached.is_symlink():
-                        cached_receipt = fixture_cache.receipt(cached, reference)
+                        cached_receipt = fixture_cache.receipt(cached, reference, container_root=Q_ROOT)
                         expected = cached_receipt['root']['digest']
                         if observed != expected:
                             raise RuntimeError('Qualified cached fixture image changed: ' + reference)
@@ -1732,7 +1803,7 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
                       [str(install / 'bin/container'), 'image', 'pull', '--progress', 'none',
                        '--platform', 'linux/arm64', API_SOCKET_IMAGE], 300)
             cached_after_setup = fixture_cache.capture(
-                private_app, FIXTURE_CACHE, fixture_references)
+                private_app, FIXTURE_CACHE, fixture_references, container_root=Q_ROOT)
             expected_fixture_refs = {fixture_cache.normalized(image) for image in fixture_references}
             if {row['reference'] for row in cached_after_setup} != expected_fixture_refs:
                 raise RuntimeError('Prepared Q fixture cache omitted a required image')
@@ -2201,6 +2272,7 @@ def recover_reference(evidence: Path) -> dict:
     result = {'schema': 1, 'target': 'capture-compose-docker-reference',
               'restored': False, 'failures': []}
     q = q_modules()
+    admit_recovery_q(evidence, q, preflight_name='reference-preflight.json')
     modules = q['modules']
     fb, runtime = modules['fork_benchmark'], modules['runtime_benchmark']
     host_module = modules['host_lease']
@@ -2313,6 +2385,8 @@ def recover(evidence: Path) -> dict:
     """Recover Compose project/plugin journals before Q workers can resume."""
     result = {'schema': 1, 'restored': False, 'evidence': str(evidence), 'failures': []}
     q = q_modules()
+    recovery_authority = admit_recovery_q(evidence, q, preflight_name='preflight.json')
+    original_fingerprint = recovery_authority['fingerprint']
     assets = revalidate_q_assets(evidence / 'q-assets', q['hashes'])
     modules = q['modules']
     fb, runtime = modules['fork_benchmark'], modules['runtime_benchmark']
@@ -2411,9 +2485,8 @@ def recover(evidence: Path) -> dict:
                         runtime_lease.restore(modules['runtime_coverage'])
                     if not runtime_lease.record['restored']:
                         raise RuntimeError('Original Q private runtime remains displaced')
-                original = json.loads((Q_EVIDENCE / 'runtime-smoke/fork-fingerprint.json').read_text())
                 modules['runtime_coverage'].verify_binaries(
-                    runtime.INSTALLS / 'fork/install', original['binaries'])
+                    runtime.INSTALLS / 'fork/install', original_fingerprint['binaries'])
                 phases.mark('private_install')
             except BaseException as error:
                 cleanup_ok = False
@@ -2540,8 +2613,13 @@ def execute_development_parity(evidence: Path) -> dict:
 
 
 def main() -> None:
+    global Q_ROOT, Q_EVIDENCE
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence', type=Path, required=True, help='Fresh internal retained directory')
+    parser.add_argument('--container-root', type=Path, required=True,
+                        help='Exact clean qualified Container source checkout')
+    parser.add_argument('--q-evidence', type=Path, required=True,
+                        help='Completed qualification evidence for that Container checkout')
     parser.add_argument('--previous-candidate-lock', type=Path,
                         help='Exact published Compose provenance lock for historical comparison')
     action = parser.add_mutually_exclusive_group()
@@ -2553,6 +2631,8 @@ def main() -> None:
     action.add_argument('--development-parity', action='store_true',
                         help='Build and sign a local candidate, run all 66 original parity cases, and restore the host; not release qualification')
     args = parser.parse_args()
+    Q_ROOT = existing_directory(parser, '--container-root', args.container_root)
+    Q_EVIDENCE = existing_directory(parser, '--q-evidence', args.q_evidence)
     if args.previous_candidate_lock and (args.recover or args.capture_reference
                                          or args.development_bridge or args.development_parity):
         parser.error('Historical Compose comparison applies only to full qualification')

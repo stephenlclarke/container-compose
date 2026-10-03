@@ -291,6 +291,8 @@ When installed correctly, `container help` lists `compose` under `PLUGINS`.
 
 Benchmark data and provenance are GitHub release assets. The Bazel release path publishes the signed binary, qualification provenance and `compose-qualified-evidence-v1.zip` containing raw measurements and parity outcomes. Later compatible comparisons reuse the old release evidence and measure only the new candidate; a missing or incompatible baseline fails before expensive work. Historical data is retained on the [0.14.2](https://github.com/stephenlclarke/container-compose/releases/tag/0.14.2) and [0.13.1](https://github.com/stephenlclarke/container-compose/releases/tag/0.13.1) releases. See the [qualification workflow](docs/guides/BAZEL.md) for compatibility checks and remaining release gates.
 
+Qualified Container runtime assets use a separate staged producer: prepare the exact-source candidate, independently review its provenance and parity archive, then publish and verify downloads with the `bazel-q-runtime-release-*` targets. The producer keeps its resumable release journal in the private output directory and temporary work on the enrolled SSD; see [artifact production](Tools/bazel/artifacts/README.md#qualified-container-runtime-release).
+
 ## Documentation
 
 Runtime preflight follows the compiled Compose backend: enhanced builds require a live matching native API server, while stock Engine builds retain their system-status readiness gate. See [installation and readiness](docs/guides/INSTALL.md) for the exact admission checks.

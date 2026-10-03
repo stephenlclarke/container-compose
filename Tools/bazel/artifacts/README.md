@@ -66,14 +66,19 @@ current minimum-macOS transitions and reuses Bazel's action cache; it may
 still visit already-built upper targets. A dirty checkout needs the explicit
 `--development-proof` flag and cannot be published.
 
-The consumer can reuse original published lower archives across only the
-authenticated Container-only pin change, or the exact Container `db240b6c`
-and Containerization `6db16197` pair. The latter permits the unchanged
-enhanced foundation and Engine API and four stock groups; enhanced
-Containerization and Container SDK need new qualified archives. The original
-manifest and resolved lock must be recovered exactly after the allowed pin
-substitutions, with all other source, recipe, lower-layer and toolchain checks
-intact. A future pin pair needs a new proof or a rebuild.
+The consumer can reuse original published lower archives across a Container-only
+pin change while Containerization remains at `6db16197`, or across the exact
+Container `db240b6c` and Containerization `6db16197` pair. For the Container-only
+case, the selected 40-character pin must occur once in both package files, and
+`Package.resolved` must contain exactly one `originHash` equal to the SHA-256 of
+the actual `Package.swift`. The verifier normalizes that pin and origin back to
+the published baseline, then requires the complete manifest and resolved lock to
+match the historical hashes. Other dependency or recipe changes are rejected.
+These pin transitions permit the unchanged enhanced foundation, released
+Containerization, Engine API, and four stock groups; enhanced Container SDK
+needs a newly qualified archive. All other source, recipe, lower-layer and
+toolchain checks remain intact. A future pin pair needs a new proof or a
+rebuild.
 
 On a clean producer checkpoint, run the two source-mode optimized CLI targets
 with the appropriate published lower configs, then use
@@ -97,3 +102,39 @@ later uses rehash the exact lock-keyed local cache without network. A local
 mirror is an explicit development proof only. The compiled groups are
 unavailable on a different Swift compiler, SDK, platform, source pin, recipe,
 or lower-layer digest. Hosted source analysis continues to compile sources.
+
+## Qualified Container runtime release
+
+`q_runtime_release.py prepare` is the maintained metadata producer for a
+qualified Container runtime candidate. Pass explicit absolute
+`--container-root`, `--qualification-dir`, Compose `--root`, and a fresh
+`--output`. It derives the source commit from the clean Container checkout,
+checks the complete maintained qualification stage inventory and retained
+receipts, replays both compiled-consumer receipts with the Container native
+verifiers, and records the reused native locks. A missing native-layer cache
+may be populated through its existing authenticated release transport. It
+packages the signed runtime, measured executables, portable benchmark results
+and provenance sidecar; it does not build or run the Container runtime. Supply
+`--scratch /Volumes/SSD/cf/bazel/tmp` (the default) for re-derivation and
+publication downloads; the command verifies that this path is on the enrolled
+external SSD.
+
+Review `preparation.json` and its exact asset hashes before invoking the
+separate `publish` action. Publication rechecks the source, all retained
+qualification hashes, native receipt graph, lower-layer release identities,
+and the sidecar through `q_assets.validate(..., qualified_source=SOURCE)`;
+the consumer's selected `Q` constant and locks remain unchanged until the
+release assets exist. The shared release transport verifies the draft bytes
+and exact tag target before exposing them. Publication resumes only under its
+exact retained source, tag, owner, and asset-byte journal; its bounded upload
+scratch stays on the enrolled SSD. After publication,
+`q_runtime_release.py verify` downloads each locked asset and revalidates the
+provenance, performance ZIP, and native-chain crosslinks. The retained
+preparation receipt records `releaseAuthority: false`; preparation alone is
+not release approval.
+
+The corresponding `bazel-q-runtime-release-prepare`,
+`bazel-q-runtime-release-publish`, and `bazel-q-runtime-release-verify` Make
+targets pass the explicit SSD scratch path. Keep the private output directory
+between steps so the preparation receipt and resumable publication journal
+remain available for review and recovery.

@@ -25,7 +25,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Callable
+from typing import Callable, Optional
 
 from artifacts.release_asset import read_lock
 
@@ -200,12 +200,13 @@ def _native_layers(rows: dict) -> set[str]:
     return {'+dependencies+swiftpkg_' + name.replace('-', '_').replace('.', '_') for name in pins}
 
 
-def _native_configuration(row: dict, mode: str, repositories: set[str], payload: dict) -> None:
+def _native_configuration(row: dict, mode: str, repositories: set[str], payload: dict,
+                          qualified_source: str) -> None:
     _native_fields(row, {'configuration', 'source', 'compiledConsumerSHA256', 'buildEventsSHA256',
                         'actionGraphSHA256', 'build', 'loadedBUILD', 'importedArchiveInputs', 'importedActions',
                         'links', 'actions', 'recipeSHA256', 'recipeCompatibility', 'toolchain', 'products',
                         'semanticHelperSHA256'}, mode)
-    _native_require(row['source'] == Q and row['configuration'] == mode
+    _native_require(row['source'] == qualified_source and row['configuration'] == mode
                     and all(SHA.fullmatch(row[key]) for key in ('compiledConsumerSHA256', 'buildEventsSHA256', 'actionGraphSHA256')),
                     mode + ' source or raw hashes differ')
     build = row['build']
@@ -283,20 +284,21 @@ def _native_configuration(row: dict, mode: str, repositories: set[str], payload:
                             for key in ('swiftVersion', 'sdkVersion', 'xcodeVersion')), mode + ' toolchain differs')
 
 
-def validate_native_chain(bundle: dict) -> None:
+def validate_native_chain(bundle: dict, *, qualified_source: Optional[str] = None) -> None:
     """Validate authenticated public projections, without fetching private BEP or rebuilding."""
-    if Q == LEGACY_Q:
+    source = Q if qualified_source is None else qualified_source
+    if source == LEGACY_Q:
         _native_require('native_compiled_chain' not in bundle and 'native_compiled_chain_sha256' not in bundle,
                         'is unexpected on the legacy source')
         return
-    _native_require(COMMIT.fullmatch(Q), 'selected source is malformed')
+    _native_require(COMMIT.fullmatch(source), 'selected source is malformed')
     try:
         chain = bundle['native_compiled_chain']
         encoded = (json.dumps(chain, sort_keys=True, indent=2, allow_nan=False) + '\n').encode()
         _native_require(bundle['native_compiled_chain_sha256'] == hashlib.sha256(encoded).hexdigest(), 'digest differs')
         _native_fields(chain, {'schema', 'source', 'layers', 'release', 'coverage', 'sourceReceiptSHA256',
                               'measuredAssets', 'signedArchiveSHA256', 'interpretation'}, 'projection')
-        _native_require(type(chain['schema']) is int and chain['schema'] == 1 and chain['source'] == Q
+        _native_require(type(chain['schema']) is int and chain['schema'] == 1 and chain['source'] == source
                         and isinstance(chain['interpretation'], str) and bool(chain['interpretation']),
                         'projection source differs')
         # Reject private path/env additions without rewriting authenticated data.
@@ -304,8 +306,8 @@ def validate_native_chain(bundle: dict) -> None:
                         'contains private data')
         repositories = _native_layers(chain['layers'])
         runtime = bundle['runtime']
-        _native_configuration(chain['release'], 'release', repositories, runtime['payload'])
-        _native_configuration(chain['coverage'], 'runtime-coverage', repositories, runtime['payload'])
+        _native_configuration(chain['release'], 'release', repositories, runtime['payload'], source)
+        _native_configuration(chain['coverage'], 'runtime-coverage', repositories, runtime['payload'], source)
         for key in ('recipeSHA256', 'recipeCompatibility', 'toolchain', 'loadedBUILD', 'importedArchiveInputs'):
             _native_require(chain['release'][key] == chain['coverage'][key], 'release and coverage lower ' + key + ' differ')
         receipts = chain['sourceReceiptSHA256']
@@ -337,7 +339,7 @@ def validate_native_chain(bundle: dict) -> None:
                         and chain['signedArchiveSHA256'] == bundle['assets']['runtime']['sha256'], 'released asset links differ')
         parity = bundle['performance_parity_asset']
         _native_fields(parity, {'name', 'sha256'}, 'performance asset')
-        _native_require(parity['name'] == 'container-performance-parity-' + Q[:8] + '.zip'
+        _native_require(parity['name'] == 'container-performance-parity-' + source[:8] + '.zip'
                         and SHA.fullmatch(parity['sha256']), 'performance asset identity differs')
     except (KeyError, TypeError, ValueError, AttributeError) as error:
         raise RuntimeError('Released Q native chain is malformed') from error
@@ -356,9 +358,11 @@ def fetch_command(lock: Path, destination: Path) -> None:
                     '--destination', str(destination)], check=True, timeout=420)
 
 
-def validate(bundle: dict, locks: dict, helpers: dict[str, str]) -> None:
+def validate(bundle: dict, locks: dict, helpers: dict[str, str], *,
+             qualified_source: Optional[str] = None) -> None:
+    source = Q if qualified_source is None else qualified_source
     if (bundle.get('schema') != 1 or bundle.get('kind') != 'container-qualified-runtime-assets'
-            or bundle.get('qualified_container_source') != Q
+            or bundle.get('qualified_container_source') != source
             or bundle.get('qualification') != {'target': 'bazel-qualify', 'passed': True}
             or bundle.get('qualified_helpers_sha256') != helpers):
         raise RuntimeError('Released Q provenance has wrong qualification or helper identity')
@@ -370,7 +374,7 @@ def validate(bundle: dict, locks: dict, helpers: dict[str, str]) -> None:
         if (product.get('name') != NAMES[name]
                 or product.get('sha256') != locks[name]['sha256']):
             raise RuntimeError('Released Q asset differs from the provenance sidecar: ' + name)
-    if (assets['runtime'].get('source') != Q
+    if (assets['runtime'].get('source') != source
             or assets['guest'].get('source') != GUEST
             or assets['builder'].get('source') != BUILDER):
         raise RuntimeError('Released Q asset source graph changed')
@@ -395,7 +399,7 @@ def validate(bundle: dict, locks: dict, helpers: dict[str, str]) -> None:
             or not SHA.fullmatch(runtime.get('kernel_sha256', ''))
             or not SHA.fullmatch(runtime.get('package_lock_sha256', ''))):
         raise RuntimeError('Released Q payload or source receipts are malformed')
-    validate_native_chain(bundle)
+    validate_native_chain(bundle, qualified_source=source)
 
 
 def fetch_assets(evidence: Path, helpers: dict[str, str],

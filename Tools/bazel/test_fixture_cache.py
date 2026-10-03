@@ -89,12 +89,13 @@ class FixtureCacheTests(unittest.TestCase):
             original = path.read_bytes()
             target = base / 'target'
             target.mkdir()
-            with patch.object(cache, 'legacy_format_compatible', return_value=False):
+            with patch.object(cache, 'legacy_format_compatible', return_value=False) as compatible:
                 with self.assertRaisesRegex(RuntimeError, 'identity changed'):
-                    cache.restore(target, retained, ('alpine:3.20',))
+                    cache.restore(target, retained, ('alpine:3.20',), container_root=base)
+                compatible.assert_called_once_with(base)
             self.assertFalse((target / 'state.json').exists())
             with patch.object(cache, 'legacy_format_compatible', return_value=True):
-                restored = cache.restore(target, retained, ('alpine:3.20',))
+                restored = cache.restore(target, retained, ('alpine:3.20',), container_root=base)
             self.assertEqual(restored[0]['q_source'], cache.LEGACY_Q_SOURCE)
             self.assertEqual(path.read_bytes(), original)
             self.assertEqual(restored[0]['root'], captured['root'])
@@ -102,7 +103,7 @@ class FixtureCacheTests(unittest.TestCase):
             path.write_text(json.dumps(historical, sort_keys=True) + '\n')
             with patch.object(cache, 'legacy_format_compatible', return_value=True):
                 with self.assertRaisesRegex(RuntimeError, 'identity changed'):
-                    cache.receipt(entry, captured['reference'])
+                    cache.receipt(entry, captured['reference'], container_root=base)
 
     def test_new_source_requires_fresh_capture_instead_of_relabeling_old_cache(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

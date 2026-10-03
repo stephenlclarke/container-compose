@@ -37,7 +37,6 @@ import tempfile
 SCHEMA = 1
 Q_SOURCE = 'a1effeeaf8c7c1d48b4773262a2d5218dcd5817d'
 LEGACY_Q_SOURCE = '15361ce5f55a6b8ab3242e89650a188766b47581'
-Q_ROOT = Path('/Users/sclarke/github/container-logging-readiness-20260929')
 IMAGE_FORMAT_CONTRACT_SHA256 = 'f3c6f8fcb3132eb41dcaf48254f6e18e65f47fe15875261cde90931bce6f33ee'
 IMAGE_FORMAT_DIRS = ('Sources/Plugins/CoreImages', 'Sources/Services/ContainerImagesService',
                      'Sources/ContainerCommands/Image')
@@ -166,17 +165,18 @@ def image_store_contract(root: Path) -> str:
     return hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
-def legacy_format_compatible(root: Path | None = None) -> bool:
-    return image_store_contract(root or Q_ROOT) == IMAGE_FORMAT_CONTRACT_SHA256
+def legacy_format_compatible(root: Path) -> bool:
+    return image_store_contract(root) == IMAGE_FORMAT_CONTRACT_SHA256
 
 
-def receipt(entry: Path, reference: str) -> dict:
+def receipt(entry: Path, reference: str, *, container_root: Path | None = None) -> dict:
     directory(entry)
     value = json.loads(regular(entry / 'receipt.json'))
     recorded_q = value.get('q_source')
     if (value.get('schema') != SCHEMA
             or recorded_q not in (Q_SOURCE, LEGACY_Q_SOURCE)
-            or (recorded_q == LEGACY_Q_SOURCE and not legacy_format_compatible())
+            or (recorded_q == LEGACY_Q_SOURCE and (
+                container_root is None or not legacy_format_compatible(container_root)))
             or value.get('containerization_source') != CONTAINERIZATION_SOURCE
             or value.get('reference') != reference
             or not isinstance(value.get('stored_reference'), str)):
@@ -314,7 +314,8 @@ def docker_pinned_metadata_matches(raw: str, requested: str) -> bool:
     return False
 
 
-def capture(app: Path, cache: Path, references: tuple[str, ...]) -> list[dict]:
+def capture(app: Path, cache: Path, references: tuple[str, ...], *,
+            container_root: Path | None = None) -> list[dict]:
     """Add currently present allowlisted images without replacing existing entries."""
     directory(cache, create=True)
     if not (app / 'state.json').exists():
@@ -328,7 +329,7 @@ def capture(app: Path, cache: Path, references: tuple[str, ...]) -> list[dict]:
         reference = normalized(requested)
         destination = entry_path(cache, reference)
         if destination.exists() or destination.is_symlink():
-            result.append(receipt(destination, reference))
+            result.append(receipt(destination, reference, container_root=container_root))
             continue
         selected = _state_entry(state, reference)
         if selected is None:
@@ -348,9 +349,9 @@ def capture(app: Path, cache: Path, references: tuple[str, ...]) -> list[dict]:
                      'reference': reference, 'stored_reference': stored_reference,
                      **inspected}
             (staging / 'receipt.json').write_text(json.dumps(value, sort_keys=True) + '\n')
-            receipt(staging, reference)
+            receipt(staging, reference, container_root=container_root)
             if destination.exists() or destination.is_symlink():
-                result.append(receipt(destination, reference))
+                result.append(receipt(destination, reference, container_root=container_root))
             else:
                 staging.rename(destination)
                 result.append(value)
@@ -360,7 +361,8 @@ def capture(app: Path, cache: Path, references: tuple[str, ...]) -> list[dict]:
     return result
 
 
-def restore(app: Path, cache: Path, references: tuple[str, ...]) -> list[dict]:
+def restore(app: Path, cache: Path, references: tuple[str, ...], *,
+            container_root: Path | None = None) -> list[dict]:
     """Seed only verified fixture refs into a freshly reset, idle Q app tree."""
     directory(app)
     if (app / 'state.json').exists() or (app / 'state.json').is_symlink() \
@@ -375,7 +377,7 @@ def restore(app: Path, cache: Path, references: tuple[str, ...]) -> list[dict]:
         reference = normalized(requested)
         source = entry_path(cache, reference)
         if source.exists() or source.is_symlink():
-            values.append(receipt(source, reference))
+            values.append(receipt(source, reference, container_root=container_root))
     if not values:
         return []
     blobs = app / 'content' / 'blobs' / 'sha256'

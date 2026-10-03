@@ -429,7 +429,7 @@ def proof_lock(receipt_path: Path, root: Path, output: Path) -> dict:
 
 def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
                               current: dict[str, str]) -> bool:
-    """Admit unchanged published groups across exact upper pin changes.
+    """Admit unchanged published groups across authenticated Container upper pins.
 
     The old producer bytes remain authenticated by the published lock. The
     canonical AST check admits only the original production nodes or the
@@ -506,8 +506,40 @@ def _legacy_recipe_compatible(lock: dict, root: Path, profile: str, group: str,
     selected_containerization = selected_pins.get("containerization", "").encode()
     manifest = (root / "Package.swift").read_bytes()
     resolved = (root / "Package.resolved").read_bytes()
-    if (not re.fullmatch(rb"[0-9a-f]{40}", selected) or selected == old_container
-            or manifest.count(selected) != 1 or resolved.count(selected) != 1
+    if not re.fullmatch(rb"[0-9a-f]{40}", selected) or selected == old_container:
+        return False
+    if selected != selected_container and selected_containerization == changed_containerization:
+        manifest_sha = digest(manifest).encode()
+        try:
+            resolved_record = json.loads(resolved)
+            origin_hash = resolved_record.get("originHash") if isinstance(resolved_record, dict) else None
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if (manifest.count(selected) != 1 or resolved.count(selected) != 1
+                or selected_container in manifest or selected_container in resolved
+                or old_container in manifest or old_container in resolved
+                or resolved.count(b'"originHash"') != 1
+                or not isinstance(origin_hash, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", origin_hash)
+                or origin_hash != manifest_sha.decode()
+                or resolved.count(manifest_sha) != 1):
+            return False
+        manifest = manifest.replace(selected, selected_container)
+        normalized_manifest_sha = digest(manifest).encode()
+        if normalized_manifest_sha != selected_origin:
+            return False
+        resolved = resolved.replace(selected, selected_container).replace(
+            manifest_sha, normalized_manifest_sha)
+        try:
+            normalized_record = json.loads(resolved)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        if (not isinstance(normalized_record, dict)
+                or normalized_record.get("originHash") != normalized_manifest_sha.decode()
+                or resolved.count(normalized_manifest_sha) != 1):
+            return False
+        selected = selected_container
+    if (manifest.count(selected) != 1 or resolved.count(selected) != 1
             or old_container in manifest or old_container in resolved):
         return False
     if selected_containerization == old_containerization and not released_containerization:
