@@ -36,6 +36,8 @@ falls back to Docker, Docker Compose, or Colima. The enhanced release profile
 remains the default for the independently installed Compose plugin. See the
 [installation guide](docs/guides/INSTALL.md#build-the-stock-apple-engine-adapter).
 
+The `build/bazel-workflow` integration patch for PR 708 prepares native create/run to carry immutable image spelling as a verified provenance label: bare `sha256:` configuration IDs and repo-qualified manifest digests retain the caller's exact request for Devcontainer inspection, while tag requests and guest arguments remain unchanged. See the [image provenance handoff](docs/PR-config-id-image-provenance.md); fresh exact-head quality checks, a new signed package, and live qualification are still required.
+
 ## Current candidate
 
 The `c52ac624` qualification passes all 66 original parity cases, then stops at the first fresh candidate benchmark setup because Compose selects an older host `container` binary. Guarded recovery restores the private runtime, Colima and original services. Candidate and recovery commands now select the exact qualified private binary; a fresh full qualification remains required before release.

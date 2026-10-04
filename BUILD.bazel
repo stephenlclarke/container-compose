@@ -237,6 +237,8 @@ swift_test(
     copts = SWIFT_COPTS,
     deps = [
         ":ComposeContainerRuntime", ":ComposeRuntimeSPI", ":ComposeTestStorage",
+        "@swiftpkg_swift_argument_parser//:ArgumentParser",
+        "@swiftpkg_container//:ContainerCommands",
         "@swiftpkg_container//:ContainerResource",
         "@swiftpkg_containerization//:ContainerizationEXT4",
         "@swiftpkg_containerization//:ContainerizationOCI",

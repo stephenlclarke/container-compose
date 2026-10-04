@@ -37,7 +37,7 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
         return result.status
     }
 
-    static let originalImageReferenceLabel = "com.apple.container.compose.image-reference"
+    static let originalImageReferenceLabel = ComposeNativeImageProvenance.label
 
     /// Only native options before the image select detached I/O. A guest
     /// command may itself contain `--detach`, including after a `--` separator.
@@ -115,82 +115,22 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
             // The first non-option operand is the image. Everything after it
             // belongs to the container process and must remain byte-for-byte
             // unchanged, even when it resembles a Container CLI mount option.
-            if let label = try Self.imageReferenceLabel(argument) {
-                let insertion = index > 0 && result[index - 1] == "--" ? index - 1 : index
-                result.insert(contentsOf: ["--label", label], at: insertion)
-            }
             break
         }
-        return result
-    }
-
-    private static func imageReferenceLabel(_ image: String) throws -> String? {
-        guard image.contains("@") else { return nil }
-        guard image.range(of: #"^[^\s@]+@sha256:[0-9a-f]{64}$"#, options: .regularExpression) != nil else {
-            throw ComposeError.invalidProject("Native image provenance requires a complete sha256 image reference")
-        }
-        return "\(originalImageReferenceLabel)=\(image)"
+        return try ComposeNativeImageProvenance.arguments(result)
     }
 
     /// Short flags may be grouped; a valued option consumes the remainder or
     /// the following token. Never treat its value as the image operand.
     static func shortOptionConsumesNext(_ argument: String, next: String?) throws -> Bool {
-        guard argument.hasPrefix("-"), !argument.hasPrefix("--") else { return false }
-        var flags = argument.dropFirst()
-        while let flag = flags.first {
-            flags = flags.dropFirst()
-            if "aceklmpuvw".contains(flag) {
-                let value = flags.isEmpty ? next : String(flags.hasPrefix("=") ? flags.dropFirst() : flags)
-                if flag == "l" {
-                    try rejectImageReferenceLabel(option: "--label", next: value)
-                }
-                return flags.isEmpty
-            }
-            guard "dith".contains(flag) else {
-                throw ComposeError.invalidProject("Unsupported native short option -\(flag)")
-            }
-        }
-        return false
+        try ComposeNativeImageProvenance.shortOptionConsumesNext(argument, next: next)
     }
 
     static func rejectImageReferenceLabel(option: String, next: String?) throws {
-        let value: String?
-        if option == "--label" || option == "-l" {
-            value = next
-        } else if option.hasPrefix("--label=") {
-            value = String(option.dropFirst("--label=".count))
-        } else if option.hasPrefix("-l") {
-            let suffix = option.dropFirst(2)
-            value = String(suffix.hasPrefix("=") ? suffix.dropFirst() : suffix)
-        } else {
-            value = nil
-        }
-        let reserved = [originalImageReferenceLabel, ComposeNativeHealthPolicy.label]
-        guard !reserved.contains(where: { value?.split(separator: "=", maxSplits: 1).first == Substring($0) }) else {
-            throw ComposeError.invalidProject("The native policy/provenance label is reserved")
-        }
+        try ComposeNativeImageProvenance.rejectReservedLabel(option: option, next: next)
     }
 
-    static let containerLaunchValueOptions: Set<String> = [
-        "--add-host", "--annotation", "--arch", "--blkio", "--cap-add", "--cap-drop",
-        "--cidfile", "--cwd", "--gid", "--uid", "--kernel", "--kernel-arg",
-        "--masked-path", "--os", "--publish-socket", "--read-only-path",
-        "--progress", "--max-concurrent-downloads",
-        "--cgroup-parent", "--cgroupns", "--cpu-period", "--cpu-quota",
-        "--cpu-shares", "--cpus", "--cpuset-cpus", "--device",
-        "--device-cgroup-rule", "--dns", "--dns-domain", "--dns-option", "--dns-search",
-        "--domainname", "--entrypoint", "--env",
-        "--env-file", "--expose", "--gpus", "--group-add", "--hostname",
-        "--health-cmd", "--health-interval", "--health-retries",
-        "--health-start-interval", "--health-start-period", "--health-timeout",
-        "--init-image", "--ipc", "--isolation", "--label", "-l", "--log-driver",
-        "--log-opt", "--memory", "--memory-reservation", "--memory-swap",
-        "--name", "--network", "--oom-score-adj", "--pid", "--pids-limit",
-        "--platform", "--publish", "--scheme", "--restart", "--restart-delay",
-        "--restart-window", "--runtime", "--security-opt", "--shm-size",
-        "--stop-signal", "--stop-timeout", "--sysctl", "--tmpfs", "--ulimit",
-        "--user", "--userns", "--uts", "--volume", "--mount", "--workdir",
-    ]
+    static let containerLaunchValueOptions = ComposeNativeImageProvenance.valueOptions
 
     private func managedShortVolume(_ value: String) async throws -> String? {
         let fields = value.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)

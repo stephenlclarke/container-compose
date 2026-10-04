@@ -93,6 +93,22 @@ struct EngineContainerCommandSupportTests {
         #expect(Array(arguments.dropFirst(2)) == expected)
     }
 
+    @Test
+    func `bare configuration ID carries provenance distinct from native image operand`() async throws {
+        let runner = RecordingRunner()
+        let provider = EngineRuntimeProvider(socketPath: "/unused", runner: runner)
+        let image = "sha256:" + String(repeating: "b", count: 64)
+        _ = try await provider.launchContainer(.init(
+            command: .create,
+            arguments: ["--name", "app", image, "tool", "--label", "guest=value"],
+            logging: .init(driver: nil, options: [:])
+        ))
+        #expect(Array(try #require(runner.commands.first).arguments.dropFirst(2)) == [
+            "--name", "app", "--label", EngineRuntimeProvider.originalImageReferenceLabel + "=" + image,
+            image, "tool", "--label", "guest=value"
+        ])
+    }
+
     @Test(arguments: ["--label", "--label=", "-l", "-l=", "-lcompact", "-il", "-ilcompact", "malformed-image"])
     func `native image metadata rejects collisions and malformed digests before launch`(form: String) async throws {
         let runner = RecordingRunner()

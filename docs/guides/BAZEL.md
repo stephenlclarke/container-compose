@@ -232,6 +232,8 @@ The current launcher is owned by this repository. It verifies the enrolled exter
 
 The unreleased stock Engine adapter records digest-qualified image spelling in the reserved `com.apple.container.compose.image-reference` creation label, without altering the actual image operand or guest arguments. Devcontainer's matching PR 83 validates that spelling against the native descriptor and repository before projecting it. Tag-only behavior is unchanged. Network creation records `com.apple.container.compose.network` as the logical key, including when the runtime name is customized; dry-run labels match real creation. Stock live C01 now passes all original observations and cleanup at Compose `1fe36f56` with devcontainer `aa56f00`, invocation `178bf269-d0d4-48e1-ac73-8ca375c2707d`. Enhanced qualification and stable release gates remain open. See [PR 708 evidence](../PR-708.md).
 
+The enhanced typed create/run path must apply the same native image provenance rule as the Engine fallback. A bare `sha256:<64-hex>` image operand denotes an OCI configuration ID, distinct from the selected manifest descriptor digest. Carry its exact requested spelling in the reserved label while leaving the actual image operand, tag-only requests, and guest arguments unchanged. Reject caller-supplied reserved labels before invoking Container's typed parser. Devcontainer must verify this bare ID against the selected descriptor and platform's manifest configuration digest before reporting it as `Config.Image`; a matching manifest digest alone is insufficient. This is a source contract, not a live qualification result.
+
 ```sh
 make -f Tools/bazel/Makefile build BAZEL_PROFILE=stock
 make -f Tools/bazel/Makefile test-spi BAZEL_PROFILE=stock
