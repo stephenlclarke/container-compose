@@ -122,8 +122,6 @@ let runtimeTargets: [Target] = enhancedRuntime
                 "ComposeTestStorage",
                 "ComposeContainerRuntime",
                 "ComposeRuntimeSPI",
-                .product(name: "ArgumentParser", package: "swift-argument-parser"),
-                .product(name: "ContainerCommands", package: "container"),
                 .product(name: "ContainerResource", package: "container"),
                 .product(name: "ContainerizationEXT4", package: "containerization"),
                 .product(name: "ContainerizationOCI", package: "containerization"),
