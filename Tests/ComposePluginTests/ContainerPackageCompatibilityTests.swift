@@ -69,7 +69,7 @@ private let matchingSystemVersionJSON = """
     {
       "appName": "container",
       "buildType": "release",
-      "commit": "matched-container",
+      "commit": "780a86b995ac4cb0985db97f38875fdc6e33d16b",
       "containerization": "stephenlclarke/containerization@matched-containerization",
       "distribution": "custom",
       "runtimeCapabilitySchemaVersion": 1,
@@ -90,7 +90,7 @@ private let matchingSystemVersionJSON = """
     {
       "appName": "container-apiserver",
       "buildType": "release",
-      "commit": "matched-container",
+      "commit": "780a86b995ac4cb0985db97f38875fdc6e33d16b",
       "version": "homebrew-main"
     }
   ]
@@ -317,7 +317,7 @@ struct ContainerPackageCompatibilityTests {
       lane: "main",
       runtimeSelection: .init(profile: .enhanced, backend: .engine),
       expectedRevisions: .init(
-        container: "matched-container",
+        container: "780a86b995ac4cb0985db97f38875fdc6e33d16b",
         containerization: "matched-containerization"
       ),
       onCompatibleRuntime: { selection.replace(with: $0) },
@@ -571,7 +571,7 @@ struct ContainerSystemServiceReadinessTests {
         lane: "main",
         runtimeSelection: .init(profile: .enhanced, backend: .engine),
         expectedRevisions: .init(
-          container: "matched-container",
+          container: "780a86b995ac4cb0985db97f38875fdc6e33d16b",
           containerization: "matched-containerization"
         ),
         run: { arguments in
@@ -607,7 +607,7 @@ struct ContainerSystemServiceReadinessTests {
       lane: "main",
       runtimeSelection: .init(profile: .enhanced, backend: .engine),
       expectedRevisions: .init(
-        container: "matched-container",
+        container: "780a86b995ac4cb0985db97f38875fdc6e33d16b",
         containerization: "matched-containerization"
       ),
       run: { arguments in
@@ -645,7 +645,7 @@ struct ContainerSystemServiceReadinessTests {
         lane: "main",
         runtimeSelection: .init(profile: .enhanced, backend: .engine),
         expectedRevisions: .init(
-          container: "matched-container",
+          container: "780a86b995ac4cb0985db97f38875fdc6e33d16b",
           containerization: "matched-containerization"
         ),
         run: { arguments in

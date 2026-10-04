@@ -372,8 +372,13 @@ extension ContainerPackageCompatibility {
         runtimeBackend: RuntimeBackend,
         run: ([String]) async throws -> Data,
     ) async throws -> String? {
-        if runtimeBackend == .nativeAPI {
-            return nativeAPIReadinessFailure(components: components)
+        if runtimeBackend == .nativeAPI || runtimeProfile == .enhanced {
+            if let failure = liveAPIIdentityFailure(components: components, backend: runtimeBackend) {
+                return failure
+            }
+            if runtimeBackend == .nativeAPI {
+                return nil
+            }
         }
         do {
             _ = try await run(["system", "status"])

@@ -54,6 +54,64 @@ struct CompiledRuntimeReadinessTests {
         #endif
     }
 
+    @Test("SDK pins constrain native API transport but not enhanced metadata over Engine",
+          arguments: [ContainerPackageCompatibility.RuntimeBackend.engine, .nativeAPI])
+    func sdkPinsFollowTransport(backend: ContainerPackageCompatibility.RuntimeBackend) async throws {
+        let revisions = ContainerPackageCompatibility.ExpectedRuntimeRevisions.forCompiledSDK(
+            container: "880a86b995ac4cb0985db97f38875fdc6e33d16b",
+            containerization: "apple-sdk-containerization",
+            backend: backend,
+        )
+        var calls: [[String]] = []
+        let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+            arguments: ["up"], lane: "main",
+            runtimeSelection: .init(profile: .enhanced, backend: backend),
+            expectedRevisions: revisions,
+            run: { arguments in
+                calls.append(arguments)
+                return try Self.versionData()
+            },
+        )
+        if backend == .engine {
+            #expect(failure == nil)
+            #expect(calls == [["system", "version", "--format", "json"], ["system", "status"]])
+        } else {
+            #expect(failure != nil)
+            #expect(calls == [["system", "version", "--format", "json"]])
+        }
+    }
+
+    @Test("production SDK pin policy defaults to the compiled backend")
+    func defaultSDKPinPolicy() {
+        let revisions = ContainerPackageCompatibility.ExpectedRuntimeRevisions.forCompiledSDK(
+            container: "880a86b995ac4cb0985db97f38875fdc6e33d16b", containerization: "sdk-containerization",
+        )
+        #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
+            #expect(revisions.container == "880a86b995ac4cb0985db97f38875fdc6e33d16b")
+            #expect(revisions.containerization == "sdk-containerization")
+        #else
+            #expect(revisions.container == nil)
+            #expect(revisions.containerization == nil)
+        #endif
+    }
+
+    @Test("enhanced Engine admission preserves coherent identity provenance and capabilities",
+          arguments: ["missing", "duplicate-server", "duplicate-client", "wrong-commit", "both-main-commits",
+                      "wrong-source", "wrong-distribution", "wrong-containerization", "missing-capabilities", "wrong-schema"])
+    func enhancedEngineRejectsIncompatibleRuntime(mutation: String) async throws {
+        var calls: [[String]] = []
+        let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+            arguments: ["up"], lane: "main", runtimeSelection: .init(profile: .enhanced, backend: .engine),
+            expectedRevisions: .forCompiledSDK(container: "apple-sdk", containerization: "apple-sdk", backend: .engine),
+            run: { arguments in
+                calls.append(arguments)
+                return try Self.versionData(mutation: mutation)
+            },
+        )
+        #expect(failure != nil)
+        #expect(calls == [["system", "version", "--format", "json"]])
+    }
+
     @Test("native live API passes without a gateway and with nonconcrete package pins",
           arguments: [nil, "main", "unspecified", "780a86b995ac4cb0985db97f38875fdc6e33d16b"])
     func liveAPI(expected: String?) async throws {

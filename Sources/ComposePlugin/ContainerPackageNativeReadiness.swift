@@ -18,13 +18,15 @@ import Foundation
 
 extension ContainerPackageCompatibility {
     /// System-version emits the API row only after a bounded live health ping succeeds.
-    static func nativeAPIReadinessFailure(
+    static func liveAPIIdentityFailure(
         components: [ContainerSystemVersionComponent],
+        backend: RuntimeBackend,
     ) -> String? {
         let clients = components.filter { $0.appName == "container" }
         let servers = components.filter { $0.appName == "container-apiserver" }
         guard clients.count == 1, servers.count == 1 else {
             return nativeAPIGuidance(
+                backend: backend,
                 detected: ["system version requires exactly one container and one live container-apiserver (found \(clients.count) and \(servers.count))"],
             )
         }
@@ -37,6 +39,7 @@ extension ContainerPackageCompatibility {
               server.buildType == "debug" || server.buildType == "release"
         else {
             return nativeAPIGuidance(
+                backend: backend,
                 detected: ["container-apiserver: malformed or mismatched health identity (commit \(server.commit ?? "missing"), CLI commit \(client.commit ?? "missing"), version \(server.version ?? "missing"), build \(server.buildType ?? "missing"))"],
             )
         }
@@ -57,9 +60,10 @@ extension ContainerPackageCompatibility {
         return !value.isEmpty && value != "unspecified" && value != "unknown"
     }
 
-    private static func nativeAPIGuidance(detected: [String]) -> String {
-        """
-        container-compose requires a live matching container API server for its compiled native API backend.
+    private static func nativeAPIGuidance(backend: RuntimeBackend, detected: [String]) -> String {
+        let provider = backend == .nativeAPI ? "compiled native API backend" : "selected enhanced runtime"
+        return """
+        container-compose requires a live matching container API server for its \(provider).
 
         Start the matching API service selected by the runtime owner, then run this command again.
         Detailed install instructions:
@@ -70,4 +74,17 @@ extension ContainerPackageCompatibility {
         """
     }
 
+}
+
+extension ContainerPackageCompatibility.ExpectedRuntimeRevisions {
+    /// Engine transport does not use the SDK's native Container APIs.
+    static func forCompiledSDK(
+        container: String?, containerization: String?,
+        backend: ContainerPackageCompatibility.RuntimeBackend = ContainerPackageCompatibility.compiledRuntimeBackend,
+    ) -> Self {
+        guard backend == .nativeAPI else {
+            return .init()
+        }
+        return .init(container: container, containerization: containerization)
+    }
 }

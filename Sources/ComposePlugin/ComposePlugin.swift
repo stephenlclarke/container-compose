@@ -451,7 +451,7 @@ struct ComposePluginMain {
             if let failure = try await ContainerPackageCompatibility.compatibilityFailure(
                 arguments: rewritten,
                 lane: composeBuildInfo.lane,
-                expectedRevisions: .init(
+                expectedRevisions: .forCompiledSDK(
                     container: composeBuildInfo.containerRef,
                     containerization: composeBuildInfo.containerizationRef,
                 ),
