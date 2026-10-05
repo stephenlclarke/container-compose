@@ -28,13 +28,18 @@ struct EngineNetworkLifecycleTests {
         try await check(mode: "owned", operation: "create", succeeds: true)
     }
 
+    @Test("same owned network survives generated Compose file provenance changes")
+    func changedFileProvenance() async throws {
+        try await check(mode: "provenance", operation: "create", succeeds: true)
+    }
+
     @Test("repeated delete succeeds only after inventory proves absence")
     func repeatedDelete() async throws {
         try await check(mode: "absent", operation: "delete", succeeds: true)
     }
 
     @Test("create refuses foreign, ambiguous and malformed identities",
-          arguments: ["foreign", "ambiguous", "malformed", "absent", "unavailable"])
+          arguments: ["foreign", "network", "directory", "custom", "internal", "ambiguous", "malformed", "absent", "unavailable"])
     func preserveCreateFailures(mode: String) async throws {
         try await check(mode: mode, operation: "create", succeeds: false)
     }
@@ -56,7 +61,15 @@ struct EngineNetworkLifecycleTests {
             if operation == "create" {
                 try await provider.createNetwork(.init(
                     name: "owned_default",
-                    labels: ["com.docker.compose.project": "owned"],
+                    labels: [
+                        "com.apple.container.compose.project": "owned",
+                        "com.apple.container.compose.network": "default",
+                        "com.apple.container.compose.project.working-directory": "/owned/workspace",
+                        "com.apple.container.compose.version": "1",
+                        "user.owner": "expected",
+                        "com.apple.container.compose.project.config-files": "compose.yaml",
+                        "com.apple.container.compose.project.config-files-hash": "one-file",
+                    ],
                 ))
             } else {
                 try await provider.deleteNetwork(id: "owned_default")
@@ -91,11 +104,27 @@ private actor NetworkLifecycleResponder: DockerHTTPResponder {
         if mode == "unavailable" {
             return json(503, #"{"message":"unavailable"}"#)
         }
-        let label = mode == "foreign" ? "foreign" : "owned"
         let id = mode == "malformed" ? "" : "network-generation"
-        let row = "{\"Id\":\"\(id)\",\"Name\":\"owned_default\",\"Labels\":{\"com.docker.compose.project\":\"\(label)\"},\"Internal\":false}"
-        let rows = mode == "absent" ? "[]" : mode == "ambiguous" ? "[\(row),\(row)]" : "[\(row)]"
-        return json(200, rows)
+        let changedProvenance = ["provenance", "foreign", "network", "directory", "custom", "internal"].contains(mode)
+        let workingDirectory = mode == "directory" ? "/foreign" : "/owned/workspace"
+        let configFiles = changedProvenance ? "compose.yaml,generated.yml" : "compose.yaml"
+        let labels = [
+            "com.apple.container.compose.project": mode == "foreign" ? "foreign" : "owned",
+            "com.apple.container.compose.network": mode == "network" ? "foreign" : "default",
+            "com.apple.container.compose.project.working-directory": workingDirectory,
+            "com.apple.container.compose.version": "1",
+            "user.owner": mode == "custom" ? "foreign" : "expected",
+            "com.apple.container.compose.project.config-files": configFiles,
+            "com.apple.container.compose.project.config-files-hash": changedProvenance ? "two-files" : "one-file",
+        ]
+        let row: [String: Any] = [
+            "Id": id, "Name": "owned_default", "Labels": labels, "Internal": mode == "internal",
+        ]
+        let rows = mode == "absent" ? [] : mode == "ambiguous" ? [row, row] : [row]
+        guard let data = try? JSONSerialization.data(withJSONObject: rows),
+              let body = String(data: data, encoding: .utf8)
+        else { return .empty(status: 500) }
+        return json(200, body)
     }
 
     private func json(_ status: Int, _ body: String) -> DockerHTTPResponse {

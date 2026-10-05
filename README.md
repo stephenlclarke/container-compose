@@ -75,6 +75,8 @@ collide in the per-user runtime namespace.
 
 The stock Engine adapter now supports repeated Compose network creation and deletion: it reuses an existing network only after checking its identity, labels, and internal setting, and accepts a missing network only after inventory proves its absence. Conflicting ownership, ambiguous identities, malformed responses, and unavailable inventory remain errors. The focused network regression suite passes; fresh signed gateway consumption and full Devcontainer qualification remain required before distribution.
 
+The Engine resource lifecycle adapter permits generated Compose file-list provenance to change while retaining project, logical network, working-directory, custom-label and internal-network checks. Repeated volume deletion accepts HTTP 404 only after current inventory proves the exact volume absent; other errors remain failures. See [the issue](docs/ISSUE-engine-resource-lifecycle.md) and [the fix](docs/PR-engine-resource-lifecycle.md). Focused regression tests pass; fresh exact-source runtime qualification remains required.
+
 The current matched stack also preserves Kubernetes control-plane discovery
 across VM address changes; skips unreadable image-list entries; accepts colons
 in published host paths; preserves named host identities in machine runs;

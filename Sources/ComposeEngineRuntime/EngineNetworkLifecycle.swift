@@ -43,7 +43,9 @@ public extension EngineRuntimeProvider {
                   let existing = try await networkResource(reference: request.name),
                   existing.name == request.name,
                   existing.internalNetwork == request.isInternal,
-                  request.labels.allSatisfy({ existing.labels[$0.key] == $0.value })
+                  request.labels.allSatisfy({ key, value in
+                      Self.networkProvenanceLabels.contains(key) || existing.labels[key] == value
+                  })
             else {
                 throw error
             }
@@ -61,6 +63,13 @@ public extension EngineRuntimeProvider {
             }
         }
     }
+
+    /// File-list provenance changes when the upstream CLI adds an override;
+    /// project, logical network, working directory and user labels remain binding.
+    private static let networkProvenanceLabels: Set<String> = [
+        "com.apple.container.compose.project.config-files",
+        "com.apple.container.compose.project.config-files-hash",
+    ]
 
     /// Resolve exact identities from current inventory; never normalize an ambiguous lookup.
     internal func networkResource(reference: String) async throws -> EngineNetworkResource? {

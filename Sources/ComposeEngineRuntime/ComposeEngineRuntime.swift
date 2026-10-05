@@ -253,7 +253,17 @@ extension EngineRuntimeProvider: ComposeRuntimeResourceManaging {
     }
 
     public func deleteVolume(name: String) async throws {
-        try await request(.delete, "/v1.53/volumes/\(escaped(name))")
+        do {
+            try await request(.delete, "/v1.53/volumes/\(escaped(name))")
+        } catch let error as ContainerUnixHTTPClientError {
+            guard case .server(status: 404, message: _) = error else {
+                throw error
+            }
+            let volumes = try await listVolumes()
+            guard !volumes.contains(where: { $0.name == name }) else {
+                throw error
+            }
+        }
     }
 }
 
