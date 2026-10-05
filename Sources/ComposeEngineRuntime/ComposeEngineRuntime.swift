@@ -192,7 +192,7 @@ extension EngineRuntimeProvider: ComposeRuntimeLifecycleManaging {
             fields.append("t=\(timeoutInSeconds)")
         }
         let suffix = fields.isEmpty ? "" : "?" + fields.joined(separator: "&")
-        try await request(.post, "/v1.53/containers/\(escaped(id))/stop\(suffix)")
+        try await requestContainerCleanup(.post, "/v1.53/containers/\(escaped(id))/stop\(suffix)", id: id)
     }
 
     public func restartContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws {
@@ -224,7 +224,7 @@ extension EngineRuntimeProvider: ComposeRuntimeLifecycleManaging {
     }
 
     public func deleteContainer(id: String, force: Bool) async throws {
-        try await request(.delete, "/v1.53/containers/\(escaped(id))?force=\(force ? 1 : 0)&v=1")
+        try await requestContainerCleanup(.delete, "/v1.53/containers/\(escaped(id))?force=\(force ? 1 : 0)&v=1", id: id)
     }
 }
 
