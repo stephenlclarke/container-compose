@@ -73,6 +73,8 @@ exits, keeps known-immediate starts off the speculative prewarm path, and
 serializes cctl VM-backed integration tests so concurrent validation cannot
 collide in the per-user runtime namespace.
 
+The stock Engine adapter now supports repeated Compose network creation and deletion: it reuses an existing network only after checking its identity, labels, and internal setting, and accepts a missing network only after inventory proves its absence. Conflicting ownership, ambiguous identities, malformed responses, and unavailable inventory remain errors. The focused network regression suite passes; fresh signed gateway consumption and full Devcontainer qualification remain required before distribution.
+
 The current matched stack also preserves Kubernetes control-plane discovery
 across VM address changes; skips unreadable image-list entries; accepts colons
 in published host paths; preserves named host identities in machine runs;

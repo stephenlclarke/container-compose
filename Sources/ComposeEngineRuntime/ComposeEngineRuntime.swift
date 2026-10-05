@@ -229,29 +229,6 @@ extension EngineRuntimeProvider: ComposeRuntimeLifecycleManaging {
 }
 
 extension EngineRuntimeProvider: ComposeRuntimeResourceManaging {
-    public func createNetwork(_ request: ComposeNetworkCreateRequest) async throws {
-        let addressing = EngineIPAMConfig(
-            subnet: request.ipv4Subnet,
-            range: request.ipv4AllocationRange,
-            gateway: request.ipv4Gateway,
-            reserved: request.ipv4ReservedAddresses,
-        )
-        let payload = EngineNetworkCreateRequest(
-            name: request.name,
-            internalNetwork: request.isInternal,
-            enableIPv4: request.enableIPv4,
-            enableIPv6: request.enableIPv6,
-            options: request.driverOpts,
-            labels: request.labels,
-            ipam: addressing.isEmpty ? nil : EngineIPAM(config: [addressing]),
-        )
-        let _: EngineNetworkCreateResponse = try await self.request(.post, "/v1.53/networks/create", body: payload)
-    }
-
-    public func deleteNetwork(id: String) async throws {
-        try await request(.delete, "/v1.53/networks/\(escaped(id))")
-    }
-
     public func createVolume(_ request: ComposeVolumeCreateRequest) async throws {
         let payload = EngineVolumeCreateRequest(
             name: request.name,
@@ -804,44 +781,6 @@ private struct EngineEndpoint: Decodable {
 private struct EngineWaitResponse: Decodable {
     let statusCode: Int32
     enum CodingKeys: String, CodingKey { case statusCode = "StatusCode" }
-}
-
-private struct EngineNetworkCreateRequest: Encodable {
-    let name: String
-    let internalNetwork: Bool
-    let enableIPv4: Bool?
-    let enableIPv6: Bool?
-    let options: [String: String]
-    let labels: [String: String]
-    let ipam: EngineIPAM?
-    enum CodingKeys: String, CodingKey {
-        case name = "Name", internalNetwork = "Internal", enableIPv4 = "EnableIPv4", enableIPv6 = "EnableIPv6"
-        case options = "Options", labels = "Labels", ipam = "IPAM"
-    }
-}
-
-private struct EngineIPAM: Encodable {
-    let config: [EngineIPAMConfig]
-    enum CodingKeys: String, CodingKey { case config = "Config" }
-}
-
-private struct EngineIPAMConfig: Encodable {
-    let subnet: String?
-    let range: String?
-    let gateway: String?
-    let reserved: [String]
-    var isEmpty: Bool {
-        subnet == nil && range == nil && gateway == nil && reserved.isEmpty
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case subnet = "Subnet", range = "IPRange", gateway = "Gateway", reserved = "AuxiliaryAddresses"
-    }
-}
-
-private struct EngineNetworkCreateResponse: Decodable {
-    let id: String
-    enum CodingKeys: String, CodingKey { case id = "Id" }
 }
 
 private struct EngineVolumeCreateRequest: Encodable {
