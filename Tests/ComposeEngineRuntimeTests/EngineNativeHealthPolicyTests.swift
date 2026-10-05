@@ -174,3 +174,92 @@ private struct HealthPolicyResponder: DockerHTTPResponder {
         )
     }
 }
+
+@Suite("Selected Engine readiness identity")
+struct SelectedEngineReadinessIdentityTests {
+    @Test("selected Engine probes provider info after source admission", arguments: ["ready", "unavailable", "wrong-info"])
+    func providerReachability(mode: String) async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let server = fixture.server(SelectedReadinessResponder(mode: mode))
+        try await server.start()
+        do {
+            if mode == "ready" {
+                try await ComposeEngineRuntime.verifySelectedReadiness(
+                    socketPath: fixture.socketPath,
+                    expectedCommit: "780a86b995ac4cb0985db97f38875fdc6e33d16b", expectedDistribution: "custom",
+                )
+            } else {
+                await #expect(throws: (any Error).self) {
+                    try await ComposeEngineRuntime.verifySelectedReadiness(
+                        socketPath: fixture.socketPath,
+                        expectedCommit: "780a86b995ac4cb0985db97f38875fdc6e33d16b", expectedDistribution: "custom",
+                    )
+                }
+            }
+        } catch {
+            try? await server.shutdown()
+            throw error
+        }
+        try await server.shutdown()
+    }
+
+    @Test("selected gateway rejects stale source wrong provider and malformed identity",
+          arguments: ["matching", "wrong-commit", "wrong-provider", "wrong-distribution", "missing", "duplicate", "malformed"])
+    func selectedIdentity(mutation: String) throws {
+        let commit = "780a86b995ac4cb0985db97f38875fdc6e33d16b"
+        var details = ["Provider": "container-compose", "Distribution": "custom"]
+        if mutation == "wrong-provider" {
+            details["Provider"] = "stock"
+        }
+        if mutation == "wrong-distribution" {
+            details["Distribution"] = "apple"
+        }
+        var engines: [[String: Any]] = [["Name": "Engine", "Details": details]]
+        if mutation == "missing" {
+            engines = []
+        }
+        if mutation == "duplicate" {
+            engines += engines
+        }
+        let object: [String: Any] = [
+            "GitCommit": mutation == "wrong-commit" ? "880a86b995ac4cb0985db97f38875fdc6e33d16b" : commit,
+            "Version": "0.0.0", "Components": engines,
+        ]
+        let data = mutation == "malformed" ? Data("{}".utf8) : try JSONSerialization.data(withJSONObject: object)
+        if mutation == "matching" {
+            #expect(try ComposeEngineRuntime.validateSelectedVersion(
+                data, expectedCommit: commit, expectedDistribution: "custom",
+            ) == "0.0.0")
+        } else {
+            #expect(throws: (any Error).self) {
+                try ComposeEngineRuntime.validateSelectedVersion(
+                    data, expectedCommit: commit, expectedDistribution: "custom",
+                )
+            }
+        }
+    }
+}
+
+private struct SelectedReadinessResponder: DockerHTTPResponder {
+    let mode: String
+    func respond(to request: DockerHTTPRequest) async -> DockerHTTPResponse {
+        let body: String
+        if request.target == "/version" {
+            body = """
+            {"GitCommit":"780a86b995ac4cb0985db97f38875fdc6e33d16b","Version":"0.0.0",
+             "Components":[{"Name":"Engine","Details":{"Provider":"container-compose","Distribution":"custom"}}]}
+            """
+        } else if request.target == "/info" {
+            if mode == "unavailable" {
+                return .empty(status: 503)
+            }
+            body = mode == "wrong-info" ? #"{"ServerVersion":"stale"}"# : #"{"ServerVersion":"0.0.0"}"#
+        } else {
+            return .empty(status: 404)
+        }
+        return DockerHTTPResponse(
+            status: 200, headers: ["Content-Type": "application/json"], body: .bytes(Data(body.utf8)),
+        )
+    }
+}

@@ -93,10 +93,15 @@ enum ContainerPackageCompatibility {
     struct RuntimeSelection {
         let profile: RuntimeProfile?
         let backend: RuntimeBackend
+        let engineReadiness: ((String, String) async throws -> Void)?
 
-        init(profile: RuntimeProfile? = nil, backend: RuntimeBackend = compiledRuntimeBackend) {
+        init(
+            profile: RuntimeProfile? = nil, backend: RuntimeBackend = compiledRuntimeBackend,
+            engineReadiness: ((String, String) async throws -> Void)? = nil,
+        ) {
             self.profile = profile
             self.backend = backend
+            self.engineReadiness = engineReadiness
         }
     }
 
@@ -251,7 +256,7 @@ extension ContainerPackageCompatibility {
             }
             if let failure = try await runtimeReadinessFailure(
                 components: components, lane: lane, runtimeProfile: runtimeProfile,
-                runtimeBackend: runtimeSelection.backend, run: run,
+                runtimeSelection: runtimeSelection, run: run,
             ) {
                 return failure
             }
@@ -363,36 +368,6 @@ extension ContainerPackageCompatibility {
             lane: lane,
             detected: ["runtime profile: stock cannot select the compiled native API backend"],
         )
-    }
-
-    private static func runtimeReadinessFailure(
-        components: [ContainerSystemVersionComponent],
-        lane: String,
-        runtimeProfile: RuntimeProfile,
-        runtimeBackend: RuntimeBackend,
-        run: ([String]) async throws -> Data,
-    ) async throws -> String? {
-        if runtimeBackend == .nativeAPI || runtimeProfile == .enhanced {
-            if let failure = liveAPIIdentityFailure(components: components, backend: runtimeBackend) {
-                return failure
-            }
-            if runtimeBackend == .nativeAPI {
-                return nil
-            }
-        }
-        do {
-            _ = try await run(["system", "status"])
-            return nil
-        } catch let interruption as ContainerPackagePreflightInterruption {
-            throw interruption
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            return serviceGuidance(
-                lane: lane, runtimeProfile: runtimeProfile,
-                detected: ["container system status: \(error.localizedDescription)"],
-            )
-        }
     }
 
     private static func selectedRuntimeProfile() throws -> RuntimeProfile {
@@ -828,7 +803,7 @@ extension ContainerPackageCompatibility {
         return true
     }
 
-    private static func serviceGuidance(
+    static func serviceGuidance(
         lane: String,
         runtimeProfile: RuntimeProfile,
         detected: [String],

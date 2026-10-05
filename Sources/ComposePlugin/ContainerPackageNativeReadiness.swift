@@ -14,7 +14,11 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 import Foundation
+#if !CONTAINER_COMPOSE_ENHANCED_RUNTIME
+    import ComposeEngineRuntime
+#endif
 
 extension ContainerPackageCompatibility {
     /// System-version emits the API row only after a bounded live health ping succeeds.
@@ -86,5 +90,77 @@ extension ContainerPackageCompatibility.ExpectedRuntimeRevisions {
             return .init()
         }
         return .init(container: container, containerization: containerization)
+    }
+}
+
+extension ContainerPackageCompatibility {
+    static func runtimeReadinessFailure(
+        components: [ContainerSystemVersionComponent],
+        lane: String,
+        runtimeProfile: RuntimeProfile,
+        runtimeSelection: RuntimeSelection,
+        run: ([String]) async throws -> Data,
+    ) async throws -> String? {
+        let runtimeBackend = runtimeSelection.backend
+        let selectedEngine = runtimeProfile == .enhanced && (
+            runtimeSelection.engineReadiness != nil
+                || ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_ENGINE_SOCKET"] != nil
+        )
+        if runtimeBackend == .nativeAPI || runtimeProfile == .enhanced {
+            if let failure = liveAPIIdentityFailure(components: components, backend: runtimeBackend) {
+                return failure
+            }
+            if runtimeBackend == .nativeAPI {
+                return nil
+            }
+        }
+        do {
+            if runtimeProfile == .enhanced,
+               let container = components.first(where: { $0.appName == "container" }),
+               let commit = container.commit, let distribution = container.distribution
+            {
+                if let check = runtimeSelection.engineReadiness {
+                    try await check(commit, distribution)
+                    return nil
+                }
+                if try await selectedEngineReadiness(commit: commit, distribution: distribution) {
+                    return nil
+                }
+            }
+            _ = try await run(["system", "status"])
+            return nil
+        } catch let interruption as ContainerPackagePreflightInterruption {
+            throw interruption
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            if selectedEngine {
+                return """
+                container-compose requires the selected enhanced Engine endpoint and its provider to be ready.
+                Restore the selected provider, then run this command again.
+
+                Detected selected Engine readiness:
+                - \(error.localizedDescription)
+                """
+            }
+            return serviceGuidance(
+                lane: lane, runtimeProfile: runtimeProfile,
+                detected: ["container system status: \(error.localizedDescription)"],
+            )
+        }
+    }
+
+    private static func selectedEngineReadiness(commit: String, distribution: String) async throws -> Bool {
+        guard let socket = ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_ENGINE_SOCKET"] else {
+            return false
+        }
+        #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
+            throw ComposeError.unsupported("Engine readiness is unavailable in the compiled native API backend")
+        #else
+            try await ComposeEngineRuntime.verifySelectedReadiness(
+                socketPath: socket, expectedCommit: commit, expectedDistribution: distribution,
+            )
+            return true
+        #endif
     }
 }

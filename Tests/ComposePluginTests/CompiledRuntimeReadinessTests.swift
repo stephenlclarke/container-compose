@@ -285,3 +285,59 @@ struct CompiledRuntimeReadinessTests {
     }
 
 }
+
+extension CompiledRuntimeReadinessTests {
+    @Test("selected enhanced Engine readiness replaces unrelated vendor status", arguments: [true, false])
+    func selectedEnginePreflight(responsive: Bool) async throws {
+        var checks = 0
+        var calls: [[String]] = []
+        let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+            arguments: ["up"], lane: "main",
+            runtimeSelection: .init(profile: .enhanced, backend: .engine, engineReadiness: { commit, distribution in
+                checks += 1
+                #expect(commit == "780a86b995ac4cb0985db97f38875fdc6e33d16b")
+                #expect(distribution == "custom")
+                if !responsive {
+                    throw ContainerPackageCompatibilityError.commandFailed("selected provider is unavailable")
+                }
+            }),
+            run: { arguments in
+                calls.append(arguments)
+                #expect(arguments != ["system", "status"])
+                return try Self.versionData()
+            },
+        )
+        #expect(checks == 1)
+        #expect((failure == nil) == responsive)
+        #expect(calls == [["system", "version", "--format", "json"]])
+    }
+
+    @Test("offline commands skip selected Engine readiness", arguments: [["config"], ["version"], ["--dry-run", "up"]])
+    func selectedEngineOffline(arguments: [String]) async throws {
+        let failure = try await ContainerPackageCompatibility.compatibilityFailure(
+            arguments: arguments, lane: "main",
+            runtimeSelection: .init(profile: .enhanced, backend: .engine, engineReadiness: { _, _ in
+                Issue.record("Offline command queried selected Engine")
+                throw CancellationError()
+            }),
+            run: { _ in
+                Issue.record("Offline command queried runtime metadata")
+                throw CancellationError()
+            },
+        )
+        #expect(failure == nil)
+    }
+
+    @Test("selected Engine readiness propagates cancellation")
+    func selectedEngineCancellation() async {
+        await #expect(throws: CancellationError.self) {
+            try await ContainerPackageCompatibility.compatibilityFailure(
+                arguments: ["up"], lane: "main",
+                runtimeSelection: .init(profile: .enhanced, backend: .engine, engineReadiness: { _, _ in
+                    throw CancellationError()
+                }),
+                run: { _ in try Self.versionData() },
+            )
+        }
+    }
+}

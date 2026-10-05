@@ -15,6 +15,8 @@
 //===----------------------------------------------------------------------===//
 
 import ComposeCore
+import ContainerEngineWire
+import ContainerUnixHTTPClient
 import Foundation
 
 extension EngineRuntimeProvider {
@@ -99,4 +101,55 @@ private struct NativeHealthComponent: Decodable {
     let name: String
     let details: [String: String]
     enum CodingKeys: String, CodingKey { case name = "Name", details = "Details" }
+}
+
+extension ComposeEngineRuntime {
+    /// Probes the explicitly selected gateway and its private provider, never an unrelated vendor service.
+    public static func verifySelectedReadiness(
+        socketPath: String, expectedCommit: String, expectedDistribution: String,
+    ) async throws {
+        try Task.checkCancellation()
+        let client = try ContainerUnixHTTPClient(socketPath: socketPath, timeoutSeconds: 2)
+        let version = try await client.send(
+            DockerHTTPRequest(method: .get, target: "/version"), maximumBodyBytes: 64 * 1024,
+        )
+        try Task.checkCancellation()
+        guard version.status == 200 else {
+            throw ComposeError.unsupported("Selected Engine version probe failed")
+        }
+        let serverVersion = try validateSelectedVersion(
+            version.body, expectedCommit: expectedCommit, expectedDistribution: expectedDistribution,
+        )
+        let info = try await client.send(
+            DockerHTTPRequest(method: .get, target: "/info"), maximumBodyBytes: 64 * 1024,
+        )
+        try Task.checkCancellation()
+        guard info.status == 200,
+              let object = try JSONSerialization.jsonObject(with: info.body) as? [String: Any],
+              object["ServerVersion"] as? String == serverVersion
+        else {
+            throw ComposeError.unsupported("Selected Engine provider returned malformed system information")
+        }
+    }
+
+    static func validateSelectedVersion(
+        _ data: Data, expectedCommit: String, expectedDistribution: String,
+    ) throws -> String {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = object["Version"] as? String, !version.isEmpty,
+              object["GitCommit"] as? String == expectedCommit,
+              let components = object["Components"] as? [[String: Any]]
+        else {
+            throw ComposeError.unsupported("Selected Engine source identity does not match the admitted runtime")
+        }
+        let engines = components.filter { $0["Name"] as? String == "Engine" }
+        guard engines.count == 1,
+              let details = engines[0]["Details"] as? [String: String],
+              details["Provider"] == "container-compose", details["Distribution"] == expectedDistribution
+        else {
+            throw ComposeError.unsupported("Selected Engine provider does not match the admitted enhanced runtime")
+        }
+        return version
+    }
+
 }
