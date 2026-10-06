@@ -465,6 +465,20 @@ def transaction(core, context, arguments):
                 for name in sorted(self.trust_attempts):
                     self.call('untrust', '--formula', self.tap + '/' + name, timeout=120)
 
+        def cleanup_and_restore(self):
+            try:
+                return super().cleanup_and_restore()
+            except BaseException as error:
+                chain = []
+                current = error
+                while current is not None and len(chain) < 8:
+                    message, truncated = redacted_command_output(str(current))
+                    chain.append({'type':type(current).__name__, 'message':message, 'truncated':truncated})
+                    current = current.__cause__
+                output = self.receipt_output.with_name(self.receipt_output.stem + '.cleanup-error.json')
+                core.write_receipt(output, {'scope':'private-installation-cleanup-diagnostic', 'exceptionChain':chain})
+                raise
+
         def receipt(self, status, error_code, original_failure_code=None):
             result = super().receipt(status, error_code, original_failure_code)
             result.update(scope='compose-homebrew-formula-pair-installation-test', runtimeSourceCommit=RUNTIME_SOURCE,
