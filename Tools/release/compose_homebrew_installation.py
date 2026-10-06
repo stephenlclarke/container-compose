@@ -17,6 +17,7 @@ import re
 import shutil
 import stat
 import subprocess
+import time
 
 FORMULAE = {'container', 'container-current', 'container-compose', 'container-compose-current'}
 RUNTIME_SHA = 'd4a9bd8e9d332b0bfbf67fc5b0b3a99c977b66d6cc50f5954b36f3263a2cf696'
@@ -132,6 +133,66 @@ def foreign_job_identity(launchd, label):
     return fields
 
 
+def normalized_foreign_registrations(rows):
+    """Collapse only OS Spotlight shared-worker instances with exact identity."""
+    result = {}
+    instance = re.compile(r'com\.apple\.mdworker\.shared\.[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}')
+    expected = {'domain':f'user/{os.getuid()}',
+                'path':'/System/Library/LaunchAgents/com.apple.mdworker.shared.plist',
+                'program':'/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared',
+                'type':'LaunchAgent'}
+    for label, fields in rows.items():
+        if fields.get('label') != label:
+            raise ValueError('Foreign registration label differs')
+        if instance.fullmatch(label):
+            if set(fields) != {'label', *expected} or any(fields[k] != value for k,value in expected.items()):
+                raise ValueError('Spotlight instance has an unaccounted registration definition')
+            result['<OS Spotlight shared-worker instances>'] = {'label':'com.apple.mdworker.shared', **expected}
+        else:
+            result[label] = fields
+    return result
+
+
+def command_failure_diagnostic(arguments, error):
+    """Expose the failed step/cause class without retaining output or secrets."""
+    safe = []
+    sensitive = False
+    for argument in arguments:
+        value = '<redacted>' if sensitive or not re.fullmatch(r'[A-Za-z0-9/_.=-]{1,256}', argument) else argument
+        if re.search(r'(?i)(token|password|secret|credential|authorization)', argument):
+            value = '<redacted>'
+            sensitive = True
+        else:
+            sensitive = False
+        safe.append(value)
+    cause = error.__cause__ or error
+    value = {'arguments':safe, 'exceptionType':type(error).__name__, 'causeType':type(cause).__name__}
+    if isinstance(cause, subprocess.CalledProcessError):
+        value['exitCode'] = cause.returncode
+        # Classify known Brew errors without copying any stderr, URLs, tokens,
+        # arbitrary messages, environment, or command output into a receipt.
+        stderr = cause.stderr or ''
+        if isinstance(stderr, bytes):stderr = stderr.decode('utf-8', errors='replace')
+        markers = [('dependency-blocked','because it is required by'), ('checksum-mismatch','SHA256 mismatch'),
+                   ('formula-test-failed','test failed'), ('formula-not-found','No available formula'),
+                   ('trust-required','not trusted')]
+        value['causeCategory'] = next((name for name,text in markers if text.lower() in stderr.lower()), 'brew-command-failed')
+        excerpt = stderr[:8192]
+        excerpt = re.sub(r'[A-Za-z][A-Za-z0-9+.-]*://[^\s]+', '<url>', excerpt)
+        excerpt = re.sub(r'(?i)\bbearer\s+[^\s]+', 'Bearer <redacted>', excerpt)
+        excerpt = re.sub(r'(?i)(authorization|bearer|token|password|secret|credential|access[_-]?key)([ :=]+|\s+)([^\s]+)', r'\1 <redacted>', excerpt)
+        excerpt = re.sub(r'\b[A-Za-z_][A-Za-z0-9_]*=([^\s]+)', '<assignment-redacted>', excerpt)
+        excerpt = re.sub(r'[A-Za-z0-9_+/=-]{40,}', '<long-value-redacted>', excerpt)
+        value['privateStderrExcerpt'] = excerpt[:4096]
+        value['stderrTruncated'] = len(stderr) > 4096
+    elif isinstance(cause, subprocess.TimeoutExpired):
+        value['timeoutSeconds'] = cause.timeout
+        value['causeCategory'] = 'brew-command-timeout'
+    else:
+        value['causeCategory'] = 'installation-command-failed'
+    return value
+
+
 def transaction(core, context, arguments):
     """Customize a private module instance; the maintained module is untouched."""
     core.FORMULAE = FORMULAE
@@ -147,7 +208,8 @@ def transaction(core, context, arguments):
     class PairServices(core.LaunchdServices):
         def capture(self, prefix: Path, kegs: dict[str, list[Path]]) -> list[dict]:
                 labels = self.launchd.labels()
-                self.other_registrations = {label:foreign_job_identity(self.launchd, label) for label in labels if label not in core.SERVICE_LABELS.values()}
+                self.other_registration_instances = {label:foreign_job_identity(self.launchd, label) for label in labels if label not in core.SERVICE_LABELS.values()}
+                self.other_registrations = normalized_foreign_registrations(self.other_registration_instances)
                 for formula, label in core.SERVICE_LABELS.items():
                     if label not in labels:
                         self.absent.append(label)
@@ -201,7 +263,7 @@ def transaction(core, context, arguments):
         def verify(self):
             super().verify()
             current = {label:foreign_job_identity(self.launchd, label) for label in self.launchd.labels() if label not in core.SERVICE_LABELS.values()}
-            if current != self.other_registrations:
+            if normalized_foreign_registrations(current) != self.other_registrations:
                 raise core.InstallationError('Unrelated launchd registration inventory changed')
             if self.signature_inventory() != self.signatures:
                 raise core.InstallationError('Restored service executable/signature differs')
@@ -249,6 +311,24 @@ def transaction(core, context, arguments):
     core.copy_keg = copy_keg
 
     class Pair(core.InstallationTransaction):
+        def call(self, *arguments, timeout=900):
+            self.command_sequence = getattr(self, 'command_sequence', 0) + 1
+            path = self.receipt_output.with_name(self.receipt_output.stem + f'.command-{self.command_sequence:04d}.json')
+            started = time.monotonic()
+            pending = {'arguments':command_failure_diagnostic(arguments, RuntimeError())['arguments'],
+                       'status':'started', 'timeoutSeconds':timeout}
+            core.write_receipt(path, pending)
+            try:
+                result = super().call(*arguments, timeout=timeout)
+            except BaseException as error:
+                failure = command_failure_diagnostic(arguments, error)
+                core.write_receipt(path, {**pending, **failure, 'status':'failed',
+                                          'elapsedSeconds':time.monotonic()-started})
+                raise
+            core.write_receipt(path, {**pending, 'status':'passed', 'returnStatus':0,
+                                      'elapsedSeconds':time.monotonic()-started})
+            return result
+
         @property
         def formula(self):
             return getattr(self, '_selected_formula', 'container-compose')
@@ -262,6 +342,7 @@ def transaction(core, context, arguments):
             manifest = json.loads(manifest_path.read_bytes())
             manifest['serviceExecutableSignatures'] = self.service.signatures
             manifest['otherLaunchdRegistrations'] = self.service.other_registrations
+            manifest['otherLaunchdRegistrationInstances'] = getattr(self.service, 'other_registration_instances', {})
             core.write_receipt(manifest_path, manifest)
             self.backup_sha = sha(manifest_path.read_bytes())
             core.sync_tree(self.backup)

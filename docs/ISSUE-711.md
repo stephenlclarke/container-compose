@@ -25,3 +25,5 @@ The actual Homebrew preflight exposed non-plist macOS login/background registrat
 Installation correction: [PR 713](https://github.com/stephenlclarke/container-compose/pull/713).
 
 The launchd list also includes per-user jobs that are absent from the GUI domain. The adapter now tries the per-user domain only after an explicit service-not-found response and records the successful domain as part of registration identity. Transport failures and absence in both domains still reject; three additional regressions cover this distinction.
+
+Natural turnover of the exact system Spotlight shared-worker UUID instances is compared by its verified persistent definition. Every other registration retains exact identity checks. The adapter also retains private, bounded and redacted command diagnostics for failed Homebrew steps. All 32 focused installation/restoration/parser/diagnostic regressions pass; actual installation and restoration remain mandatory before stable promotion.
