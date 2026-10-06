@@ -1,0 +1,19 @@
+# Issue 711: finalize qualified Bazel Compose artifacts
+
+[GitHub issue](https://github.com/stephenlclarke/container-compose/issues/711)
+
+## Problem
+
+The layered Compose workflow can qualify and publish a signed prerelease, but cannot finish the stable Homebrew release from those admitted bytes. The older stable path rebuilds the native stack and has a different release authority.
+
+Add a narrow Bazel stable finalizer that preserves qualified executable bytes, supplements reviewed notices and source availability, notarizes the final distribution, publishes benchmark/parity provenance, verifies real GitHub downloads, tests the matched Homebrew formula pair with exact baseline restoration, and promotes the same immutable release. Keep qualification source and release-tooling commits distinct. Historical failed attempts must remain failed evidence.
+
+Validation must include altered payload/source rejection, unknown notary/publication reconciliation, partial installation restoration, real downloaded installation tests, and unchanged lower artifact hashes. Heavy validation runs locally; existing exact-source GitHub code-quality results remain part of admission.
+
+## Acceptance
+
+A stable/latest immutable GitHub release must retain exact qualified executable bytes and current benchmark/parity provenance. The matched Container runtime must remain unchanged. Actual downloads, both Homebrew tests, full baseline restoration and atomic tested formula publication must pass before promotion.
+
+## Scope
+
+The release helpers and installation adapter complete the existing enhanced qualification. Runtime optimization and a new build-system migration are outside this release.
