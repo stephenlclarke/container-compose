@@ -399,8 +399,11 @@ def transaction(core, context, arguments):
                 self.call('trust', '--formula', full, timeout=120)
                 # The imperative owned-keg checks cannot be expressed by the
                 # declarative post-install DSL; keep every other audit enabled.
-                audit_options = ('--except-cops=FormulaAudit/InstallSteps',) if name == 'container' else ()
-                self.call('audit', '--formula', '--strict', '--online', *audit_options, full, timeout=300)
+                if name == 'container':
+                    self.call('style', '--formula', '--except-cops=FormulaAudit/InstallSteps', full, timeout=300)
+                    self.call('audit', '--formula', '--strict', '--online', '--skip-style', full, timeout=300)
+                else:
+                    self.call('audit', '--formula', '--strict', '--online', full, timeout=300)
                 self.call('fetch', '--formula', '--force', full)
                 # Public formula post_install contains a broad launchd stop.
                 # Skip it; install only its exact owned plugin link below.
