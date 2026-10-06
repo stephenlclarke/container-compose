@@ -58,6 +58,15 @@ class SpotlightTests(unittest.TestCase):
                 return SimpleNamespace(returncode=self.status,stdout=b'')
         with self.assertRaises(ValueError):M.foreign_job_identity(Launchd(113),key)
         with self.assertRaises(RuntimeError):M.foreign_job_identity(Launchd(5),key)
+    def test_application_instances_bind_to_the_exact_persistent_os_definition(self):
+        base='com.apple.mdworker.application'
+        label=base+'.01000000-0000-0000-0000-000000000000'
+        _,row=self.row('10000000-0300-0000-0000-000000000000')
+        row={**row,'label':base,'path':f'/System/Library/LaunchAgents/{base}.plist'}
+        before={base:row}
+        self.assertEqual(M.normalized_foreign_registrations(before),M.normalized_foreign_registrations({**before,label:{**row,'label':label}}))
+        with self.assertRaises(ValueError):M.normalized_foreign_registrations({**before,label:{**row,'label':label,'program':'/foreign'}})
+
     def test_private_diagnostic_has_step_exit_and_redacted_bounded_stderr(self):
         cause=subprocess.CalledProcessError(1,['brew'],output='Audit: use stable resource naming TOKEN=stdoutsecret\n',stderr='Error: because it is required by dependency\nTOKEN=abcdef password: abcdef Authorization: Bearer ghsecret https://user:secret@example.test/token?access=abc\n'+'x'*9000)
         error=RuntimeError('safe wrapper');error.__cause__=cause

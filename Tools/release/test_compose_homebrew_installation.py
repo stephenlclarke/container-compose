@@ -31,6 +31,13 @@ class PairAdmissionTests(unittest.TestCase):
                        'container CLI version 0.0.0 (commit: f86fea2) unexpected']:
             with self.assertRaises(ValueError):M.validate_runtime_product(output,ctx)
 
+    def test_runtime_build_metadata_preserves_exact_version_and_source(self):
+        ctx,_=self.fixture()
+        value='container CLI version 0.0.0 (build: release, builder-shim: registry@sha256:123, commit: f86fea2, distribution: custom)'
+        self.assertEqual(M.validate_runtime_product(value,ctx)['sourceCommit'],M.RUNTIME_SOURCE)
+        for bad in [value.replace('f86fea2','aaaaaaa'),value.replace('commit: f86fea2','commit: f86fea2, commit: f86fea2'),value+' suffix']:
+            with self.assertRaises(ValueError):M.validate_runtime_product(bad,ctx)
+
     def test_source_build_binary_hash_cannot_substitute_for_signed_payload(self):
         ctx,texts=self.fixture();ctx['formulae']['container']['binarySHA256']='4'*64
         with self.assertRaises(ValueError):M.validate_pair(ctx,texts)

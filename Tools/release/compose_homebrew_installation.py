@@ -91,9 +91,17 @@ def validate_pair(context, texts):
 
 
 def validate_runtime_product(output, context):
-    match = re.fullmatch(r'container CLI version ([0-9]+\.[0-9]+\.[0-9]+) \(commit:?\s*([0-9a-f]{7,40})\)', output.strip())
-    if (match is None or match.group(1) != context['runtimeProductVersion']
-            or match.group(2) != RUNTIME_SOURCE[:len(match.group(2))]):
+    match = re.fullmatch(r'container CLI version ([0-9]+\.[0-9]+\.[0-9]+) \(([^()\n]+)\)', output.strip())
+    if match is None or match.group(1) != context['runtimeProductVersion']:
+        raise ValueError('Installed runtime embedded product/source differs')
+    fields = {}
+    for item in match.group(2).split(', '):
+        field = re.fullmatch(r'([a-z][a-z-]*):?\s+(.+)', item)
+        if field is None or field.group(1) in fields:
+            raise ValueError('Runtime build metadata is ambiguous')
+        fields[field.group(1)] = field.group(2)
+    commit = fields.get('commit', '')
+    if re.fullmatch(r'[0-9a-f]{7,40}', commit) is None or commit != RUNTIME_SOURCE[:len(commit)]:
         raise ValueError('Installed runtime embedded product/source differs')
     return {'productVersion': match.group(1), 'sourceCommit': RUNTIME_SOURCE}
 
@@ -114,11 +122,14 @@ def signed_binary(path, expected, team):
 
 
 SPOTLIGHT_BASE = 'com.apple.mdworker.shared'
-SPOTLIGHT_INSTANCE = re.compile(r'com\.apple\.mdworker\.shared\.[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}')
+SPOTLIGHT_BASES = (SPOTLIGHT_BASE, 'com.apple.mdworker.application')
+SPOTLIGHT_INSTANCE = re.compile(r'com\.apple\.mdworker\.(?:shared|application)\.[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}')
 
-def verified_spotlight_base(fields):
-    expected = {'label':SPOTLIGHT_BASE, 'domain':f'user/{os.getuid()}',
-                'path':'/System/Library/LaunchAgents/com.apple.mdworker.shared.plist',
+def verified_spotlight_base(fields, base=SPOTLIGHT_BASE):
+    if base not in SPOTLIGHT_BASES:
+        raise ValueError('Unadmitted Spotlight family')
+    expected = {'label':base, 'domain':f'user/{os.getuid()}',
+                'path':f'/System/Library/LaunchAgents/{base}.plist',
                 'program':'/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared',
                 'type':'LaunchAgent'}
     if fields != expected:
@@ -137,7 +148,8 @@ def foreign_job_identity(launchd, label):
         domain = 'user/' + launchd.domain.split('/', 1)[1]
         result = launchd.command('print', f'{domain}/{label}')
     if result.returncode == 113 and SPOTLIGHT_INSTANCE.fullmatch(label):
-        base = verified_spotlight_base(foreign_job_identity(launchd, SPOTLIGHT_BASE))
+        base_label = label.rsplit('.', 1)[0]
+        base = verified_spotlight_base(foreign_job_identity(launchd, base_label), base_label)
         return {'label':label, 'absentWithVerifiedBase':base}
     if result.returncode != 0:
         raise RuntimeError('Cannot inspect unrelated launchd registration')
@@ -154,20 +166,21 @@ def foreign_job_identity(launchd, label):
 def normalized_foreign_registrations(rows):
     """Bind exact OS shared-worker instances to their persistent base job."""
     result = {}
-    base = rows.get(SPOTLIGHT_BASE)
-    if base is not None:
-        result[SPOTLIGHT_BASE] = verified_spotlight_base(base)
+    for base in SPOTLIGHT_BASES:
+        if base in rows:
+            result[base] = verified_spotlight_base(rows[base], base)
     for label, fields in rows.items():
         if fields.get('label') != label:
             raise ValueError('Foreign registration label differs')
         if SPOTLIGHT_INSTANCE.fullmatch(label):
+            base = label.rsplit('.', 1)[0]
             if set(fields) == {'label', 'absentWithVerifiedBase'}:
-                canonical = verified_spotlight_base(fields['absentWithVerifiedBase'])
+                canonical = verified_spotlight_base(fields['absentWithVerifiedBase'], base)
             else:
-                canonical = verified_spotlight_base({**fields, 'label':SPOTLIGHT_BASE})
-            if base is None:
+                canonical = verified_spotlight_base({**fields, 'label':base}, base)
+            if base not in result:
                 raise ValueError('Spotlight instances lack their persistent base registration')
-            if canonical != result[SPOTLIGHT_BASE]:
+            if canonical != result[base]:
                 raise ValueError('Spotlight instance differs from persistent base')
         else:
             result[label] = fields

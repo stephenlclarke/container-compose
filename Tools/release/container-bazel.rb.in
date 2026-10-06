@@ -218,7 +218,9 @@ class Container < Formula
   end
 
   test do
-    assert_match "container CLI version 0.0.0 (commit: f86fea2)", shell_output("#{bin}/container --version")
+    version_output = shell_output("#{bin}/container --version")
+    assert_match "container CLI version 0.0.0 (", version_output
+    assert_match(/(?:\(|, )commit: f86fea2(?:, |\))/, version_output)
     assert_match "List running containers", shell_output("#{bin}/container list --help")
     assert_predicate bin/"container-engine", :executable?
     assert_predicate libexec/"container/helpers/container-semantic-helper", :executable?
