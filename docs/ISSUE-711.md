@@ -17,3 +17,5 @@ A stable/latest immutable GitHub release must retain exact qualified executable 
 ## Scope
 
 The release helpers and installation adapter complete the existing enhanced qualification. Runtime optimization and a new build-system migration are outside this release.
+
+Implementation: [PR 712](https://github.com/stephenlclarke/container-compose/pull/712).
