@@ -127,7 +127,12 @@ class RestorationTests(unittest.TestCase):
                     receipt=json.loads(args.receipt_output.read_bytes())
                     self.assertEqual(receipt['status'],'restoration-failed')
                     self.assertFalse(receipt['baselineRestored']);self.assertFalse(receipt['guardAbsent'])
-                    self.assertIsNotNone(tx.guard.owner);return
+                    self.assertIsNotNone(tx.guard.owner)
+                    diagnostic=json.loads(args.receipt_output.with_name('receipt.cleanup-error.json').read_text())
+                    self.assertEqual(diagnostic['scope'],'private-installation-cleanup-diagnostic')
+                    self.assertEqual(diagnostic['exceptionChain'][0]['type'],'InstallationError')
+                    self.assertIn('restoration failed',diagnostic['exceptionChain'][0]['message'])
+                    return
                 if failure is None:receipt=tx.run();self.assertEqual(receipt['status'],'passed-restored')
                 else:
                     with self.assertRaises(core.InstallationError):tx.run()
@@ -136,6 +141,14 @@ class RestorationTests(unittest.TestCase):
             self.assertEqual(before,after);self.assertIsNone(tx.guard.owner)
             self.assertEqual(receipt['beforeInventorySHA256'],receipt['afterInventorySHA256'])
             self.assertFalse(receipt['broadPostInstallStopExecuted'])
+            if failure is None:
+                for name in ['container','container-compose']:
+                    full=args.test_tap+'/'+name
+                    install=next(i for i,c in enumerate(brew.calls) if c[0]=='install' and c[-1]==full)
+                    post=brew.calls.index(('postinstall',full))
+                    test=brew.calls.index(('test',full))
+                    self.assertLess(install,post)
+                    self.assertLess(post,test)
             self.assertTrue(all('--skip-post-install' in call for call in brew.calls if call[0]=='install'))
     def test_corrupted_durable_backup_keeps_guard_and_rejects_success(self):self.exercise(corrupt_backup=True)
     def test_same_runtime_and_compose_versions_restore_exactly(self):self.exercise(same_version=True)

@@ -11,6 +11,8 @@ class Formula
   def prefix; fixture_prefix; end
   def ln_s(source,target); File.symlink(source,target); end
   def odie(message); raise message; end
+  # This fixture isolates plugin registration; signed-copy behavior has its own tests.
+  def resource(*); Object.new.tap { |value| def value.stage; end }; end
 end
 load File.join(__dir__, "container-bazel.rb.in")
 class RegistrationTest < Minitest::Test

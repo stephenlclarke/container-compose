@@ -337,3 +337,5 @@ The Apple-facing drafts under [docs/upstream/](docs/upstream/README.md) are curr
 
 This project uses the Apache License, Version 2.0, matching the license used by
 [`apple/container`](https://github.com/apple/container).
+
+The stable Bazel release formulas restore the exact notarized native binaries from immutable release resources after Homebrew relocation. `make bazel-compose-stable-tools-test` covers installation ordering, signed payload preservation and host restoration; successful real pair installation and restoration remains required before stable promotion.

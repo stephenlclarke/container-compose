@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import re
 
-TEMPLATE_SHA256='6b8412cb8213c1589c80591667e3d21a93e8f0e838ddaed2001e3c6c1f7ffbfb'
+TEMPLATE_SHA256='22065910bd23b00d04c9b926d449131d18dbb5c9f3fde93a03e4d1e576d02680'
 PLACEHOLDER='@RUNTIME_NOTICES_SHA256@'
 
 def render(data, notices_sha256):

@@ -17,6 +17,7 @@ import re
 import shutil
 import stat
 import subprocess
+import time
 
 FORMULAE = {'container', 'container-current', 'container-compose', 'container-compose-current'}
 RUNTIME_SHA = 'd4a9bd8e9d332b0bfbf67fc5b0b3a99c977b66d6cc50f5954b36f3263a2cf696'
@@ -74,8 +75,10 @@ def validate_pair(context, texts):
         raise ValueError('Runtime signed payload executable differs from qualified archive')
     if context['formulae']['container']['archiveSHA256'] != RUNTIME_SHA:
         raise ValueError('Stable runtime asset bytes differ from qualified archive')
-    if re.findall(r'^  version "([^"]*)"$', texts['container'], re.M) != [context['runtimeVersion']]:
-        raise ValueError('Runtime formula must preserve actual runtime product version')
+    runtime_versions = re.findall(r'^  version "([^"]*)"$', texts['container'], re.M)
+    if (runtime_versions != [context['runtimeVersion']]
+            and not (not runtime_versions and context['version'] == context['runtimeVersion'])):
+        raise ValueError('Runtime distribution version must be explicit or derived from the same release URL')
     if re.findall(r'^  version ', texts['container-compose'], re.M):
         raise ValueError('Stable Compose derives version from its release URL')
     if '  depends_on "stephenlclarke/tap/container"' not in texts['container-compose']:
@@ -88,9 +91,17 @@ def validate_pair(context, texts):
 
 
 def validate_runtime_product(output, context):
-    match = re.fullmatch(r'container CLI version ([0-9]+\.[0-9]+\.[0-9]+) \(commit:?\s*([0-9a-f]{7,40})\)', output.strip())
-    if (match is None or match.group(1) != context['runtimeProductVersion']
-            or match.group(2) != RUNTIME_SOURCE[:len(match.group(2))]):
+    match = re.fullmatch(r'container CLI version ([0-9]+\.[0-9]+\.[0-9]+) \(([^()\n]+)\)', output.strip())
+    if match is None or match.group(1) != context['runtimeProductVersion']:
+        raise ValueError('Installed runtime embedded product/source differs')
+    fields = {}
+    for item in match.group(2).split(', '):
+        field = re.fullmatch(r'([a-z][a-z-]*):?\s+(.+)', item)
+        if field is None or field.group(1) in fields:
+            raise ValueError('Runtime build metadata is ambiguous')
+        fields[field.group(1)] = field.group(2)
+    commit = fields.get('commit', '')
+    if re.fullmatch(r'[0-9a-f]{7,40}', commit) is None or commit != RUNTIME_SOURCE[:len(commit)]:
         raise ValueError('Installed runtime embedded product/source differs')
     return {'productVersion': match.group(1), 'sourceCommit': RUNTIME_SOURCE}
 
@@ -110,6 +121,119 @@ def signed_binary(path, expected, team):
         raise ValueError('Installed signing team differs')
 
 
+SPOTLIGHT_BASE = 'com.apple.mdworker.shared'
+SPOTLIGHT_BASES = (SPOTLIGHT_BASE, 'com.apple.mdworker.application')
+SPOTLIGHT_INSTANCE = re.compile(r'com\.apple\.mdworker\.(?:shared|application)\.[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}')
+
+def verified_spotlight_base(fields, base=SPOTLIGHT_BASE):
+    if base not in SPOTLIGHT_BASES:
+        raise ValueError('Unadmitted Spotlight family')
+    expected = {'label':base, 'domain':f'user/{os.getuid()}',
+                'path':f'/System/Library/LaunchAgents/{base}.plist',
+                'program':'/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared',
+                'type':'LaunchAgent'}
+    if fields != expected:
+        raise ValueError('Spotlight base has an unaccounted registration definition')
+    return expected
+
+
+def foreign_job_identity(launchd, label):
+    """Snapshot stable registration fields without requiring a plist job."""
+    if re.fullmatch(r'[A-Za-z0-9._-]+', label) is None:
+        raise ValueError('Invalid unrelated launchd label')
+    domain = launchd.domain
+    result = launchd.command('print', f'{domain}/{label}')
+    if result.returncode == 113:
+        # launchctl list includes jobs from the discrete per-user domain.
+        domain = 'user/' + launchd.domain.split('/', 1)[1]
+        result = launchd.command('print', f'{domain}/{label}')
+    if result.returncode == 113 and SPOTLIGHT_INSTANCE.fullmatch(label):
+        base_label = label.rsplit('.', 1)[0]
+        base = verified_spotlight_base(foreign_job_identity(launchd, base_label), base_label)
+        return {'label':label, 'absentWithVerifiedBase':base}
+    if result.returncode != 0:
+        raise RuntimeError('Cannot inspect unrelated launchd registration')
+    output = result.stdout.decode('utf-8')
+    fields = {'label':label, 'domain':domain}
+    for key in ('path', 'program', 'type'):
+        values = re.findall(r'^\t' + key + r' = ([^\n]+)$', output, re.MULTILINE)
+        if len(values) > 1:
+            raise ValueError('Ambiguous unrelated launchd registration identity')
+        fields[key] = values[0] if values else None
+    return fields
+
+
+def normalized_foreign_registrations(rows):
+    """Bind exact OS shared-worker instances to their persistent base job."""
+    result = {}
+    for base in SPOTLIGHT_BASES:
+        if base in rows:
+            result[base] = verified_spotlight_base(rows[base], base)
+    for label, fields in rows.items():
+        if fields.get('label') != label:
+            raise ValueError('Foreign registration label differs')
+        if SPOTLIGHT_INSTANCE.fullmatch(label):
+            base = label.rsplit('.', 1)[0]
+            if set(fields) == {'label', 'absentWithVerifiedBase'}:
+                canonical = verified_spotlight_base(fields['absentWithVerifiedBase'], base)
+            else:
+                canonical = verified_spotlight_base({**fields, 'label':base}, base)
+            if base not in result:
+                raise ValueError('Spotlight instances lack their persistent base registration')
+            if canonical != result[base]:
+                raise ValueError('Spotlight instance differs from persistent base')
+        else:
+            result[label] = fields
+    return result
+
+
+def redacted_command_output(output):
+    """Retain bounded private findings without URLs, credentials or environment."""
+    if isinstance(output, bytes):output = output.decode('utf-8', errors='replace')
+    output = output or ''
+    excerpt = output[:8192]
+    excerpt = re.sub(r'[A-Za-z][A-Za-z0-9+.-]*://[^\s]+', '<url>', excerpt)
+    excerpt = re.sub(r'(?i)\bbearer\s+[^\s]+', 'Bearer <redacted>', excerpt)
+    excerpt = re.sub(r'(?i)(authorization|bearer|token|password|secret|credential|access[_-]?key)([ :=]+|\s+)([^\s]+)', r'\1 <redacted>', excerpt)
+    excerpt = re.sub(r'\b[A-Za-z_][A-Za-z0-9_]*=([^\s]+)', '<assignment-redacted>', excerpt)
+    excerpt = re.sub(r'[A-Za-z0-9_+/=-]{40,}', '<long-value-redacted>', excerpt)
+    return excerpt[:4096], len(output) > 4096
+
+
+def command_failure_diagnostic(arguments, error):
+    """Expose the failed step/cause class without retaining output or secrets."""
+    safe = []
+    sensitive = False
+    for argument in arguments:
+        value = '<redacted>' if sensitive or not re.fullmatch(r'[A-Za-z0-9/_.=-]{1,256}', argument) else argument
+        if re.search(r'(?i)(token|password|secret|credential|authorization)', argument):
+            value = '<redacted>'
+            sensitive = True
+        else:
+            sensitive = False
+        safe.append(value)
+    cause = error.__cause__ or error
+    value = {'arguments':safe, 'exceptionType':type(error).__name__, 'causeType':type(cause).__name__}
+    if isinstance(cause, subprocess.CalledProcessError):
+        value['exitCode'] = cause.returncode
+        # Classify known Brew errors without copying any stderr, URLs, tokens,
+        # arbitrary messages, environment, or command output into a receipt.
+        stderr = cause.stderr or ''
+        if isinstance(stderr, bytes):stderr = stderr.decode('utf-8', errors='replace')
+        markers = [('dependency-blocked','because it is required by'), ('checksum-mismatch','SHA256 mismatch'),
+                   ('formula-test-failed','test failed'), ('formula-not-found','No available formula'),
+                   ('trust-required','not trusted')]
+        value['causeCategory'] = next((name for name,text in markers if text.lower() in stderr.lower()), 'brew-command-failed')
+        value['privateStderrExcerpt'], value['stderrTruncated'] = redacted_command_output(stderr)
+        value['privateStdoutExcerpt'], value['stdoutTruncated'] = redacted_command_output(cause.stdout)
+    elif isinstance(cause, subprocess.TimeoutExpired):
+        value['timeoutSeconds'] = cause.timeout
+        value['causeCategory'] = 'brew-command-timeout'
+    else:
+        value['causeCategory'] = 'installation-command-failed'
+    return value
+
+
 def transaction(core, context, arguments):
     """Customize a private module instance; the maintained module is untouched."""
     core.FORMULAE = FORMULAE
@@ -125,7 +249,8 @@ def transaction(core, context, arguments):
     class PairServices(core.LaunchdServices):
         def capture(self, prefix: Path, kegs: dict[str, list[Path]]) -> list[dict]:
                 labels = self.launchd.labels()
-                self.other_registrations = {label:self.launchd.inspect(label) for label in labels if label not in core.SERVICE_LABELS.values()}
+                self.other_registration_instances = {label:foreign_job_identity(self.launchd, label) for label in labels if label not in core.SERVICE_LABELS.values()}
+                self.other_registrations = normalized_foreign_registrations(self.other_registration_instances)
                 for formula, label in core.SERVICE_LABELS.items():
                     if label not in labels:
                         self.absent.append(label)
@@ -178,8 +303,8 @@ def transaction(core, context, arguments):
 
         def verify(self):
             super().verify()
-            current = {label:self.launchd.inspect(label) for label in self.launchd.labels() if label not in core.SERVICE_LABELS.values()}
-            if current != self.other_registrations:
+            current = {label:foreign_job_identity(self.launchd, label) for label in self.launchd.labels() if label not in core.SERVICE_LABELS.values()}
+            if normalized_foreign_registrations(current) != self.other_registrations:
                 raise core.InstallationError('Unrelated launchd registration inventory changed')
             if self.signature_inventory() != self.signatures:
                 raise core.InstallationError('Restored service executable/signature differs')
@@ -227,6 +352,24 @@ def transaction(core, context, arguments):
     core.copy_keg = copy_keg
 
     class Pair(core.InstallationTransaction):
+        def call(self, *arguments, timeout=900):
+            self.command_sequence = getattr(self, 'command_sequence', 0) + 1
+            path = self.receipt_output.with_name(self.receipt_output.stem + f'.command-{self.command_sequence:04d}.json')
+            started = time.monotonic()
+            pending = {'arguments':command_failure_diagnostic(arguments, RuntimeError())['arguments'],
+                       'status':'started', 'timeoutSeconds':timeout}
+            core.write_receipt(path, pending)
+            try:
+                result = super().call(*arguments, timeout=timeout)
+            except BaseException as error:
+                failure = command_failure_diagnostic(arguments, error)
+                core.write_receipt(path, {**pending, **failure, 'status':'failed',
+                                          'elapsedSeconds':time.monotonic()-started})
+                raise
+            core.write_receipt(path, {**pending, 'status':'passed', 'returnStatus':0,
+                                      'elapsedSeconds':time.monotonic()-started})
+            return result
+
         @property
         def formula(self):
             return getattr(self, '_selected_formula', 'container-compose')
@@ -240,6 +383,7 @@ def transaction(core, context, arguments):
             manifest = json.loads(manifest_path.read_bytes())
             manifest['serviceExecutableSignatures'] = self.service.signatures
             manifest['otherLaunchdRegistrations'] = self.service.other_registrations
+            manifest['otherLaunchdRegistrationInstances'] = getattr(self.service, 'other_registration_instances', {})
             core.write_receipt(manifest_path, manifest)
             self.backup_sha = sha(manifest_path.read_bytes())
             core.sync_tree(self.backup)
@@ -266,12 +410,28 @@ def transaction(core, context, arguments):
                 self.trust_attempted = True
                 self.trust_attempts.add(name)
                 self.call('trust', '--formula', full, timeout=120)
-                self.call('audit', '--formula', '--strict', '--online', full, timeout=300)
+                # The imperative owned-keg checks cannot be expressed by the
+                # declarative post-install DSL; keep every other audit enabled.
+                self.call('style', '--formula', '--except-cops=FormulaAudit/InstallSteps', full, timeout=300)
+                self.call('audit', '--formula', '--strict', '--online', '--skip-style', full, timeout=300)
                 self.call('fetch', '--formula', '--force', full)
-                # Public formula post_install contains a broad launchd stop.
-                # Skip it; install only its exact owned plugin link below.
+                # Record Brew relocation before running the admitted signed
+                # payload restoration and bounded registration post-install.
                 self.candidate_install_attempts.add(name)
                 self.call('install', '--formula', '--skip-post-install', full)
+                installed_keg = Path(self.call('--prefix', full, timeout=30)).resolve(strict=True)
+                core.canonical_directory(installed_keg, self.cellar / name)
+                expected_version = context['runtimeVersion'] if name == 'container' else context['version']
+                if installed_keg != self.cellar / name / expected_version:
+                    raise core.InstallationError('Pre-postinstall candidate Cellar identity differs')
+                binary_relative = 'libexec/bin/container' if name == 'container' else 'libexec/container-plugins/compose/bin/compose'
+                installed_binary = installed_keg / binary_relative
+                if installed_binary.is_symlink() or not installed_binary.is_file() or installed_binary.resolve() != installed_binary:
+                    raise core.InstallationError('Pre-postinstall installed binary is aliased')
+                evidence_path = self.receipt_output.with_name(self.receipt_output.stem + f'.{name}-before-postinstall.json')
+                core.write_receipt(evidence_path, {'formula':name, 'installedBinarySHA256':core.digest(installed_binary),
+                                                 'expectedSignedPayloadSHA256':context['formulae'][name]['binarySHA256']})
+                self.call('postinstall', full, timeout=900)
             runtime_keg = Path(self.call('--prefix', self.tap + '/container', timeout=30)).resolve(strict=True)
             plugin_keg = Path(self.call('--prefix', self.tap + '/container-compose', timeout=30)).resolve(strict=True)
             for name, keg in [('container', runtime_keg), ('container-compose', plugin_keg)]:
@@ -327,6 +487,20 @@ def transaction(core, context, arguments):
             if self.trust_attempted:
                 for name in sorted(self.trust_attempts):
                     self.call('untrust', '--formula', self.tap + '/' + name, timeout=120)
+
+        def cleanup_and_restore(self):
+            try:
+                return super().cleanup_and_restore()
+            except BaseException as error:
+                chain = []
+                current = error
+                while current is not None and len(chain) < 8:
+                    message, truncated = redacted_command_output(str(current))
+                    chain.append({'type':type(current).__name__, 'message':message, 'truncated':truncated})
+                    current = current.__cause__
+                output = self.receipt_output.with_name(self.receipt_output.stem + '.cleanup-error.json')
+                core.write_receipt(output, {'scope':'private-installation-cleanup-diagnostic', 'exceptionChain':chain})
+                raise
 
         def receipt(self, status, error_code, original_failure_code=None):
             result = super().receipt(status, error_code, original_failure_code)
