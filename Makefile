@@ -550,6 +550,7 @@ bazel-compose-stable-publish:
 
 bazel-compose-stable-tools-test:
 	$(TOOL_TEST_TEMP_ENV) ruby Tools/release/test_container_bazel_registration.rb
+	$(TOOL_TEST_TEMP_ENV) ruby Tools/release/test_compose_signed_restore.rb
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover -s Tools/release -p 'test_compose_homebrew*.py' -q
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover -s Tools/release -p 'test_compose_installation_portability.py' -q
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover -s Tools/release -p 'test_compose_foreign_registration.py' -q

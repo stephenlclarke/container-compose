@@ -399,16 +399,26 @@ def transaction(core, context, arguments):
                 self.call('trust', '--formula', full, timeout=120)
                 # The imperative owned-keg checks cannot be expressed by the
                 # declarative post-install DSL; keep every other audit enabled.
-                if name == 'container':
-                    self.call('style', '--formula', '--except-cops=FormulaAudit/InstallSteps', full, timeout=300)
-                    self.call('audit', '--formula', '--strict', '--online', '--skip-style', full, timeout=300)
-                else:
-                    self.call('audit', '--formula', '--strict', '--online', full, timeout=300)
+                self.call('style', '--formula', '--except-cops=FormulaAudit/InstallSteps', full, timeout=300)
+                self.call('audit', '--formula', '--strict', '--online', '--skip-style', full, timeout=300)
                 self.call('fetch', '--formula', '--force', full)
-                # Public formula post_install contains a broad launchd stop.
-                # Skip it; install only its exact owned plugin link below.
+                # Record Brew relocation before running the admitted signed
+                # payload restoration and bounded registration post-install.
                 self.candidate_install_attempts.add(name)
                 self.call('install', '--formula', '--skip-post-install', full)
+                installed_keg = Path(self.call('--prefix', full, timeout=30)).resolve(strict=True)
+                core.canonical_directory(installed_keg, self.cellar / name)
+                expected_version = context['runtimeVersion'] if name == 'container' else context['version']
+                if installed_keg != self.cellar / name / expected_version:
+                    raise core.InstallationError('Pre-postinstall candidate Cellar identity differs')
+                binary_relative = 'libexec/bin/container' if name == 'container' else 'libexec/container-plugins/compose/bin/compose'
+                installed_binary = installed_keg / binary_relative
+                if installed_binary.is_symlink() or not installed_binary.is_file() or installed_binary.resolve() != installed_binary:
+                    raise core.InstallationError('Pre-postinstall installed binary is aliased')
+                evidence_path = self.receipt_output.with_name(self.receipt_output.stem + f'.{name}-before-postinstall.json')
+                core.write_receipt(evidence_path, {'formula':name, 'installedBinarySHA256':core.digest(installed_binary),
+                                                 'expectedSignedPayloadSHA256':context['formulae'][name]['binarySHA256']})
+                self.call('postinstall', full, timeout=900)
             runtime_keg = Path(self.call('--prefix', self.tap + '/container', timeout=30)).resolve(strict=True)
             plugin_keg = Path(self.call('--prefix', self.tap + '/container-compose', timeout=30)).resolve(strict=True)
             for name, keg in [('container', runtime_keg), ('container-compose', plugin_keg)]:
