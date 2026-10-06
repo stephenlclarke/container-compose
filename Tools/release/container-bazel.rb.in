@@ -2,7 +2,6 @@ class Container < Formula
   desc "Create and run Linux containers using lightweight virtual machines"
   homepage "https://apple.github.io/container/documentation/"
   url "https://github.com/stephenlclarke/container-compose/releases/download/0.16.0/container-release-arm64.tar.gz"
-  version "0.16.0"
   sha256 "d4a9bd8e9d332b0bfbf67fc5b0b3a99c977b66d6cc50f5954b36f3263a2cf696"
   license "Apache-2.0"
 
@@ -30,16 +29,21 @@ class Container < Formula
     resource("release-notices").stage do
       notice_names = ["LICENSE", "THIRD-PARTY-NOTICES.md", "SOURCE-AVAILABILITY.md"]
       notice_files = Pathname.pwd.children.sort
-      odie "Runtime release notices have an unexpected layout" unless notice_files.map(&:basename).map(&:to_s).sort == notice_names.sort
+      if notice_files.map { |file| file.basename.to_s }.sort != notice_names.sort
+        odie "Runtime release notices have an unexpected layout"
+      end
       notice_files.each do |file|
-        odie "Runtime release notice is not a regular text file" unless file.file? && !file.symlink?
+        odie "Runtime release notice is not a regular text file" if !file.file? || file.symlink?
         text = File.read(file, encoding: "UTF-8")
-        odie "Runtime release notice is not nonempty UTF-8 text" unless text.valid_encoding? && !text.empty? && !text.include?("\0")
+        if !text.valid_encoding? || text.empty? || text.include?("\0")
+          odie "Runtime release notice is not nonempty UTF-8 text"
+        end
       end
       (libexec/"share/licenses/container").install notice_files
     end
   end
 
+  # Keep explicit ownership and alias checks that the declarative step DSL cannot express.
   def post_install
     compose_plugin = HOMEBREW_PREFIX/"opt/container-compose/libexec/container-plugins/compose"
     return unless compose_plugin.directory?
@@ -48,22 +52,33 @@ class Container < Formula
     # services or replace an existing foreign file, directory, or link.
     runtime_root = prefix.realpath
     compose_root = (HOMEBREW_CELLAR/"container-compose").realpath
-    odie "Runtime keg ownership changed" unless runtime_root == prefix && File.stat(runtime_root).uid == Process.uid
+    if runtime_root != prefix || File.stat(runtime_root).uid != Process.uid
+      odie "Runtime keg ownership changed"
+    end
     compose_keg = (HOMEBREW_PREFIX/"opt/container-compose").realpath
-    odie "Compose plugin escapes its installed keg" unless compose_keg.parent == compose_root && compose_plugin.realpath == compose_keg/"libexec/container-plugins/compose"
-    odie "Compose plugin ownership changed" unless File.stat(compose_plugin.realpath).uid == Process.uid
+    if compose_keg.parent != compose_root ||
+       compose_plugin.realpath != compose_keg/"libexec/container-plugins/compose"
+      odie "Compose plugin escapes its installed keg"
+    end
+    odie "Compose plugin ownership changed" if File.stat(compose_plugin.realpath).uid != Process.uid
     plugin_parent = prefix/"libexec"
-    odie "Runtime plugin parent is aliased" unless plugin_parent.directory? && !plugin_parent.symlink? && plugin_parent.realpath == plugin_parent
+    if !plugin_parent.directory? || plugin_parent.symlink? || plugin_parent.realpath != plugin_parent
+      odie "Runtime plugin parent is aliased"
+    end
     plugin_dir = plugin_parent/"container-plugins"
     if plugin_dir.exist? || plugin_dir.symlink?
-      odie "Runtime plugin directory is aliased" unless plugin_dir.directory? && !plugin_dir.symlink? && plugin_dir.realpath == plugin_dir
+      if !plugin_dir.directory? || plugin_dir.symlink? || plugin_dir.realpath != plugin_dir
+        odie "Runtime plugin directory is aliased"
+      end
     else
       plugin_dir.mkpath
     end
-    odie "Runtime plugin directory ownership changed" unless File.stat(plugin_dir).uid == Process.uid
+    odie "Runtime plugin directory ownership changed" if File.stat(plugin_dir).uid != Process.uid
     plugin_link = plugin_dir/"compose"
     if plugin_link.symlink?
-      odie "Refusing to replace a foreign Compose link" unless plugin_link.readlink == compose_plugin && plugin_link.realpath == compose_plugin.realpath
+      if plugin_link.readlink != compose_plugin || plugin_link.realpath != compose_plugin.realpath
+        odie "Refusing to replace a foreign Compose link"
+      end
       return
     end
     odie "Refusing to replace an existing Compose entry" if plugin_link.exist?

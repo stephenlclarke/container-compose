@@ -75,8 +75,10 @@ def validate_pair(context, texts):
         raise ValueError('Runtime signed payload executable differs from qualified archive')
     if context['formulae']['container']['archiveSHA256'] != RUNTIME_SHA:
         raise ValueError('Stable runtime asset bytes differ from qualified archive')
-    if re.findall(r'^  version "([^"]*)"$', texts['container'], re.M) != [context['runtimeVersion']]:
-        raise ValueError('Runtime formula must preserve actual runtime product version')
+    runtime_versions = re.findall(r'^  version "([^"]*)"$', texts['container'], re.M)
+    if (runtime_versions != [context['runtimeVersion']]
+            and not (not runtime_versions and context['version'] == context['runtimeVersion'])):
+        raise ValueError('Runtime distribution version must be explicit or derived from the same release URL')
     if re.findall(r'^  version ', texts['container-compose'], re.M):
         raise ValueError('Stable Compose derives version from its release URL')
     if '  depends_on "stephenlclarke/tap/container"' not in texts['container-compose']:
@@ -111,6 +113,19 @@ def signed_binary(path, expected, team):
         raise ValueError('Installed signing team differs')
 
 
+SPOTLIGHT_BASE = 'com.apple.mdworker.shared'
+SPOTLIGHT_INSTANCE = re.compile(r'com\.apple\.mdworker\.shared\.[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}')
+
+def verified_spotlight_base(fields):
+    expected = {'label':SPOTLIGHT_BASE, 'domain':f'user/{os.getuid()}',
+                'path':'/System/Library/LaunchAgents/com.apple.mdworker.shared.plist',
+                'program':'/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared',
+                'type':'LaunchAgent'}
+    if fields != expected:
+        raise ValueError('Spotlight base has an unaccounted registration definition')
+    return expected
+
+
 def foreign_job_identity(launchd, label):
     """Snapshot stable registration fields without requiring a plist job."""
     if re.fullmatch(r'[A-Za-z0-9._-]+', label) is None:
@@ -121,6 +136,9 @@ def foreign_job_identity(launchd, label):
         # launchctl list includes jobs from the discrete per-user domain.
         domain = 'user/' + launchd.domain.split('/', 1)[1]
         result = launchd.command('print', f'{domain}/{label}')
+    if result.returncode == 113 and SPOTLIGHT_INSTANCE.fullmatch(label):
+        base = verified_spotlight_base(foreign_job_identity(launchd, SPOTLIGHT_BASE))
+        return {'label':label, 'absentWithVerifiedBase':base}
     if result.returncode != 0:
         raise RuntimeError('Cannot inspect unrelated launchd registration')
     output = result.stdout.decode('utf-8')
@@ -134,23 +152,39 @@ def foreign_job_identity(launchd, label):
 
 
 def normalized_foreign_registrations(rows):
-    """Collapse only OS Spotlight shared-worker instances with exact identity."""
+    """Bind exact OS shared-worker instances to their persistent base job."""
     result = {}
-    instance = re.compile(r'com\.apple\.mdworker\.shared\.[0-9A-F]{8}(?:-[0-9A-F]{4}){3}-[0-9A-F]{12}')
-    expected = {'domain':f'user/{os.getuid()}',
-                'path':'/System/Library/LaunchAgents/com.apple.mdworker.shared.plist',
-                'program':'/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared',
-                'type':'LaunchAgent'}
+    base = rows.get(SPOTLIGHT_BASE)
+    if base is not None:
+        result[SPOTLIGHT_BASE] = verified_spotlight_base(base)
     for label, fields in rows.items():
         if fields.get('label') != label:
             raise ValueError('Foreign registration label differs')
-        if instance.fullmatch(label):
-            if set(fields) != {'label', *expected} or any(fields[k] != value for k,value in expected.items()):
-                raise ValueError('Spotlight instance has an unaccounted registration definition')
-            result['<OS Spotlight shared-worker instances>'] = {'label':'com.apple.mdworker.shared', **expected}
+        if SPOTLIGHT_INSTANCE.fullmatch(label):
+            if set(fields) == {'label', 'absentWithVerifiedBase'}:
+                canonical = verified_spotlight_base(fields['absentWithVerifiedBase'])
+            else:
+                canonical = verified_spotlight_base({**fields, 'label':SPOTLIGHT_BASE})
+            if base is None:
+                raise ValueError('Spotlight instances lack their persistent base registration')
+            if canonical != result[SPOTLIGHT_BASE]:
+                raise ValueError('Spotlight instance differs from persistent base')
         else:
             result[label] = fields
     return result
+
+
+def redacted_command_output(output):
+    """Retain bounded private findings without URLs, credentials or environment."""
+    if isinstance(output, bytes):output = output.decode('utf-8', errors='replace')
+    output = output or ''
+    excerpt = output[:8192]
+    excerpt = re.sub(r'[A-Za-z][A-Za-z0-9+.-]*://[^\s]+', '<url>', excerpt)
+    excerpt = re.sub(r'(?i)\bbearer\s+[^\s]+', 'Bearer <redacted>', excerpt)
+    excerpt = re.sub(r'(?i)(authorization|bearer|token|password|secret|credential|access[_-]?key)([ :=]+|\s+)([^\s]+)', r'\1 <redacted>', excerpt)
+    excerpt = re.sub(r'\b[A-Za-z_][A-Za-z0-9_]*=([^\s]+)', '<assignment-redacted>', excerpt)
+    excerpt = re.sub(r'[A-Za-z0-9_+/=-]{40,}', '<long-value-redacted>', excerpt)
+    return excerpt[:4096], len(output) > 4096
 
 
 def command_failure_diagnostic(arguments, error):
@@ -177,14 +211,8 @@ def command_failure_diagnostic(arguments, error):
                    ('formula-test-failed','test failed'), ('formula-not-found','No available formula'),
                    ('trust-required','not trusted')]
         value['causeCategory'] = next((name for name,text in markers if text.lower() in stderr.lower()), 'brew-command-failed')
-        excerpt = stderr[:8192]
-        excerpt = re.sub(r'[A-Za-z][A-Za-z0-9+.-]*://[^\s]+', '<url>', excerpt)
-        excerpt = re.sub(r'(?i)\bbearer\s+[^\s]+', 'Bearer <redacted>', excerpt)
-        excerpt = re.sub(r'(?i)(authorization|bearer|token|password|secret|credential|access[_-]?key)([ :=]+|\s+)([^\s]+)', r'\1 <redacted>', excerpt)
-        excerpt = re.sub(r'\b[A-Za-z_][A-Za-z0-9_]*=([^\s]+)', '<assignment-redacted>', excerpt)
-        excerpt = re.sub(r'[A-Za-z0-9_+/=-]{40,}', '<long-value-redacted>', excerpt)
-        value['privateStderrExcerpt'] = excerpt[:4096]
-        value['stderrTruncated'] = len(stderr) > 4096
+        value['privateStderrExcerpt'], value['stderrTruncated'] = redacted_command_output(stderr)
+        value['privateStdoutExcerpt'], value['stdoutTruncated'] = redacted_command_output(cause.stdout)
     elif isinstance(cause, subprocess.TimeoutExpired):
         value['timeoutSeconds'] = cause.timeout
         value['causeCategory'] = 'brew-command-timeout'
@@ -369,7 +397,10 @@ def transaction(core, context, arguments):
                 self.trust_attempted = True
                 self.trust_attempts.add(name)
                 self.call('trust', '--formula', full, timeout=120)
-                self.call('audit', '--formula', '--strict', '--online', full, timeout=300)
+                # The imperative owned-keg checks cannot be expressed by the
+                # declarative post-install DSL; keep every other audit enabled.
+                audit_options = ('--except-cops=FormulaAudit/InstallSteps',) if name == 'container' else ()
+                self.call('audit', '--formula', '--strict', '--online', *audit_options, full, timeout=300)
                 self.call('fetch', '--formula', '--force', full)
                 # Public formula post_install contains a broad launchd stop.
                 # Skip it; install only its exact owned plugin link below.

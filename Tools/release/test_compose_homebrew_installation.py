@@ -51,6 +51,20 @@ class PairAdmissionTests(unittest.TestCase):
         ctx,texts=self.fixture();ctx['runtimeVersion']='1.2.3'
         with self.assertRaises(ValueError):M.validate_pair(ctx,texts)
 
+    def test_distribution_version_can_be_derived_only_from_matching_url(self):
+        ctx,texts=self.fixture()
+        for name in texts:
+            texts[name]=texts[name].replace('/1.2.3/','/0.16.0/')
+        ctx['version']='0.16.0'
+        texts['container']=texts['container'].replace('  version "0.16.0"\n','')
+        for name,text in texts.items():ctx['formulae'][name]['formulaSHA256']=M.sha(text.encode())
+        M.validate_pair(ctx,texts)
+        ctx['version']='1.2.3'
+        for name in texts:
+            texts[name]=texts[name].replace('/0.16.0/','/1.2.3/')
+            ctx['formulae'][name]['formulaSHA256']=M.sha(texts[name].encode())
+        with self.assertRaises(ValueError):M.validate_pair(ctx,texts)
+
     def test_private_pair_rewrites_only_tap_namespace(self):
         ctx,texts=self.fixture();tap='stephenlclarke/container-compose-release-ci-123'
         for text in texts.values():
