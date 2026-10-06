@@ -19,3 +19,5 @@ A stable/latest immutable GitHub release must retain exact qualified executable 
 The release helpers and installation adapter complete the existing enhanced qualification. Runtime optimization and a new build-system migration are outside this release.
 
 Implementation: [PR 712](https://github.com/stephenlclarke/container-compose/pull/712).
+
+The actual Homebrew preflight exposed non-plist macOS login/background registrations. The pair adapter must preserve their available registration identity without requiring Homebrew-specific path/program fields; owned service lifecycle checks remain strict.

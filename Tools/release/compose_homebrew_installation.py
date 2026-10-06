@@ -110,6 +110,23 @@ def signed_binary(path, expected, team):
         raise ValueError('Installed signing team differs')
 
 
+def foreign_job_identity(launchd, label):
+    """Snapshot stable registration fields without requiring a plist job."""
+    if re.fullmatch(r'[A-Za-z0-9._-]+', label) is None:
+        raise ValueError('Invalid unrelated launchd label')
+    result = launchd.command('print', f'{launchd.domain}/{label}')
+    if result.returncode != 0:
+        raise RuntimeError('Cannot inspect unrelated launchd registration')
+    output = result.stdout.decode('utf-8')
+    fields = {'label':label}
+    for key in ('path', 'program', 'type'):
+        values = re.findall(r'^\t' + key + r' = ([^\n]+)$', output, re.MULTILINE)
+        if len(values) > 1:
+            raise ValueError('Ambiguous unrelated launchd registration identity')
+        fields[key] = values[0] if values else None
+    return fields
+
+
 def transaction(core, context, arguments):
     """Customize a private module instance; the maintained module is untouched."""
     core.FORMULAE = FORMULAE
@@ -125,7 +142,7 @@ def transaction(core, context, arguments):
     class PairServices(core.LaunchdServices):
         def capture(self, prefix: Path, kegs: dict[str, list[Path]]) -> list[dict]:
                 labels = self.launchd.labels()
-                self.other_registrations = {label:self.launchd.inspect(label) for label in labels if label not in core.SERVICE_LABELS.values()}
+                self.other_registrations = {label:foreign_job_identity(self.launchd, label) for label in labels if label not in core.SERVICE_LABELS.values()}
                 for formula, label in core.SERVICE_LABELS.items():
                     if label not in labels:
                         self.absent.append(label)
@@ -178,7 +195,7 @@ def transaction(core, context, arguments):
 
         def verify(self):
             super().verify()
-            current = {label:self.launchd.inspect(label) for label in self.launchd.labels() if label not in core.SERVICE_LABELS.values()}
+            current = {label:foreign_job_identity(self.launchd, label) for label in self.launchd.labels() if label not in core.SERVICE_LABELS.values()}
             if current != self.other_registrations:
                 raise core.InstallationError('Unrelated launchd registration inventory changed')
             if self.signature_inventory() != self.signatures:
