@@ -23,3 +23,5 @@ Implementation: [PR 712](https://github.com/stephenlclarke/container-compose/pul
 The actual Homebrew preflight exposed non-plist macOS login/background registrations. The pair adapter must preserve their available registration identity without requiring Homebrew-specific path/program fields; owned service lifecycle checks remain strict.
 
 Installation correction: [PR 713](https://github.com/stephenlclarke/container-compose/pull/713).
+
+The launchd list also includes per-user jobs that are absent from the GUI domain. The adapter now tries the per-user domain only after an explicit service-not-found response and records the successful domain as part of registration identity. Transport failures and absence in both domains still reject; three additional regressions cover this distinction.

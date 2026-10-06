@@ -114,11 +114,16 @@ def foreign_job_identity(launchd, label):
     """Snapshot stable registration fields without requiring a plist job."""
     if re.fullmatch(r'[A-Za-z0-9._-]+', label) is None:
         raise ValueError('Invalid unrelated launchd label')
-    result = launchd.command('print', f'{launchd.domain}/{label}')
+    domain = launchd.domain
+    result = launchd.command('print', f'{domain}/{label}')
+    if result.returncode == 113:
+        # launchctl list includes jobs from the discrete per-user domain.
+        domain = 'user/' + launchd.domain.split('/', 1)[1]
+        result = launchd.command('print', f'{domain}/{label}')
     if result.returncode != 0:
         raise RuntimeError('Cannot inspect unrelated launchd registration')
     output = result.stdout.decode('utf-8')
-    fields = {'label':label}
+    fields = {'label':label, 'domain':domain}
     for key in ('path', 'program', 'type'):
         values = re.findall(r'^\t' + key + r' = ([^\n]+)$', output, re.MULTILINE)
         if len(values) > 1:

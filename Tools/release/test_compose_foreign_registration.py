@@ -13,7 +13,7 @@ class FakeLaunchd:
 class ForeignRegistrationTests(unittest.TestCase):
     def test_submitted_job_without_path_or_program_is_accurately_recorded(self):
         job=FakeLaunchd('\ttype = Submitted\n\tpid = 123\n')
-        self.assertEqual(M.foreign_job_identity(job,'submitted.job'),{'label':'submitted.job','path':None,'program':None,'type':'Submitted'})
+        self.assertEqual(M.foreign_job_identity(job,'submitted.job'),{'label':'submitted.job','domain':'gui/501','path':None,'program':None,'type':'Submitted'})
         self.assertEqual(job.calls,[('print','gui/501/submitted.job')])
     def test_optional_fields_remain_identity_when_present(self):
         job=FakeLaunchd('\tpath = /owned/example.plist\n\tprogram = /usr/bin/example\n')
@@ -25,6 +25,23 @@ class ForeignRegistrationTests(unittest.TestCase):
     def test_transport_or_disappearance_failure_rejects(self):
         for status in [1,113]:
             with self.assertRaises(RuntimeError):M.foreign_job_identity(FakeLaunchd('',status),'job')
+    def test_user_domain_is_used_only_after_gui_not_found(self):
+        job=FakeLaunchd('')
+        def command(*arguments):
+            job.calls.append(arguments)
+            return SimpleNamespace(stdout=b'\ttype = LaunchAgent\n',returncode=113 if len(job.calls)==1 else 0)
+        job.command=command
+        value=M.foreign_job_identity(job,'registered.job')
+        self.assertEqual(value['domain'],'user/501')
+        self.assertEqual(job.calls,[('print','gui/501/registered.job'),('print','user/501/registered.job')])
+    def test_transport_failure_never_looks_up_another_domain(self):
+        job=FakeLaunchd('',1)
+        with self.assertRaises(RuntimeError):M.foreign_job_identity(job,'job')
+        self.assertEqual(job.calls,[('print','gui/501/job')])
+    def test_absent_in_both_domains_remains_a_failure(self):
+        job=FakeLaunchd('',113)
+        with self.assertRaises(RuntimeError):M.foreign_job_identity(job,'job')
+        self.assertEqual(len(job.calls),2)
     def test_process_reincarnation_does_not_change_registration_identity(self):
         first=M.foreign_job_identity(FakeLaunchd('\ttype = Submitted\n\tpid = 12\n'),'job')
         second=M.foreign_job_identity(FakeLaunchd('\ttype = Submitted\n\tpid = 99\n'),'job')
