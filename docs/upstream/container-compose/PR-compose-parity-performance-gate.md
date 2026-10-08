@@ -5,8 +5,10 @@
 The existing development parity target stopped after its 66 original strict
 parity cases, while full qualification also ran hosted, unit, coverage,
 notarization, and release checks. This adds a focused local target for a fresh
-candidate that runs those 66 cases and the published-reference benchmark's
-four one/three-service up/down fixtures with seven measured trials each.
+candidate that runs those 66 cases, the published-reference benchmark's four
+one/three-service up/down fixtures with seven measured trials each, and the
+complete 29-fixture lifecycle/logging matrix for five counterbalanced
+Docker/candidate repetitions, including remote logging.
 
 ## Implementation
 
@@ -18,6 +20,15 @@ four one/three-service up/down fixtures with seven measured trials each.
 - Reuse the admitted published benchmark reference from the local asset cache;
   measure only the fresh candidate and compare all four seven-trial vectors to
   the retained Docker samples.
+- Run the existing broad matrix directly inside the same runtime, host,
+  Colima, and command leases, without its build prerequisite or runtime
+  wrapper. Apply identical 200 MiB hard service limits to lifecycle and
+  aggregate fixtures in both lanes. Capture exact fixture hashes and a fresh
+  host/Colima/memory-pressure capacity receipt before timing.
+- Reject a 50-service run before launch if physical allocation budgets or
+  current reclaimable memory do not satisfy the explicit guest envelope and
+  host-headroom limits. Preserve the matrix's real functional and timing
+  failures in the controller receipt.
 - Keep the existing `--development-parity` behavior and non-release receipt
   unchanged. Do not run hosted admission, the separate runtime test suite,
   notarization, or release preparation/publication.
@@ -26,8 +37,9 @@ four one/three-service up/down fixtures with seven measured trials each.
 ## Validation
 
 - Focused Python controller and CLI regressions cover the all-66 parity
-  selection, exact four-fixture/seven-trial reference comparison, excluded
-  release gates, and unchanged existing development parity behavior.
+  selection, exact four-fixture/seven-trial reference comparison, bounded
+  matrix fixture selection and workload fingerprints, cleanup admission,
+  excluded release gates, and unchanged existing development parity behavior.
 - Python lint and repository Markdown lint are required before merge.
 - Live candidate/runtime validation is a separate authorized campaign step;
   no live result is claimed by this implementation handoff.

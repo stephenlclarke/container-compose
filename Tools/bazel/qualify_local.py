@@ -54,6 +54,8 @@ from q_assets import fetch_assets as fetch_q_assets, revalidate as revalidate_q_
 from prebuilt_parity_tests import test_workspace
 from run import RETAINED, ROOT, SSD
 from retain_evidence import restore_candidate
+sys.path.insert(0, str(ROOT))
+from Tools.parity import performance_matrix_capacity
 
 Q = fixture_cache.Q_SOURCE
 CONTAINERIZATION = fixture_cache.CONTAINERIZATION_SOURCE
@@ -76,6 +78,10 @@ BENCHMARK_CACHE = RETAINED / 'release-asset-cache'
 DOCKER_COMPOSE_VERSION = '5.5.1'
 COLIMA_MEMORY_MAX = 8 * 1024**3
 RUNTIME_VM_BUDGET = 6 * 1024**3
+PERFORMANCE_MATRIX_SERVICES_MAX = 50
+PERFORMANCE_MATRIX_SERVICE_MEMORY_MIB = 200
+PERFORMANCE_MATRIX_SERVICE_OVERHEAD_MIB = 32
+PERFORMANCE_MATRIX_HOST_HEADROOM = 4 * 1024**3
 STAGES = (
     ('go', 'build', '//Tools/compose-normalizer:all', 'enhanced', 900),
     ('spi-stock', 'test', '//:ComposeRuntimeSPITests', 'stock', 900),
@@ -151,6 +157,18 @@ def host_budget() -> dict:
             'minimum_free_budget_bytes': 8 * 1024**3,
             'services_max': 3,
             'memory_per_service_mib': benchmark_evidence.SERVICE_MEMORY_MIB}
+
+
+def performance_matrix_budget() -> dict:
+    """Fail closed unless the explicitly capped 50-service run fits the host."""
+    base = host_budget()
+    snapshot = performance_matrix_capacity.capture()
+    admitted = performance_matrix_capacity.admit(
+        snapshot, PERFORMANCE_MATRIX_SERVICE_MEMORY_MIB)
+    if (base['host_bytes'] != snapshot['host_bytes']
+            or base['colima_bytes'] != snapshot['colima_bytes']):
+        raise RuntimeError('Host/Colima capacity changed during broad matrix admission')
+    return {**admitted, 'preflight_budget': base}
 
 
 def benchmark_budget() -> dict:
@@ -1408,6 +1426,221 @@ def run_candidate_reference_benchmark(evidence: Path, runtime: object, candidate
             'benchmarks': compare(measured + historical, runtime_evidence)}
 
 
+def performance_matrix_projects() -> list[tuple[str, str, str]]:
+    rows = [('candidate', 'cc-perf-c-preflight', 'services-1.yml')]
+    for lane, prefix in (('docker', 'cc-perf-d'), ('candidate', 'cc-perf-c')):
+        for count in (1, 10, 50):
+            rows.append((lane, f'{prefix}-{count}', f'services-{count}.yml'))
+            rows.append((lane, f'{prefix}-aggregate-{count}', f'aggregate-{count}.yml'))
+        rows.append((lane, f'{prefix}-logging', 'logging.yml'))
+    return rows
+
+
+def run_broad_performance_matrix(evidence: Path, runtime: object, install: Path,
+                                 plugin: Path, runner: object) -> dict:
+    """Run the full capped five-repetition matrix under the active live lease."""
+    runtime_evidence = evidence / 'runtime'
+    matrix_evidence = runtime_evidence / 'performance-matrix'
+    work_root = ROOT / '.build/parity' / ('development-performance-' + uuid.uuid4().hex)
+    if matrix_evidence.exists() or work_root.exists():
+        raise RuntimeError('Broad performance matrix evidence path is already occupied')
+
+    shutdown = stage(evidence, 'bazel-shutdown-before-performance-matrix',
+                     [str(ROOT / 'Tools/bazel/run.sh'), 'shutdown'], 120)
+    try:
+        budget = performance_matrix_budget()
+    except BaseException as error:
+        write(runtime_evidence / 'performance-matrix-budget.json',
+              {'schema': 1, 'passed': False, 'failure': str(error),
+               'bazel_shutdown': shutdown})
+        raise
+    budget['bazel_shutdown'] = shutdown
+    write(runtime_evidence / 'performance-matrix-budget.json', budget)
+
+    environment = candidate_environment(runtime, install, runner.runtime_environment)
+    environment.update(
+        DOCKER_CONTEXT='colima', DOCKER_COMPOSE='docker --context colima compose',
+        CONTAINER_COMPOSE=str(plugin / 'bin/compose'),
+        COMPOSE_TEST_BINARY=str(plugin / 'bin/compose'),
+        CONTAINER_COMPOSE_CONTAINER=str(install / 'bin/container'),
+        CONTAINER_BIN=str(install / 'bin/container'),
+        CONTAINER_COMPOSE_NORMALIZER=str(plugin / 'resources/compose-normalizer'),
+        CONTAINER_COMPOSE_LIVE='1', CONTAINER_COMPOSE_BUILD_CHECK_LIVE='1',
+        PARITY_EVIDENCE_DIR=str(matrix_evidence), PARITY_WORK_ROOT=str(work_root),
+        PARITY_REPETITIONS='5', PARITY_FIXTURE_GROUPS='all',
+        PARITY_SERVICE_MEMORY_MIB=str(PERFORMANCE_MATRIX_SERVICE_MEMORY_MIB),
+        PARITY_RETAIN_FIXTURE_DIR='1', PARITY_INCLUDE_REMOTE_LOGGING='1',
+        PARITY_SINK_BIND_ADDRESS='0.0.0.0',
+        PARITY_DOCKER_HOST_ADDRESS='host.docker.internal',
+        PARITY_CONTAINER_HOST_ADDRESS='127.0.0.1',
+        PARITY_TIMEOUT_SECONDS='300')
+    fixture_ids = subprocess.check_output(
+        [str(ROOT / 'Tools/parity/check-compose-performance-matrix.sh'),
+         '--list-fixtures'], text=True, timeout=30, env=environment).splitlines()
+    if (len(fixture_ids) != 29
+            or 'logging-blocking-slow-sink' not in fixture_ids
+            or 'logging-dual-cache-read' not in fixture_ids
+            or 'startup-50-services' not in fixture_ids
+            or 'logging-aggregate-50-services' not in fixture_ids):
+        raise RuntimeError('Broad matrix fixture selection is incomplete or changed')
+    state_path = runtime_evidence / 'performance-matrix-state.json'
+
+    cleanup_rows = []
+    leftovers = []
+
+    def run_cleanup_command(lane: str, name: str, args: list[str], timeout: int = 120) -> dict:
+        runner.env = benchmark_issue_environment(lane, name, runtime, install,
+                                                 runner.runtime_environment)
+        command = ([str(install / 'bin/container')] if lane == 'candidate'
+                   else ['docker', '--context', 'colima']) + args
+        try:
+            row = runner.run('performance-matrix-cleanup', lane, name,
+                             len(cleanup_rows), command, ROOT, timeout)
+        except BaseException as error:
+            row = {'component': 'performance-matrix-cleanup', 'lane': lane,
+                   'fixture': name, 'trial': len(cleanup_rows),
+                   'status': 255, 'command': command, 'error': str(error)}
+        cleanup_rows.append(row)
+        return row
+
+    def resource_snapshot(label: str) -> dict:
+        snapshot = {}
+        for lane in ('candidate', 'docker'):
+            for kind, args in (
+                    ('containers', ['ps', '-aq']),
+                    ('networks', ['network', 'ls', '-q']),
+                    ('volumes', ['volume', 'ls', '-q'])):
+                row = run_cleanup_command(lane, label + '-' + kind, args, 90)
+                if row['status']:
+                    raise RuntimeError(f'{label} {lane} {kind} inventory failed; '
+                                       + row.get('log', row.get('error', 'unknown command failure')))
+                snapshot[lane + '/' + kind] = sorted(
+                    Path(row['log']).read_text(errors='replace').splitlines())
+        return snapshot
+
+    before = resource_snapshot('before-matrix')
+    write(state_path, {'schema': 1, 'started': True,
+                       'fixture_count': len(fixture_ids),
+                       'fixture_ids': fixture_ids,
+                       'profile': {'repetitions': 5, 'remote_logging': True,
+                                   'service_memory_mib': PERFORMANCE_MATRIX_SERVICE_MEMORY_MIB},
+                       'budget_sha256': sha(runtime_evidence / 'performance-matrix-budget.json')})
+
+    stage_error = None
+    stage_row = None
+    try:
+        runner.env = environment
+        stage_row = runner.run(
+            'compose', 'candidate', 'broad-performance-matrix', 0,
+            [str(ROOT / 'Tools/parity/check-compose-performance-matrix.sh'),
+             '--strict'], ROOT, 21600)
+        runner.report()
+        if stage_row['status']:
+            stage_error = f"matrix process exited {stage_row['status']}; see {stage_row['log']}"
+    except BaseException as error:
+        stage_error = str(error)
+
+    manifest_path = matrix_evidence / 'workload.json'
+    try:
+        workload = json.loads(manifest_path.read_text()) if manifest_path.is_file() else None
+    except (OSError, json.JSONDecodeError) as error:
+        workload = None
+        stage_error = stage_error or 'Broad matrix workload manifest is unreadable: ' + str(error)
+    fixture_directory = None
+    if workload is not None:
+        try:
+            fixture_directory = Path(workload['fixtureDirectory']).resolve()
+            if (workload.get('serviceMemoryMiB') != PERFORMANCE_MATRIX_SERVICE_MEMORY_MIB
+                    or fixture_directory.parent != work_root.resolve()
+                    or not isinstance(workload.get('fixtureSHA256'), dict)):
+                stage_error = stage_error or 'Broad matrix workload manifest failed exact profile admission'
+        except (KeyError, TypeError, OSError) as error:
+            stage_error = stage_error or 'Broad matrix workload manifest is malformed: ' + str(error)
+
+    if fixture_directory is not None and fixture_directory.is_dir():
+        for lane, project, filename in performance_matrix_projects():
+            fixture_path = fixture_directory / filename
+            if not fixture_path.is_file():
+                continue
+            row = run_cleanup_command(lane, project + '-down',
+                                      ['compose', '-p', project, '-f', str(fixture_path),
+                                       'down', '--volumes', '--remove-orphans'])
+            if row['status']:
+                leftovers.append({'lane': lane, 'project': project,
+                                  'kind': 'cleanup', 'status': row['status'],
+                                  'log': row.get('log'), 'error': row.get('error')})
+    else:
+        # No workload was started if fixture generation did not produce its admission receipt.
+        if stage_row is not None:
+            stage_error = stage_error or 'Broad matrix completed without a retained workload manifest'
+
+    try:
+        after = resource_snapshot('after-matrix')
+        for key in before:
+            if before[key] != after[key]:
+                leftovers.append({'kind': 'resource-inventory-changed', 'resource': key,
+                                  'before': before[key], 'after': after[key]})
+    except BaseException as error:
+        after = None
+        leftovers.append({'kind': 'resource-inventory-failed', 'error': str(error)})
+    cleanup = {'schema': 1, 'verified': not leftovers,
+               'projects': [project for _, project, _ in performance_matrix_projects()],
+               'resource_inventory_before': before,
+               'resource_inventory_after': after,
+               'workload_manifest': str(manifest_path) if workload is not None else None,
+               'cleanup_commands': cleanup_rows, 'leftovers': leftovers,
+               'stage_error': stage_error}
+    if fixture_directory is not None and fixture_directory.is_dir() and not leftovers:
+        retained_fixtures = matrix_evidence / 'fixtures'
+        if retained_fixtures.exists():
+            leftovers.append({'kind': 'evidence-collision',
+                              'path': str(retained_fixtures)})
+            cleanup['verified'] = False
+            cleanup['leftovers'] = leftovers
+        else:
+            expected_hashes = workload.get('fixtureSHA256', {})
+            observed_hashes = {path.name: sha(path) for path in sorted(fixture_directory.glob('*.yml'))}
+            if observed_hashes != expected_hashes:
+                leftovers.append({'kind': 'fixture-bytes-changed',
+                                  'expected': expected_hashes,
+                                  'observed': observed_hashes})
+                cleanup['verified'] = False
+                cleanup['leftovers'] = leftovers
+            else:
+                shutil.copytree(fixture_directory, retained_fixtures)
+                workload['fixtureDirectory'] = str(retained_fixtures)
+                write(manifest_path, workload)
+                shutil.rmtree(work_root)
+                cleanup['retained_fixture_directory'] = str(retained_fixtures)
+    write(runtime_evidence / 'performance-matrix-cleanup.json', cleanup)
+    write(state_path, {'schema': 1, 'started': True, 'completed': True,
+                       'passed': stage_error is None and not leftovers,
+                       'cleanup_verified': not leftovers,
+                       'fixture_count': len(fixture_ids),
+                       'fixture_ids': fixture_ids,
+                       'profile': {'repetitions': 5, 'remote_logging': True,
+                                   'service_memory_mib': PERFORMANCE_MATRIX_SERVICE_MEMORY_MIB},
+                       'budget_sha256': sha(runtime_evidence / 'performance-matrix-budget.json'),
+                       'cleanup_sha256': sha(runtime_evidence / 'performance-matrix-cleanup.json')})
+    if leftovers:
+        raise RuntimeError('Broad performance matrix left resources; see performance-matrix-cleanup.json')
+    if stage_error:
+        raise RuntimeError('Broad performance matrix failed: ' + stage_error)
+    if stage_row is None:
+        raise RuntimeError('Broad performance matrix did not produce a stage receipt')
+    fingerprint = json.loads((matrix_evidence / 'fingerprints.json').read_text())
+    return {'passed': True, 'stage': stage_row,
+            'budget_sha256': sha(runtime_evidence / 'performance-matrix-budget.json'),
+            'fingerprint_sha256': sha(matrix_evidence / 'fingerprints.json'),
+            'workload_sha256': sha(manifest_path),
+            'fixture_count': len(fixture_ids),
+            'fixture_ids': fixture_ids,
+            'repetitions': fingerprint['conditions']['repetitions'],
+            'remote_logging': fingerprint['conditions']['remoteLogging'],
+            'service_memory_mib': fingerprint['conditions']['serviceMemoryMiB'],
+            'cleanup_sha256': sha(runtime_evidence / 'performance-matrix-cleanup.json')}
+
+
 def retain_performance_reports(directory: Path, results: dict) -> None:
     rows = ['# Matched Compose performance', '',
             'Seven same-fixture trials per lane; Docker is a released historical reference. '
@@ -1875,6 +2108,9 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
             if development_performance or not (development_bridge or development_parity):
                 result.update(run_candidate_reference_benchmark(
                     evidence, runtime, candidate, ledger, issue, benchmark_reference))
+            if development_performance:
+                result['broad_performance_matrix'] = run_broad_performance_matrix(
+                    evidence, runtime, install, plugin, runner)
             result['passed'] = True
         except BaseException as error:
             result['failures'].append(str(error))
@@ -2112,6 +2348,20 @@ def ensure_projects_cleared(evidence: Path, ledger: ProjectLedger, q: dict,
                             descriptors: tuple[int, ...], command_lock: Path,
                             *, allow_existing: bool) -> dict:
     """Bind a completed project inventory to exclusive command ownership."""
+    matrix_cleanup = evidence / 'runtime/performance-matrix-cleanup.json'
+    matrix_state_path = evidence / 'runtime/performance-matrix-state.json'
+    if matrix_state_path.is_file():
+        state = json.loads(matrix_state_path.read_text())
+        if (state.get('schema') != 1 or state.get('started') is not True
+                or state.get('completed') is not True
+                or state.get('cleanup_verified') is not True):
+            raise RuntimeError('Broad performance matrix did not complete verified cleanup')
+    if matrix_cleanup.is_file():
+        receipt = json.loads(matrix_cleanup.read_text())
+        if receipt.get('schema') != 1 or receipt.get('verified') is not True:
+            raise RuntimeError('Broad performance matrix cleanup is not verified')
+    elif matrix_state_path.is_file():
+        raise RuntimeError('Broad performance matrix cleanup receipt is missing')
     phase_path = evidence / 'projects-cleared.json'
     if phase_path.exists():
         if not allow_existing:

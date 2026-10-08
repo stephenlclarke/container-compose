@@ -958,6 +958,46 @@ class QualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, '10x'):
             local.compare(rows)
 
+    def test_broad_matrix_budget_requires_200m_profile_and_live_headroom(self) -> None:
+        def output(command, **_options):
+            if command[-2:] == ['-n', 'hw.memsize']:
+                return str(24 * 1024**3)
+            if command[:2] == ['colima', 'list']:
+                return json.dumps({'name': 'default', 'arch': 'aarch64',
+                                   'runtime': 'docker', 'status': 'Stopped',
+                                   'memory': 8 * 1024**3}) + '\n'
+            if command == ['/usr/bin/vm_stat']:
+                return ('Mach Virtual Memory Statistics: (page size of 16384 bytes)\n'
+                        'Pages free: 1000000.\nPages inactive: 400000.\n'
+                        'Pages speculative: 100000.\n')
+            raise AssertionError(command)
+
+        with patch.object(local.subprocess, 'check_output', side_effect=output):
+            budget = local.performance_matrix_budget()
+        self.assertEqual(budget['service_memory_mib'], 200)
+        self.assertEqual(budget['service_count_max'], 50)
+        self.assertEqual(budget['candidate_guest_envelope_bytes'],
+                         50 * (200 + 32) * 1024**2)
+        self.assertEqual(budget['minimum_host_headroom_bytes'], 4 * 1024**3)
+        self.assertTrue(budget['passed'])
+
+        def pressured(command, **_options):
+            if command[-2:] == ['-n', 'hw.memsize']:
+                return str(24 * 1024**3)
+            if command[:2] == ['colima', 'list']:
+                return json.dumps({'name': 'default', 'arch': 'aarch64',
+                                   'runtime': 'docker', 'status': 'Stopped',
+                                   'memory': 8 * 1024**3}) + '\n'
+            if command == ['/usr/bin/vm_stat']:
+                return ('Mach Virtual Memory Statistics: (page size of 16384 bytes)\n'
+                        'Pages free: 300000.\nPages inactive: 100000.\n'
+                        'Pages speculative: 10000.\n')
+            raise AssertionError(command)
+
+        with patch.object(local.subprocess, 'check_output', side_effect=pressured):
+            with self.assertRaisesRegex(RuntimeError, 'Current memory pressure'):
+                local.performance_matrix_budget()
+
     def test_private_plugin_restores_original_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
