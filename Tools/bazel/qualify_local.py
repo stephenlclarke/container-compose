@@ -1377,6 +1377,37 @@ def compare(rows: list[dict], report_dir: Path | None = None) -> dict:
     return results
 
 
+def run_candidate_reference_benchmark(evidence: Path, runtime: object, candidate: list[str],
+                                     ledger: ProjectLedger, issue: object,
+                                     benchmark_reference: dict) -> dict:
+    """Measure the candidate against the admitted immutable seven-trial Docker reference."""
+    image = runtime.ALPINE
+    reference = revalidate_benchmark_reference(evidence, image)
+    if reference != benchmark_reference:
+        raise RuntimeError('Published historical benchmark changed before live measurements')
+    fixtures = evidence / 'fixtures'
+    fixtures.mkdir()
+    for count in benchmark_evidence.COUNTS:
+        fixture(fixtures / f'{count}.yml', count, image)
+    fixture_hashes = {str(count): sha(fixtures / f'{count}.yml')
+                      for count in benchmark_evidence.COUNTS}
+    if fixture_hashes != reference['workload']['fixtureSHA256']:
+        raise RuntimeError('Current fixture bytes differ from the published reference')
+    runtime_evidence = evidence / 'runtime'
+    write(runtime_evidence / 'benchmark-host-before.json', benchmark_host_snapshot())
+    measured, warmups = measure_lane(
+        'candidate', candidate, fixtures, ledger, issue,
+        runtime_evidence / 'compose-operations.json')
+    write(runtime_evidence / 'benchmark-host-after.json', benchmark_host_snapshot())
+    historical = [{**row, 'historical_reference': True}
+                  for row in reference['samples']]
+    return {'fixture_sha256': fixture_hashes,
+            'budget': benchmark_budget(),
+            'benchmark_reference': json.loads((evidence / 'benchmark-reference.json').read_text()),
+            'benchmark_candidate_warmups': warmups,
+            'benchmarks': compare(measured + historical, runtime_evidence)}
+
+
 def retain_performance_reports(directory: Path, results: dict) -> None:
     rows = ['# Matched Compose performance', '',
             'Seven same-fixture trials per lane; Docker is a released historical reference. '
@@ -1635,7 +1666,8 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
 def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
              q_assets: dict, native_tests: dict, benchmark_reference: dict | None, *,
              development_bridge: bool = False,
-             development_parity: bool = False) -> dict:
+             development_parity: bool = False,
+             development_performance: bool = False) -> dict:
     """Own signed Q release bytes, private plugin and exact host/command leases."""
     modules = q['modules']
     runtime = modules['runtime_benchmark']
@@ -1840,29 +1872,9 @@ def run_live(evidence: Path, q: dict, plugin: Path, signed: dict,
                   {'schema': 1, 'settle_seconds': 5,
                    'inventory_sha256': hashlib.sha256(json.dumps(
                        quiet, sort_keys=True).encode()).hexdigest()})
-            if not (development_bridge or development_parity):
-                image = runtime.ALPINE
-                reference = revalidate_benchmark_reference(evidence, image)
-                if reference != benchmark_reference:
-                    raise RuntimeError('Published historical benchmark changed before live measurements')
-                fixtures = evidence / 'fixtures'
-                fixtures.mkdir()
-                for count in (1, 3):
-                    fixture(fixtures / f'{count}.yml', count, image)
-                result['fixture_sha256'] = {str(count): sha(fixtures / f'{count}.yml') for count in (1, 3)}
-                if result['fixture_sha256'] != reference['workload']['fixtureSHA256']:
-                    raise RuntimeError('Current fixture bytes differ from the published reference')
-                result['budget'] = benchmark_budget()
-                # Only the current signed candidate is timed; Docker rows are immutable evidence.
-                write(runtime_evidence / 'benchmark-host-before.json', benchmark_host_snapshot())
-                measured, warmups = measure_lane(
-                    'candidate', candidate, fixtures, ledger, issue,
-                    runtime_evidence / 'compose-operations.json')
-                write(runtime_evidence / 'benchmark-host-after.json', benchmark_host_snapshot())
-                historical = [{**row, 'historical_reference': True} for row in reference['samples']]
-                result['benchmark_reference'] = json.loads((evidence / 'benchmark-reference.json').read_text())
-                result['benchmark_candidate_warmups'] = warmups
-                result['benchmarks'] = compare(measured + historical, runtime_evidence)
+            if development_performance or not (development_bridge or development_parity):
+                result.update(run_candidate_reference_benchmark(
+                    evidence, runtime, candidate, ledger, issue, benchmark_reference))
             result['passed'] = True
         except BaseException as error:
             result['failures'].append(str(error))
@@ -2568,9 +2580,11 @@ def verify_qualified_helpers(q: dict) -> None:
             raise RuntimeError('Qualified helper changed during Compose qualification: ' + name)
 
 
-def execute_development(evidence: Path, *, parity: bool) -> dict:
+def execute_development(evidence: Path, *, parity: bool,
+                        performance: bool = False) -> dict:
     """Run selected original parity leaves without producing release acceptance."""
-    target = 'compose-development-parity' if parity else 'compose-development-bridge'
+    target = ('compose-development-parity-performance' if performance else
+              'compose-development-parity' if parity else 'compose-development-bridge')
     mode = {'development_parity': True} if parity else {'development_bridge': True}
     result = {'schema': 1, 'target': target, 'passed': False,
               'source': None, 'q_checkpoint': Q, 'stages': [], 'failures': []}
@@ -2588,19 +2602,27 @@ def execute_development(evidence: Path, *, parity: bool) -> dict:
         signed = sign(evidence, plugin, config.get(
             'signing_identity', q['modules']['runtime_benchmark'].IDENTITY))
         result['signed_candidate'] = signed
+        benchmark_reference = (admit_benchmark_reference(
+            evidence, q['modules']['runtime_benchmark'].ALPINE) if performance else None)
+        if benchmark_reference:
+            result['benchmark_reference_sha256'] = sha(evidence / 'benchmark-reference.json')
         result['live'] = run_live(evidence, q, plugin, signed, assets, native_tests,
-                                  None, **mode)
+                                  benchmark_reference['document'] if benchmark_reference else None,
+                                  development_performance=performance, **mode)
         result['live_sha256'] = sha(evidence / 'live.json')
         verify_source(source, source_identity(ROOT))
         verify_qualified_helpers(q)
         result['passed'] = result['live'].get('passed') is True
         if not result['passed']:
-            raise RuntimeError('Development parity proof or restoration did not pass')
+            label = 'Development parity/performance' if performance else 'Development parity'
+            raise RuntimeError(label + ' proof or restoration did not pass')
     except BaseException as error:
         result['failures'].append(str(error))
         raise
     finally:
-        write(evidence / ('development-parity.json' if parity else 'development-bridge.json'), result)
+        receipt = ('development-parity-performance.json' if performance else
+                   'development-parity.json' if parity else 'development-bridge.json')
+        write(evidence / receipt, result)
     return result
 
 
@@ -2610,6 +2632,10 @@ def execute_development_bridge(evidence: Path) -> dict:
 
 def execute_development_parity(evidence: Path) -> dict:
     return execute_development(evidence, parity=True)
+
+
+def execute_development_parity_performance(evidence: Path) -> dict:
+    return execute_development(evidence, parity=True, performance=True)
 
 
 def main() -> None:
@@ -2630,11 +2656,14 @@ def main() -> None:
                         help='Build and sign a local candidate, run only original Bridge parity, and restore the host; not release qualification')
     action.add_argument('--development-parity', action='store_true',
                         help='Build and sign a local candidate, run all 66 original parity cases, and restore the host; not release qualification')
+    action.add_argument('--development-parity-performance', action='store_true',
+                        help='Build and sign a local candidate, run all 66 original parity cases and the matched four-fixture seven-trial benchmark, then restore the host; no unit, notary or release stages')
     args = parser.parse_args()
     Q_ROOT = existing_directory(parser, '--container-root', args.container_root)
     Q_EVIDENCE = existing_directory(parser, '--q-evidence', args.q_evidence)
     if args.previous_candidate_lock and (args.recover or args.capture_reference
-                                         or args.development_bridge or args.development_parity):
+                                         or args.development_bridge or args.development_parity
+                                         or args.development_parity_performance):
         parser.error('Historical Compose comparison applies only to full qualification')
     evidence = args.evidence.resolve()
     allowed = (OUTPUT, CAPTURE_OUTPUT) if args.recover else (
@@ -2667,6 +2696,10 @@ def main() -> None:
         return
     if args.development_parity:
         outcome = execute_development_parity(evidence)
+        print(json.dumps(outcome, indent=2))
+        return
+    if args.development_parity_performance:
+        outcome = execute_development_parity_performance(evidence)
         print(json.dumps(outcome, indent=2))
         return
     result = {'schema': 1, 'target': 'compose-only-qualify', 'passed': False,

@@ -408,7 +408,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 
 .PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint actions-lint
 .PHONY: worktree-audit worktree-audit-strict
-.PHONY: bazel-compose-qualify bazel-compose-development-bridge bazel-compose-development-parity bazel-compose-capture-reference bazel-workflow-tools-test
+.PHONY: bazel-compose-qualify bazel-compose-development-bridge bazel-compose-development-parity bazel-compose-development-parity-performance bazel-compose-capture-reference bazel-workflow-tools-test
 .PHONY: bazel-compose-release-prepare bazel-compose-release-publish bazel-compose-release-verify bazel-compose-recover
 
 COMPOSE_CONTAINER_ROOT ?=
@@ -487,6 +487,16 @@ bazel-compose-development-parity:
 	$(PYTHON) Tools/bazel/qualify_local.py --development-parity \
 	  --container-root "$(COMPOSE_CONTAINER_ROOT)" --q-evidence "$(COMPOSE_Q_EVIDENCE)" \
 	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/local-final/$$sha-development-parity-$$stamp"
+
+# Fresh candidate, all 66 original parity cases, and matched published-reference
+# performance; reuses the retained source/Q products and skips unit/notary/release.
+bazel-compose-development-parity-performance:
+	@stamp="$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	sha="$$(git rev-parse --short=8 HEAD)"; \
+	test -n "$(COMPOSE_CONTAINER_ROOT)" && test -n "$(COMPOSE_Q_EVIDENCE)" || { printf '%s\n' "Set COMPOSE_CONTAINER_ROOT and COMPOSE_Q_EVIDENCE" >&2; exit 2; }; \
+	$(PYTHON) Tools/bazel/qualify_local.py --development-parity-performance \
+	  --container-root "$(COMPOSE_CONTAINER_ROOT)" --q-evidence "$(COMPOSE_Q_EVIDENCE)" \
+	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/local-final/$$sha-development-parity-performance-$$stamp"
 
 # One explicit first-reference capture; never builds or runs an older Compose candidate.
 bazel-compose-capture-reference:

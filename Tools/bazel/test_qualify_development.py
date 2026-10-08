@@ -226,23 +226,86 @@ class DevelopmentBridgeTests(unittest.TestCase):
                 self.assertFalse((evidence / 'full-suite/resource-ledger.json').exists())
                 self.assertEqual(runner.rows, [])
 
+    def test_development_performance_compares_four_fixtures_with_seven_trials(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'runtime').mkdir()
+            image = 'docker.io/library/alpine@sha256:' + 'a' * 64
+            workload = local.benchmark_evidence.workload(image)
+            docker_rows = [
+                {'fixture': f'{count}-services-{operation}', 'lane': 'docker',
+                 'trial': trial, 'seconds': 1.0, 'status': 0, 'log_sha256': 'd' * 64}
+                for count in (1, 3) for operation in ('up', 'down')
+                for trial in range(1, local.TRIALS + 1)]
+            reference = {'workload': workload, 'samples': docker_rows}
+            local.write(root / 'benchmark-reference.json', {'tag': 'recorded-reference'})
+            measure_calls = []
+            candidate_rows = [
+                {'fixture': f'{count}-services-{operation}', 'lane': 'candidate',
+                 'trial': trial, 'seconds': 2.0, 'status': 0, 'log_sha256': 'c' * 64}
+                for count in (1, 3) for operation in ('up', 'down')
+                for trial in range(1, local.TRIALS + 1)]
+
+            def measure(lane, base, fixtures, ledger, issue, progress):
+                measure_calls.append((lane, base, fixtures))
+                self.assertEqual(lane, 'candidate')
+                self.assertEqual(sorted(path.name for path in fixtures.glob('*.yml')),
+                                 ['1.yml', '3.yml'])
+                return candidate_rows, [{'fixture': 'warmup', 'trial': 0}]
+
+            with patch.object(local, 'revalidate_benchmark_reference', return_value=reference), \
+                 patch.object(local, 'measure_lane', side_effect=measure) as measured, \
+                 patch.object(local, 'benchmark_host_snapshot', return_value={'load': 0}), \
+                 patch.object(local, 'benchmark_budget', return_value={'trials': 7}), \
+                 patch.object(local, 'compare', wraps=local.compare) as compared:
+                result = local.run_candidate_reference_benchmark(
+                    root, SimpleNamespace(ALPINE=image), ['/candidate/compose'],
+                    object(), lambda *args: self.fail('unexpected issue'), reference)
+
+            self.assertEqual(len(measure_calls), 1)
+            measured.assert_called_once()
+            rows = compared.call_args.args[0]
+            self.assertEqual(len(rows), 56)
+            self.assertEqual(sum(row['lane'] == 'candidate' for row in rows), 28)
+            self.assertEqual(sum(row['lane'] == 'docker' for row in rows), 28)
+            self.assertTrue(all(row.get('historical_reference') for row in rows if row['lane'] == 'docker'))
+            self.assertEqual(set(result['benchmarks']), {
+                '1-services-up', '1-services-down', '3-services-up', '3-services-down'})
+            for fixture_result in result['benchmarks'].values():
+                self.assertEqual(len(fixture_result['lanes']['candidate']['raw_seconds']), 7)
+                self.assertEqual(len(fixture_result['lanes']['docker']['raw_seconds']), 7)
+                self.assertTrue(fixture_result['passed'])
+            self.assertTrue((root / 'runtime/performance-comparison.md').is_file())
+
     def test_development_receipt_never_invokes_release_or_benchmark_gates(self) -> None:
-        for parity, fail_live in ((False, False), (False, True),
-                                  (True, False), (True, True)):
-            with self.subTest(parity=parity, fail_live=fail_live), tempfile.TemporaryDirectory() as temporary:
+        cases = ((False, False, False), (False, False, True),
+                 (True, False, False), (True, False, True),
+                 (True, True, False), (True, True, True))
+        for parity, performance, fail_live in cases:
+            with self.subTest(parity=parity, performance=performance, fail_live=fail_live), \
+                    tempfile.TemporaryDirectory() as temporary:
                 root = Path(temporary)
                 for filename in ('preflight.json', 'compiled-sdk-chain.json', 'live.json'):
                     local.write(root/filename, {})
                 (root/'q-assets').mkdir()
                 local.write(root/'q-assets/q-assets.json', {})
                 source = {'commit': 'a'*40, 'dirty': False}
-                q = {'modules': {'runtime_benchmark': SimpleNamespace(IDENTITY='test')}, 'hashes': {}}
+                q = {'modules': {'runtime_benchmark': SimpleNamespace(
+                    IDENTITY='test', ALPINE='docker.io/library/alpine@sha256:' + 'a' * 64)},
+                     'hashes': {}}
+                reference = {'document': {'samples': ['immutable reference']}}
+                def admit_reference(evidence, image):
+                    local.write(evidence / 'benchmark-reference.json', {'tag': 'cached-reference'})
+                    return reference
                 with ExitStack() as patches:
-                    for name in ('admit_hosted', 'admit_benchmark_reference', 'measure_lane', 'notarize', 'portable_benchmark'):
+                    for name in ('admit_hosted', 'measure_lane', 'notarize', 'portable_benchmark'):
                         patches.enter_context(patch.object(local, name, side_effect=AssertionError(name)))
+                    admit_reference = patches.enter_context(patch.object(
+                        local, 'admit_benchmark_reference', side_effect=admit_reference))
                     patches.enter_context(patch.object(local, 'q_modules', return_value=q))
                     preflight = patches.enter_context(patch.object(local, 'preflight', return_value=(source, {})))
-                    patches.enter_context(patch.object(local, 'run_layers', return_value=([], 'invocation', {}, {})))
+                    layers = patches.enter_context(patch.object(
+                        local, 'run_layers', return_value=([], 'invocation', {}, {})))
                     patches.enter_context(patch.object(local, 'source_identity', return_value=source))
                     patches.enter_context(patch.object(local, 'verify_source'))
                     patches.enter_context(patch.object(local, 'verify_qualified_helpers'))
@@ -251,7 +314,8 @@ class DevelopmentBridgeTests(unittest.TestCase):
                     live = patches.enter_context(patch.object(local, 'run_live',
                         side_effect=RuntimeError('restoration failed') if fail_live else None,
                         return_value={'passed': True}))
-                    execute = (local.execute_development_parity if parity else
+                    execute = (local.execute_development_parity_performance if performance else
+                               local.execute_development_parity if parity else
                                local.execute_development_bridge)
                     if fail_live:
                         with self.assertRaisesRegex(RuntimeError, 'restoration failed'):
@@ -261,8 +325,16 @@ class DevelopmentBridgeTests(unittest.TestCase):
                     mode = 'development_parity' if parity else 'development_bridge'
                     self.assertTrue(preflight.call_args.kwargs[mode])
                     self.assertTrue(live.call_args.kwargs[mode])
-                target = 'compose-development-parity' if parity else 'compose-development-bridge'
-                result = json.loads((root / (target.removeprefix('compose-') + '.json')).read_text())
+                    self.assertEqual(admit_reference.called, performance)
+                    self.assertEqual(live.call_args.kwargs['development_performance'], performance)
+                    self.assertEqual(live.call_args.args[6], reference['document'] if performance else None)
+                    self.assertNotIn('development_performance', preflight.call_args.kwargs)
+                    self.assertEqual(layers.call_args.kwargs[mode], True)
+                target = ('compose-development-parity-performance' if performance else
+                          'compose-development-parity' if parity else 'compose-development-bridge')
+                receipt_name = ('development-parity-performance.json' if performance else
+                                'development-parity.json' if parity else 'development-bridge.json')
+                result = json.loads((root / receipt_name).read_text())
                 self.assertEqual(result['target'], target)
                 self.assertEqual(result['passed'], not fail_live)
                 self.assertFalse((root/'acceptance.json').exists())
