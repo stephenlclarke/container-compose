@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "archiveCommit": "3d77ec228c7f55a04f689d5e1453752fc0c27f72",
-  "generatedAt": "2026-10-03",
+  "generatedAt": "2026-10-08",
   "entries": [
     {
       "id": "apple-container-1459",
@@ -9083,6 +9083,26 @@
         {
           "kind": "pull-request",
           "path": "docs/upstream/container-compose/PR-qualified-container-runtime-release.md"
+        }
+      ]
+    },
+    {
+      "id": "container-compose-compose-parity-performance-gate",
+      "owner": "stephenlclarke/container-compose",
+      "title": "Fresh local parity and benchmark gate without release replay",
+      "state": "active-draft",
+      "lastVerified": "2026-10-08",
+      "commits": [
+        "b783a6bc09a88a319122c052698231e2a52fe547"
+      ],
+      "documents": [
+        {
+          "kind": "issue",
+          "path": "docs/upstream/container-compose/ISSUE-compose-parity-performance-gate.md"
+        },
+        {
+          "kind": "pull-request",
+          "path": "docs/upstream/container-compose/PR-compose-parity-performance-gate.md"
         }
       ]
     }
