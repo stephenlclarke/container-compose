@@ -278,6 +278,42 @@ def verify_selected_docker_compose(expected_sha256: str) -> None:
         raise RuntimeError('Docker selected a different Compose plugin than the recorded bottle')
 
 
+def docker_buildx_identity(environment: dict) -> dict:
+    """Prove the selected Docker CLI can load Buildx without changing the daemon."""
+    try:
+        version_output = subprocess.check_output(
+            ['docker', '--context', 'colima', 'buildx', 'version'],
+            env=environment, text=True, timeout=20).strip()
+    except (OSError, subprocess.SubprocessError) as error:
+        raise RuntimeError(
+            'Docker Buildx plugin is unavailable in the selected Docker configuration') from error
+    if not version_output:
+        raise RuntimeError('Docker Buildx plugin returned no version')
+    try:
+        plugins = json.loads(subprocess.check_output(
+            ['docker', '--context', 'colima', 'info', '--format', '{{json .ClientInfo.Plugins}}'],
+            env=environment, text=True, timeout=20))
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
+        raise RuntimeError('Docker could not verify selected CLI plugin provenance') from error
+    if not isinstance(plugins, list):
+        raise RuntimeError('Docker CLI plugin inventory is malformed')
+    matches = [row for row in plugins if isinstance(row, dict)
+               and row.get('Name') == 'buildx']
+    if len(matches) != 1:
+        raise RuntimeError('Docker Buildx plugin is unavailable in the selected Docker configuration')
+    plugin = matches[0]
+    path = plugin.get('Path')
+    version = plugin.get('Version')
+    if (not isinstance(path, str) or not isinstance(version, str) or not version
+            or version not in version_output):
+        raise RuntimeError('Docker Buildx selected-plugin provenance is incomplete')
+    binary = Path(path)
+    if not binary.is_file() or not os.access(binary, os.X_OK):
+        raise RuntimeError('Docker Buildx selected plugin binary is unavailable')
+    return {'context': 'colima', 'version_output': version_output,
+            'plugin_version': version, 'binary_sha256': sha(binary.resolve())}
+
+
 def admit_benchmark_reference(evidence: Path, image: str) -> dict:
     """Fetch one published baseline before any Bazel or live qualification stage."""
     if not BENCHMARK_LOCK.is_file():
@@ -1774,9 +1810,6 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
         command = [str(install / 'bin/container') if args[0] == 'container' else args[0], *args[1:]]
         row = issue(lane, 'full-inventory-' + kind, sequence, command, 60)
         return Path(row['log']).read_text(errors='replace')
-    sdk = subprocess.check_output(['/usr/bin/xcrun', '--sdk', 'macosx', '--show-sdk-path'],
-                                  text=True, timeout=20).strip()
-    scratch = full_suite_scratch.create(evidence)
     common = dict(candidate_environment(runtime, install, runner.runtime_environment),
                   DOCKER_CONTEXT='colima', DOCKER_COMPOSE='docker --context colima compose',
                   CONTAINER_COMPOSE=str(plugin / 'bin/compose'),
@@ -1786,8 +1819,22 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
                   CONTAINER_COMPOSE_NORMALIZER=str(plugin / 'resources/compose-normalizer'),
                   CONTAINER_COMPOSE_LIVE='1', CONTAINER_COMPOSE_BUILD_CHECK_LIVE='1',
                   COMPOSE_PARITY_TEST_RUNNER=str(ROOT / 'Tools/bazel/prebuilt_parity_tests.py'),
-                  PARITY_TIMEOUT_SECONDS='300', SDKROOT=sdk,
-                  TEST_TMPDIR=str(scratch), TMPDIR=str(scratch) + '/')
+                  PARITY_TIMEOUT_SECONDS='300')
+    buildx = None
+    if not development_bridge:
+        try:
+            buildx = docker_buildx_identity(common)
+        except Exception as error:
+            write(base / 'docker-buildx-preflight.json',
+                  {'schema': 1, 'passed': False, 'context': 'colima',
+                   'failure': str(error)})
+            raise
+        write(base / 'docker-buildx-preflight.json',
+              {'schema': 1, 'passed': True, **buildx})
+    sdk = subprocess.check_output(['/usr/bin/xcrun', '--sdk', 'macosx', '--show-sdk-path'],
+                                  text=True, timeout=20).strip()
+    scratch = full_suite_scratch.create(evidence)
+    common.update(SDKROOT=sdk, TEST_TMPDIR=str(scratch), TMPDIR=str(scratch) + '/')
     if not development_bridge:
         common.update(COMPOSE_PREBUILT_CORE_TEST=native_tests['ComposeCoreTests']['path'],
                       COMPOSE_PREBUILT_PLUGIN_TEST=native_tests['ComposePluginTests']['path'])
@@ -1885,6 +1932,8 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
         receipt = {'schema': 1, 'target': target, 'passed': True,
                    'parity_cases': len(rows), 'rows': rows,
                    'ledger_sha256': sha(ledger.path)}
+        if buildx is not None:
+            receipt['docker_buildx'] = buildx
         if development_bridge:
             receipt['case'] = rows[0]['fixture']
         write(base / ('development-bridge.json' if development_bridge
@@ -1892,6 +1941,8 @@ def run_original_full_suite(evidence: Path, runner: object, runtime: object,
         return receipt
     receipt = {'passed': True, 'runtime_tests': 27, 'parity_cases': len(rows) - 1,
                'rows': rows, 'ledger_sha256': sha(ledger.path)}
+    if buildx is not None:
+        receipt['docker_buildx'] = buildx
     write(base / 'acceptance.json', receipt)
     return receipt
 

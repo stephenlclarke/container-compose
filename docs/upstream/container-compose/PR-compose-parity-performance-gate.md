@@ -20,6 +20,10 @@ Docker/candidate repetitions, including remote logging.
 - Reuse the admitted published benchmark reference from the local asset cache;
   measure only the fresh candidate and compare all four seven-trial vectors to
   the retained Docker samples.
+- Before the first full-suite case, run a read-only Buildx availability check
+  against the selected Docker config and Colima context, then retain its exact
+  version and selected-plugin hash. Fail before any case if Docker would fall
+  back to a different builder.
 - Run the existing broad matrix directly inside the same runtime, host,
   Colima, and command leases, without its build prerequisite or runtime
   wrapper. Apply identical 200 MiB hard service limits to lifecycle and
@@ -38,8 +42,9 @@ Docker/candidate repetitions, including remote logging.
 
 - Focused Python controller and CLI regressions cover the all-66 parity
   selection, exact four-fixture/seven-trial reference comparison, bounded
-  matrix fixture selection and workload fingerprints, cleanup admission,
-  excluded release gates, and unchanged existing development parity behavior.
+  matrix fixture selection and workload fingerprints, Buildx identity and
+  missing-plugin rejection before any parity case, cleanup admission, excluded
+  release gates, and unchanged existing development parity behavior.
 - Python lint and repository Markdown lint are required before merge.
 - Live candidate/runtime validation is a separate authorized campaign step;
   no live result is claimed by this implementation handoff.

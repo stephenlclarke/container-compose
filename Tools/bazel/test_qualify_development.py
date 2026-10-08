@@ -141,6 +141,9 @@ class DevelopmentBridgeTests(unittest.TestCase):
             with patch.dict(sys.modules, {'fork_benchmark': SimpleNamespace(
                      command_lease=lambda environment: nullcontext(()))}), \
                  patch.object(local.subprocess, 'check_output', return_value=b'/sdk'), \
+                 patch.object(local, 'docker_buildx_identity', return_value={
+                     'context': 'colima', 'version_output': 'buildx v0.37.1',
+                     'plugin_version': 'v0.37.1', 'binary_sha256': 'b' * 64}), \
                  patch.object(local.full_suite_scratch, 'create', return_value=root), \
                  patch.object(local.full_suite, 'snapshot', return_value=empty), \
                  patch.object(local.full_suite, 'assert_namespace_free'), \
@@ -152,6 +155,8 @@ class DevelopmentBridgeTests(unittest.TestCase):
                     development_parity=True)
             self.assertEqual(receipt['target'], 'compose-development-parity')
             self.assertEqual(receipt['parity_cases'], 66)
+            self.assertEqual(receipt['docker_buildx']['plugin_version'], 'v0.37.1')
+            self.assertEqual(receipt['docker_buildx']['binary_sha256'], 'b' * 64)
             self.assertEqual(len(commands), 66)
             self.assertTrue(all(timeout == 600 for _, _, timeout in commands))
             environments = {Path(command[0]).name: env for command, env, _ in commands}
@@ -176,6 +181,35 @@ class DevelopmentBridgeTests(unittest.TestCase):
                           environments['check-compose-build-external-secret.sh'])
             self.assertFalse((evidence / 'full-suite/acceptance.json').exists())
             self.assertFalse((evidence / 'acceptance.json').exists())
+
+    def test_missing_buildx_aborts_before_any_full_suite_case(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            evidence = root / 'evidence'
+            evidence.mkdir()
+            runner_evidence = evidence / 'runtime'
+            runner_evidence.mkdir()
+            runner = SimpleNamespace(evidence=runner_evidence, rows=[], runtime_environment={})
+            runtime = SimpleNamespace(environment=lambda lane: {
+                'DOCKER_CONFIG': '/private/selected/docker-config'})
+            with patch.object(local, 'docker_buildx_identity',
+                              side_effect=RuntimeError('selected Docker Buildx plugin is unavailable')) as buildx, \
+                 patch.object(local.cli_process, 'run') as run_case:
+                with self.assertRaisesRegex(RuntimeError, 'Buildx plugin is unavailable'):
+                    local.run_original_full_suite(
+                        evidence, runner, runtime, root, root, {},
+                        lambda *args: self.fail('parity case inventory started'),
+                        development_parity=True)
+
+            buildx.assert_called_once()
+            environment = buildx.call_args.args[0]
+            self.assertEqual(environment['DOCKER_CONFIG'], '/private/selected/docker-config')
+            self.assertEqual(environment['DOCKER_CONTEXT'], 'colima')
+            run_case.assert_not_called()
+            self.assertFalse((evidence / 'full-suite/resource-ledger.json').exists())
+            receipt = json.loads((evidence / 'full-suite/docker-buildx-preflight.json').read_text())
+            self.assertFalse(receipt['passed'])
+            self.assertIn('Buildx plugin is unavailable', receipt['failure'])
 
     def test_unique_build_image_collision_refused_before_case_ledger(self) -> None:
         for name, prefix in local.full_suite.UNIQUE_OUTPUT_IMAGE_PREFIXES.items():
@@ -209,6 +243,9 @@ class DevelopmentBridgeTests(unittest.TestCase):
                     baseline['docker']['images'][tag + '|sha256:existing'] = tag
                     return original_check(baseline, case, fixed_names, fixed_images)
                 with patch.object(local.subprocess, 'check_output', return_value=b'/sdk'), \
+                     patch.object(local, 'docker_buildx_identity', return_value={
+                         'context': 'colima', 'version_output': 'buildx v0.37.1',
+                         'plugin_version': 'v0.37.1', 'binary_sha256': 'b' * 64}), \
                      patch.object(local.full_suite_scratch, 'create', return_value=root), \
                      patch.object(local.full_suite, 'inventory', return_value=[selected]), \
                      patch.object(local.full_suite, 'snapshot', return_value=empty), \

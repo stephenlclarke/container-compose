@@ -35,6 +35,44 @@ import q_assets
 
 
 class QualificationTests(unittest.TestCase):
+    def test_docker_buildx_identity_uses_selected_context_and_hashes_plugin(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / 'docker-buildx'
+            binary.write_bytes(b'selected buildx plugin')
+            binary.chmod(0o755)
+            expected_sha256 = local.sha(binary)
+            environment = {'DOCKER_CONFIG': '/private/selected/docker-config',
+                           'DOCKER_CONTEXT': 'colima'}
+            outputs = iter((
+                'github.com/docker/buildx v0.37.1 1234567890abcdef\n',
+                json.dumps([{'Name': 'buildx', 'Path': str(binary),
+                             'Version': 'v0.37.1'}]),
+            ))
+            with patch.object(local.subprocess, 'check_output',
+                              side_effect=lambda *args, **kwargs: next(outputs)) as check:
+                identity = local.docker_buildx_identity(environment)
+
+        self.assertEqual(identity['context'], 'colima')
+        self.assertEqual(identity['plugin_version'], 'v0.37.1')
+        self.assertEqual(identity['version_output'],
+                         'github.com/docker/buildx v0.37.1 1234567890abcdef')
+        self.assertEqual(identity['binary_sha256'], expected_sha256)
+        self.assertEqual(check.call_count, 2)
+        self.assertTrue(all(call.kwargs['env'] is environment for call in check.call_args_list))
+        self.assertEqual(check.call_args_list[0].args[0],
+                         ['docker', '--context', 'colima', 'buildx', 'version'])
+
+    def test_docker_buildx_identity_rejects_missing_selected_plugin(self) -> None:
+        outputs = iter((
+            'github.com/docker/buildx v0.37.1 1234567890abcdef\n',
+            json.dumps([{'Name': 'compose', 'Path': '/docker/cli-plugins/docker-compose',
+                         'Version': 'v5.5.1'}]),
+        ))
+        with patch.object(local.subprocess, 'check_output',
+                          side_effect=lambda *args, **kwargs: next(outputs)):
+            with self.assertRaisesRegex(RuntimeError, 'Buildx plugin is unavailable'):
+                local.docker_buildx_identity({'DOCKER_CONFIG': '/private/selected/config'})
+
     def make_q_recovery_fixture(self, root: Path) -> tuple[Path, Path, dict]:
         container_root = root / 'container'
         q_evidence = root / 'q-evidence'

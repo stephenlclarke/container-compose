@@ -41,6 +41,10 @@ Docker Compose compatibility assertion changes.
 - It admits the current clean Compose source, exact Q source/evidence, released
   Q asset hashes, compiled dependency chain, candidate package, and published
   benchmark reference.
+- Before the original 66-case suite begins, it verifies that the selected
+  Docker context can load Buildx and records the selected plugin version and
+  binary hash; missing Buildx stops the suite before any case can fall back to
+  a different builder.
 - It uses the existing host, runtime, plugin, Colima, command, project, and
   restoration leases.
 - It skips hosted quality, the separate runtime suite, unit/coverage replay,
