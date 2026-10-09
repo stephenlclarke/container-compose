@@ -47,6 +47,10 @@ Docker Compose compatibility assertion changes.
   a different builder.
 - It uses the existing host, runtime, plugin, Colima, command, project, and
   restoration leases.
+- Cleanup snapshots use each lane's supported resource-list commands: native
+  Container JSON inventory for the candidate and Docker's `ps`/`network ls`/
+  `volume ls` commands for the selected Colima context. Native container JSON
+  is validated and normalized before the inventories are compared.
 - It skips hosted quality, the separate runtime suite, unit/coverage replay,
   notarization, and release preparation/publication.
 - The existing development parity command remains unchanged.

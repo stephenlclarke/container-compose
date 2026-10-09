@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime, timezone
 import fcntl
@@ -1462,6 +1463,62 @@ def run_candidate_reference_benchmark(evidence: Path, runtime: object, candidate
             'benchmarks': compare(measured + historical, runtime_evidence)}
 
 
+def performance_matrix_cleanup_command(lane: str, candidate_binary: Path,
+                                       args: list[str]) -> list[str]:
+    """Build cleanup commands using the native Container CLI or Docker CLI per lane."""
+    if lane == 'candidate':
+        return [str(candidate_binary), *args]
+    if lane == 'docker':
+        return ['docker', '--context', 'colima', *args]
+    raise RuntimeError('Unknown performance matrix lane: ' + lane)
+
+
+def performance_matrix_inventory_commands(lane: str) -> dict[str, list[str]]:
+    """Use each runtime's supported resource-list commands for cleanup inventory."""
+    if lane == 'candidate':
+        return {
+            'containers': ['list', '--all', '--format', 'json'],
+            'networks': ['network', 'list', '--quiet'],
+            'volumes': ['volume', 'list', '--quiet'],
+        }
+    if lane == 'docker':
+        return {
+            'containers': ['ps', '-aq'],
+            'networks': ['network', 'ls', '-q'],
+            'volumes': ['volume', 'ls', '-q'],
+        }
+    raise RuntimeError('Unknown performance matrix lane: ' + lane)
+
+
+def performance_matrix_inventory_values(lane: str, kind: str, output: str) -> list[str]:
+    """Normalize candidate JSON containers and quiet resource IDs for stable comparison."""
+    if lane == 'candidate' and kind == 'containers':
+        containers = full_suite.native_containers(output)
+        return sorted(identity + '\t' + name for identity, name in containers.items())
+    if kind not in ('containers', 'networks', 'volumes') or lane not in ('candidate', 'docker'):
+        raise RuntimeError('Unknown performance matrix inventory kind or lane')
+    values = [line.strip() for line in output.splitlines() if line.strip()]
+    if len(values) != len(set(values)):
+        raise RuntimeError('Resource inventory returned duplicate identities')
+    return sorted(values)
+
+
+def performance_matrix_resource_snapshot(
+        label: str,
+        run_cleanup_command: Callable[[str, str, list[str], int], dict]) -> dict:
+    """Collect stable per-lane resource inventories through the supplied runner."""
+    snapshot = {}
+    for lane in ('candidate', 'docker'):
+        for kind, args in performance_matrix_inventory_commands(lane).items():
+            row = run_cleanup_command(lane, label + '-' + kind, args, 90)
+            if row['status']:
+                raise RuntimeError(f'{label} {lane} {kind} inventory failed; '
+                                   + row.get('log', row.get('error', 'unknown command failure')))
+            output = Path(row['log']).read_text(errors='replace')
+            snapshot[lane + '/' + kind] = performance_matrix_inventory_values(lane, kind, output)
+    return snapshot
+
+
 def performance_matrix_projects() -> list[tuple[str, str, str]]:
     rows = [('candidate', 'cc-perf-c-preflight', 'services-1.yml')]
     for lane, prefix in (('docker', 'cc-perf-d'), ('candidate', 'cc-perf-c')):
@@ -1527,8 +1584,7 @@ def run_broad_performance_matrix(evidence: Path, runtime: object, install: Path,
     def run_cleanup_command(lane: str, name: str, args: list[str], timeout: int = 120) -> dict:
         runner.env = benchmark_issue_environment(lane, name, runtime, install,
                                                  runner.runtime_environment)
-        command = ([str(install / 'bin/container')] if lane == 'candidate'
-                   else ['docker', '--context', 'colima']) + args
+        command = performance_matrix_cleanup_command(lane, install / 'bin/container', args)
         try:
             row = runner.run('performance-matrix-cleanup', lane, name,
                              len(cleanup_rows), command, ROOT, timeout)
@@ -1540,19 +1596,7 @@ def run_broad_performance_matrix(evidence: Path, runtime: object, install: Path,
         return row
 
     def resource_snapshot(label: str) -> dict:
-        snapshot = {}
-        for lane in ('candidate', 'docker'):
-            for kind, args in (
-                    ('containers', ['ps', '-aq']),
-                    ('networks', ['network', 'ls', '-q']),
-                    ('volumes', ['volume', 'ls', '-q'])):
-                row = run_cleanup_command(lane, label + '-' + kind, args, 90)
-                if row['status']:
-                    raise RuntimeError(f'{label} {lane} {kind} inventory failed; '
-                                       + row.get('log', row.get('error', 'unknown command failure')))
-                snapshot[lane + '/' + kind] = sorted(
-                    Path(row['log']).read_text(errors='replace').splitlines())
-        return snapshot
+        return performance_matrix_resource_snapshot(label, run_cleanup_command)
 
     before = resource_snapshot('before-matrix')
     write(state_path, {'schema': 1, 'started': True,

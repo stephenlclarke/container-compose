@@ -1418,6 +1418,70 @@ class QualificationTests(unittest.TestCase):
             self.assertFalse(result['restored'])
             self.assertEqual(len(closed), 3)
 
+    def test_performance_matrix_inventory_uses_native_and_docker_commands(self) -> None:
+        self.assertEqual(local.performance_matrix_inventory_commands('candidate'), {
+            'containers': ['list', '--all', '--format', 'json'],
+            'networks': ['network', 'list', '--quiet'],
+            'volumes': ['volume', 'list', '--quiet'],
+        })
+        self.assertEqual(local.performance_matrix_inventory_commands('docker'), {
+            'containers': ['ps', '-aq'],
+            'networks': ['network', 'ls', '-q'],
+            'volumes': ['volume', 'ls', '-q'],
+        })
+        self.assertEqual(local.performance_matrix_cleanup_command(
+            'candidate', Path('/runtime/bin/container'), ['compose', 'down']),
+            ['/runtime/bin/container', 'compose', 'down'])
+        self.assertEqual(local.performance_matrix_cleanup_command(
+            'docker', Path('/unused'), ['ps', '-aq']),
+            ['docker', '--context', 'colima', 'ps', '-aq'])
+
+    def test_performance_matrix_resource_snapshot_fake_runner(self) -> None:
+        fixture = {
+            ('candidate', 'containers'): json.dumps([
+                {'id': 'c2', 'name': 'compose-api-2'},
+                {'id': 'c1', 'configuration': {'id': 'compose-api-1'}},
+            ]),
+            ('candidate', 'networks'): 'net-b\nnet-a\n',
+            ('candidate', 'volumes'): 'vol-b\nvol-a\n',
+            ('docker', 'containers'): 'd2\nd1\n',
+            ('docker', 'networks'): 'dnet-b\ndnet-a\n',
+            ('docker', 'volumes'): 'dvol-b\ndvol-a\n',
+        }
+        calls = []
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def fake_runner(lane, name, args, timeout):
+                calls.append((lane, name, args, timeout))
+                kind = name.rsplit('-', 1)[-1]
+                log = root / f'{len(calls)}.log'
+                log.write_text(fixture[(lane, kind)])
+                return {'status': 0, 'log': str(log)}
+
+            snapshot = local.performance_matrix_resource_snapshot('before', fake_runner)
+
+        self.assertEqual(snapshot['candidate/containers'], [
+            'c1\tcompose-api-1', 'c2\tcompose-api-2'])
+        self.assertEqual(snapshot['candidate/networks'], ['net-a', 'net-b'])
+        self.assertEqual(snapshot['candidate/volumes'], ['vol-a', 'vol-b'])
+        self.assertEqual(snapshot['docker/containers'], ['d1', 'd2'])
+        self.assertEqual(snapshot['docker/networks'], ['dnet-a', 'dnet-b'])
+        self.assertEqual(snapshot['docker/volumes'], ['dvol-a', 'dvol-b'])
+        self.assertEqual([call[2] for call in calls[:3]], [
+            ['list', '--all', '--format', 'json'],
+            ['network', 'list', '--quiet'],
+            ['volume', 'list', '--quiet'],
+        ])
+        self.assertEqual([call[2] for call in calls[3:]], [
+            ['ps', '-aq'], ['network', 'ls', '-q'], ['volume', 'ls', '-q'],
+        ])
+
+    def test_performance_matrix_inventory_reuses_native_container_validator(self) -> None:
+        repeated = json.dumps([{'id': 'c1', 'name': 'one'}, {'id': 'c1', 'name': 'two'}])
+        with self.assertRaisesRegex(RuntimeError, 'unique ID/name'):
+            local.performance_matrix_inventory_values('candidate', 'containers', repeated)
+
 
 if __name__ == '__main__':
     unittest.main()

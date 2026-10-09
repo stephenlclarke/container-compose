@@ -33,6 +33,13 @@ Docker/candidate repetitions, including remote logging.
   current reclaimable memory do not satisfy the explicit guest envelope and
   host-headroom limits. Preserve the matrix's real functional and timing
   failures in the controller receipt.
+- Take cleanup snapshots with the lane's own CLI. The candidate uses native
+  `list --all --format json`, `network list --quiet`, and `volume list --quiet`
+  commands, then validates and sorts native container IDs/names through the
+  full-suite parser. The Docker control lane uses `docker --context colima ps
+  -aq`, `network ls -q`, and `volume ls -q`. This prevents Docker-only `ps`
+  flags from being sent to the native Container CLI; it changes no product
+  command or compatibility assertion.
 - Keep the existing `--development-parity` behavior and non-release receipt
   unchanged. Do not run hosted admission, the separate runtime test suite,
   notarization, or release preparation/publication.
@@ -45,16 +52,29 @@ Docker/candidate repetitions, including remote logging.
   matrix fixture selection and workload fingerprints, Buildx identity and
   missing-plugin rejection before any parity case, cleanup admission, excluded
   release gates, and unchanged existing development parity behavior.
+- The three focused cleanup-inventory regressions pass: command selection for
+  both lanes, resource snapshot normalization using a fake runner, and rejection
+  of duplicate native container identities.
 - Python lint and repository Markdown lint are required before merge.
-- Live candidate/runtime validation is a separate authorized campaign step;
-  no live result is claimed by this implementation handoff.
+- Fresh source-1ef validation passed 66 parity fixtures, 27 native runtime
+  tests from the retained 5a artifact (its test source and fixture bundle match
+  the current source), and the four-fixture/seven-trial comparison (28 fresh
+  samples against 28 historical samples). The broad matrix passed 260 samples for 26
+  fixtures using the bounded 4-GiB profile and 200-MiB service cap. The three
+  50-service fixtures (30 planned samples) were not started: the unchanged
+  fail-closed guard recorded 5.556 GiB available against 9.328 GiB required.
+  They remain pending, not measured failures or successes. The 8-GiB
+  comparison and 4-GiB matrix measurements remain separate; cleanup and host
+  restoration were independently verified.
 
 ## Compatibility and risks
 
 This changes only local qualification orchestration and evidence. It does not
-change Compose command behavior or modify the published Docker reference.
-The target is not release qualification; final release still requires the
-complete hosted and local gates.
+change Compose command behavior, add Docker-only CLI flags to Container, or
+modify the published Docker reference. The incomplete 50-service matrix means
+the full 29-fixture performance scope is still pending. This target is not
+release qualification; final release still requires the complete hosted and
+local gates.
 
 ## Linked handoff
 
