@@ -53,6 +53,13 @@ func resourceLabels(project: ComposeProject, labels: [String: String]?) -> [Stri
     return merged
 }
 
+/// Keeps the logical Compose network key distinct from its runtime name.
+func networkLabels(project: ComposeProject, composeName: String, labels: [String: String]?) -> [String: String] {
+    var merged = resourceLabels(project: project, labels: labels)
+    merged["com.apple.container.compose.network"] = composeName
+    return merged
+}
+
 /// Returns labels that identify a service container and its config hash.
 func serviceLabels(
     project: ComposeProject,

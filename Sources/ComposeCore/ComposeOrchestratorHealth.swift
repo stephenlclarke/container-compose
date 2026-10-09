@@ -98,7 +98,10 @@ extension ComposeOrchestrator {
             guard serviceImage(project: project, service: service) != nil else {
                 continue
             }
-            _ = try await runtimeHealthCheckArguments(project: project, service: service, cache: cache)
+            let arguments = try await runtimeHealthCheckArguments(project: project, service: service, cache: cache)
+            if !options.dryRun {
+                try await launchManager.validateHealthCheckArguments(arguments)
+            }
         }
     }
 

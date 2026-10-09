@@ -24,8 +24,8 @@ import Foundation
 /// Wires Compose to the runtime-neutral, current-user Container Engine socket.
 ///
 /// The adapter speaks the Engine HTTP protocol but neither imports nor invokes
-/// Docker software. Container creation remains on the selected Apple
-/// `container` CLI so an unmodified stock installation can own VM lifecycle.
+/// Docker software. Prepared creation and attached/detached startup use the gateway;
+/// legacy argument-only callers retain the selected Apple `container` CLI.
 public enum ComposeEngineRuntime {
     public static let socketEnvironmentVariable = "CONTAINER_COMPOSE_ENGINE_SOCKET"
     public static let volumeInitializerEnvironmentVariable =
@@ -69,6 +69,7 @@ public enum ComposeEngineRuntime {
 
 public final class EngineRuntimeProvider: @unchecked Sendable {
     private let client: Result<ContainerUnixHTTPClient, any Error>
+    let attachmentClient: Result<ContainerUnixHTTPClient, any Error>
     private static let volumeInitializations = EngineVolumeInitializationCoordinator()
     let volumeInitializerPathOverride: String?
     let runner: CommandRunning
@@ -83,6 +84,9 @@ public final class EngineRuntimeProvider: @unchecked Sendable {
         environmentLauncher: String = ComposeExecutionOptions.defaultEnvironmentLauncher
     ) {
         client = Result { try ContainerUnixHTTPClient(socketPath: socketPath) }
+        // Long-running foreground jobs must not inherit the control API's
+        // five-minute deadline. Cancellation still interrupts every operation.
+        attachmentClient = Result { try ContainerUnixHTTPClient(socketPath: socketPath, timeoutSeconds: 86400) }
         volumeInitializerPathOverride = volumeInitializerPath
         self.runner = runner
         self.containerBinary = containerBinary
@@ -188,7 +192,7 @@ extension EngineRuntimeProvider: ComposeRuntimeLifecycleManaging {
             fields.append("t=\(timeoutInSeconds)")
         }
         let suffix = fields.isEmpty ? "" : "?" + fields.joined(separator: "&")
-        try await request(.post, "/v1.53/containers/\(escaped(id))/stop\(suffix)")
+        try await requestContainerCleanup(.post, "/v1.53/containers/\(escaped(id))/stop\(suffix)", id: id)
     }
 
     public func restartContainer(id: String, signal: String?, timeoutInSeconds: Int?) async throws {
@@ -220,34 +224,11 @@ extension EngineRuntimeProvider: ComposeRuntimeLifecycleManaging {
     }
 
     public func deleteContainer(id: String, force: Bool) async throws {
-        try await request(.delete, "/v1.53/containers/\(escaped(id))?force=\(force ? 1 : 0)&v=1")
+        try await requestContainerCleanup(.delete, "/v1.53/containers/\(escaped(id))?force=\(force ? 1 : 0)&v=1", id: id)
     }
 }
 
 extension EngineRuntimeProvider: ComposeRuntimeResourceManaging {
-    public func createNetwork(_ request: ComposeNetworkCreateRequest) async throws {
-        let addressing = EngineIPAMConfig(
-            subnet: request.ipv4Subnet,
-            range: request.ipv4AllocationRange,
-            gateway: request.ipv4Gateway,
-            reserved: request.ipv4ReservedAddresses,
-        )
-        let payload = EngineNetworkCreateRequest(
-            name: request.name,
-            internalNetwork: request.isInternal,
-            enableIPv4: request.enableIPv4,
-            enableIPv6: request.enableIPv6,
-            options: request.driverOpts,
-            labels: request.labels,
-            ipam: addressing.isEmpty ? nil : EngineIPAM(config: [addressing]),
-        )
-        let _: EngineNetworkCreateResponse = try await self.request(.post, "/v1.53/networks/create", body: payload)
-    }
-
-    public func deleteNetwork(id: String) async throws {
-        try await request(.delete, "/v1.53/networks/\(escaped(id))")
-    }
-
     public func createVolume(_ request: ComposeVolumeCreateRequest) async throws {
         let payload = EngineVolumeCreateRequest(
             name: request.name,
@@ -272,7 +253,17 @@ extension EngineRuntimeProvider: ComposeRuntimeResourceManaging {
     }
 
     public func deleteVolume(name: String) async throws {
-        try await request(.delete, "/v1.53/volumes/\(escaped(name))")
+        do {
+            try await request(.delete, "/v1.53/volumes/\(escaped(name))")
+        } catch let error as ContainerUnixHTTPClientError {
+            guard case .server(status: 404, message: _) = error else {
+                throw error
+            }
+            let volumes = try await listVolumes()
+            guard !volumes.contains(where: { $0.name == name }) else {
+                throw error
+            }
+        }
     }
 }
 
@@ -800,44 +791,6 @@ private struct EngineEndpoint: Decodable {
 private struct EngineWaitResponse: Decodable {
     let statusCode: Int32
     enum CodingKeys: String, CodingKey { case statusCode = "StatusCode" }
-}
-
-private struct EngineNetworkCreateRequest: Encodable {
-    let name: String
-    let internalNetwork: Bool
-    let enableIPv4: Bool?
-    let enableIPv6: Bool?
-    let options: [String: String]
-    let labels: [String: String]
-    let ipam: EngineIPAM?
-    enum CodingKeys: String, CodingKey {
-        case name = "Name", internalNetwork = "Internal", enableIPv4 = "EnableIPv4", enableIPv6 = "EnableIPv6"
-        case options = "Options", labels = "Labels", ipam = "IPAM"
-    }
-}
-
-private struct EngineIPAM: Encodable {
-    let config: [EngineIPAMConfig]
-    enum CodingKeys: String, CodingKey { case config = "Config" }
-}
-
-private struct EngineIPAMConfig: Encodable {
-    let subnet: String?
-    let range: String?
-    let gateway: String?
-    let reserved: [String]
-    var isEmpty: Bool {
-        subnet == nil && range == nil && gateway == nil && reserved.isEmpty
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case subnet = "Subnet", range = "IPRange", gateway = "Gateway", reserved = "AuxiliaryAddresses"
-    }
-}
-
-private struct EngineNetworkCreateResponse: Decodable {
-    let id: String
-    enum CodingKeys: String, CodingKey { case id = "Id" }
 }
 
 private struct EngineVolumeCreateRequest: Encodable {

@@ -127,6 +127,78 @@ public enum ComposeArgumentRewriter {
 }
 
 public extension ComposeArgumentRewriter {
+    /// Protects the guest command from ArgumentParser's built-in help and from
+    /// Compose options that share a name with guest options.
+    static func argumentsForParsing(_ arguments: [String]) -> [String] {
+        var rewritten = rewrite(arguments)
+        guard let boundary = passthroughBoundary(in: rewritten),
+              rewritten[boundary] != "--", boundary + 1 < rewritten.count
+        else {
+            return rewritten
+        }
+        rewritten.insert("--", at: boundary + 1)
+        return rewritten
+    }
+
+    /// Finds the service or explicit terminator using the same option inventory
+    /// as command-local rewriting, rather than interpreting guest arguments.
+    private static func passthroughBoundary(in arguments: [String]) -> Int? {
+        guard let commandIndex = commandIndex(in: arguments),
+              ["run", "exec"].contains(arguments[commandIndex])
+        else {
+            return nil
+        }
+        let isRun = arguments[commandIndex] == "run"
+        var index = commandIndex + 1
+        while index < arguments.count {
+            let argument = arguments[index]
+            if argument == "--" || !argument.hasPrefix("-") {
+                return index
+            }
+            let consumesLocalValue = isRun
+                ? runOptionConsumesValue(argument)
+                : execOptionConsumesFollowingValue(argument)
+            index += !argument.contains("=") && (consumesLocalValue || globalOptionKind(argument) == .value) ? 2 : 1
+        }
+        return nil
+    }
+
+    /// Returns normalized Compose arguments without a run/exec service or its
+    /// command payload. Guest options must not request Compose help or bypass
+    /// the installed-runtime compatibility check.
+    static func argumentsForOptionInspection(_ arguments: [String]) -> [String] {
+        let rewritten = rewrite(arguments)
+        guard let commandIndex = commandIndex(in: rewritten),
+              ["run", "exec"].contains(rewritten[commandIndex])
+        else {
+            return rewritten
+        }
+        let isRun = rewritten[commandIndex] == "run"
+        var inspected = Array(rewritten[...commandIndex])
+        var index = commandIndex + 1
+        while index < rewritten.count {
+            let argument = rewritten[index]
+            if argument == "--" || !argument.hasPrefix("-") {
+                return inspected
+            }
+            let consumesLocalValue = isRun
+                ? runOptionConsumesValue(argument)
+                : execOptionConsumesFollowingValue(argument)
+            if !argument.contains("="),
+               consumesLocalValue || globalOptionKind(argument) == .value,
+               rewritten.indices.contains(index + 1)
+            {
+                // An option value named --help is data, not a help request.
+                inspected.append(argument + "=" + rewritten[index + 1])
+                index += 2
+            } else {
+                inspected.append(argument)
+                index += 1
+            }
+        }
+        return inspected
+    }
+
     /// Returns arguments with known Compose global options moved immediately
     /// after the subcommand while preserving unknown pre-command arguments.
     static func rewrite(_ arguments: [String]) -> [String] {
@@ -641,7 +713,7 @@ private extension ComposeArgumentRewriter {
         return rewritten
     }
 
-    /// Normalizes Docker Compose `run -p` before the service name.
+    /// Normalizes Docker Compose run options before the service name.
     private static func rewriteRunOptions(_ arguments: [String]) -> [String] {
         var rewritten: [String] = []
         var index = 0
@@ -655,22 +727,16 @@ private extension ComposeArgumentRewriter {
                 shouldRewriteOptions = false
                 rewritten.append(argument)
                 index += 1
-            } else if argument == "-p" {
-                rewritten.append("--publish")
-                if arguments.indices.contains(index + 1) {
-                    rewritten.append(arguments[index + 1])
-                    index += 2
-                } else {
+            } else if let normalized = ComposeRunTerminalArguments.normalize(argument) {
+                rewritten.append(contentsOf: normalized.arguments)
+                index += 1
+                if normalized.consumesFollowingValue, arguments.indices.contains(index) {
+                    rewritten.append(arguments[index])
                     index += 1
                 }
-            } else if argument.hasPrefix("-p="), argument.count > 3 {
-                rewritten.append("--publish")
-                rewritten.append(String(argument.dropFirst(3)))
-                index += 1
-            } else if argument.hasPrefix("-p"), argument.count > 2 {
-                rewritten.append("--publish")
-                rewritten.append(String(argument.dropFirst(2)))
-                index += 1
+            } else if let publish = normalizedRunPublishOption(arguments, at: index) {
+                rewritten.append(contentsOf: publish.arguments)
+                index += publish.consumed
             } else if let split = splitCompactRunValueOption(argument) {
                 rewritten.append(split.option)
                 rewritten.append(split.value)
@@ -688,6 +754,27 @@ private extension ComposeArgumentRewriter {
             }
         }
         return rewritten
+    }
+
+    /// Expands Docker Compose publish shorthand before the service name.
+    private static func normalizedRunPublishOption(
+        _ arguments: [String],
+        at index: Int,
+    ) -> (arguments: [String], consumed: Int)? {
+        let argument = arguments[index]
+        if argument == "-p" {
+            if arguments.indices.contains(index + 1) {
+                return (["--publish", arguments[index + 1]], 2)
+            }
+            return (["--publish"], 1)
+        }
+        if argument.hasPrefix("-p="), argument.count > 3 {
+            return (["--publish", String(argument.dropFirst(3))], 1)
+        }
+        if argument.hasPrefix("-p"), argument.count > 2 {
+            return (["--publish", String(argument.dropFirst(2))], 1)
+        }
+        return nil
     }
 
     /// Rewrites Docker-style optional boolean flag values for ArgumentParser flags.
@@ -743,6 +830,8 @@ private extension ComposeArgumentRewriter {
     /// Returns whether a `run` option consumes the following argument.
     private static func runOptionConsumesValue(_ argument: String) -> Bool {
         [
+            "--cap-add",
+            "--cap-drop",
             "--entrypoint",
             "--env",
             "--env-from-file",

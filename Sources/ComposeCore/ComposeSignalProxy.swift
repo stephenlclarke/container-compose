@@ -51,7 +51,7 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
                 try await operation()
                 return
             }
-            await Self.processSignalOwnership.acquire()
+            try await Self.processSignalOwnership.acquire()
             do {
                 try Task.checkCancellation()
                 try await Self.runWithSignalProxy(
@@ -98,13 +98,7 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
                 sources.append(source)
             }
 
-            let operationResult: Result<Void, Error>
-            do {
-                try await operation()
-                operationResult = .success(())
-            } catch {
-                operationResult = .failure(error)
-            }
+            let operationResult = await runOperation(operation, handlerTasks: handlerTasks)
             for source in sources {
                 source.cancel()
             }
@@ -113,11 +107,35 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
                     continuation.resume()
                 }
             }
-            await handlerTasks.waitForAll()
+            await withTaskCancellationHandler {
+                await handlerTasks.waitForAll()
+            } onCancel: {
+                handlerTasks.cancelAll()
+            }
             for (number, previousHandler) in previousHandlers {
                 _ = Darwin.signal(number, previousHandler)
             }
             try operationResult.get()
+            try Task.checkCancellation()
+        }
+
+        private static func runOperation(
+            _ operation: @escaping @Sendable () async throws -> Void,
+            handlerTasks: SignalHandlerTaskTracker
+        ) async -> Result<Void, Error> {
+            do {
+                try await withTaskCancellationHandler {
+                    try await operation()
+                } onCancel: {
+                    handlerTasks.cancelAll()
+                }
+                return .success(())
+            } catch {
+                if error is CancellationError {
+                    handlerTasks.cancelAll()
+                }
+                return .failure(error)
+            }
         }
 
         private static func signalMapping(named name: String) -> (name: String, number: Int32)? {
@@ -130,6 +148,10 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
                 ("SIGQUIT", SIGQUIT)
             case "SIGTERM":
                 ("SIGTERM", SIGTERM)
+            case "SIGUSR1":
+                ("SIGUSR1", SIGUSR1)
+            case "SIGUSR2":
+                ("SIGUSR2", SIGUSR2)
             default:
                 nil
             }
@@ -141,16 +163,27 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
     /// Serializes ownership of process-wide Darwin signal dispositions.
     private actor ProcessSignalProxyOwnership {
         private var isOwned = false
-        private var waiters: [CheckedContinuation<Void, Never>] = []
+        private var waiters: [(UUID, CheckedContinuation<Void, any Error>)] = []
 
-        func acquire() async {
-            guard isOwned else {
-                isOwned = true
-                return
+        func acquire() async throws {
+            let id = UUID()
+            try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                guard isOwned else {
+                    isOwned = true
+                    return
+                }
+                try await withCheckedThrowingContinuation { continuation in
+                    waiters.append((id, continuation))
+                }
+            } onCancel: {
+                Task { await self.cancelWaiter(id) }
             }
-            await withCheckedContinuation { continuation in
-                waiters.append(continuation)
-            }
+        }
+
+        private func cancelWaiter(_ id: UUID) {
+            guard let index = waiters.firstIndex(where: { $0.0 == id }) else { return }
+            waiters.remove(at: index).1.resume(throwing: CancellationError())
         }
 
         func release() {
@@ -158,7 +191,7 @@ public struct DispatchComposeSignalProxy: ComposeSignalProxying {
                 isOwned = false
                 return
             }
-            waiters.removeFirst().resume()
+            waiters.removeFirst().1.resume()
         }
     }
 #endif
@@ -167,15 +200,32 @@ private final class SignalHandlerTaskTracker: @unchecked Sendable {
     private let lock = NSLock()
     private var inFlightTaskCount = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var tasks: [UUID: Task<Void, Never>] = [:]
+    private var cancelled = false
 
     func submit(_ operation: @escaping @Sendable () async -> Void) {
         lock.lock()
         inFlightTaskCount += 1
-        lock.unlock()
-
-        Task {
+        let id = UUID()
+        let task = Task {
             await operation()
-            self.completeTask()
+            self.completeTask(id)
+        }
+        tasks[id] = task
+        let shouldCancel = cancelled
+        lock.unlock()
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    func cancelAll() {
+        let owned = lock.withLock {
+            cancelled = true
+            return Array(tasks.values)
+        }
+        for task in owned {
+            task.cancel()
         }
     }
 
@@ -192,9 +242,10 @@ private final class SignalHandlerTaskTracker: @unchecked Sendable {
         }
     }
 
-    private func completeTask() {
+    private func completeTask(_ id: UUID) {
         let completedWaiters: [CheckedContinuation<Void, Never>]
         lock.lock()
+        tasks.removeValue(forKey: id)
         inFlightTaskCount -= 1
         if inFlightTaskCount == 0 {
             completedWaiters = waiters

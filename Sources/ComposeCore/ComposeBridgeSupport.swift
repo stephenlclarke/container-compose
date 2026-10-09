@@ -323,8 +323,7 @@ func writeBridgeTransformerDockerfile(destination: String) throws {
     COPY templates /templates
     """ + "\n"
     let path = bridgeDockerfilePath(destination)
-    try dockerfile.write(toFile: path, atomically: true, encoding: .utf8)
-    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
+    try ComposeTemporaryFiles.writeAtomically(Data(dockerfile.utf8), to: URL(fileURLWithPath: path), permissions: 0o700)
 }
 
 func bridgeDockerfilePath(_ destination: String) -> String {

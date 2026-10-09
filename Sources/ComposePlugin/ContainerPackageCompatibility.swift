@@ -76,6 +76,35 @@ enum ContainerPackageCompatibility {
         case stock
     }
 
+    enum RuntimeBackend {
+        case nativeAPI
+        case engine
+    }
+
+    static var compiledRuntimeBackend: RuntimeBackend {
+        #if CONTAINER_COMPOSE_ENHANCED_RUNTIME
+            .nativeAPI
+        #else
+            .engine
+        #endif
+    }
+
+    /// Metadata selection is independent of the compiled runtime transport.
+    struct RuntimeSelection {
+        let profile: RuntimeProfile?
+        let backend: RuntimeBackend
+        let engineReadiness: ((String, String) async throws -> Void)?
+
+        init(
+            profile: RuntimeProfile? = nil, backend: RuntimeBackend = compiledRuntimeBackend,
+            engineReadiness: ((String, String) async throws -> Void)? = nil,
+        ) {
+            self.profile = profile
+            self.backend = backend
+            self.engineReadiness = engineReadiness
+        }
+    }
+
     struct ExpectedRuntimeRevisions: Sendable {
         let container: String?
         let containerization: String?
@@ -167,6 +196,7 @@ enum ContainerPackageCompatibility {
 
     /// Returns whether this invocation needs the installed runtime stack check.
     static func requiresRuntimeCheck(arguments: [String]) -> Bool {
+        let arguments = ComposeArgumentRewriter.argumentsForOptionInspection(arguments)
         if isAlphaDryRun(arguments: arguments) {
             return false
         }
@@ -196,7 +226,7 @@ extension ContainerPackageCompatibility {
     static func compatibilityFailure(
         arguments: [String],
         lane: String,
-        runtimeProfile requestedRuntimeProfile: RuntimeProfile? = nil,
+        runtimeSelection: RuntimeSelection = .init(),
         expectedRevisions: ExpectedRuntimeRevisions = .init(),
         stockRuntimeCapabilities: [String] = [],
         onCompatibleRuntime: @escaping @Sendable (ComposeRuntimeCapabilities) -> Void = { _ in
@@ -211,7 +241,10 @@ extension ContainerPackageCompatibility {
         do {
             let data = try await run(["system", "version", "--format", "json"])
             let components = try decodeComponents(from: data)
-            let runtimeProfile = try requestedRuntimeProfile ?? selectedRuntimeProfile()
+            let runtimeProfile = try runtimeSelection.profile ?? selectedRuntimeProfile()
+            if let failure = runtimeProfileFailure(runtimeProfile, backend: runtimeSelection.backend, lane: lane) {
+                return failure
+            }
             if let failure = compatibilityFailure(
                 components: components,
                 lane: lane,
@@ -221,34 +254,22 @@ extension ContainerPackageCompatibility {
             ) {
                 return failure
             }
-            do {
-                _ = try await run(["system", "status"])
-            } catch let interruption as ContainerPackagePreflightInterruption {
-                throw interruption
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                return serviceGuidance(
-                    lane: lane,
-                    runtimeProfile: runtimeProfile,
-                    detected: [
-                        "container system status: \(error.localizedDescription)",
-                    ],
-                )
+            if let failure = try await runtimeReadinessFailure(
+                components: components, lane: lane, runtimeProfile: runtimeProfile,
+                runtimeSelection: runtimeSelection, run: run,
+            ) {
+                return failure
             }
-            let runtimeCapabilities = runtimeProfile == .stock
-                ? stockRuntimeCapabilities
-                : components
-                .first(where: { $0.appName == "container" })?
-                .runtimeCapabilities ?? []
-            onCompatibleRuntime(ComposeRuntimeCapabilities(identifiers: runtimeCapabilities))
+            onCompatibleRuntime(compatibleCapabilities(
+                components: components, profile: runtimeProfile, stockCapabilities: stockRuntimeCapabilities,
+            ))
             return nil
         } catch let interruption as ContainerPackagePreflightInterruption {
             throw interruption
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            if (requestedRuntimeProfile ?? compiledRuntimeProfile) == .stock {
+            if (runtimeSelection.profile ?? compiledRuntimeProfile) == .stock {
                 return stockInstallGuidance(
                     lane: lane,
                     detected: [
@@ -326,6 +347,27 @@ extension ContainerPackageCompatibility {
         }
 
         return nil
+    }
+
+    private static func compatibleCapabilities(
+        components: [ContainerSystemVersionComponent], profile: RuntimeProfile, stockCapabilities: [String],
+    ) -> ComposeRuntimeCapabilities {
+        let identifiers = profile == .stock
+            ? stockCapabilities
+            : components.first(where: { $0.appName == "container" })?.runtimeCapabilities ?? []
+        return ComposeRuntimeCapabilities(identifiers: identifiers)
+    }
+
+    private static func runtimeProfileFailure(
+        _ profile: RuntimeProfile, backend: RuntimeBackend, lane: String,
+    ) -> String? {
+        guard backend == .nativeAPI, profile != .enhanced else {
+            return nil
+        }
+        return installGuidance(
+            lane: lane,
+            detected: ["runtime profile: stock cannot select the compiled native API backend"],
+        )
     }
 
     private static func selectedRuntimeProfile() throws -> RuntimeProfile {
@@ -761,7 +803,7 @@ extension ContainerPackageCompatibility {
         return true
     }
 
-    private static func serviceGuidance(
+    static func serviceGuidance(
         lane: String,
         runtimeProfile: RuntimeProfile,
         detected: [String],
@@ -805,9 +847,11 @@ extension ContainerPackageCompatibility {
 
     private static func stockInstallGuidance(lane _: String, detected: [String]) -> String {
         """
-        container-compose was asked to use stock Apple container, but the active runtime is not a coherent stock installation.
+        container-compose was asked to use stock Apple container, but the active runtime is not a coherent \
+        stock installation.
 
-        Install and start a tagged Apple container package, or explicitly select the enhanced runtime profile. No runtime is installed or replaced automatically.
+        Install and start a tagged Apple container package, or explicitly select the enhanced runtime profile. \
+        No runtime is installed or replaced automatically.
 
           /usr/local/bin/container system start
 
@@ -867,8 +911,8 @@ struct ContainerSystemVersionComponent: Decodable, Equatable {
     var commit: String?
     var containerization: String?
     var distribution: String?
-    var runtimeCapabilitySchemaVersion: Int? = nil
-    var runtimeCapabilities: [String]? = nil
+    var runtimeCapabilitySchemaVersion: Int?
+    var runtimeCapabilities: [String]?
     var source: String?
     var version: String?
 

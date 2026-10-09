@@ -119,7 +119,7 @@ extension ComposeOrchestrator {
             image: image,
             command: command,
         )
-        let createArguments = try await preStartHelperCreateArguments(
+        let launch = try await preStartHelperLaunchPlan(
             project: project,
             service: service,
             containerIndex: target.index,
@@ -127,8 +127,9 @@ extension ComposeOrchestrator {
             helperName: helperName,
         )
         try await runContainerWithProgress(
-            createArguments,
+            launch.arguments,
             message: "Running \(service.name) pre_start[\(index)]",
+            options: .init(logging: launch.configuration.logging, configuration: launch.configuration),
         )
 
         if options.dryRun {
@@ -162,13 +163,13 @@ extension ComposeOrchestrator {
     }
 
     /// Builds the ephemeral helper create invocation and resolves inherited mounts.
-    private func preStartHelperCreateArguments(
+    private func preStartHelperLaunchPlan(
         project: ComposeProject,
         service: ComposeService,
         containerIndex: Int,
         helperService sourceService: ComposeService,
         helperName: String,
-    ) async throws -> [String] {
+    ) async throws -> ContainerServiceLaunchPlan {
         var helperService = sourceService
         var helperProject = project
         let externalVolumeMounts: ExternalVolumeMounts
@@ -189,7 +190,7 @@ extension ComposeOrchestrator {
         helperProject.services[helperService.name] = helperService
 
         let imageHealthCheckCache = ComposeImageHealthCheckCache()
-        return try await runArguments(
+        return try await serviceLaunchPlan(
             project: helperProject,
             service: helperService,
             options: RunArgumentOptions {

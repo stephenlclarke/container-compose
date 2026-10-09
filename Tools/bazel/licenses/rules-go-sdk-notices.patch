@@ -1,0 +1,11 @@
+--- a/go/private/BUILD.sdk.bazel
++++ b/go/private/BUILD.sdk.bazel
+@@ -6,6 +6,8 @@
+ load("@io_bazel_rules_go//go/private/rules:transition.bzl", "non_go_reset_target")
+ 
+ package(default_visibility = ["//visibility:public"])
++
++exports_files(["LICENSE", "PATENTS"])
+ 
+ filegroup(
+     name = "libs",

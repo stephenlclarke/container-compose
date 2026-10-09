@@ -1,0 +1,79 @@
+//===----------------------------------------------------------------------===//
+// Copyright © 2026 container-compose project authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//   https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+
+import ComposeCore
+@testable import ComposeEngineRuntime
+import Darwin
+import Foundation
+import Testing
+
+struct EngineServiceEnvironmentCaptureTests {
+    @Test func capturesExactBytesAndOrderingUsingOwnedProcesses() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let first = fixture.root.appendingPathComponent("-first.env")
+        let second = fixture.root.appendingPathComponent("second.env")
+        let bytes = [Data("KEY=first\r\n".utf8), Data([0xFF])]
+        try bytes[0].write(to: first)
+        try bytes[1].write(to: second)
+        let result = try await EngineServiceEnvironment.capture(
+            paths: [first.path, second.path], runner: ProcessRunner()
+        )
+        #expect(result == bytes)
+    }
+
+    @Test func missingAndOversizedFilesFailWithoutLeakingOutput() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let file = fixture.root.appendingPathComponent("env")
+        let secret = "TOKEN=private-value"
+        try Data(secret.utf8).write(to: file)
+        for paths in [[file.path, file.path], [fixture.root.appendingPathComponent("missing").path]] {
+            do {
+                _ = try await EngineServiceEnvironment.capture(
+                    paths: paths, runner: ProcessRunner(), maximumBytes: secret.utf8.count
+                )
+                Issue.record("Capture should have failed")
+            } catch {
+                #expect(!String(describing: error).contains(secret))
+            }
+        }
+    }
+
+    @Test func unopenedFIFOIsCancelledAtDeadline() async throws {
+        let fixture = try EngineFixture()
+        defer { fixture.cleanup() }
+        let fifo = fixture.root.appendingPathComponent("waiting.env")
+        #expect(mkfifo(fifo.path, 0o600) == 0)
+        let start = ContinuousClock.now
+        await #expect(throws: ComposeError.self) {
+            try await EngineServiceEnvironment.capture(
+                paths: [fifo.path], runner: ProcessRunner(), timeout: .milliseconds(100)
+            )
+        }
+        #expect(start.duration(to: .now) < .seconds(10))
+    }
+
+    @Test func validatesBoundsAndEmptyPaths() async throws {
+        #expect(try await EngineServiceEnvironment.capture(paths: [], runner: ProcessRunner()) == [])
+        await #expect(throws: ComposeError.self) {
+            try await EngineServiceEnvironment.capture(paths: [""], runner: ProcessRunner())
+        }
+        await #expect(throws: ComposeError.self) {
+            try await EngineServiceEnvironment.capture(paths: ["unused"], runner: ProcessRunner(), maximumBytes: 0)
+        }
+    }
+}

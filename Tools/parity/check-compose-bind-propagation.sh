@@ -228,6 +228,7 @@ expect_container_behavior() {
         -p "$PROJECT_NAME" \
         -f "$FIXTURE_DIR/compose.yml" \
         up --no-start node-exporter >"$dry_run_output" 2>&1
+    dry_run_output="$(python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --file "$dry_run_output")"
     if ! grep -F "container create --name $PROJECT_NAME-node-exporter-1" "$dry_run_output" >/dev/null; then
         error 'container-compose did not render a create command for the propagated bind fixture'
         sed -n '1,160p' "$dry_run_output" >&2

@@ -404,10 +404,131 @@ DOCKER_COMPOSE_PARITY_TARGETS := \
 SWIFT_TEST_FLAGS ?=
 SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -F -Xswiftc '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' -Xlinker -rpath -Xlinker '$(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)' $(if $(strip $(SWIFT_TEST_RUNTIME_LIBRARY_PATH)),-Xlinker -rpath -Xlinker '$(SWIFT_TEST_RUNTIME_LIBRARY_PATH)'))
 
-.PHONY: all local-build workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-test-direct swift-runtime-test-build swift-runtime-test swift-coverage swift-coverage-check go-test go-coverage-check go-build go-release-check stock-engine-image-volume-smoke cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check sonar sonar-scan release release-plan release-version package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit swift-style-tools swift-style-paths swift-style-check swift-style-format local-swift-stack-clean
+.PHONY: all local-build workflow ci ci-fast release-gate-environment-fingerprint-check release-gate release-gate-hosted ci-release clean run build build-release test resolve swift-test-build swift-test swift-test-direct swift-runtime-test-build swift-runtime-test swift-coverage swift-coverage-check go-test go-coverage-check go-build go-release-check stock-engine-image-volume-smoke cli-smoke cli-smoke-built container-stack-build container-stack-build-if-needed docker-log-fixtures docker-log-fixtures-update docker-compose-reference docker-compose-e2e-fixtures docker-compose-parity docker-compose-parity-stages docker-compose-cli-surface-parity docker-compose-bridge-parity docker-compose-compatibility-names-parity docker-compose-config-all-resources-parity docker-compose-env-file-parity docker-compose-git-remote-parity docker-compose-commit-parity docker-compose-cp-stdio-archive-streams-parity docker-compose-build-builder-parity docker-compose-build-check-parity docker-compose-build-external-dockerfile-parity docker-compose-build-external-secret-parity docker-compose-build-isolation-parity docker-compose-build-no-cache-filter-parity docker-compose-build-secret-metadata-parity docker-compose-bind-create-host-path-parity docker-compose-bind-propagation-parity docker-compose-image-volumes-parity docker-compose-deploy-endpoint-mode-parity docker-compose-deploy-resource-reservations-parity docker-compose-cpu-limit-parity docker-compose-privileged-parity docker-compose-security-opt-parity docker-compose-deploy-scheduler-metadata-parity docker-compose-memory-byte-precision-parity docker-compose-memory-swap-limit-parity docker-compose-pids-limit-parity docker-compose-device-cgroup-rules-parity docker-compose-devices-parity docker-compose-gpus-parity docker-compose-network-driver-opts-parity docker-compose-network-service-discovery-parity docker-compose-links-parity docker-compose-up-menu-parity docker-compose-host-namespaces-parity docker-compose-health-wait-parity docker-compose-create-options-parity docker-compose-events-parity docker-compose-state-status-parity docker-compose-rm-parity docker-compose-lifecycle-hooks-parity docker-compose-signal-log-reliability-parity docker-compose-restart-policy-parity docker-compose-userns-mode-parity coverage coverage-check coverage-profiles-check sonar sonar-scan release release-plan release-version package package-release package-debug package-built stack-consistency coverage-tools-syntax coverage-python-tools-test release-tools-test ci-tools-test coverage-tools-test source-checks lint format fmt check check-licenses update-licenses pre-commit swift-style-tools swift-style-paths swift-style-check swift-style-format local-swift-stack-clean
 
 .PHONY: print-release-gate-static-fingerprint print-release-gate-fingerprint actions-lint
 .PHONY: worktree-audit worktree-audit-strict
+.PHONY: bazel-compose-qualify bazel-compose-development-bridge bazel-compose-development-parity bazel-compose-development-parity-performance bazel-compose-capture-reference bazel-workflow-tools-test
+.PHONY: bazel-compose-release-prepare bazel-compose-release-publish bazel-compose-release-verify bazel-compose-recover
+
+COMPOSE_CONTAINER_ROOT ?=
+COMPOSE_Q_EVIDENCE ?=
+COMPOSE_RECOVERY_EVIDENCE ?=
+.PHONY: bazel-q-runtime-release-prepare bazel-q-runtime-release-publish bazel-q-runtime-release-verify
+
+# Cheap, no-runtime regressions for the retained launcher, hosted admission,
+# private recovery and published-layer consumers. The native CLI/package tests
+# remain in their declared Bazel targets and need actual built artifacts.
+bazel-workflow-tools-test:
+	$(TOOL_TEST_TEMP_ENV) PYTHONPATH="Tools/bazel:Tools/bazel/artifacts" $(PYTHON) -m unittest -q \
+		 test_local_launcher test_hosted_quality test_qualify_local test_qualify_development test_benchmark_evidence \
+		 test_prebuilt_parity_tests test_full_suite test_full_suite_scratch test_fixture_cache test_qualified_process test_compose_release test_q_assets
+	$(TOOL_TEST_TEMP_ENV) PYTHONPATH="Tools/bazel:Tools/bazel/artifacts" $(PYTHON) -m unittest \
+		discover -s Tools/bazel/artifacts -p 'test_*.py' -q
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_keychain_fixture.py
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_network_parity_fixtures.py
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_normalize_container_command_output.py
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) Tools/parity/test_qualification_lease.py
+	$(TOOL_TEST_TEMP_ENV) PYTHONPATH="Tools/ci" $(PYTHON) -m unittest -q test_python39_compatibility
+
+# Qualified Container runtime metadata production is explicitly staged:
+# preparation may fetch exact native lower-layer receipts; publication and
+# remote verification remain separate actions.
+Q_CONTAINER_ROOT ?=
+Q_QUALIFICATION_DIR ?=
+Q_RUNTIME_RELEASE_OUTPUT ?=
+Q_RUNTIME_RELEASE_SCRATCH ?= /Volumes/SSD/cf/bazel/tmp
+
+bazel-q-runtime-release-prepare:
+	@test -n "$(Q_CONTAINER_ROOT)" -a -n "$(Q_QUALIFICATION_DIR)" -a -n "$(Q_RUNTIME_RELEASE_OUTPUT)" || { echo "Set Q_CONTAINER_ROOT, Q_QUALIFICATION_DIR, and Q_RUNTIME_RELEASE_OUTPUT" >&2; exit 2; }
+	@test "$(Q_RUNTIME_RELEASE_SCRATCH)" = /Volumes/SSD/cf/bazel/tmp || { echo "Q_RUNTIME_RELEASE_SCRATCH must be the enrolled SSD tmp directory" >&2; exit 2; }
+	TMPDIR="$(Q_RUNTIME_RELEASE_SCRATCH)" TMP="$(Q_RUNTIME_RELEASE_SCRATCH)" TEMP="$(Q_RUNTIME_RELEASE_SCRATCH)" $(PYTHON) Tools/bazel/artifacts/q_runtime_release.py prepare --container-root "$(Q_CONTAINER_ROOT)" --qualification-dir "$(Q_QUALIFICATION_DIR)" --root "$(CURDIR)" --output "$(Q_RUNTIME_RELEASE_OUTPUT)" --scratch "$(Q_RUNTIME_RELEASE_SCRATCH)"
+
+bazel-q-runtime-release-publish:
+	@test -n "$(Q_CONTAINER_ROOT)" -a -n "$(Q_QUALIFICATION_DIR)" -a -n "$(Q_RUNTIME_RELEASE_OUTPUT)" || { echo "Set Q_CONTAINER_ROOT, Q_QUALIFICATION_DIR, and Q_RUNTIME_RELEASE_OUTPUT" >&2; exit 2; }
+	@test "$(Q_RUNTIME_RELEASE_SCRATCH)" = /Volumes/SSD/cf/bazel/tmp || { echo "Q_RUNTIME_RELEASE_SCRATCH must be the enrolled SSD tmp directory" >&2; exit 2; }
+	@test -d "$(Q_RUNTIME_RELEASE_SCRATCH)" && test -w "$(Q_RUNTIME_RELEASE_SCRATCH)" || { echo "Create writable enrolled SSD scratch at Q_RUNTIME_RELEASE_SCRATCH" >&2; exit 2; }
+	TMPDIR="$(Q_RUNTIME_RELEASE_SCRATCH)" TMP="$(Q_RUNTIME_RELEASE_SCRATCH)" TEMP="$(Q_RUNTIME_RELEASE_SCRATCH)" $(PYTHON) Tools/bazel/artifacts/q_runtime_release.py publish --container-root "$(Q_CONTAINER_ROOT)" --qualification-dir "$(Q_QUALIFICATION_DIR)" --root "$(CURDIR)" --output "$(Q_RUNTIME_RELEASE_OUTPUT)" --scratch "$(Q_RUNTIME_RELEASE_SCRATCH)"
+
+bazel-q-runtime-release-verify:
+	@test -n "$(Q_CONTAINER_ROOT)" -a -n "$(Q_QUALIFICATION_DIR)" -a -n "$(Q_RUNTIME_RELEASE_OUTPUT)" || { echo "Set Q_CONTAINER_ROOT, Q_QUALIFICATION_DIR, and Q_RUNTIME_RELEASE_OUTPUT" >&2; exit 2; }
+	@test "$(Q_RUNTIME_RELEASE_SCRATCH)" = /Volumes/SSD/cf/bazel/tmp || { echo "Q_RUNTIME_RELEASE_SCRATCH must be the enrolled SSD tmp directory" >&2; exit 2; }
+	@test -d "$(Q_RUNTIME_RELEASE_SCRATCH)" && test -w "$(Q_RUNTIME_RELEASE_SCRATCH)" || { echo "Create writable enrolled SSD scratch at Q_RUNTIME_RELEASE_SCRATCH" >&2; exit 2; }
+	TMPDIR="$(Q_RUNTIME_RELEASE_SCRATCH)" TMP="$(Q_RUNTIME_RELEASE_SCRATCH)" TEMP="$(Q_RUNTIME_RELEASE_SCRATCH)" $(PYTHON) Tools/bazel/artifacts/q_runtime_release.py verify --container-root "$(Q_CONTAINER_ROOT)" --qualification-dir "$(Q_QUALIFICATION_DIR)" --root "$(CURDIR)" --output "$(Q_RUNTIME_RELEASE_OUTPUT)" --scratch "$(Q_RUNTIME_RELEASE_SCRATCH)"
+
+# Final local gate for one clean Compose checkpoint. Evidence is retained on
+# internal storage; cached Bazel build scratch stays on the enrolled SSD.
+bazel-compose-qualify:
+	@stamp="$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	sha="$$(git rev-parse --short=8 HEAD)"; \
+	test -n "$(COMPOSE_CONTAINER_ROOT)" && test -n "$(COMPOSE_Q_EVIDENCE)" || { printf '%s\n' "Set COMPOSE_CONTAINER_ROOT and COMPOSE_Q_EVIDENCE" >&2; exit 2; }; \
+	if [ -n "$(COMPOSE_PREVIOUS_CANDIDATE_LOCK)" ]; then \
+	  set -- --previous-candidate-lock "$(COMPOSE_PREVIOUS_CANDIDATE_LOCK)"; \
+	else set --; fi; \
+	$(PYTHON) Tools/bazel/qualify_local.py \
+	  --container-root "$(COMPOSE_CONTAINER_ROOT)" --q-evidence "$(COMPOSE_Q_EVIDENCE)" \
+	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/local-final/$$sha-$$stamp" "$$@"
+
+# One original live case for an unpushed clean checkpoint, with normal recovery.
+# Its development receipt cannot qualify a product release.
+bazel-compose-development-bridge:
+	@stamp="$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	sha="$$(git rev-parse --short=8 HEAD)"; \
+	test -n "$(COMPOSE_CONTAINER_ROOT)" && test -n "$(COMPOSE_Q_EVIDENCE)" || { printf '%s\n' "Set COMPOSE_CONTAINER_ROOT and COMPOSE_Q_EVIDENCE" >&2; exit 2; }; \
+	$(PYTHON) Tools/bazel/qualify_local.py --development-bridge \
+	  --container-root "$(COMPOSE_CONTAINER_ROOT)" --q-evidence "$(COMPOSE_Q_EVIDENCE)" \
+	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/local-final/$$sha-development-bridge-$$stamp"
+
+# All original parity leaves against the signed candidate, without release acceptance.
+bazel-compose-development-parity:
+	@stamp="$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	sha="$$(git rev-parse --short=8 HEAD)"; \
+	test -n "$(COMPOSE_CONTAINER_ROOT)" && test -n "$(COMPOSE_Q_EVIDENCE)" || { printf '%s\n' "Set COMPOSE_CONTAINER_ROOT and COMPOSE_Q_EVIDENCE" >&2; exit 2; }; \
+	$(PYTHON) Tools/bazel/qualify_local.py --development-parity \
+	  --container-root "$(COMPOSE_CONTAINER_ROOT)" --q-evidence "$(COMPOSE_Q_EVIDENCE)" \
+	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/local-final/$$sha-development-parity-$$stamp"
+
+# Fresh candidate, all 66 original parity cases, and matched published-reference
+# performance; reuses the retained source/Q products and skips unit/notary/release.
+bazel-compose-development-parity-performance:
+	@stamp="$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	sha="$$(git rev-parse --short=8 HEAD)"; \
+	test -n "$(COMPOSE_CONTAINER_ROOT)" && test -n "$(COMPOSE_Q_EVIDENCE)" || { printf '%s\n' "Set COMPOSE_CONTAINER_ROOT and COMPOSE_Q_EVIDENCE" >&2; exit 2; }; \
+	$(PYTHON) Tools/bazel/qualify_local.py --development-parity-performance \
+	  --container-root "$(COMPOSE_CONTAINER_ROOT)" --q-evidence "$(COMPOSE_Q_EVIDENCE)" \
+	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/local-final/$$sha-development-parity-performance-$$stamp"
+
+# One explicit first-reference capture; never builds or runs an older Compose candidate.
+bazel-compose-capture-reference:
+	@stamp="$$(date -u +%Y%m%dT%H%M%SZ)"; \
+	sha="$$(git rev-parse --short=8 HEAD)"; \
+	test -n "$(COMPOSE_CONTAINER_ROOT)" && test -n "$(COMPOSE_Q_EVIDENCE)" || { printf '%s\n' "Set COMPOSE_CONTAINER_ROOT and COMPOSE_Q_EVIDENCE" >&2; exit 2; }; \
+	$(PYTHON) Tools/bazel/qualify_local.py --capture-reference \
+	  --container-root "$(COMPOSE_CONTAINER_ROOT)" --q-evidence "$(COMPOSE_Q_EVIDENCE)" \
+	  --evidence "$(HOME)/Library/Application Support/ContainerFamily/retained/container-compose/benchmark-reference-capture/$$sha-$$stamp"
+
+# Restore only an existing, journaled Compose qualification using its matching Q source and receipt.
+bazel-compose-recover:
+	@test -n "$(COMPOSE_CONTAINER_ROOT)" && test -n "$(COMPOSE_Q_EVIDENCE)" && test -n "$(COMPOSE_RECOVERY_EVIDENCE)" || { printf '%s\n' "Set COMPOSE_CONTAINER_ROOT, COMPOSE_Q_EVIDENCE and COMPOSE_RECOVERY_EVIDENCE" >&2; exit 2; }
+	$(PYTHON) Tools/bazel/qualify_local.py --recover \
+	  --container-root "$(COMPOSE_CONTAINER_ROOT)" --q-evidence "$(COMPOSE_Q_EVIDENCE)" \
+	  --evidence "$(COMPOSE_RECOVERY_EVIDENCE)"
+
+# The signed product release is separate from the unsigned Bazel candidate.
+# Publishing is an explicit command after independent review of a clean pass.
+bazel-compose-release-prepare:
+	@test -n "$(COMPOSE_QUALIFICATION_EVIDENCE)" && test -n "$(COMPOSE_RELEASE_OUTPUT)"
+	$(PYTHON) Tools/bazel/compose_release.py prepare \
+	  --evidence "$(COMPOSE_QUALIFICATION_EVIDENCE)" --output "$(COMPOSE_RELEASE_OUTPUT)"
+
+bazel-compose-release-publish:
+	@test -n "$(COMPOSE_RELEASE_OUTPUT)"
+	$(PYTHON) Tools/bazel/compose_release.py publish --prepared "$(COMPOSE_RELEASE_OUTPUT)"
+
+bazel-compose-release-verify:
+	@test -n "$(COMPOSE_RELEASE_OUTPUT)" && test -n "$(COMPOSE_RELEASE_CONSUME)"
+	$(PYTHON) Tools/bazel/compose_release.py verify-published \
+	  --prepared "$(COMPOSE_RELEASE_OUTPUT)" --destination "$(COMPOSE_RELEASE_CONSUME)"
 .PHONY: core-runtime-neutrality
 .PHONY: codeql-local codeql-sarif-upload codeql-sarif-upload-dry-run
 .PHONY: docker-compose-environment-parity docker-compose-named-volume-reuse-parity docker-compose-oci-annotations-parity docker-compose-exposed-ports-parity docker-compose-empty-process-overrides-parity docker-compose-provider-services-parity
@@ -2481,6 +2602,14 @@ coverage: swift-coverage go-test
 coverage-check: coverage
 	$(MAKE) --no-print-directory swift-coverage-check go-coverage-check
 
+# Merge already-executed profile reports without rebuilding or mixing profdata.
+SWIFT_PROFILE_COVERAGE_DIR ?= .build/coverage-profiles
+coverage-profiles-check:
+	$(PYTHON) Tools/coverage/merge_profiles.py merge \
+		--source-sha "$$(git rev-parse HEAD)" \
+		--inputs "$(SWIFT_PROFILE_COVERAGE_DIR)" --output .
+	$(MAKE) --no-print-directory swift-coverage-check go-coverage-check
+
 swift-coverage-check:
 	$(PYTHON) Tools/coverage/check-coverage.py \
 		--scope swift \
@@ -2661,7 +2790,7 @@ release-tools-test: coverage-tools-syntax
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover Tools/release
 	$(TOOL_TEST_TEMP_ENV) Tools/release/test_publish_github_release.sh
 
-ci-tools-test: coverage-tools-syntax
+ci-tools-test: coverage-tools-syntax bazel-workflow-tools-test
 	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover Tools/ci
 	$(MAKE) --no-print-directory stack-self-test
 

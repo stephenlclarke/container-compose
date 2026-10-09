@@ -51,6 +51,10 @@
 #   PARITY_COMPARABLE_NOISE_PCT  Comparable-performance noise band (default: 5).
 #   PARITY_SINK_STALL_SECONDS    Host slow-sink pause (default: 2).
 #   PARITY_PRESSURE_RECORDS      Records in pressure workloads (default: 65536).
+#   PARITY_SERVICE_MEMORY_MIB    Optional lifecycle/aggregate service cap
+#                                (default: 0, preserving uncapped fixtures).
+#   PARITY_RETAIN_FIXTURE_DIR    Keep generated fixture YAML after cleanup
+#                                (default: 0; used by owned qualification).
 #   PARITY_INCLUDE_REMOTE_LOGGING
 #                                Include cross-VM remote-sink lanes (default: 1).
 #                                Set to 0 for unattended, approval-free runs.
@@ -104,6 +108,8 @@ PARITY_TIMING_POLICY="${PARITY_TIMING_POLICY:-enforce}"
 PARITY_COMPARABLE_NOISE_PCT="${PARITY_COMPARABLE_NOISE_PCT:-5}"
 PARITY_SINK_STALL_SECONDS="${PARITY_SINK_STALL_SECONDS:-2}"
 PARITY_PRESSURE_RECORDS="${PARITY_PRESSURE_RECORDS:-65536}"
+PARITY_SERVICE_MEMORY_MIB="${PARITY_SERVICE_MEMORY_MIB:-0}"
+PARITY_RETAIN_FIXTURE_DIR="${PARITY_RETAIN_FIXTURE_DIR:-0}"
 PARITY_INCLUDE_REMOTE_LOGGING="${PARITY_INCLUDE_REMOTE_LOGGING:-1}"
 PARITY_SINK_BIND_ADDRESS="${PARITY_SINK_BIND_ADDRESS:-127.0.0.1}"
 PARITY_DOCKER_HOST_ADDRESS="${PARITY_DOCKER_HOST_ADDRESS:-host.docker.internal}"
@@ -123,6 +129,7 @@ SINK_PORT=""
 SINK_PORT_FILE=""
 SINK_RESULT_FILE=""
 SINK_STOP_FILE=""
+CAPACITY_CHECK_SEQUENCE=0
 readonly LOGGING_WORKLOADS=(
     logging-throughput-stdout-small
     logging-throughput-stderr-small
@@ -228,6 +235,11 @@ validate_configuration() {
     [[ "$PARITY_COMPARABLE_NOISE_PCT" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { error "PARITY_COMPARABLE_NOISE_PCT must be zero or positive"; return 2; }
     [[ "$PARITY_SINK_STALL_SECONDS" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { error "PARITY_SINK_STALL_SECONDS must be zero or positive"; return 2; }
     [[ "$PARITY_PRESSURE_RECORDS" =~ ^[1-9][0-9]*$ ]] || { error "PARITY_PRESSURE_RECORDS must be a positive integer"; return 2; }
+    [[ "$PARITY_SERVICE_MEMORY_MIB" =~ ^(0|[1-9][0-9]*)$ ]] || { error "PARITY_SERVICE_MEMORY_MIB must be a non-negative integer"; return 2; }
+    if ((PARITY_SERVICE_MEMORY_MIB != 0 && PARITY_SERVICE_MEMORY_MIB < 200)); then
+        error "PARITY_SERVICE_MEMORY_MIB must be 0 or at least 200 MiB"; return 2
+    fi
+    [[ "$PARITY_RETAIN_FIXTURE_DIR" == 0 || "$PARITY_RETAIN_FIXTURE_DIR" == 1 ]] || { error "PARITY_RETAIN_FIXTURE_DIR must be 0 or 1"; return 2; }
     [[ "$PARITY_INCLUDE_REMOTE_LOGGING" == 0 || "$PARITY_INCLUDE_REMOTE_LOGGING" == 1 ]] || { error "PARITY_INCLUDE_REMOTE_LOGGING must be 0 or 1"; return 2; }
     [[ "$PARITY_EVIDENCE_MODE" == reset || "$PARITY_EVIDENCE_MODE" == append ]] || { error "PARITY_EVIDENCE_MODE must be reset or append"; return 2; }
     [[ "$PARITY_FINALIZE_EVIDENCE" == 0 || "$PARITY_FINALIZE_EVIDENCE" == 1 ]] || { error "PARITY_FINALIZE_EVIDENCE must be 0 or 1"; return 2; }
@@ -346,7 +358,9 @@ cleanup() {
     done
     "${DOCKER_COMPOSE_COMMAND[@]}" -p cc-perf-d-logging -f "$FIXTURE_DIR/logging.yml" down --volumes --remove-orphans >/dev/null 2>&1 || true
     "$CONTAINER_COMPOSE" --ansi never -p cc-perf-c-logging -f "$FIXTURE_DIR/logging.yml" down --volumes --remove-orphans >/dev/null 2>&1 || true
-    [[ -z "$FIXTURE_DIR" ]] || rm -rf "$FIXTURE_DIR"
+    if [[ -n "$FIXTURE_DIR" && "$PARITY_RETAIN_FIXTURE_DIR" == 0 ]]; then
+        rm -rf "$FIXTURE_DIR"
+    fi
 }
 
 # Write one otherwise-identical Compose project for each service count.
@@ -355,13 +369,19 @@ cleanup() {
 # shellcheck disable=SC2016
 create_fixtures() {
     local count index
+    local memory_limit_line=""
+    if ((PARITY_SERVICE_MEMORY_MIB > 0)); then
+        memory_limit_line="    mem_limit: ${PARITY_SERVICE_MEMORY_MIB}m"
+    fi
     mkdir -p "$PARITY_WORK_ROOT"
     FIXTURE_DIR="$(mktemp -d "$PARITY_WORK_ROOT/performance-matrix.XXXXXX")"
     for count in 1 10 50; do
         {
             printf 'services:\n'
             for ((index = 1; index <= count; index++)); do
-                printf '  worker%02d:\n    image: %s\n    command: ["sh", "-c", "sleep 600"]\n    stop_grace_period: 1s\n' "$index" "$FIXTURE_IMAGE"
+                printf '  worker%02d:\n    image: %s\n' "$index" "$FIXTURE_IMAGE"
+                [[ -z "$memory_limit_line" ]] || printf '%s\n' "$memory_limit_line"
+                printf '    command: ["sh", "-c", "sleep 600"]\n    stop_grace_period: 1s\n'
             done
         } >"$FIXTURE_DIR/services-$count.yml"
         {
@@ -369,6 +389,7 @@ create_fixtures() {
             for ((index = 1; index <= count; index++)); do
                 printf '  logger%02d:\n' "$index"
                 printf '    image: %s\n' "$FIXTURE_IMAGE"
+                [[ -z "$memory_limit_line" ]] || printf '%s\n' "$memory_limit_line"
                 printf '    command: ["sh", "-c", "index=0; while [ $$index -lt 64 ]; do printf '\''logger%02d-%%03d\\n'\'' $$index; index=$$((index + 1)); done"]\n' "$index"
                 printf '    logging:\n      driver: json-file\n      options:\n        max-size: "8m"\n        max-file: "3"\n'
             done
@@ -552,17 +573,39 @@ create_fixtures() {
             '        cache-max-file: "3"' \
             '        cache-compress: "true"'
     } >"$FIXTURE_DIR/logging-remote-cache.yml"
+    python3 - "$PARITY_EVIDENCE_DIR/workload.json" "$FIXTURE_DIR" \
+        "$PARITY_SERVICE_MEMORY_MIB" <<'PY'
+import hashlib, json, pathlib, sys
+destination, directory, memory = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), int(sys.argv[3])
+hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+          for path in sorted(directory.glob('*.yml'))}
+destination.parent.mkdir(parents=True, exist_ok=True)
+destination.write_text(json.dumps({"fixtureDirectory": str(directory),
+                                   "fixtureSHA256": hashes,
+                                   "serviceMemoryMiB": memory},
+                                  indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
 }
 
 # Initialize raw samples and exact run fingerprints.
 initialize_evidence() {
     local fixture_image_sha=""
     local init_image_sha=""
+    local fixture_sha_json="{}"
     if [[ -n "$PARITY_INIT_IMAGE_ARCHIVE" ]]; then
         init_image_sha="$(shasum -a 256 "$PARITY_INIT_IMAGE_ARCHIVE" | awk '{print $1}')"
     fi
     if [[ -n "$PARITY_FIXTURE_IMAGE_ARCHIVE" ]]; then
         fixture_image_sha="$(shasum -a 256 "$PARITY_FIXTURE_IMAGE_ARCHIVE" | awk '{print $1}')"
+    fi
+    if [[ -n "$FIXTURE_DIR" && -d "$FIXTURE_DIR" ]]; then
+        fixture_sha_json="$(python3 - "$FIXTURE_DIR" <<'PY'
+import hashlib, json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+print(json.dumps({path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+                  for path in sorted(root.glob('*.yml'))}, sort_keys=True))
+PY
+)"
     fi
     mkdir -p "$PARITY_EVIDENCE_DIR"
     PARITY_REPETITIONS="$PARITY_REPETITIONS" python3 - \
@@ -580,10 +623,12 @@ initialize_evidence() {
         "$PARITY_SINK_BIND_ADDRESS" "$PARITY_DOCKER_HOST_ADDRESS" \
         "$PARITY_CONTAINER_HOST_ADDRESS" "$init_image_sha" \
         "$PARITY_INIT_IMAGE_REFERENCES" "$fixture_image_sha" \
+        "$PARITY_SERVICE_MEMORY_MIB" "$fixture_sha_json" \
+        "$FIXTURE_DIR" \
         "$PARITY_FIXTURE_IMAGE_ARCHIVE_REFERENCE" <<'PY'
 import json, os, pathlib, sys
 from datetime import datetime, timezone
-(mode, timing, fingerprints, timing_junit, timing_matrix, docker_compose, docker_engine, compose_version, runtime_version, commit, model, memory, macos, architecture, compose_sha, runtime_sha, noise, timeout, maximum_ratio, timing_policy, pressure_records, sink_stall, include_remote_logging, sink_bind, docker_host, container_host, init_sha, init_references, fixture_sha, fixture_reference) = sys.argv[1:]
+(mode, timing, fingerprints, timing_junit, timing_matrix, docker_compose, docker_engine, compose_version, runtime_version, commit, model, memory, macos, architecture, compose_sha, runtime_sha, noise, timeout, maximum_ratio, timing_policy, pressure_records, sink_stall, include_remote_logging, sink_bind, docker_host, container_host, init_sha, init_references, fixture_sha, service_memory_mib, fixture_hashes, fixture_directory, fixture_reference) = sys.argv[1:]
 def decode(value):
     try: return json.loads(value)
     except json.JSONDecodeError: return value
@@ -602,6 +647,8 @@ current = {
         "mode": "warm",
         "operationTimeoutSeconds": int(timeout),
         "pressureRecords": int(pressure_records),
+        "serviceMemoryMiB": int(service_memory_mib),
+        "fixtureSHA256": json.loads(fixture_hashes),
         "remoteLogging": include_remote_logging == "1",
         "repetitions": int(os.environ["PARITY_REPETITIONS"]),
         "schedule": "Docker-first on odd repetitions; candidate-first on even repetitions",
@@ -652,6 +699,13 @@ else:
         json.dumps(current, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+pathlib.Path(timing).with_name("workload.json").write_text(
+    json.dumps({"fixtureDirectory": fixture_directory,
+                "fixtureSHA256": current["conditions"]["fixtureSHA256"],
+                "serviceMemoryMiB": int(service_memory_mib)},
+               indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
 PY
 }
 
@@ -1402,6 +1456,7 @@ validate_finalize_fingerprint() {
     python3 - "$FINGERPRINT_JSON" "$TIMING_TSV" "$PARITY_REPETITIONS" \
         "$PARITY_TIMING_MAX_RATIO" "$PARITY_COMPARABLE_NOISE_PCT" \
         "$PARITY_TIMING_POLICY" "$PARITY_INCLUDE_REMOTE_LOGGING" \
+        "$PARITY_SERVICE_MEMORY_MIB" \
         "${PERFORMANCE_FIXTURES[@]}" <<'PY'
 import collections, csv, json, pathlib, sys
 fingerprint_path = pathlib.Path(sys.argv[1])
@@ -1419,6 +1474,7 @@ expected = {
     "comparableNoisePercent": float(sys.argv[5]),
     "timingPolicy": sys.argv[6],
     "remoteLogging": sys.argv[7] == "1",
+    "serviceMemoryMiB": int(sys.argv[8]),
 }
 changed = [key for key, value in expected.items() if conditions.get(key) != value]
 if changed:
@@ -1433,7 +1489,7 @@ try:
         rows = list(csv.DictReader(handle, delimiter="\t"))
 except (csv.Error, OSError) as error:
     raise SystemExit(f"finalize evidence has invalid raw timings: {error}") from error
-expected_fixtures = set(sys.argv[8:])
+expected_fixtures = set(sys.argv[9:])
 actual_fixtures = {row.get("fixture", "") for row in rows}
 if actual_fixtures != expected_fixtures:
     missing = sorted(expected_fixtures - actual_fixtures)
@@ -1532,6 +1588,15 @@ if failures: raise SystemExit("\n".join(failures))
 PY
 }
 
+# Recheck available host capacity immediately before each capped 50-service lane.
+check_matrix_capacity() {
+    CAPACITY_CHECK_SEQUENCE=$((CAPACITY_CHECK_SEQUENCE + 1))
+    local path
+    path="$PARITY_EVIDENCE_DIR/capacity-check-$(printf '%02d' "$CAPACITY_CHECK_SEQUENCE").json"
+    python3 "$REPO_ROOT/Tools/parity/performance_matrix_capacity.py" \
+        "$path" "$PARITY_SERVICE_MEMORY_MIB"
+}
+
 # Warm each image and run counterbalanced lifecycle and logging samples.
 run_matrix() {
     local count repetition file lane position fixture workload tail buffer_size
@@ -1546,6 +1611,9 @@ run_matrix() {
                 position=0
                 for lane in "${LANE_ORDER[@]}"; do
                     ((position += 1))
+                    if ((count == 50 && PARITY_SERVICE_MEMORY_MIB > 0)); then
+                        check_matrix_capacity
+                    fi
                     run_lifecycle_lane "$lane" "$repetition" "$position" "$count" "$file"
                 done
             done
@@ -1650,6 +1718,9 @@ run_matrix() {
                 position=0
                 for lane in "${LANE_ORDER[@]}"; do
                     ((position += 1))
+                    if ((count == 50 && PARITY_SERVICE_MEMORY_MIB > 0)); then
+                        check_matrix_capacity
+                    fi
                     run_logging_aggregate_lane "$lane" "$repetition" "$position" \
                         "$count" "$FIXTURE_DIR/aggregate-$count.yml"
                 done

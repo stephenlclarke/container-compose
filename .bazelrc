@@ -1,0 +1,54 @@
+# Copyright 2026 devcontainer project authors. SPDX-License-Identifier: Apache-2.0
+# Host-specific paths are supplied by Tools/bazel/run.sh, never inferred here.
+common --enable_bzlmod
+common --enable_workspace=false
+common --repo_env=DEVCONTAINER_RUNTIME_PROFILE=enhanced
+common:stock --repo_env=DEVCONTAINER_RUNTIME_PROFILE=stock
+build:stock --define=runtime_profile=stock
+common:enhanced --repo_env=DEVCONTAINER_RUNTIME_PROFILE=enhanced
+build:enhanced --define=runtime_profile=enhanced
+common:prebuilt-argument-parser --repo_env=COMPOSE_ARGUMENT_PARSER_LAYER=prebuilt
+common:prebuilt-argument-parser --repo_env=COMPOSE_ARGUMENT_PARSER_LAYER_MIRROR
+common:prebuilt-foundation --config=prebuilt-argument-parser
+common:prebuilt-foundation --repo_env=COMPOSE_FOUNDATION_LAYER=prebuilt
+common:prebuilt-foundation --repo_env=COMPOSE_FOUNDATION_LAYER_MIRROR
+common:prebuilt-containerization --config=prebuilt-foundation
+common:prebuilt-containerization --repo_env=COMPOSE_CONTAINERIZATION_LAYER=prebuilt
+common:prebuilt-containerization --repo_env=COMPOSE_CONTAINERIZATION_LAYER_MIRROR
+common:prebuilt-engine-api --config=prebuilt-foundation
+common:prebuilt-engine-api --repo_env=COMPOSE_ENGINE_API_LAYER=prebuilt
+common:prebuilt-engine-api --repo_env=COMPOSE_ENGINE_API_LAYER_MIRROR
+common:prebuilt-container-sdk --config=prebuilt-containerization
+common:prebuilt-container-sdk --config=prebuilt-engine-api
+common:prebuilt-container-sdk --repo_env=COMPOSE_CONTAINER_SDK_LAYER=prebuilt
+common:prebuilt-container-sdk --repo_env=COMPOSE_CONTAINER_SDK_LAYER_MIRROR
+build --jobs=6
+build --local_resources=cpu=6
+build --local_resources=memory=8192
+build --experimental_disk_cache_gc_max_size=30G
+build --experimental_disk_cache_gc_max_age=14d
+build --compilation_mode=dbg
+build --macos_minimum_os=15.0
+build --action_env=TMPDIR
+test --test_env=TMPDIR
+test --test_env=HOME
+build --symlink_prefix=/
+test --test_output=errors
+test --flaky_test_attempts=1
+test --local_test_jobs=2
+test --run_under=//Tools/bazel:ssd_test_runner
+coverage --combined_report=lcov
+# Test-only fixture utilities are not production coverage; no product excludes.
+coverage --instrumentation_filter=^//,-^//:ComposeTestStorage$
+coverage --experimental_use_llvm_covmap
+coverage --experimental_generate_llvm_lcov
+# Parallel tests need lossless counters. The rules_swift worker can retain
+# non-atomic incremental objects after these flags change; coverage uses fresh
+# sandboxed compile actions, while Bazel's content-keyed action cache remains.
+coverage --@build_bazel_rules_swift//swift:copt=-Xllvm
+coverage --@build_bazel_rules_swift//swift:copt=-instrprof-atomic-counter-update-all
+coverage --copt=-fprofile-update=atomic
+coverage --strategy=SwiftCompile=sandboxed
+build:release --compilation_mode=opt
+build:asan --features=asan
+build:tsan --features=tsan

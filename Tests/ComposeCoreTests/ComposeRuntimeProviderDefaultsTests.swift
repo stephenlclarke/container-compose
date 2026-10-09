@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 @testable import ComposeCore
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -72,7 +73,7 @@ struct ComposeRuntimeProviderDefaultsTests {
     @Test
     func `archive defaults fail every operation`() async throws {
         let archives = ComposeRuntimeProviderDefaults.archives()
-        let temporaryDirectory = FileManager.default.temporaryDirectory
+        let temporaryDirectory = TestStorage.temporaryDirectory
         let archive = try FileHandle(forReadingFrom: URL(fileURLWithPath: "/dev/null"))
         defer { try? archive.close() }
 

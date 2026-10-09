@@ -21,20 +21,57 @@ import Foundation
 
 extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
     public func launchContainer(_ request: ComposeRuntimeContainerLaunchRequest) async throws -> Int32 {
-        let arguments = try await rewriteManagedVolumeMounts(request.arguments)
+        if let configuration = request.configuration {
+            return try await launchPreparedContainer(request, configuration: configuration)
+        }
+        let arguments = try await healthLaunchArguments(request.arguments)
         let result = try await runner.run(
             environmentLauncher,
             [containerBinary, request.command.rawValue] + arguments,
             workingDirectory: nil,
             environment: nil,
-            io: request.command == .run && !arguments.contains("--detach")
+            io: request.command == .run && !(try Self.nativeRunIsDetached(arguments))
                 ? .inherited
                 : .captured(input: nil)
         )
         return result.status
     }
 
-    private func rewriteManagedVolumeMounts(_ arguments: [String]) async throws -> [String] {
+    static let originalImageReferenceLabel = ComposeNativeImageProvenance.label
+
+    /// Only native options before the image select detached I/O. A guest
+    /// command may itself contain `--detach`, including after a `--` separator.
+    static func nativeRunIsDetached(_ arguments: [String]) throws -> Bool {
+        var index = 0
+        while index < arguments.count {
+            let argument = arguments[index]
+            if argument == "--" || !argument.hasPrefix("-") {
+                return false
+            }
+            if argument == "--detach" {
+                return true
+            }
+            if argument.hasPrefix("--") {
+                index += containerLaunchValueOptions.contains(argument) ? 2 : 1
+                continue
+            }
+            for flag in argument.dropFirst() {
+                if flag == "d" {
+                    return true
+                }
+                if "aceklmpuvw".contains(flag) {
+                    break
+                }
+            }
+            let takesNext = try shortOptionConsumesNext(
+                argument, next: arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
+            )
+            index += takesNext ? 2 : 1
+        }
+        return false
+    }
+
+    func nativeHealthFreeArguments(_ arguments: [String]) async throws -> [String] {
         var result = arguments
         var index = result.startIndex
         while index < result.endIndex {
@@ -61,7 +98,13 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
                 continue
             }
             let argument = result[index]
-            if Self.containerLaunchValueOptions.contains(argument) {
+            try Self.rejectImageReferenceLabel(
+                option: argument, next: result.indices.contains(index + 1) ? result[index + 1] : nil
+            )
+            let shortValue = try Self.shortOptionConsumesNext(
+                argument, next: result.indices.contains(index + 1) ? result[index + 1] : nil
+            )
+            if Self.containerLaunchValueOptions.contains(argument) || shortValue {
                 index += result.indices.contains(index + 1) ? 2 : 1
                 continue
             }
@@ -74,26 +117,20 @@ extension EngineRuntimeProvider: ComposeRuntimeContainerLaunching {
             // unchanged, even when it resembles a Container CLI mount option.
             break
         }
-        return result
+        return try ComposeNativeImageProvenance.arguments(result)
     }
 
-    private static let containerLaunchValueOptions: Set<String> = [
-        "--add-host", "--annotation", "--blkio", "--cap-add", "--cap-drop",
-        "--cgroup-parent", "--cgroupns", "--cpu-period", "--cpu-quota",
-        "--cpu-shares", "--cpus", "--cpuset-cpus", "--device",
-        "--device-cgroup-rule", "--dns", "--dns-option", "--dns-search",
-        "--domainname", "--entrypoint", "--env",
-        "--env-file", "--expose", "--gpus", "--group-add", "--hostname",
-        "--health-cmd", "--health-interval", "--health-retries",
-        "--health-start-interval", "--health-start-period", "--health-timeout",
-        "--init-image", "--ipc", "--isolation", "--label", "--log-driver",
-        "--log-opt", "--memory", "--memory-reservation", "--memory-swap",
-        "--name", "--network", "--oom-score-adj", "--pid", "--pids-limit",
-        "--platform", "--publish", "--restart", "--restart-delay",
-        "--restart-window", "--runtime", "--security-opt", "--shm-size",
-        "--stop-signal", "--stop-timeout", "--sysctl", "--tmpfs", "--ulimit",
-        "--user", "--userns", "--uts", "--workdir",
-    ]
+    /// Short flags may be grouped; a valued option consumes the remainder or
+    /// the following token. Never treat its value as the image operand.
+    static func shortOptionConsumesNext(_ argument: String, next: String?) throws -> Bool {
+        try ComposeNativeImageProvenance.shortOptionConsumesNext(argument, next: next)
+    }
+
+    static func rejectImageReferenceLabel(option: String, next: String?) throws {
+        try ComposeNativeImageProvenance.rejectReservedLabel(option: option, next: next)
+    }
+
+    static let containerLaunchValueOptions = ComposeNativeImageProvenance.valueOptions
 
     private func managedShortVolume(_ value: String) async throws -> String? {
         let fields = value.split(separator: ":", maxSplits: 2, omittingEmptySubsequences: false)

@@ -34,6 +34,10 @@
 #                           running. The check then provisions an invocation-
 #                           private Keychain fixture and proves a live build.
 #   DOCKER_COMPOSE          Docker Compose command to compare with.
+#   COMPOSE_PARITY_KEYCHAIN_JOURNAL_DIR
+#                           Optional fresh absolute directory for durable fixture
+#                           restoration. Recover with keychain_fixture.py recover
+#                           --journal-dir DIR before resuming shared workers.
 #
 # This parity check proves Docker Compose V2's external build-secret config,
 # bake omission, and missing-local-store behavior. It then uses the same
@@ -51,8 +55,8 @@ readonly FIXTURE_DIR="$REPO_ROOT/Tools/parity/fixtures/build-external-secret"
 readonly COMPOSE_FILE="$FIXTURE_DIR/compose.yaml"
 readonly DOCKER_COMPOSE_FILE="$FIXTURE_DIR/compose.docker.yaml"
 readonly EXPECTED_OUTPUT="external-build-secret-parity-ok"
-readonly KEYCHAIN_SERVICE="com.apple.container-compose"
 readonly KEYCHAIN_PASSWORD="container-compose-parity-fixture"
+readonly KEYCHAIN_HELPER="$REPO_ROOT/Tools/parity/keychain_fixture.py"
 
 STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
@@ -65,11 +69,8 @@ DOCKER_PROJECT_NAME="compose-ext-secret-docker-$RANDOM-$$"
 DOCKER_EXTERNAL_PROJECT_NAME="compose-ext-secret-missing-$RANDOM-$$"
 CONTAINER_PROJECT_NAME="cc-ext-secret-$RANDOM-$$"
 KEYCHAIN_ACCOUNT="container-compose-build-parity-$RANDOM-$$"
-KEYCHAIN_PROVISIONED=0
-KEYCHAIN_CREATED=0
-KEYCHAIN_SEARCH_LIST_CHANGED=0
-KEYCHAIN_PATH=""
-ORIGINAL_KEYCHAINS=()
+KEYCHAIN_JOURNAL_DIR=""
+KEYCHAIN_OWNER=""
 WORK_DIR=""
 
 info() { printf '%s\n' "$*"; }
@@ -141,31 +142,20 @@ check_tools() {
 
 prepare_work_dir() {
     WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/container-compose-external-build-secret.XXXXXX")"
-    KEYCHAIN_PATH="$WORK_DIR/external-build-secret.keychain-db"
 }
 
+# Persist recovery intent before creating or selecting the private fixture.
 prepare_keychain() {
-    local keychain_path
-    while IFS= read -r keychain_path; do
-        keychain_path="${keychain_path#\"}"
-        keychain_path="${keychain_path%\"}"
-        [[ -n "$keychain_path" ]] && ORIGINAL_KEYCHAINS+=("$keychain_path")
-    done < <(
-        security list-keychains -d user \
-            | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//'
-    )
-
-    security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-    KEYCHAIN_CREATED=1
-    security set-keychain-settings -lut 3600 "$KEYCHAIN_PATH"
-    security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-    security list-keychains \
-        -d user \
-        -s "$KEYCHAIN_PATH" "${ORIGINAL_KEYCHAINS[@]}"
-    KEYCHAIN_SEARCH_LIST_CHANGED=1
+    KEYCHAIN_JOURNAL_DIR="${COMPOSE_PARITY_KEYCHAIN_JOURNAL_DIR:-$WORK_DIR/keychain-transaction}"
+    KEYCHAIN_OWNER="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+    printf '%s' "$KEYCHAIN_PASSWORD" | python3 "$KEYCHAIN_HELPER" prepare \
+        --journal-dir "$KEYCHAIN_JOURNAL_DIR" --account "$KEYCHAIN_ACCOUNT" \
+        --owner "$KEYCHAIN_OWNER" >/dev/null
 }
 
+# Restore the keychain transaction before discarding any retained work files.
 cleanup() {
+    local status=$?
     if ((${#DOCKER_COMPOSE_COMMAND[@]} > 0)); then
         "${DOCKER_COMPOSE_COMMAND[@]}" \
             --project-directory "$FIXTURE_DIR" \
@@ -184,27 +174,16 @@ cleanup() {
         --project-name "$CONTAINER_PROJECT_NAME" \
         --file "$COMPOSE_FILE" \
         down --rmi all --volumes --remove-orphans >/dev/null 2>&1 || true
-    if ((KEYCHAIN_PROVISIONED == 1)); then
-        security delete-generic-password \
-            -s "$KEYCHAIN_SERVICE" \
-            -a "$KEYCHAIN_ACCOUNT" \
-            "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
-    fi
-    if ((KEYCHAIN_SEARCH_LIST_CHANGED == 1)); then
-        if ((${#ORIGINAL_KEYCHAINS[@]} > 0)); then
-            security list-keychains \
-                -d user \
-                -s "${ORIGINAL_KEYCHAINS[@]}" >/dev/null 2>&1 || true
-        else
-            security list-keychains -d user -s >/dev/null 2>&1 || true
+    if [[ -n "$KEYCHAIN_JOURNAL_DIR" ]]; then
+        if ! python3 "$KEYCHAIN_HELPER" recover --journal-dir "$KEYCHAIN_JOURNAL_DIR" --owner "$KEYCHAIN_OWNER"; then
+            error "keychain restoration is incomplete; retained journal: $KEYCHAIN_JOURNAL_DIR"
+            return 1
         fi
-    fi
-    if ((KEYCHAIN_CREATED == 1)); then
-        security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
     fi
     if [[ -n "$WORK_DIR" ]]; then
         rm -rf "$WORK_DIR"
     fi
+    return "$status"
 }
 
 assert_external_config() {
@@ -324,14 +303,6 @@ check_container_live() {
     # private, unlocked keychain keeps the fixture noninteractive without
     # changing the access policy of the user's login keychain.
     prepare_keychain
-    security add-generic-password \
-        -A \
-        -U \
-        -s "$KEYCHAIN_SERVICE" \
-        -a "$KEYCHAIN_ACCOUNT" \
-        -w "$EXPECTED_OUTPUT" \
-        "$KEYCHAIN_PATH" >/dev/null
-    KEYCHAIN_PROVISIONED=1
 
     EXTERNAL_SECRET_NAME="$KEYCHAIN_ACCOUNT" \
         CONTAINER_BIN="$CONTAINER_BINARY" \
@@ -363,10 +334,15 @@ main() {
     check_tools
     prepare_work_dir
     trap cleanup EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
     check_projection
     check_docker_contract
     check_container_live
     info 'Docker Compose V2 and container-compose external build-secret parity passed.'
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

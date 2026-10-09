@@ -1,0 +1,38 @@
+diff --git a/tools/test_discoverer/TestPrinterCommon.swift b/tools/test_discoverer/TestPrinterCommon.swift
+--- a/tools/test_discoverer/TestPrinterCommon.swift
++++ b/tools/test_discoverer/TestPrinterCommon.swift
+@@ -22,4 +22,8 @@
+ /// Creates a text file with the given contents at a file URL.
+ func createTextFile(at url: URL, contents: String) {
+-  FileManager.default.createFile(atPath: url.path, contents: contents.data(using: .utf8)!)
++  do {
++    try Data(contents.utf8).write(to: url)
++  } catch {
++    fatalError("Could not write generated test source: \(error)")
++  }
+ }
+diff --git a/tools/test_observer/XUnitTestRecorder.swift b/tools/test_observer/XUnitTestRecorder.swift
+--- a/tools/test_observer/XUnitTestRecorder.swift
++++ b/tools/test_observer/XUnitTestRecorder.swift
+@@ -101,5 +101,5 @@
+         """#
+       return output
+     }
+-    try output.write(to: URL(fileURLWithPath: outputPath), atomically: true, encoding: .utf8)
++    try output.write(to: URL(fileURLWithPath: outputPath), atomically: false, encoding: .utf8)
+   }
+diff --git a/swift/swift_test.bzl b/swift/swift_test.bzl
+--- a/swift/swift_test.bzl
++++ b/swift/swift_test.bzl
+@@ -593,6 +593,11 @@
+                     "@build_bazel_apple_support//tools:coverage_support",
+                 ),
+             ),
++            "_lcov_merger": attr.label(
++                cfg = "exec",
++                default = Label("@bazel_tools//tools/test:coverage_report_generator"),
++                executable = True,
++            ),
+             "_swizzle_absolute_xcttestsourcelocation": attr.label(
+                 default = Label(
+                     "//swift/internal:swizzle_absolute_xcttestsourcelocation",

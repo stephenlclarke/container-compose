@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import socket
@@ -32,6 +33,8 @@ from pathlib import Path
 
 
 REPOSITORY = Path(__file__).parents[2]
+sys.path.insert(0, str(Path(__file__).parent))
+import performance_matrix_capacity
 HARNESS = REPOSITORY / "Tools" / "parity" / "check-compose-performance-matrix.sh"
 SINK = REPOSITORY / "Tools" / "parity" / "logging_performance_sink.py"
 FIXTURES = [
@@ -86,6 +89,7 @@ DOCKER_COMPOSE_COMMAND=(/usr/bin/true)
 CONTAINER_COMPOSE=/usr/bin/true
 CONTAINER_BINARY=/usr/bin/true
 PARITY_EVIDENCE_MODE=reset
+FIXTURE_DIR="${TEST_FIXTURE_DIR:-}"
 initialize_evidence
 printf 'existing\tdocker\t1\t1\tlower-is-better\t1.0\tsuccess\ttrue\n' >>"$TIMING_TSV"
 '''
@@ -173,6 +177,114 @@ class PerformanceMatrixInventoryTests(unittest.TestCase):
         self.assertIn("logging-follow-rotation", fixtures)
         self.assertNotIn("logging-blocking-slow-sink", fixtures)
         self.assertNotIn("logging-dual-cache-delivery", fixtures)
+
+    def test_minimum_memory_cap_is_recorded_for_both_fifty_service_fixtures(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-capped-") as directory:
+            root = Path(directory)
+            environment = dict(os.environ)
+            environment.update(
+                {
+                    "PARITY_SERVICE_MEMORY_MIB": "200",
+                    "PARITY_WORK_ROOT": str(root / "work"),
+                    "PARITY_EVIDENCE_DIR": str(root / "evidence"),
+                }
+            )
+            result = subprocess.run(
+                ["bash", "-c", 'source "$1"; create_fixtures; printf "%s\\n" "$FIXTURE_DIR"',
+                 "_", HARNESS], cwd=REPOSITORY, env=environment,
+                capture_output=True, check=False, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            fixture_dir = Path(result.stdout.strip())
+            services = (fixture_dir / "services-50.yml").read_text(encoding="utf-8")
+            aggregate = (fixture_dir / "aggregate-50.yml").read_text(encoding="utf-8")
+            manifest = json.loads((root / "evidence/workload.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(services.count("mem_limit: 200m"), 50)
+        self.assertEqual(aggregate.count("mem_limit: 200m"), 50)
+        self.assertEqual(manifest["serviceMemoryMiB"], 200)
+        self.assertEqual(manifest["fixtureSHA256"]["services-50.yml"],
+                         hashlib.sha256(services.encode()).hexdigest())
+        self.assertEqual(manifest["fixtureSHA256"]["aggregate-50.yml"],
+                         hashlib.sha256(aggregate.encode()).hexdigest())
+
+    def test_existing_matrix_profile_remains_uncapped_by_default(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-default-") as directory:
+            root = Path(directory)
+            environment = dict(os.environ)
+            environment.update({"PARITY_SERVICE_MEMORY_MIB": "0",
+                                "PARITY_WORK_ROOT": str(root / "work")})
+            result = subprocess.run(
+                ["bash", "-c", 'source "$1"; create_fixtures; printf "%s\\n" "$FIXTURE_DIR"',
+                 "_", HARNESS], cwd=REPOSITORY, env=environment,
+                capture_output=True, check=False, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            fixture_dir = Path(result.stdout.strip())
+            services = (fixture_dir / "services-50.yml").read_text(encoding="utf-8")
+            aggregate = (fixture_dir / "aggregate-50.yml").read_text(encoding="utf-8")
+
+        self.assertNotIn("mem_limit:", services)
+        self.assertNotIn("mem_limit:", aggregate)
+
+    def test_subminimum_memory_cap_is_rejected(self) -> None:
+        environment = dict(os.environ)
+        environment["PARITY_SERVICE_MEMORY_MIB"] = "128"
+        result = subprocess.run(
+            [HARNESS, "--list-fixtures"], cwd=REPOSITORY, env=environment,
+            capture_output=True, check=False, text=True,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("at least 200 MiB", result.stderr)
+
+    def test_capacity_profile_accepts_only_supported_cap_and_sufficient_headroom(self) -> None:
+        snapshot = {
+            "host_bytes": 24 * 1024**3,
+            "colima_bytes": 8 * 1024**3,
+            "available_memory_bytes": 16 * 1024**3,
+        }
+        admitted = performance_matrix_capacity.admit(snapshot)
+        self.assertTrue(admitted["passed"])
+        self.assertEqual(admitted["candidate_guest_envelope_bytes"],
+                         50 * (200 + 32) * 1024**2)
+        self.assertEqual(admitted["physical_headroom_bytes"],
+                         24 * 1024**3 - 8 * 1024**3
+                         - 50 * (200 + 32) * 1024**2)
+        with self.assertRaisesRegex(RuntimeError, "requires the admitted 200 MiB"):
+            performance_matrix_capacity.admit(snapshot, 128)
+        with self.assertRaisesRegex(RuntimeError, "memory pressure"):
+            performance_matrix_capacity.admit({**snapshot,
+                                                "available_memory_bytes": 9 * 1024**3})
+        with self.assertRaisesRegex(RuntimeError, "Physical host"):
+            performance_matrix_capacity.admit({**snapshot, "host_bytes": 23 * 1024**3})
+
+    def test_workload_fingerprint_records_cap_and_exact_fixture_hashes(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="compose-performance-fingerprint-") as directory:
+            root = Path(directory)
+            fixtures = root / "fixtures"
+            fixtures.mkdir()
+            (fixtures / "services-50.yml").write_text("services: {}\n", encoding="utf-8")
+            environment = dict(os.environ)
+            environment.update(
+                {
+                    "PARITY_EVIDENCE_DIR": str(root / "evidence"),
+                    "PARITY_SERVICE_MEMORY_MIB": "200",
+                    "TEST_FIXTURE_DIR": str(fixtures),
+                }
+            )
+            result = subprocess.run(
+                ["bash", "-c", INITIALIZE_EVIDENCE_SCRIPT, "_", HARNESS],
+                cwd=REPOSITORY, env=environment, capture_output=True,
+                check=False, text=True,
+            )
+            fingerprint = json.loads(
+                (root / "evidence/fingerprints.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(fingerprint["conditions"]["serviceMemoryMiB"], 200)
+        self.assertEqual(fingerprint["conditions"]["fixtureSHA256"], {
+            "services-50.yml": hashlib.sha256(b"services: {}\n").hexdigest()})
 
     def test_file_logging_group_has_only_its_checkpoint_fixtures(self) -> None:
         environment = dict(os.environ)

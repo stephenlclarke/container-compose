@@ -15,7 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 /// Runtime process configuration projected from a Compose service.
-public struct ComposeProcessConfiguration: Codable, Sendable {
+public struct ComposeProcessConfiguration: Codable, Equatable, Sendable {
     public struct Rlimit: Codable, Equatable, Sendable {
         public let limit: String
         public let soft: UInt64
@@ -228,26 +228,39 @@ public struct ComposeRuntimeContainerLaunchRequest: Equatable, Sendable {
     public var command: ComposeRuntimeContainerLaunchCommand
     public var arguments: [String]
     public var logging: ComposeLogConfiguration
+    /// Resolved service configuration; nil for older argument-only callers.
+    public var configuration: ContainerServiceCreatePlan?
 
     public init(
         command: ComposeRuntimeContainerLaunchCommand,
         arguments: [String],
         logging: ComposeLogConfiguration,
+        configuration: ContainerServiceCreatePlan? = nil,
     ) {
         self.command = command
         self.arguments = arguments
         self.logging = logging
+        self.configuration = configuration
     }
 }
 
 /// Authority-backed container creation without a child `container` process.
 public protocol ComposeRuntimeContainerLaunching: Sendable {
+    /// Validate resolved health arguments before creating project resources.
+    func validateHealthCheckArguments(_ arguments: [String]) async throws
     /// Creates or runs one container and returns its process status.
     func launchContainer(_ request: ComposeRuntimeContainerLaunchRequest) async throws -> Int32
 }
 
+public extension ComposeRuntimeContainerLaunching {
+    /// Native enhanced providers already validate their own health primitives.
+    func validateHealthCheckArguments(_: [String]) async throws {
+        // Native enhanced providers validate health primitives during launch.
+    }
+}
+
 /// Runtime healthcheck projected from Compose or inherited image metadata.
-public struct ComposeHealthCheck: Codable, Sendable {
+public struct ComposeHealthCheck: Codable, Equatable, Sendable {
     public static let defaultIntervalInNanoseconds: UInt64 = 30_000_000_000
     public static let defaultTimeoutInNanoseconds: UInt64 = 30_000_000_000
     public static let defaultStartPeriodInNanoseconds: UInt64 = 0

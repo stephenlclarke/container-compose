@@ -4046,20 +4046,20 @@ formula_digest="sha256:${DIGEST}"
             repair.index("Verify repaired stable Homebrew output closure"),
         )
 
-    def test_current_package_workflow_only_follows_successful_main_ci(self) -> None:
+    def test_manual_current_package_requires_successful_exact_main_ci(self) -> None:
         workflow = PACKAGE_WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("workflow_run:", workflow)
-        self.assertIn("branches:\n      - main", workflow)
-        self.assertIn("github.event.workflow_run.conclusion == 'success'", workflow)
-        self.assertIn(
-            'if [[ "${WORKFLOW_RUN_EVENT}" != "push" && "${WORKFLOW_RUN_EVENT}" != "workflow_dispatch" ]]',
-            workflow,
-        )
-        self.assertIn('elif [[ "${WORKFLOW_RUN_HEAD_BRANCH}" == "main" ]]', workflow)
+        triggers = workflow[workflow.index("on:\n") : workflow.index("\npermissions:")]
+        self.assertIn("workflow_dispatch:", triggers)
+        self.assertNotIn("workflow_run:", triggers)
+        self.assertNotIn("schedule:", triggers)
+        self.assertIn("github.event_name == 'workflow_dispatch'", workflow)
+        self.assertIn("EXPECTED_CONTROL_SHA", workflow)
+        self.assertIn('"${GITHUB_SHA}" != "${EXPECTED_CONTROL_SHA}"', workflow)
+        self.assertIn('resolve_remote_ref "${DISPATCH_REF}"', workflow)
+        self.assertIn('if [[ "${ref_type}" == "branch" ]]', workflow)
         self.assertIn("main_ci_has_successful_sonarqube_scan()", workflow)
-        self.assertIn("wait_for_successful_main_sonarqube_scan()", workflow)
         self.assertIn('.event == "workflow_dispatch"', workflow)
-        self.assertIn("Skipping current package for %s until successful exact-main CI", workflow)
+        self.assertIn("Refusing Current package for %s without successful exact-main CI", workflow)
         self.assertIn("timeout-minutes: 120", workflow)
         self.assertIn('.headBranch == "main"', workflow)
         self.assertIn('.status == "completed"', workflow)
@@ -4238,7 +4238,7 @@ formula_digest="sha256:${DIGEST}"
         ]
         sonar = ci[
             ci.index("- name: SonarQube scan") : ci.index(
-                "- name: Enforce SonarQube failures when the service is available"
+                "- name: Require completed SonarQube analysis and restoration"
             )
         ]
         obligation = ci[
@@ -4252,7 +4252,7 @@ formula_digest="sha256:${DIGEST}"
             )
         ]
         sonar_enforcement = ci[
-            ci.index("- name: Enforce SonarQube failures when the service is available") :
+            ci.index("- name: Require completed SonarQube analysis and restoration") :
         ]
         self.assertIn("timeout-minutes: 250", runtime_job)
         self.assertIn("- resolve-canonical-main", runtime_job)
@@ -4317,7 +4317,7 @@ formula_digest="sha256:${DIGEST}"
         self.assertIn("steps.sonar_install.outcome == 'success'", obligation)
         self.assertIn("steps.sonar_restore_obligation.outputs.required", ci)
         self.assertIn(
-            "steps.sonar_scan.outputs.canonical_restore_completed != 'true'",
+            'if [[ "${CANONICAL_RESTORE_REQUIRED}" == "true" && "${CANONICAL_RESTORE_COMPLETED}" != "true" ]]',
             sonar_enforcement,
         )
         self.assertNotIn(
@@ -6027,10 +6027,13 @@ formula_digest="sha256:${DIGEST}"
         self.assertIn("CONTAINER_STACK_MILESTONE_SOAK_OVERRIDE_REASON", build_doc)
         self.assertIn("Current source and package", build_doc)
 
-    def test_weekly_stable_scheduler_uses_the_same_fresh_current_package_policy(self) -> None:
+    def test_manual_stable_release_uses_the_same_fresh_current_package_policy(self) -> None:
         workflow = SCHEDULED_STABLE_RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
-        self.assertIn('cron: "17 9 * * 1"', workflow)
+        triggers = workflow[workflow.index("on:\n") : workflow.index("\npermissions:")]
+        self.assertIn("workflow_dispatch:", triggers)
+        self.assertNotIn("schedule:", triggers)
+        self.assertIn("github.ref == 'refs/heads/main'", workflow)
         self.assertIn('default: "auto"', workflow)
         self.assertIn('--format selector --allow-no-release', workflow)
         self.assertIn('Conventional Commit history contains no release-producing change', workflow)

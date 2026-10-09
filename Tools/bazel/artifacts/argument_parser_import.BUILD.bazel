@@ -1,0 +1,40 @@
+# Copyright 2026 container-compose project authors. SPDX-License-Identifier: Apache-2.0
+
+load("@build_bazel_rules_swift//swift:swift.bzl", "swift_import", "swift_library_group")
+load("@rules_license//rules:license.bzl", "license")
+load("@rules_license//rules:package_info.bzl", "package_info")
+
+package(default_visibility = ["//visibility:public"], default_package_metadata = [":license.rspm", ":package_info.rspm"])
+
+exports_files(["pkg_info.json", "layer.json"])
+
+license(name = "license.rspm", license_text = "LICENSE.txt")
+package_info(
+    name = "package_info.rspm",
+    package_name = "swift-argument-parser",
+    package_url = "https://github.com/apple/swift-argument-parser.git",
+    package_version = "1.8.2",
+)
+
+swift_import(
+    name = "ArgumentParserToolInfo.rspm.__impl",
+    module_name = "ArgumentParserToolInfo",
+    swiftmodule = "ArgumentParserToolInfo.swiftmodule",
+    swiftdoc = "ArgumentParserToolInfo.swiftdoc",
+    archives = ["libArgumentParserToolInfo.rspm.__impl.a"],
+)
+
+alias(name = "ArgumentParserToolInfo.rspm", actual = ":ArgumentParserToolInfo.rspm.__impl")
+swift_library_group(name = "ArgumentParserToolInfo", deps = [":ArgumentParserToolInfo.rspm"])
+
+swift_import(
+    name = "ArgumentParser.rspm.__impl",
+    module_name = "ArgumentParser",
+    swiftmodule = "ArgumentParser.swiftmodule",
+    swiftdoc = "ArgumentParser.swiftdoc",
+    archives = ["libArgumentParser.rspm.__impl.a"],
+    deps = [":ArgumentParserToolInfo.rspm"],
+)
+
+alias(name = "ArgumentParser.rspm", actual = ":ArgumentParser.rspm.__impl")
+swift_library_group(name = "ArgumentParser", deps = [":ArgumentParser.rspm"])
