@@ -528,3 +528,7 @@ This preserves the original archive and producer provenance. It does not rewrite
 ## Qualified Container SDK consumption
 
 The current enhanced graph pins Container `f86fea2236fab118c0e0c6f8be5eb7672df894e2` and consumes its published compiled SDK at `layer-container-sdk-enhanced-1a96c412f91335d20486`. The SDK was produced from clean Compose `89b6a736c4c68d50bf17d36293bcdce96f4c1092`; both source-mode CLI smoke and contract tests passed. The archive SHA-256 is `1a96c412f91335d20486399c38f9c8e9bcac6f17441a7662dd17416586bd6868`. Publication and a fresh download of the archive and qualification sidecar were independently verified. Unchanged lower layers retain their original release locks. Prebuilt Compose consumer tests and full current-source qualification remain required before a Compose product release.
+
+## Finalizing a stable release
+
+The [stable Bazel release procedure](BAZEL-STABLE-RELEASE.md) finalizes exact qualified bytes, publishes benchmark and source provenance, tests real GitHub downloads and restores the previous Homebrew installation before promotion. Its release authority is separate from the legacy hosted gate.

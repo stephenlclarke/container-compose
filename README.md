@@ -40,6 +40,8 @@ The `build/bazel-workflow` integration patch for PR 708 prepares native create/r
 
 ## Current candidate
 
+The enhanced Bazel release can now finalize already qualified artifacts without another stack rebuild. Its source commit, release-tooling commit, published runtime dependency and reused benchmark reference remain distinct. See the [stable release procedure](docs/guides/BAZEL-STABLE-RELEASE.md) for admission, publication, real Homebrew installation and restoration requirements. Adding the procedure does not assert that a stable release has completed.
+
 The `c52ac624` qualification passes all 66 original parity cases, then stops at the first fresh candidate benchmark setup because Compose selects an older host `container` binary. Guarded recovery restores the private runtime, Colima and original services. Candidate and recovery commands now select the exact qualified private binary; a fresh full qualification remains required before release.
 
 At `f0c0479a`, the corrected selection passes all 66 cases again, but the first benchmark warmup exposes an older 128 MiB fixture below the Container runtime's 200 MiB minimum. The benchmark workload now requests 256 MiB per service; the matching Docker Compose 5.5.1 reference is now published from a separately reviewed 28-sample capture with complete restoration. The published 128 MiB reference remains intact as historical evidence; fresh full qualification is still required.
@@ -52,8 +54,10 @@ The [latest stable release](https://github.com/stephenlclarke/container-compose/
 is the default macOS arm64 lane. The [Current release feed](https://github.com/stephenlclarke/container-compose/releases)
 contains immutable `current-<full-sha>` prereleases; the two Current Homebrew
 formulae atomically select the newest validated matched Container stack. A
-Current build becomes a semantic release only after the hosted Stable Release
-Gate, including the supported Docker Compose parity suite, succeeds.
+The legacy Current build becomes a semantic release after the hosted Stable Release
+Gate, including the supported Docker Compose parity suite, succeeds. The enhanced
+Bazel path uses the separately documented exact-source local qualification and
+downloaded installation/restoration authority.
 
 The 15 September 2026 source-bearing [Current build at
 `7a76b0b889c1`](https://github.com/stephenlclarke/container-compose/commit/7a76b0b889c18786090d71638dc3342631491b92)

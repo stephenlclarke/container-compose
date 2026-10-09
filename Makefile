@@ -410,6 +410,7 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: bazel-compose-qualify bazel-compose-development-bridge bazel-compose-development-parity bazel-compose-development-parity-performance bazel-compose-capture-reference bazel-workflow-tools-test
 .PHONY: bazel-compose-release-prepare bazel-compose-release-publish bazel-compose-release-verify bazel-compose-recover
+.PHONY: bazel-compose-stable-finalize bazel-compose-stable-tools-test bazel-compose-stable-publish bazel-compose-runtime-formula
 
 COMPOSE_CONTAINER_ROOT ?=
 COMPOSE_Q_EVIDENCE ?=
@@ -529,6 +530,43 @@ bazel-compose-release-verify:
 	@test -n "$(COMPOSE_RELEASE_OUTPUT)" && test -n "$(COMPOSE_RELEASE_CONSUME)"
 	$(PYTHON) Tools/bazel/compose_release.py verify-published \
 	  --prepared "$(COMPOSE_RELEASE_OUTPUT)" --destination "$(COMPOSE_RELEASE_CONSUME)"
+
+# Reuse admitted executable bytes; stable metadata and reviewed legal sidecars
+# have their own final archive and notarization authority.
+bazel-compose-stable-finalize:
+	@test -n "$(COMPOSE_QUALIFICATION_EVIDENCE)" && test -n "$(COMPOSE_FINALIZATION_OUTPUT)" && test -n "$(COMPOSE_QUALIFIED_SOURCE)" && test -n "$(COMPOSE_STABLE_VERSION)" && test -n "$(COMPOSE_LEGAL_CLOSURE)" && test -n "$(COMPOSE_LEGAL_CLOSURE_SHA256)" && test -n "$(COMPOSE_NOTARY_PROFILE)"
+	$(PYTHON) Tools/release/finalize_qualified_compose.py \
+	  --checkout "$(CURDIR)" --tool-commit "$$(git rev-parse HEAD)" \
+	  --source-commit "$(COMPOSE_QUALIFIED_SOURCE)" \
+	  --evidence "$(COMPOSE_QUALIFICATION_EVIDENCE)" \
+	  --output "$(COMPOSE_FINALIZATION_OUTPUT)" --version "$(COMPOSE_STABLE_VERSION)" \
+	  --legal-closure "$(COMPOSE_LEGAL_CLOSURE)" \
+	  --legal-closure-sha256 "$(COMPOSE_LEGAL_CLOSURE_SHA256)" \
+	  --notary-profile "$(COMPOSE_NOTARY_PROFILE)"
+
+bazel-compose-runtime-formula:
+	@test -n "$(COMPOSE_RUNTIME_NOTICES_SHA256)" && test -n "$(COMPOSE_RUNTIME_FORMULA_OUTPUT)"
+	$(PYTHON) Tools/release/render_runtime_formula.py \
+	  --notices-sha256 "$(COMPOSE_RUNTIME_NOTICES_SHA256)" \
+	  --output "$(COMPOSE_RUNTIME_FORMULA_OUTPUT)"
+
+bazel-compose-stable-publish:
+	@test -n "$(COMPOSE_STABLE_PLAN)" && test -n "$(COMPOSE_STABLE_PLAN_SHA256)" && test -n "$(COMPOSE_EXECUTION_MANIFEST)" && test -n "$(COMPOSE_EXECUTION_MANIFEST_SHA256)" && test -n "$(COMPOSE_STABLE_JOURNAL)"
+	$(PYTHON) Tools/release/publish_qualified_compose.py \
+	  --plan "$(COMPOSE_STABLE_PLAN)" --plan-sha256 "$(COMPOSE_STABLE_PLAN_SHA256)" \
+	  --execution-manifest "$(COMPOSE_EXECUTION_MANIFEST)" \
+	  --execution-manifest-sha256 "$(COMPOSE_EXECUTION_MANIFEST_SHA256)" \
+	  --journal "$(COMPOSE_STABLE_JOURNAL)"
+
+bazel-compose-stable-tools-test:
+	$(TOOL_TEST_TEMP_ENV) ruby Tools/release/test_container_bazel_registration.rb
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover -s Tools/release -p 'test_compose_homebrew*.py' -q
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover -s Tools/release -p 'test_compose_installation_portability.py' -q
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover -s Tools/release -p 'test_finalize_qualified_compose.py' -q
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover -s Tools/release -p 'test_stable_compose_controller.py' -q
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover -s Tools/release -p 'test_publish_qualified_compose.py' -q
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover -s Tools/release -p 'test_build_source_companion.py' -q
+	$(TOOL_TEST_TEMP_ENV) $(PYTHON) -m unittest discover -s Tools/release -p 'test_build_runtime_source_companion.py' -q
 .PHONY: core-runtime-neutrality
 .PHONY: codeql-local codeql-sarif-upload codeql-sarif-upload-dry-run
 .PHONY: docker-compose-environment-parity docker-compose-named-volume-reuse-parity docker-compose-oci-annotations-parity docker-compose-exposed-ports-parity docker-compose-empty-process-overrides-parity docker-compose-provider-services-parity
