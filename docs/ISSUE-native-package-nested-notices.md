@@ -19,3 +19,9 @@ Preserve default stock/enhanced provenance, selected-lock validation, all requir
 Checkpoint v2 at `82748d5ba48d49a5c23d95caebb6222eb821c0f3` passed compilation, 1,825 unit cases and the three independent CLI/package unit targets, but package smoke analysis rejected the seven direct file labels: published native package BUILD files export `pkg_info.json`, not these existing source texts. Preserve the v2 log and receipts too.
 
 A separate metadata-only repository now locates the five selected package roots through their public `pkg_info.json` labels, reads exactly seven confined nonempty notice files and exports a closed public filegroup. Source and native selection use the same path. No published archive or cached package BUILD changes; the graph verifier still requires exact published BUILD hashes. All application `Sources` and `Tests` are unchanged by this packaging correction, permitting root to assess reuse of the successful compilation/unit evidence separately from fresh package qualification.
+
+## Retained CLI contract quoting follow-up
+
+The v5 checkpoint's direct release CLI contract run executed 42 cases: 41 passed and the foreground dry-run case failed because it expected an unquoted runtime executable path. Its retained `Application Support` scratch path contains spaces; production correctly quoted that one shell token. The original failed XML/log and acceptance remain unchanged.
+
+Correct only the create/start string expectations with `shlex.quote(str(self.runtime))`. Preserve service names, argument order, attach/no-stdin assertions, no-logs-follow checks and the forbidden-runtime marker. Other runtime command expectations already use parsed argument vectors. The actual retained quoted-path case provides regression coverage; no mirrored quote test or production change is needed. Root will rerun the 42 contracts against the already built release binary, without recompilation or a unit-suite rerun.

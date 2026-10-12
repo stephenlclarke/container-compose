@@ -113,8 +113,8 @@ class CLIContracts(unittest.TestCase):
         attach, _ = self.invoke("--dry-run", "attach", "--no-stdin", "api")
         for service in ("db", "api"):
             name = PROJECT + "-" + service + "-1"
-            self.assertIn(f"+ {self.runtime} create --name {name} ", up)
-            self.assertIn(f"+ {self.runtime} start {name}", up)
+            self.assertIn(f"+ {shlex.quote(str(self.runtime))} create --name {name} ", up)
+            self.assertIn(f"+ {shlex.quote(str(self.runtime))} start {name}", up)
             self.assertIn(f"+ compose-runtime attach --no-stdin {name}", up)
         self.assertNotIn("+ compose-runtime logs --follow", up)
         self.assertIn(f"+ compose-runtime attach --no-stdin {PROJECT}-api-1", attach)
