@@ -1,9 +1,9 @@
 {
-  "archiveSHA256": "1a96c412f91335d20486399c38f9c8e9bcac6f17441a7662dd17416586bd6868",
+  "archiveSHA256": "66d87a93c4747679463f769cc283c77a8204be5528c3d0314022680af2207418",
   "asset": "container-sdk-enhanced-darwin-arm64-opt.tar.gz",
   "developmentProof": false,
-  "evidenceAsset": "evidence.json",
-  "evidenceSHA256": "a4b5648752ebdc0e9101193ef55546f639e664bc7090acd0d062f4e566b5d6df",
+  "evidenceAsset": "container-sdk-evidence.json",
+  "evidenceSHA256": "4592c0c5b81790a161749370abc13da4e862f53f834f22454091f7035b189267",
   "group": "container-sdk",
   "lower": {
     "argument-parser": {
@@ -27,12 +27,12 @@
       "tag": "layer-foundation-enhanced-2c0f42b6902f5b4e1a55"
     }
   },
-  "producerCommit": "89b6a736c4c68d50bf17d36293bcdce96f4c1092",
+  "producerCommit": "230d729765591f036745d432c43b6a0c411b26d4",
   "profile": "enhanced",
   "reachedSources": {
     "container": {
       "repository": "swiftpkg_container",
-      "sourceCommit": "f86fea2236fab118c0e0c6f8be5eb7672df894e2",
+      "sourceCommit": "641b7019ce11735e75b331e32a777a130439e9f3",
       "sourceLocation": "https://github.com/stephenlclarke/container.git"
     }
   },
@@ -47,15 +47,15 @@
     "producer": "29106fff31463e72310a5ad3131b329993b24e1ca643f6930170b19819d26047",
     "rootBuild": "0ea5ae98c5f8045a44dd89bdd2f8680b96c79aef5974079d267e99ec5d64594d",
     "sourceIdentity": "d4d4eec1f9d86086b4a31e0f39236bdbc5567911b098d17611f6835c83878e34",
-    "swiftPackageManifest": "4f828bfdeb0d2c4ff15406ddbc7a9779c08854c278b044ea5fd661c02da6adb6"
+    "swiftPackageManifest": "fd5ae67efea7ee3d7ef1fc26f2cc4469d582eb771468f42a3e1c471a5624401d"
   },
   "repository": "stephenlclarke/container",
   "schema": 1,
   "sourcePins": {
-    "container": "f86fea2236fab118c0e0c6f8be5eb7672df894e2"
+    "container": "641b7019ce11735e75b331e32a777a130439e9f3"
   },
-  "tag": "layer-container-sdk-enhanced-1a96c412f91335d20486",
-  "targetCommit": "f86fea2236fab118c0e0c6f8be5eb7672df894e2",
+  "tag": "layer-container-sdk-enhanced-66d87a93c4747679463f",
+  "targetCommit": "641b7019ce11735e75b331e32a777a130439e9f3",
   "toolchain": {
     "bazelVersion": "8.8.0",
     "sdkSettingsSHA256": "7b93ad7e534cc4b31c6a4e39d19b5e0288acf2168c2649479a796d1cb51939fb",
