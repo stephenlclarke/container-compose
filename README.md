@@ -142,7 +142,7 @@ The supported release line includes:
 - network-scoped discovery and aliases, scaled hostnames, bridge mapping,
   advanced IPAM, IPv6-only networking, and runtime DNS;
 - dependency-aware parallel lifecycle operations, attach-before-start,
-  WebSocket attach and resize, wait, and expanded inspect/info behavior;
+  WebSocket attach and resize, wait, and expanded inspect/info behavior; `wait` and `wait --down-project` replay stored exit codes for both `stopped` and naturally `exited` containers. Missing exit codes and unsupported states fail before cleanup; live targets still wait through the runtime API.
 - inherited OCI and image-volume metadata, safer archive/copy behavior, image
   discovery and mutation, digest resolution, and content-addressed caching; and
 - versioned runtime-capability negotiation plus stricter staging, containment,

@@ -2864,14 +2864,14 @@ extension ComposeOrchestratorTests {
         #expect(await discoveryManager.listRequests == [true, true])
     }
 
-    @Test("wait uses direct runtime API for selected running service containers")
-    func waitUsesDirectRuntimeAPIForSelectedRunningServiceContainers() async throws {
+    @Test("wait uses direct runtime API for selected live service containers", arguments: ["running", "stopping"])
+    func waitUsesDirectRuntimeAPIForSelectedRunningServiceContainers(status: String) async throws {
         let emitted = MessageRecorder()
         let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-api-1": 7])
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
             ComposeContainerSummary(
                 id: "demo-api-1",
-                status: "running",
+                status: status,
                 labels: [
                     "com.apple.container.compose.project": "demo",
                     "com.apple.container.compose.service": "api",
@@ -2942,20 +2942,20 @@ extension ComposeOrchestratorTests {
         ])
     }
 
-    @Test("wait replays stored exit codes for already stopped containers")
-    func waitReplaysStoredExitCodesForAlreadyStoppedContainers() async throws {
+    @Test("wait replays stored exit codes for terminal containers", arguments: ["stopped", "exited"], [Int32(0), 9])
+    func waitReplaysStoredExitCodesForAlreadyStoppedContainers(status: String, exitCode: Int32) async throws {
         let emitted = MessageRecorder()
         let lifecycleManager = RecordingContainerLifecycleManager()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
             ComposeContainerSummary(
                 id: "demo-api-1",
-                status: "stopped",
+                status: status,
                 labels: [
                     "com.apple.container.compose.project": "demo",
                     "com.apple.container.compose.service": "api",
                     "com.apple.container.compose.oneoff": "false",
                 ],
-                exitCode: 9
+                exitCode: exitCode
             ),
         ])
         let project = ComposeProject(
@@ -2973,17 +2973,17 @@ extension ComposeOrchestratorTests {
             }
         ).wait(project: project)
 
-        #expect(emitted.messages == ["9"])
+        #expect(emitted.messages == [String(exitCode)])
         #expect(await lifecycleManager.requests.isEmpty)
     }
 
-    @Test("wait rejects stopped containers without stored exit codes")
-    func waitRejectsStoppedContainersWithoutStoredExitCodes() async throws {
+    @Test("wait rejects terminal containers without stored exit codes", arguments: ["stopped", "exited"])
+    func waitRejectsStoppedContainersWithoutStoredExitCodes(status: String) async throws {
         let lifecycleManager = RecordingContainerLifecycleManager()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
             ComposeContainerSummary(
                 id: "demo-api-1",
-                status: "stopped",
+                status: status,
                 labels: [
                     "com.apple.container.compose.project": "demo",
                     "com.apple.container.compose.service": "api",
@@ -3005,14 +3005,48 @@ extension ComposeOrchestratorTests {
                     $0.lifecycleManager = lifecycleManager
                 }
             ).wait(project: project)
-            Issue.record("Expected stopped wait target to be rejected")
+            Issue.record("Expected terminal wait target to be rejected")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("wait: service 'api' container 'demo-api-1' is stopped but has no stored exit code"))
+            #expect(error == .unsupported("wait: service 'api' container 'demo-api-1' is \(status) but has no stored exit code"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
 
         #expect(await lifecycleManager.requests.isEmpty)
+    }
+
+    @Test("wait rejects nonterminal unsupported states without cleanup", arguments: ["created", "unknown"], [false, true])
+    func waitRejectsUnsupportedStatesWithoutCleanup(status: String, downProject: Bool) async throws {
+        let emitted = MessageRecorder()
+        let lifecycleManager = RecordingContainerLifecycleManager()
+        let discoveryManager = RecordingContainerDiscoveryManager(containers: [
+            ComposeContainerSummary(
+                id: "demo-api-1",
+                status: status,
+                labels: [
+                    composeProjectLabel: "demo",
+                    composeServiceLabel: "api",
+                    composeOneOffLabel: "false",
+                ],
+                exitCode: 0
+            ),
+        ])
+        let project = ComposeProject(name: "demo", services: ["api": ComposeService(name: "api", image: "example/api")])
+        do {
+            try await ComposeOrchestrator(
+                options: ComposeExecutionOptions(emit: { emitted.append($0) }),
+                dependencies: orchestratorDependencies {
+                    $0.discoveryManager = discoveryManager
+                    $0.lifecycleManager = lifecycleManager
+                }
+            ).wait(project: project, options: ComposeWaitOptions(downProject: downProject))
+            Issue.record("Expected unsupported wait target to be rejected")
+        } catch let error as ComposeError {
+            #expect(error == .unsupported("wait: service 'api' container 'demo-api-1' is \(status)"))
+        }
+        #expect(emitted.messages.isEmpty)
+        #expect(await lifecycleManager.requests.isEmpty)
+        #expect(await discoveryManager.listRequests == [true])
     }
 
     @Test("wait dry run emits compose runtime wait operations")
@@ -3042,14 +3076,14 @@ extension ComposeOrchestratorTests {
         #expect(await lifecycleManager.requests.isEmpty)
     }
 
-    @Test("wait down-project tears down project after first selected service exits")
-    func waitDownProjectTearsDownProjectAfterFirstSelectedServiceExits() async throws {
+    @Test("wait down-project waits for a live target before teardown", arguments: ["running", "stopping"])
+    func waitDownProjectTearsDownProjectAfterFirstSelectedServiceExits(status: String) async throws {
         let emitted = MessageRecorder()
         let lifecycleManager = RecordingContainerLifecycleManager(waitExitCodes: ["demo-api-1": 5])
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
             ComposeContainerSummary(
                 id: "demo-api-1",
-                status: "running",
+                status: status,
                 labels: [
                     composeProjectLabel: "demo",
                     composeServiceLabel: "api",
@@ -3130,20 +3164,20 @@ extension ComposeOrchestratorTests {
         #expect(await lifecycleManager.requests.isEmpty)
     }
 
-    @Test("wait down-project tears down after replaying stopped container exit code")
-    func waitDownProjectTearsDownAfterReplayingStoppedContainerExitCode() async throws {
+    @Test("wait down-project tears down after replaying a terminal exit code", arguments: ["stopped", "exited"], [Int32(0), 9])
+    func waitDownProjectTearsDownAfterReplayingStoppedContainerExitCode(status: String, exitCode: Int32) async throws {
         let emitted = MessageRecorder()
         let lifecycleManager = RecordingContainerLifecycleManager()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
             ComposeContainerSummary(
                 id: "demo-api-1",
-                status: "stopped",
+                status: status,
                 labels: [
                     composeProjectLabel: "demo",
                     composeServiceLabel: "api",
                     composeOneOffLabel: "false",
                 ],
-                exitCode: 9
+                exitCode: exitCode
             ),
         ])
         let project = ComposeProject(
@@ -3161,7 +3195,7 @@ extension ComposeOrchestratorTests {
             }
         ).wait(project: project, options: ComposeWaitOptions(downProject: true))
 
-        #expect(emitted.messages == ["9"])
+        #expect(emitted.messages == [String(exitCode)])
         #expect(await lifecycleManager.requests == [
             .stop(id: "demo-api-1", signal: nil, timeoutInSeconds: nil),
             .delete(id: "demo-api-1", force: false),
@@ -3170,13 +3204,13 @@ extension ComposeOrchestratorTests {
         #expect(await discoveryManager.getRequests == ["demo-api-1"])
     }
 
-    @Test("wait down-project rejects already stopped containers before teardown")
-    func waitDownProjectRejectsAlreadyStoppedContainersBeforeTeardown() async throws {
+    @Test("wait down-project rejects missing terminal exit codes before teardown", arguments: ["stopped", "exited"])
+    func waitDownProjectRejectsAlreadyStoppedContainersBeforeTeardown(status: String) async throws {
         let lifecycleManager = RecordingContainerLifecycleManager()
         let discoveryManager = RecordingContainerDiscoveryManager(containers: [
             ComposeContainerSummary(
                 id: "demo-api-1",
-                status: "stopped",
+                status: status,
                 labels: [
                     composeProjectLabel: "demo",
                     composeServiceLabel: "api",
@@ -3198,9 +3232,9 @@ extension ComposeOrchestratorTests {
                     $0.lifecycleManager = lifecycleManager
                 }
             ).wait(project: project, options: ComposeWaitOptions(downProject: true))
-            Issue.record("Expected stopped down-project wait target to be rejected")
+            Issue.record("Expected terminal down-project wait target to be rejected")
         } catch let error as ComposeError {
-            #expect(error == .unsupported("wait: service 'api' container 'demo-api-1' is stopped but has no stored exit code"))
+            #expect(error == .unsupported("wait: service 'api' container 'demo-api-1' is \(status) but has no stored exit code"))
         } catch {
             Issue.record("Unexpected error: \(error)")
         }

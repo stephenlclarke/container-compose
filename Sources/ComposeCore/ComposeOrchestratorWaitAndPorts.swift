@@ -280,7 +280,7 @@ extension ComposeOrchestrator {
         }
     }
 
-    /// Returns a stopped container's stored exit code, or nil when the target
+    /// Returns a stopped or exited container's stored exit code, or nil when the target
     /// is live and should be waited through apple/container.
     func stoppedWaitExitCode(_ target: ServiceContainerTarget) async throws -> Int32? {
         guard let container = try await discoveryManager.getContainer(id: target.name) else {
@@ -289,14 +289,14 @@ extension ComposeOrchestrator {
         return try stoppedWaitExitCode(container, service: target.service)
     }
 
-    /// Returns a stopped container's stored exit code, or nil when the target
+    /// Returns a stopped or exited container's stored exit code, or nil when the target
     /// is live and should be waited through apple/container.
     func stoppedWaitExitCode(_ container: ComposeContainerSummary, service: ComposeService) throws -> Int32? {
         let status = container.status.lowercased()
         switch status {
-        case "stopped":
+        case "stopped", "exited":
             guard let exitCode = container.exitCode else {
-                throw ComposeError.unsupported("wait: service '\(service.name)' container '\(container.id)' is stopped but has no stored exit code")
+                throw ComposeError.unsupported("wait: service '\(service.name)' container '\(container.id)' is \(container.status) but has no stored exit code")
             }
             return exitCode
         case "running", "stopping":
