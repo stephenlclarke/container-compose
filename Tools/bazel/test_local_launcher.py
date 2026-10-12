@@ -50,6 +50,8 @@ class LauncherTests(unittest.TestCase):
             identifier = '00000000-0000-0000-0000-000000000003'
 
             def analyzed(arguments, log, child_environment, recovery):
+                self.assertIn('--define=DEVCONTAINER_NATIVE_BINDING=' +
+                              json.dumps({'admissionSHA256': 'a' * 64}, separators=(',', ':')), arguments)
                 self.assertNotIn('COMPOSE_NATIVE_ADMISSION', child_environment)
                 self.assertEqual(child_environment, {'HOME': str(root)})
                 events = Path(next(arg.split('=', 1)[1] for arg in arguments
@@ -63,12 +65,15 @@ class LauncherTests(unittest.TestCase):
             with patch.object(run, 'SSD', scratch), patch.object(run, 'RETAINED', retained), \
                  patch.object(run, 'source_snapshot', return_value=source), \
                  patch.object(run, 'run_owned', side_effect=analyzed), \
-                 patch('artifacts.native_consumer.readmit') as readmit:
+                 patch('artifacts.native_consumer.readmit') as readmit, \
+                 patch('artifacts.native_consumer.package_binding', return_value={'admissionSHA256': 'a' * 64}) as binding:
                 status = run.execute('aquery', ['--config=release'], 'enhanced', environment,
                                      root / 'recovery.json')
             self.assertEqual(status, 0)
-            readmit.assert_called_once_with(run.ROOT, admission, retained / 'native-binary-layers',
-                                            ['--config=release'], 'enhanced')
+            self.assertEqual(readmit.call_count, 2)
+            readmit.assert_called_with(run.ROOT, admission, retained / 'native-binary-layers',
+                                       ['--config=release'], 'enhanced')
+            binding.assert_called_once_with(admission)
             self.assertIn('COMPOSE_NATIVE_ADMISSION', environment)
             with sqlite3.connect(retained / 'bazel-evidence.sqlite') as database:
                 manifest = json.loads(database.execute('SELECT manifest FROM invocations WHERE id=?',
@@ -87,6 +92,8 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(run.release_metadata("query", ["--config=release"], source), [])
         with self.assertRaises(ValueError):
             run.validated_args(["--define=DEVCONTAINER_COMMIT=fake"])
+        with self.assertRaises(ValueError):
+            run.validated_args(["--define=DEVCONTAINER_NATIVE_BINDING={}"])
 
     def test_shell_selects_new_python_only_for_explicit_native_admission(self):
         with tempfile.TemporaryDirectory() as temporary:

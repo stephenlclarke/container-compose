@@ -253,3 +253,24 @@ def readmit(root: Path, record: dict, cache: Path, supplied: list[str], profile:
     current = admit(root, Path(record["verifierRoot"]), Path(record["locksRoot"]), cache, supplied, profile)
     if current != record:
         raise ValueError("native dependency admission changed during Compose invocation")
+
+
+def package_binding(record: dict) -> dict:
+    """Bind package metadata to a replayed admission's exact resolved bytes."""
+    resolved = Path(record["resolved"])
+    if (record.get("graph") != "container-native" or record.get("consumerProfile") != "enhanced"
+            or resolved.is_symlink()
+            or hashlib.sha256(resolved.read_bytes()).hexdigest() != record["resolvedSHA256"]):
+        raise ValueError("native metadata requires unchanged admitted resolved bytes")
+    pins = json.loads(resolved.read_bytes())["pins"]
+    from_package = {}
+    for name in ("container", "containerization"):
+        rows = [row for row in pins if row["identity"] == name]
+        if len(rows) != 1 or not re.fullmatch(r"[0-9a-f]{40}", rows[0]["state"]["revision"]):
+            raise ValueError("native metadata requires unique immutable lower refs")
+        from_package[name + "Ref"] = rows[0]["state"]["revision"]
+    if from_package["containerRef"] != record["verifierCommit"]:
+        raise ValueError("native metadata Container ref differs from admitted own source")
+    encoded = (json.dumps(record, sort_keys=True) + "\n").encode()
+    return {"admissionSHA256": hashlib.sha256(encoded).hexdigest(),
+            "resolvedSHA256": record["resolvedSHA256"], **from_package}

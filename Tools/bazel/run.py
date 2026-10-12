@@ -247,12 +247,17 @@ def run_owned(argv: list[str], log_path: Path, environment: dict[str, str],
             signal.signal(kind, handler)
 
 
-def release_metadata(command: str, arguments: list[str], source: dict) -> list[str]:
+def release_metadata(command: str, arguments: list[str], source: dict, native: dict | None = None) -> list[str]:
     if '--config=release' not in arguments or command not in {'build', 'test', 'coverage', 'aquery', 'cquery'}:
         return []
-    return [f'--define=DEVCONTAINER_COMMIT={source["commit"]}',
+    result = [f'--define=DEVCONTAINER_COMMIT={source["commit"]}',
             '--define=DEVCONTAINER_BUILD_LANE=candidate',
             f'--define=DEVCONTAINER_SOURCE_DIRTY={str(source["dirty"]).lower()}']
+    if native is not None:
+        from artifacts.native_consumer import package_binding
+        result.append('--define=DEVCONTAINER_NATIVE_BINDING=' +
+                      json.dumps(package_binding(native), sort_keys=True, separators=(',', ':')))
+    return result
 
 
 def execute(command: str, arguments: list[str], profile: str, environment: dict[str, str],
@@ -274,7 +279,11 @@ def execute(command: str, arguments: list[str], profile: str, environment: dict[
     if "COMPOSE_NATIVE_ADMISSION" in environment:
         (invocation / 'native-admission.json').write_text(environment["COMPOSE_NATIVE_ADMISSION"] + '\n')
     selected = base + [f'--config={profile}', *arguments]
-    selected += release_metadata(command, arguments, before)
+    native = json.loads(environment["COMPOSE_NATIVE_ADMISSION"]) if "COMPOSE_NATIVE_ADMISSION" in environment else None
+    if native is not None:
+        from artifacts.native_consumer import readmit
+        readmit(ROOT, native, RETAINED / "native-binary-layers", arguments, profile)
+    selected += release_metadata(command, arguments, before, native)
     if command in {'build', 'test', 'coverage'}:
         selected.append(f'--disk_cache={SSD / "cache"}')
     if command in {'test', 'coverage'}:

@@ -84,6 +84,32 @@ class NativeConsumerTests(unittest.TestCase):
             producerBuild={"files": {"configured/" + name: {"sha256": digest}
                                       for name, digest in files.items()}})
 
+    def test_package_binding_requires_exact_replayed_vector(self):
+        path = self.root / "resolved.json"
+        pins = [{"identity": name, "state": {"revision": revision}}
+                for name, revision in (("container", self.commit), ("containerization", "a" * 40))]
+        path.write_text(json.dumps({"pins": pins}))
+        record = {"graph": "container-native", "consumerProfile": "enhanced", "resolved": str(path),
+                  "resolvedSHA256": self.layers.digest(path), "verifierCommit": self.commit}
+        binding = consumer.package_binding(record)
+        self.assertEqual(binding["containerRef"], self.commit)
+        self.assertEqual(binding["containerizationRef"], "a" * 40)
+        self.assertEqual(binding["admissionSHA256"], hashlib.sha256(
+            (json.dumps(record, sort_keys=True) + "\n").encode()).hexdigest())
+        for key, value in (("graph", "enhanced"), ("consumerProfile", "stock"),
+                           ("resolvedSHA256", "0" * 64), ("verifierCommit", "b" * 40)):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                consumer.package_binding({**record, key: value})
+        for rows in (pins + pins[:1], pins[1:],
+                     [{"identity": "container", "state": {"revision": "main"}}, pins[1]]):
+            path.write_text(json.dumps({"pins": rows}))
+            with self.assertRaisesRegex(ValueError, "unique immutable"):
+                consumer.package_binding({**record, "resolvedSHA256": self.layers.digest(path)})
+        target = self.root / "link.json"
+        target.symlink_to(path)
+        with self.assertRaisesRegex(ValueError, "unchanged admitted"):
+            consumer.package_binding({**record, "resolved": str(target)})
+
     def verify(self):
         consumer.verify_client(self.layers, self.producer, self.sidecar,
             self.manifest, self.pair, self.admission, {})

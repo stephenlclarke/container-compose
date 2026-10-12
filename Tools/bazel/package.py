@@ -82,10 +82,8 @@ def dependency(pins: list[dict], name: str, profile: str) -> tuple[str, str]:
     return source[1], revision
 
 
-def metadata(manifest: dict, writer: Path) -> tuple[dict, dict]:
-    """Reuse existing build-info semantics without invoking builds or signing."""
-    if set(manifest["binaries"]) != set(PRODUCTS):
-        raise ValueError("Candidate needs exactly four declared products")
+def build_info(manifest: dict, writer: Path) -> dict:
+    """Generate package or raw-product metadata from the selected compiled graph."""
     if manifest["profile"] not in {"stock", "enhanced"} or not re.fullmatch(r"[0-9a-f]{40}", manifest["commit"]):
         raise ValueError("Candidate requires a selected profile and full source commit")
     version = re.findall(r"^COMPOSE_VERSION\s*\?=\s*([0-9]+\.[0-9]+\.[0-9]+)\s*$", Path(manifest["makefile"]).read_text(), re.M)
@@ -101,7 +99,16 @@ def metadata(manifest: dict, writer: Path) -> tuple[dict, dict]:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         schema, capabilities = module.load_runtime_capability_manifest(Path(manifest["capabilities"]))
-    info = {
+    binding = manifest.get("native_binding")
+    if binding is not None:
+        if (manifest["profile"] != "enhanced"
+                or set(binding) != {"admissionSHA256", "resolvedSHA256", "containerRef", "containerizationRef"}
+                or any(not re.fullmatch(r"[0-9a-f]{64}", binding[key])
+                       for key in ("admissionSHA256", "resolvedSHA256"))
+                or binding["resolvedSHA256"] != sha256(Path(manifest["resolved"]))
+                or (binding["containerRef"], binding["containerizationRef"]) != (container_ref, virtualization_ref)):
+            raise ValueError("Native package metadata differs from admitted dependency graph")
+    return {
         "version": version[0], "source": "stephenlclarke/container-compose",
         "branch": "detached", "lane": "candidate", "commit": manifest["commit"],
         "buildType": "release", "containerSource": container_source, "containerRef": container_ref,
@@ -109,6 +116,13 @@ def metadata(manifest: dict, writer: Path) -> tuple[dict, dict]:
         "composeGoVersion": go_version[0], "runtimeCapabilitySchemaVersion": schema,
         "runtimeCapabilities": capabilities,
     }
+
+
+def metadata(manifest: dict, writer: Path) -> tuple[dict, dict]:
+    """Reuse existing build-info semantics without invoking builds or signing."""
+    if set(manifest["binaries"]) != set(PRODUCTS):
+        raise ValueError("Candidate needs exactly four declared products")
+    info = build_info(manifest, writer)
     products = {}
     for name, platform in PRODUCTS.items():
         path = Path(manifest["binaries"][name])
@@ -116,12 +130,14 @@ def metadata(manifest: dict, writer: Path) -> tuple[dict, dict]:
         products[name] = sha256(path)
     identity = {
         "schemaVersion": 1, "kind": "unsigned-native-candidate", "productFamily": "container-compose",
-        "version": version[0], "commit": manifest["commit"], "runtimeProfile": manifest["profile"],
+        "version": info["version"], "commit": manifest["commit"], "runtimeProfile": manifest["profile"],
         "architecture": "arm64", "compilationMode": "opt", "distributionReady": False,
         "licenseClosureComplete": False, "products": products,
         "dependencyLockSHA256": sha256(Path(manifest["resolved"])),
         "goModSHA256": sha256(Path(manifest["go_mod"])), "goSumSHA256": sha256(Path(manifest["go_sum"])),
     }
+    if manifest.get("native_binding") is not None:
+        identity["nativeAdmission"] = manifest["native_binding"]
     return info, identity
 
 

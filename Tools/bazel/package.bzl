@@ -21,6 +21,7 @@ def _metadata_impl(ctx):
         "binaries": {binary.basename: binary.path for binary in binaries},
         "makefile": ctx.file.makefile.path,
         "resolved": ctx.file.resolved.path,
+        "native_binding": json.decode(ctx.var.get("DEVCONTAINER_NATIVE_BINDING", "null")),
         "go_mod": ctx.file.go_mod.path,
         "go_sum": ctx.file.go_sum.path,
         "capabilities": ctx.file.capabilities.path,

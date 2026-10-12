@@ -95,6 +95,35 @@ class PackageTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             metadata(self.manifest, WRITER)
 
+    def test_native_metadata_rejects_legacy_pins_and_binds_selected_vector(self) -> None:
+        self.manifest["profile"] = "enhanced"
+        old_info, _ = metadata(self.manifest, WRITER)
+        self.assertEqual(old_info["containerRef"], "b" * 40)
+        binding = {"admissionSHA256": "d" * 64, "resolvedSHA256": sha256(Path(self.manifest["resolved"])),
+                   "containerRef": "c" * 40, "containerizationRef": "e" * 40}
+        self.manifest["native_binding"] = binding
+        with self.assertRaisesRegex(ValueError, "admitted dependency graph"):
+            metadata(self.manifest, WRITER)
+        path = Path(self.manifest["resolved"])
+        pins = json.loads(path.read_bytes())["pins"]
+        for row in pins:
+            row["state"]["revision"] = binding[row["identity"] + "Ref"]
+        path.write_text(json.dumps({"pins": pins}))
+        binding["resolvedSHA256"] = sha256(path)
+        info, identity = metadata(self.manifest, WRITER)
+        self.assertEqual((info["containerRef"], info["containerizationRef"]), ("c" * 40, "e" * 40))
+        self.assertEqual(identity["nativeAdmission"], binding)
+        for key, wrong in (("admissionSHA256", "invalid"), ("resolvedSHA256", "0" * 64)):
+            with self.subTest(key=key):
+                original = binding[key]
+                binding[key] = wrong
+                with self.assertRaisesRegex(ValueError, "admitted dependency graph"):
+                    metadata(self.manifest, WRITER)
+                binding[key] = original
+        self.manifest["profile"] = "stock"
+        with self.assertRaisesRegex(ValueError, "admitted dependency graph"):
+            metadata(self.manifest, WRITER)
+
     def test_missing_products_and_unbound_identity_fail(self) -> None:
         for key, value in [("binaries", {}), ("commit", "HEAD"), ("profile", "invalid")]:
             changed = {**self.manifest, key: value}
