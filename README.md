@@ -339,3 +339,5 @@ The Apple-facing drafts under [docs/upstream/](docs/upstream/README.md) are curr
 
 This project uses the Apache License, Version 2.0, matching the license used by
 [`apple/container`](https://github.com/apple/container).
+
+The attached-output performance candidate selects a narrowly patched Container XPC client layer to avoid the optimized response-timeout crash. Other published dependency layers and historical benchmarks remain unchanged; the new client archive and runtime comparison still require qualification.
