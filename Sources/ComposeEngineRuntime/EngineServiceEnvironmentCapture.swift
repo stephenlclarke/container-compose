@@ -52,7 +52,7 @@ extension EngineServiceEnvironment {
                 return contents
             }
             group.addTask {
-                try await Task.sleep(for: timeout)
+                try await ComposeTaskSleep.sleep(for: timeout)
                 throw ComposeError.invalidProject("Environment file capture exceeded its deadline")
             }
             defer { group.cancelAll() }

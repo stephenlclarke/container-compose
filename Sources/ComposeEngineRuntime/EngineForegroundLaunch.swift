@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 import ContainerEngineWire
 import ContainerUnixHTTPClient
 import Foundation
@@ -132,7 +133,7 @@ extension EngineRuntimeProvider {
                 }
                 previous = size
             }
-            try await Task.sleep(for: .milliseconds(250))
+            try await ComposeTaskSleep.sleep(for: .milliseconds(250))
         }
     }
 

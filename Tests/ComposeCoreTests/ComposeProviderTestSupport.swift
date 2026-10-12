@@ -400,7 +400,7 @@ actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         let chunks = followChunks
         Task {
             for chunk in chunks {
-                try? await Task.sleep(for: .milliseconds(50))
+                try? await ComposeTaskSleep.sleep(for: .milliseconds(50))
                 try? writer.write(contentsOf: chunk)
             }
         }
@@ -419,7 +419,7 @@ actor RotatingContainerLogAPIClient: ContainerLogAPIClienting {
         Task {
             var previous: [ContainerLogRecord] = []
             for (index, snapshot) in snapshots.enumerated() {
-                try? await Task.sleep(for: .milliseconds(50))
+                try? await ComposeTaskSleep.sleep(for: .milliseconds(50))
                 let records: [ContainerLogRecord]
                 if index == 0 {
                     records = applyLogOptions(to: snapshot, options: options)

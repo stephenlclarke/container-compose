@@ -250,7 +250,7 @@ public struct DockerAPISocketCredentialResolver:
                 )
             }
             group.addTask {
-                try await Task.sleep(for: Self.helperTimeout)
+                try await ComposeTaskSleep.sleep(for: Self.helperTimeout)
                 throw ComposeError.invalidProject(
                     "Docker credential helper '\(executable)' timed out",
                 )

@@ -1303,7 +1303,7 @@ func waitForMessages(_ expected: [String], in recorder: MessageRecorder) async t
         if recorder.messages == expected {
             return
         }
-        try await Task.sleep(for: .milliseconds(10))
+        try await ComposeTaskSleep.sleep(for: .milliseconds(10))
     }
 }
 
@@ -1312,7 +1312,7 @@ func waitForData(_ expected: [Data], in recorder: DataRecorder) async throws {
         if recorder.data == expected {
             return
         }
-        try await Task.sleep(for: .milliseconds(10))
+        try await ComposeTaskSleep.sleep(for: .milliseconds(10))
     }
 }
 
@@ -1946,7 +1946,7 @@ actor RecordingContainerLifecycleManager: ContainerLifecycleManaging {
     func waitContainer(id: String) async throws -> Int32 {
         storage.append(.wait(id: id))
         if let delay = waitDelaysByID[id] {
-            try await Task.sleep(for: delay)
+            try await ComposeTaskSleep.sleep(for: delay)
         }
         return waitExitCodes[id] ?? 0
     }
@@ -2052,7 +2052,7 @@ actor RecordingContainerLogManager: ContainerLogManaging {
             )
         )
         if let delay {
-            try await Task.sleep(for: delay)
+            try await ComposeTaskSleep.sleep(for: delay)
         }
         if let error, errorIDs.isEmpty || errorIDs.contains(id) {
             throw error
@@ -2103,7 +2103,7 @@ actor RecordingContainerAttachManager: ComposeRuntimeAttachManaging {
         onReady()
         onStarted()
         if let delay {
-            try await Task.sleep(for: delay)
+            try await ComposeTaskSleep.sleep(for: delay)
         }
         if let error {
             throw error
@@ -2156,7 +2156,7 @@ actor BlockingContainerLogManager: ContainerLogManaging {
             if storage.count >= count {
                 return true
             }
-            try await Task.sleep(for: .milliseconds(10))
+            try await ComposeTaskSleep.sleep(for: .milliseconds(10))
         }
         return storage.count >= count
     }
@@ -2299,7 +2299,7 @@ actor InterruptibleStatsManager: ContainerStatsManaging {
         emit _: @escaping @Sendable (String) -> Void
     ) async throws {
         do {
-            try await Task.sleep(for: .seconds(60))
+            try await ComposeTaskSleep.sleep(for: .seconds(60))
         } catch is CancellationError {
             cancelled = true
             throw CancellationError()
@@ -2845,7 +2845,7 @@ actor OperationConcurrencyRecorder {
     func recordOperation() async {
         activeOperations += 1
         maximum = max(maximum, activeOperations)
-        try? await Task.sleep(for: delay)
+        try? await ComposeTaskSleep.sleep(for: delay)
         activeOperations -= 1
     }
 }
@@ -2877,7 +2877,7 @@ actor DelayedBuildRunner: CommandRunning {
     ) async throws -> CommandResult {
         activeOperations += 1
         maximum = max(maximum, activeOperations)
-        try? await Task.sleep(for: delay)
+        try? await ComposeTaskSleep.sleep(for: delay)
         storedCommands.append(arguments)
         activeOperations -= 1
         return .success

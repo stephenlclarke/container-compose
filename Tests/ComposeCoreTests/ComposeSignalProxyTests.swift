@@ -48,7 +48,7 @@ struct ComposeSignalProxyTests {
                 )
             }
             while await !gate.firstOperationStarted {
-                try await Task.sleep(for: .milliseconds(5))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
             }
             let second = Task {
                 do {
@@ -61,18 +61,18 @@ struct ComposeSignalProxyTests {
                 }
                 await events.append("second-finished")
             }
-            try await Task.sleep(for: .milliseconds(30))
+            try await ComposeTaskSleep.sleep(for: .milliseconds(30))
             second.cancel()
             let deadline = ContinuousClock.now.advanced(by: .seconds(1))
             while await !events.contains("second-finished"), ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(5))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
             }
             #expect(await events.contains("cancelled"))
             #expect(await !events.contains("unexpected-operation"))
             #expect(Darwin.raise(SIGHUP) == 0)
             let deliveryDeadline = ContinuousClock.now.advanced(by: .seconds(1))
             while await !events.contains("SIGHUP"), ContinuousClock.now < deliveryDeadline {
-                try await Task.sleep(for: .milliseconds(5))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
             }
             #expect(await events.contains("SIGHUP"))
             await gate.releaseFirstOperation()
@@ -91,7 +91,7 @@ struct ComposeSignalProxyTests {
                             await events.append("handler-started")
                             do {
                                 while await !events.contains("release-handler") {
-                                    try await Task.sleep(for: .milliseconds(5))
+                                    try await ComposeTaskSleep.sleep(for: .milliseconds(5))
                                 }
                             } catch is CancellationError {
                                 await events.append("handler-cancelled")
@@ -102,10 +102,10 @@ struct ComposeSignalProxyTests {
                         operation: {
                             #expect(Darwin.raise(SIGUSR2) == 0)
                             while await !events.contains("handler-started") {
-                                try await Task.sleep(for: .milliseconds(5))
+                                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
                             }
                             if !duringTeardown {
-                                try await Task.sleep(for: .seconds(30))
+                                try await ComposeTaskSleep.sleep(for: .seconds(30))
                             }
                         }
                     )
@@ -115,15 +115,15 @@ struct ComposeSignalProxyTests {
                 await events.append("finished")
             }
             while await !events.contains("handler-started") {
-                try await Task.sleep(for: .milliseconds(5))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
             }
             if duringTeardown {
-                try await Task.sleep(for: .milliseconds(30))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(30))
             }
             operation.cancel()
             let deadline = ContinuousClock.now.advanced(by: .seconds(1))
             while await !events.contains("finished"), ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(5))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
             }
             #expect(await events.contains("finished"))
             #expect(await events.contains("handler-cancelled"))
@@ -147,7 +147,7 @@ struct ComposeSignalProxyTests {
                         if await events.contains(name) {
                             return
                         }
-                        try await Task.sleep(for: .milliseconds(10))
+                        try await ComposeTaskSleep.sleep(for: .milliseconds(10))
                     }
                     throw SignalProxyTestError.timedOut
                 },
@@ -171,7 +171,7 @@ struct ComposeSignalProxyTests {
                             if await gate.handlerStarted {
                                 return
                             }
-                            try await Task.sleep(for: .milliseconds(10))
+                            try await ComposeTaskSleep.sleep(for: .milliseconds(10))
                         }
                         throw SignalProxyTestError.timedOut
                     },
@@ -183,7 +183,7 @@ struct ComposeSignalProxyTests {
                 if await gate.handlerStarted {
                     break
                 }
-                try await Task.sleep(for: .milliseconds(10))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(10))
             }
             #expect(await gate.handlerStarted)
 
@@ -191,7 +191,7 @@ struct ComposeSignalProxyTests {
                 if await gate.proxyCompleted {
                     break
                 }
-                try await Task.sleep(for: .milliseconds(5))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
             }
             #expect(await !gate.proxyCompleted)
 
@@ -216,7 +216,7 @@ struct ComposeSignalProxyTests {
                 if await gate.firstOperationStarted {
                     break
                 }
-                try await Task.sleep(for: .milliseconds(10))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(10))
             }
             #expect(await gate.firstOperationStarted)
 
@@ -227,7 +227,7 @@ struct ComposeSignalProxyTests {
                     operation: { await gate.runSecondOperation() },
                 )
             }
-            try await Task.sleep(for: .milliseconds(50))
+            try await ComposeTaskSleep.sleep(for: .milliseconds(50))
             #expect(await !gate.secondOperationStarted)
 
             await gate.releaseFirstOperation()

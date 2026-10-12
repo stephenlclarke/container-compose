@@ -298,7 +298,7 @@ private func wait(for signal: AsyncSignal, timeout: Duration) async throws {
             await signal.wait()
         }
         group.addTask {
-            try await Task.sleep(for: timeout)
+            try await ComposeTaskSleep.sleep(for: timeout)
             throw AsyncSignalTimeout()
         }
         _ = try await group.next()

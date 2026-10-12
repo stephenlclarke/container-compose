@@ -984,7 +984,7 @@ private func waitForProcessIdentifier(at pidFile: URL) async throws -> pid_t {
         {
             return processIdentifier
         }
-        try await Task.sleep(for: .milliseconds(10))
+        try await ComposeTaskSleep.sleep(for: .milliseconds(10))
     }
     throw ProcessRunnerTestError.pidFileTimedOut
 }

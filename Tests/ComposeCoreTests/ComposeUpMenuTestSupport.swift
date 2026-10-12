@@ -35,7 +35,7 @@ func menuConfiguration(
 
 func pendingOperationTask() -> Task<Void, any Error> {
     Task {
-        try await Task.sleep(for: .seconds(60))
+        try await ComposeTaskSleep.sleep(for: .seconds(60))
     }
 }
 

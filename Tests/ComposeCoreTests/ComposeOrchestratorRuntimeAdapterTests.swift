@@ -456,7 +456,7 @@ extension ComposeOrchestratorTests {
         let reader = try await client.followLogs(id: "demo-api-1", options: .default)
 
         try reader.close()
-        try await Task.sleep(for: .milliseconds(100))
+        try await ComposeTaskSleep.sleep(for: .milliseconds(100))
 
         #expect(await client.followRequests == ["demo-api-1"])
     }
@@ -498,7 +498,7 @@ extension ComposeOrchestratorTests {
         let followTask = Task {
             try await manager.logs(id: "demo-api-1", tail: 0, follow: true, emit: { emitted.append($0) })
         }
-        try await Task.sleep(for: .milliseconds(300))
+        try await ComposeTaskSleep.sleep(for: .milliseconds(300))
         followTask.cancel()
         try await followTask.value
 
@@ -764,7 +764,7 @@ extension ComposeOrchestratorTests {
                 emit: { emitted.append($0) }
             )
         }
-        try await Task.sleep(for: .milliseconds(300))
+        try await ComposeTaskSleep.sleep(for: .milliseconds(300))
         followTask.cancel()
         try await followTask.value
 

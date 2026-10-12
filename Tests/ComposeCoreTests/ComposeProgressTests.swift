@@ -186,7 +186,7 @@ struct ComposeProgressTests {
         let reporter = ComposeProgressReporter(
             style: .tty,
             emitData: { emitted.append($0) },
-            sleep: { _ in try await Task.sleep(for: .seconds(60)) },
+            sleep: { _ in try await ComposeTaskSleep.sleep(for: .seconds(60)) },
         )
 
         try await reporter.activity("Loading Compose model") {
@@ -216,7 +216,7 @@ struct ComposeProgressTests {
             style: .tty,
             colorEnabled: true,
             emitData: { emitted.append($0) },
-            sleep: { _ in try await Task.sleep(for: .seconds(60)) },
+            sleep: { _ in try await ComposeTaskSleep.sleep(for: .seconds(60)) },
         )
 
         try await reporter.activity("Loading Compose model") {
@@ -234,7 +234,7 @@ struct ComposeProgressTests {
         let reporter = ComposeProgressReporter(
             style: .tty,
             emitData: { emitted.append($0) },
-            sleep: { _ in try await Task.sleep(for: .milliseconds(1)) },
+            sleep: { _ in try await ComposeTaskSleep.sleep(for: .milliseconds(1)) },
         )
         let expectedFrames = [
             "\r⠓ Loading Compose model",
@@ -248,7 +248,7 @@ struct ComposeProgressTests {
                 if emitted.string.contains(expectedFrames) {
                     return
                 }
-                try await Task.sleep(for: .milliseconds(1))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(1))
             }
             Issue.record("Expected figure-eight trail frames")
         }
@@ -262,7 +262,7 @@ struct ComposeProgressTests {
         let reporter = ComposeProgressReporter(
             style: .tty,
             emitData: { emitted.append($0) },
-            sleep: { _ in try await Task.sleep(for: .seconds(60)) },
+            sleep: { _ in try await ComposeTaskSleep.sleep(for: .seconds(60)) },
         )
 
         try await reporter.activityWithExternalOutput("Building api") {
