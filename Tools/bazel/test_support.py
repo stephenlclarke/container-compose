@@ -299,7 +299,8 @@ def xml_testcase_count(payload: bytes) -> int:
 
 def validate_test_summary(events: list[dict]) -> None:
     # Bazel 8.8 TestSummary.total_run_count counts shard attempts, not XML
-    # testcases. This runner deliberately admits one fresh, unsharded attempt.
+    # testcases. Result run/shard/attempt IDs are one-based, including an
+    # unsharded test. This runner admits one fresh attempt.
     summaries = [row for row in events if 'testSummary' in row]
     results = [row for row in events if 'testResult' in row]
     if (len(summaries) != 1 or len(results) != 1
@@ -314,7 +315,7 @@ def validate_test_summary(events: list[dict]) -> None:
             or any(summary.get(name, 1) != 1 for name in ('runCount', 'attemptCount'))
             or summary.get('shardCount', 0) not in (0, 1)
             or result_id.get('run', 1) != 1 or result_id.get('attempt', 1) != 1
-            or result_id.get('shard', 0) != 0
+            or result_id.get('shard') != 1
             or result_id.get('configuration') != summary_id.get('configuration')):
         raise ValueError('Contradictory BEP run/attempt/configuration evidence')
 

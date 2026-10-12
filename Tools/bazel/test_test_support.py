@@ -295,13 +295,35 @@ class TestSupportAdmissionTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Contradictory XML'):
                     support.xml_testcase_count(changed.encode())
 
+    def test_actual_bazel_88_unsharded_result_uses_one_based_shard(self):
+        # Retained v3 10-test.bep.json identity/summary fields, without local URIs.
+        configuration = {'id': 'e443afd35fad56bcd05146b14e8854caa80c39af0643852e2954df911b95d3ab'}
+        events = [
+            {'id': {'testResult': {'label': support.TARGET, 'run': 1, 'shard': 1, 'attempt': 1,
+                                  'configuration': configuration}},
+             'testResult': {'status': 'PASSED', 'testAttemptDurationMillis': '875',
+                            'testAttemptStartMillisEpoch': '1791773459754'}},
+            {'id': {'testSummary': {'label': support.TARGET, 'configuration': configuration}},
+             'testSummary': {'totalRunCount': 1, 'overallStatus': 'PASSED',
+                             'runCount': 1, 'attemptCount': 1}}]
+        support.validate_test_summary(events)
+        for shard in (None, 0, 2):
+            changed = json.loads(json.dumps(events))
+            if shard is None:
+                del changed[0]['id']['testResult']['shard']
+            else:
+                changed[0]['id']['testResult']['shard'] = shard
+            with self.subTest(shard=shard):
+                with self.assertRaisesRegex(ValueError, 'Contradictory BEP'):
+                    support.validate_test_summary(changed)
+
     def test_bep_run_count_counts_attempts_not_xml_cases(self):
         events = [
             {'id': {'testSummary': {'label': support.TARGET, 'configuration': {'id': 'config'}}},
              'testSummary': {'overallStatus': 'PASSED', 'totalRunCount': 1, 'runCount': 1,
                              'attemptCount': 1, 'shardCount': 1}},
             {'id': {'testResult': {'label': support.TARGET, 'configuration': {'id': 'config'},
-                                  'run': 1, 'attempt': 1, 'shard': 0}},
+                                  'run': 1, 'attempt': 1, 'shard': 1}},
              'testResult': {'status': 'PASSED'}}]
         support.validate_test_summary(events)
         # One executable invocation legitimately reports multiple XML cases.
