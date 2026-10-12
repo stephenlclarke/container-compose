@@ -7,8 +7,20 @@ their native Bazel targets. This extension only selects immutable repository pin
 load("@rules_swift_package_manager//swiftpkg:defs.bzl", "swift_package")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
+def _selected_pins_impl(ctx):
+    ctx.file("Package.resolved", ctx.attr.contents)
+    ctx.file("BUILD.bazel", 'exports_files(["Package.resolved"])\n')
+
+_selected_pins = repository_rule(
+    implementation = _selected_pins_impl,
+    attrs = {"contents": attr.string(mandatory = True)},
+)
+
 def _dependencies_impl(ctx):
     profile = ctx.getenv("DEVCONTAINER_RUNTIME_PROFILE", "enhanced")
+    native_pins = ctx.getenv("COMPOSE_NATIVE_RESOLVED", "")
+    if native_pins and (profile != "enhanced" or not native_pins.startswith("/") or ".." in native_pins.split("/")):
+        fail("Native consumption requires explicitly admitted absolute enhanced pins")
     argument_parser_layer = ctx.getenv("COMPOSE_ARGUMENT_PARSER_LAYER", "source")
     layer_mirror = ctx.getenv("COMPOSE_ARGUMENT_PARSER_LAYER_MIRROR", "")
     modes = {
@@ -36,7 +48,9 @@ def _dependencies_impl(ctx):
     for mod in ctx.modules:
         for config in mod.tags.lockfiles:
             selected = config.stock if profile == "stock" else config.enhanced
-            pins = json.decode(ctx.read(selected))["pins"]
+            contents = ctx.read(ctx.path(native_pins)) if native_pins else ctx.read(selected)
+            pins = json.decode(contents)["pins"]
+            _selected_pins(name = "compose_selected_pins", contents = contents)
             names = []
             for pin in pins:
                 if pin["kind"] != "remoteSourceControl":
@@ -102,7 +116,7 @@ def _dependencies_impl(ctx):
                     )
                     continue
                 patches = []
-                if profile == "enhanced" and pin["identity"] == "containerization":
+                if profile == "enhanced" and not native_pins and pin["identity"] == "containerization":
                     patches = ["//Tools/bazel:containerization-ext4-unaligned.patch"]
                 if profile == "enhanced" and pin["identity"] == "zstd":
                     patches = ["//Tools/bazel:zstd-public-module.patch"]

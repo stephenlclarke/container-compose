@@ -8,6 +8,42 @@ module-map generation and minimum-OS wrappers, retain their original edges.
 load("@build_bazel_rules_swift//swift:swift.bzl", _swift_import = "swift_import")
 load("@rules_cc//cc:defs.bzl", _cc_import = "cc_import", _cc_library = "cc_library")
 
+def _prebuilt_executable_impl(ctx):
+    executable = ctx.actions.declare_file(ctx.label.name)
+    ctx.actions.symlink(output = executable, target_file = ctx.file.binary, is_executable = True)
+    runfiles = ctx.runfiles(files = [executable])
+    for dependency in ctx.attr.deps + ctx.attr.data:
+        if DefaultInfo in dependency:
+            runfiles = runfiles.merge(dependency[DefaultInfo].default_runfiles)
+    return DefaultInfo(executable = executable, runfiles = runfiles)
+
+_prebuilt_executable = rule(
+    implementation = _prebuilt_executable_impl,
+    executable = True,
+    attrs = {
+        "binary": attr.label(allow_single_file = True, mandatory = True),
+        "deps": attr.label_list(),
+        "data": attr.label_list(allow_files = True),
+    },
+)
+
+def import_swift_binary(artifacts, name, deps = [], data = [], **kwargs):
+    common = {"tags": kwargs.get("tags", [])}
+    if kwargs.get("visibility") != None:
+        common["visibility"] = kwargs["visibility"]
+    artifact = artifacts.get(name)
+    if artifact == None:
+        # Keep inactive generated labels loadable without a source-build path.
+        native.filegroup(name = name, srcs = [], **common)
+        return
+    _prebuilt_executable(
+        name = name,
+        binary = artifact,
+        deps = deps,
+        data = data,
+        **common
+    )
+
 def import_swift_library(artifacts, name, module_name, deps = [], data = [], private_deps = [], plugins = [], **kwargs):
     artifact = artifacts.get(name)
     common = {"tags": kwargs.get("tags", [])}

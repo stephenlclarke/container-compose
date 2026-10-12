@@ -23,7 +23,7 @@ native_docc(
 compose_candidate(
     name = "candidate_archive",
     profile = select({":stock_runtime": "stock", "//conditions:default": "enhanced"}),
-    resolved = select({":stock_runtime": "Package.stock.resolved", "//conditions:default": "Package.resolved"}),
+    resolved = "@compose_selected_pins//:Package.resolved",
 )
 
 config_setting(

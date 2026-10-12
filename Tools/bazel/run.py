@@ -61,6 +61,7 @@ def usage() -> str:
     return ('Usage: Tools/bazel/run.sh build|test|coverage|query|cquery|aquery|info|shutdown [Bazel args]\n'
             '       Tools/bazel/run.sh coverage-report ID [--minimum-percent N] [--inventory=unit|unit-cli] [--config=stock|enhanced]\n'
             '       Tools/bazel/run.sh restore-candidate ID\n'
+            'Native opt-in: --native-container-source=/ABS/CONTAINER --native-layer-locks=/ABS/LOCKS --config=enhanced --config=release\n'
             'All build scratch/cache stays on the enrolled SSD; invocation reports and candidate bytes are retained internally.\n')
 
 
@@ -262,6 +263,8 @@ def execute(command: str, arguments: list[str], profile: str, environment: dict[
     invocation.mkdir(mode=0o700)
     before = source_snapshot()
     (invocation / 'inputs-before.json').write_text(json.dumps(before, sort_keys=True) + '\n')
+    if "COMPOSE_NATIVE_ADMISSION" in environment:
+        (invocation / 'native-admission.json').write_text(environment["COMPOSE_NATIVE_ADMISSION"] + '\n')
     selected = base + [f'--config={profile}', *arguments]
     if '--config=release' in arguments and command in {'build', 'test', 'coverage'}:
         selected += [f'--define=DEVCONTAINER_COMMIT={before["commit"]}',
@@ -287,6 +290,10 @@ def execute(command: str, arguments: list[str], profile: str, environment: dict[
     try:
         after = source_snapshot()
         verify(before, after)
+        if "COMPOSE_NATIVE_ADMISSION" in environment:
+            from artifacts.native_consumer import readmit
+            readmit(ROOT, json.loads(environment["COMPOSE_NATIVE_ADMISSION"]),
+                    RETAINED / "native-binary-layers", arguments, profile)
         (invocation / 'inputs-after.json').write_text(json.dumps(after, sort_keys=True) + '\n')
         suite = 'source' if command in {'test', 'coverage'} and any(
             arg in {'//:unit_stock', '//:unit_enhanced', '//:coverage_stock', '//:coverage_enhanced'}
@@ -368,7 +375,19 @@ def main(arguments: list[str]) -> int:
             fail('Inventory selection requires a coverage threshold')
         return subprocess.call([sys.executable, str(ROOT / 'Tools/bazel/coverage_report.py'),
                                 *report_args], cwd=ROOT, env=environment)
-    profile, supplied = validated_args(rest)
+    from artifacts.native_consumer import options as native_options_for
+    native_options, filtered = native_options_for(rest)
+    profile, supplied = validated_args(filtered)
+    if native_options:
+        from artifacts.native_consumer import admit
+        native = admit(ROOT, native_options["--native-container-source"],
+                       native_options["--native-layer-locks"], RETAINED / "native-binary-layers",
+                       supplied, profile)
+        supplied += ["--repo_env=COMPOSE_NATIVE_RESOLVED=" + native["resolved"]]
+        supplied += ["--override_repository=" + name + "=" + path
+                     for name, path in sorted(native["overrides"].items())]
+        environment["COMPOSE_NATIVE_ADMISSION"] = json.dumps(native, sort_keys=True)
+
     package_configs = {'--config=prebuilt-argument-parser', '--config=prebuilt-foundation',
                        '--config=prebuilt-containerization', '--config=prebuilt-engine-api',
                        '--config=prebuilt-container-sdk'}
