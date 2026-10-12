@@ -410,6 +410,18 @@ SWIFT_TEST_FLAGS += $(if $(strip $(SWIFT_TEST_FRAMEWORK_SEARCH_PATH)),-Xswiftc -
 .PHONY: worktree-audit worktree-audit-strict
 .PHONY: bazel-compose-qualify bazel-compose-development-bridge bazel-compose-development-parity bazel-compose-development-parity-performance bazel-compose-capture-reference bazel-workflow-tools-test
 .PHONY: bazel-compose-release-prepare bazel-compose-release-publish bazel-compose-release-verify bazel-compose-recover
+.PHONY: bazel-stock-test-support bazel-stock-test-support-tools-test
+
+STOCK_TEST_SUPPORT_LAYERS ?=
+STOCK_TEST_SUPPORT_OUTPUT ?=
+
+# This opt-in component gate preserves the five published product layers.
+bazel-stock-test-support:
+	@test -n $(call SHELL_QUOTE,$(STOCK_TEST_SUPPORT_LAYERS)) -a -n $(call SHELL_QUOTE,$(STOCK_TEST_SUPPORT_OUTPUT)) || { printf '%s\n' 'Set STOCK_TEST_SUPPORT_LAYERS and fresh STOCK_TEST_SUPPORT_OUTPUT' >&2; exit 2; }
+	PYTHONDONTWRITEBYTECODE=1 $(PYTHON) Tools/bazel/test_support.py --root $(call SHELL_QUOTE,$(CURDIR)) --layers $(call SHELL_QUOTE,$(STOCK_TEST_SUPPORT_LAYERS)) --output $(call SHELL_QUOTE,$(STOCK_TEST_SUPPORT_OUTPUT))
+
+bazel-stock-test-support-tools-test:
+	$(TOOL_TEST_TEMP_ENV) PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=Tools/bazel $(PYTHON) -m unittest -q test_test_support
 
 COMPOSE_CONTAINER_ROOT ?=
 COMPOSE_Q_EVIDENCE ?=

@@ -274,6 +274,14 @@ The enhanced CLI graph also builds (`a66291f4-6596-4ab3-ae61-067a837c5e13`, 56.7
 
 Native help smoke checks pass in enhanced (`5d52852c-ee61-4bc1-a83f-23c4abf4e31a`) and stock (`cbe4c5e4-0ef3-47f1-8cc7-ccad1a46b8a6`) profiles. The initial smoke fixture expected Swift Argument Parser's generic headings instead of this project's custom Docker-shaped help; that test-only mismatch is retained at `268946a3-8bda-4830-987e-cb85f37b3b93`. The assertion now checks the actual declared root usage and up/down command descriptions and retains help output before asserting. Runtime-SPI discovery reports 20 actual Swift Testing cases; the enhanced repeat (`1f1f9fc5-f5eb-4369-9abf-febcfdce2c41`) reuses the unchanged test result. No container services are started by these checks.
 
+## Stock Engine test-support supplement
+
+The stock Engine component suite uses a Unix HTTP server fixture that is outside the published client-only product closure. An opt-in isolated gate builds only the missing configured package targets, then runs `//:ComposeEngineRuntimeTests` with every dependency library imported as a binary. Existing product archives, locks and producer recipes stay unchanged; there is no source fallback in the test consumer.
+
+From a clean immutable checkout, run `make bazel-stock-test-support STOCK_TEST_SUPPORT_LAYERS=/absolute/path/layers.json STOCK_TEST_SUPPORT_OUTPUT=/absolute/path/fresh-output`. The JSON map has exactly five keys: `argument-parser`, `foundation`, `containerization`, `engine-api` and `container-sdk`. Each value contains `archive` and `lock` absolute paths plus their `archiveSHA256` and `lockSHA256`; the helper authenticates them against the checkout's current stock locks and toolchain. The output must not already exist. Use the established host qualification lease and run no other heavy local workload concurrently.
+
+The gate retains source/configuration identities, package overlays, commands, BEP, fresh XML/log, the test-only supplement archive and its qualification receipt. `make bazel-stock-test-support-tools-test` runs its offline admission regressions without compiling Swift or starting a runtime. A passing offline regression does not qualify a supplement. The first actual producer/consumer run remains pending; see the [issue](../upstream/container-compose/ISSUE-stock-test-support.md) and [change record](../upstream/container-compose/PR-stock-test-support.md). This component gate neither reruns the enhanced Core or historical benchmark lanes nor qualifies a product release.
+
 ## Unit and filesystem migration
 
 Test commands enable `swift.enable_testing` so optimized project modules support their internal unit tests while consuming the published release dependency layers. Product build commands keep their existing compiler configuration. The direct command-line configuration restrictions and dependency archive checks remain enforced.

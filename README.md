@@ -337,6 +337,8 @@ The Apple-facing drafts under [docs/upstream/](docs/upstream/README.md) are curr
 
 The [full logging diagnostic candidate](https://github.com/stephenlclarke/container-compose/releases/tag/candidate-output-performance-e2aa25f05997-ba07cf8d6891) reuses all five published lower archives and passes 1,310 enhanced Core cases, eight temporary-file cases, and all 110 observations across the 22 frozen logging workloads. Its immutable release stores the signed candidate, raw timing rows, semantic assertions, unit proof and provenance; unchanged baselines and the matching published runtime are reused. The 1-MiB stdout median is 26.6% faster than the original fork, but slower than the earlier focused candidate. Some workloads regress, and attached startup remains 6.34 times the recorded Docker median. These historical comparisons do not establish performance parity. Stock Engine tests need a separately qualified server test-support closure; newest-stack integration and notarized product qualification remain pending. See the [attached-output handoff](docs/upstream/container-compose/PR-attached-output-framing.md) and [optimized sleep correction](docs/upstream/container-compose/PR-optimized-clock-sleep.md).
 
+The opt-in [stock Engine test-support gate](docs/guides/BAZEL.md#stock-engine-test-support-supplement) preserves all five product archives, builds only missing fixture modules, and requires a fresh import-only component test. Its first producer/consumer qualification remains pending.
+
 ## License
 
 This project uses the Apache License, Version 2.0, matching the license used by
