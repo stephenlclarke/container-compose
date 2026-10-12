@@ -280,6 +280,95 @@ class PackageTests(unittest.TestCase):
         Path(self.manifest["licenses"]).write_text(json.dumps([{"licenses": list(reversed(entries)) + entries}]))
         self.assertEqual(dependency_notices(self.manifest), (text, evidence))
 
+    def test_explicit_nested_notices_restore_binary_graph_inventory(self) -> None:
+        entries = self.notice_fixture()
+        expected = dependency_notices(self.manifest)
+        nested = [row for row in entries if "/Sources/" in row["license_text"]]
+        Path(self.manifest["licenses"]).write_text(json.dumps([{
+            "licenses": [row for row in entries if row not in nested]}]))
+        with self.assertRaisesRegex(ValueError, "Missing nested Swift"):
+            dependency_notices(self.manifest)
+        self.manifest["source_swift_notices"] = [row["license_text"] for row in nested]
+        self.assertEqual(dependency_notices(self.manifest), expected)
+        for invalid in (self.manifest["source_swift_notices"] * 2, [entries[0]["license_text"]]):
+            self.manifest["source_swift_notices"] = invalid
+            with self.assertRaisesRegex(ValueError, "Invalid explicit Swift"):
+                dependency_notices(self.manifest)
+
+    def test_explicit_root_notices_preserve_existing_archive_requirements(self) -> None:
+        self.notice_fixture()
+        self.manifest["source_swift_notices"] = []
+        for name in ("swift_crypto", "swift_nio_ssl"):
+            path = self.root / ("swiftpkg_" + name) / "NOTICE.txt"
+            path.parent.mkdir(exist_ok=True)
+            path.write_text(name + " attribution\n")
+            self.manifest["source_swift_notices"].append(str(path))
+        text, evidence = dependency_notices(self.manifest)
+        self.assertEqual(evidence["swiftNoticePackages"], 6)
+        for name in ("swift_crypto", "swift_nio_ssl"):
+            self.assertIn("Swift/" + name + "/NOTICE.txt", text)
+
+    def test_explicit_nested_notices_preserve_conflict_and_empty_rejection(self) -> None:
+        entries = self.notice_fixture()
+        original = next(row for row in entries if "/Sources/" in row["license_text"])
+        self.manifest["source_swift_notices"] = [original["license_text"]]
+        dependency_notices(self.manifest)
+        alternate = self.root / "alternate" / Path(original["license_text"]).relative_to(self.root)
+        alternate.parent.mkdir(parents=True)
+        for text, message in (("different", "Conflicting"), ("", "Empty dependency")):
+            alternate.write_text(text)
+            self.manifest["source_swift_notices"] = [str(alternate)]
+            with self.assertRaisesRegex(ValueError, message):
+                dependency_notices(self.manifest)
+
+    def test_native_vendored_notices_use_current_reviewed_pins(self) -> None:
+        self.notice_fixture()
+        inventory = json.loads((Path(__file__).parent / "licenses/vendored.json").read_text())
+        selected = {key: {**inventory[key], **inventory["native"][key]}
+                    for key in ("packages", "sourceFragments")}
+        path = Path(self.manifest["vendor_inventory"])
+        path.write_text(json.dumps(inventory))
+        self.manifest["vendor_notices"] = [str(Path(__file__).parent / "licenses" / name) for name in sorted({
+            row["license"] for item in (inventory, selected)
+            for row in [*item["packages"].values(), *item["sourceFragments"].values()]})]
+        resolved = Path(self.manifest["resolved"])
+        lock = json.loads(resolved.read_text())
+        reviewed = {**selected["packages"], **{identity: selected["sourceFragments"][component]
+                    for component, (identity, _, _, _) in SOURCE_NOTICES.items()}}
+        for pin in lock["pins"]:
+            if pin["identity"] in reviewed:
+                pin["state"]["revision"] = reviewed[pin["identity"]]["packageRevisions"][0]
+                pin["location"] = reviewed[pin["identity"]]["repository"]
+        lock["pins"].append({"identity": "tldextractswift", "kind": "remoteSourceControl",
+                             "location": "https://github.com/futamura/TLDExtractSwift.git",
+                             "state": {"revision": PSL_PACKAGE_REVISION}})
+        resolved.write_text(json.dumps(lock))
+        with self.assertRaisesRegex(ValueError, "revision requires review"):
+            dependency_notices(self.manifest)
+        self.manifest.update(profile="enhanced", native_binding={"admitted": True})
+        path.write_text(json.dumps({key: value for key, value in inventory.items() if key != "native"}))
+        with self.assertRaisesRegex(ValueError, "admitted enhanced pins"):
+            dependency_notices(self.manifest)
+        path.write_text(json.dumps(inventory))
+        text, evidence = dependency_notices(self.manifest)
+        nio = next(row for row in evidence["vendoredNotices"] if row["package"] == "swift-nio-ssl")
+        self.assertEqual(nio["packageRevision"], "8f2f979a28610f47714d50eccfe16b435e7e04a5")
+        self.assertEqual(nio["vendorRevision"], "8eb25be6fa18d475291122887a7bccd3762ff236")
+        self.assertIn("BoringSSL@8eb25be6fa18d475291122887a7bccd3762ff236", text)
+        sha1 = next(row for row in evidence["sourceNoticeFragments"] if row["component"] == "swift-nio-sha1")
+        self.assertEqual(sha1["sourceRevision"], "0b18836bd8b0162e7e17a995a3fbee20ed8f3b2b")
+        self.manifest["profile"] = "stock"
+        with self.assertRaisesRegex(ValueError, "admitted enhanced pins"):
+            dependency_notices(self.manifest)
+        self.manifest["profile"] = "enhanced"
+        lock["pins"][-1]["state"]["revision"] = "0" * 40
+        lock["pins"].append({"identity": "tldextractswift", "kind": "remoteSourceControl",
+                             "location": "https://github.com/futamura/TLDExtractSwift.git",
+                             "state": {"revision": PSL_PACKAGE_REVISION}})
+        resolved.write_text(json.dumps(lock))
+        with self.assertRaisesRegex(ValueError, "revision requires review"):
+            dependency_notices(self.manifest)
+
     def test_notices_reject_missing_mismatched_and_unknown_inputs(self) -> None:
         original = self.notice_fixture()
         for entries in (original[1:], original[:-1], [{**original[0], "package_version": "v1.0.0"}] + original[1:],

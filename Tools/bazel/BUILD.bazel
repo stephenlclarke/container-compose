@@ -33,11 +33,26 @@ sh_test(
     size = "medium",
 )
 
+filegroup(
+    name = "package_notice_inputs",
+    srcs = [
+        "licenses/vendored.json",
+        "licenses/boringssl-0226f30467f540a3f62ef48d453f93927da199b6.txt",
+        "licenses/boringssl-817ab07ebb53da35afea409ab9328f578492832d.txt",
+        "licenses/boringssl-8eb25be6fa18d475291122887a7bccd3762ff236.txt",
+        "licenses/swift-nio-sha1.txt",
+        "licenses/swift-nio-ushet.txt",
+        "licenses/swift-toml-tomlplusplus.txt",
+        "licenses/tldextractswift-psl-mpl.txt",
+        "licenses/yams-libyaml.txt",
+    ],
+)
+
 sh_test(
     name = "package_tests",
     srcs = ["tests/package.sh"],
     args = ["$(location test_package.py)", "$(location //:Tools/release/write-build-info.py)", "unit"],
-    data = ["package.py", "containerization-ext4-unaligned.patch", "zstd-public-module.patch", "test_package.py", "licenses/vendored.json", "licenses/tldextractswift-psl-mpl.txt", "licenses/swift-toml-tomlplusplus.txt", "//:Tools/release/write-build-info.py"],
+    data = ["package.py", "containerization-ext4-unaligned.patch", "zstd-public-module.patch", "test_package.py", ":package_notice_inputs", "//:Tools/release/write-build-info.py"],
     size = "small",
 )
 
@@ -45,7 +60,7 @@ sh_test(
     name = "package_smoke",
     srcs = ["tests/package.sh"],
     args = ["$(location test_package.py)", "$(location //:Tools/release/write-build-info.py)", "archive", "$(location //:candidate_archive_payload)"],
-    data = ["package.py", "containerization-ext4-unaligned.patch", "zstd-public-module.patch", "test_package.py", "licenses/vendored.json", "licenses/tldextractswift-psl-mpl.txt", "licenses/swift-toml-tomlplusplus.txt", "//:Tools/release/write-build-info.py", "//:candidate_archive_payload"],
+    data = ["package.py", "containerization-ext4-unaligned.patch", "zstd-public-module.patch", "test_package.py", ":package_notice_inputs", "//:Tools/release/write-build-info.py", "//:candidate_archive_payload"],
     size = "small",
 )
 

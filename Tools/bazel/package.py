@@ -162,6 +162,15 @@ def go_notice_inventory(manifest: dict) -> tuple[list[dict], dict[str, str]]:
 def source_notices(manifest: dict, required: dict[str, str]) -> tuple[dict, dict, set]:
     """Collect dependency-graph texts with stable, source-relative headings."""
     entries = [entry for group in json.loads(Path(manifest["licenses"]).read_text()) for entry in group["licenses"]]
+    nested = manifest.get("source_swift_notices", [])
+    labels = []
+    for value in nested:
+        match = re.search(r"swiftpkg_([^/]+)/(.+)$", value)
+        label = "Swift/" + match[1] + "/" + match[2] if match else ""
+        if label not in EXPLICIT_SWIFT_NOTICES or label in labels:
+            raise ValueError("Invalid explicit Swift notice input")
+        labels.append(label)
+        entries.append({"package_name": "", "package_version": "", "license_text": value})
     texts = {}
     found = {}
     swift = set()
@@ -293,14 +302,22 @@ def source_fragments(rows: dict, pins: list[dict], sources: dict) -> tuple[dict,
 def vendored_notices(manifest: dict) -> tuple[dict, list[dict], list[dict]]:
     """Bind reviewed vendor texts to immutable containing-package revisions."""
     inventory = json.loads(Path(manifest["vendor_inventory"]).read_text())
-    rows = inventory["packages"]
-    fragments = inventory["sourceFragments"]
+    selected_inventory = inventory
+    if manifest.get("native_binding") is not None:
+        if manifest["profile"] != "enhanced" or "native" not in inventory:
+            raise ValueError("Native vendored notice inventory requires admitted enhanced pins")
+        selected_inventory = {key: {**inventory[key], **inventory["native"][key]}
+                              for key in ("packages", "sourceFragments")}
+    rows = selected_inventory["packages"]
+    fragments = selected_inventory["sourceFragments"]
     if (inventory.get("schemaVersion") != 1 or set(rows) != {"swift-crypto", "swift-nio-ssl"} or
             set(fragments) != set(SOURCE_NOTICES) | {PSL_COMPONENT}):
         raise ValueError("Invalid vendored notice inventory")
     pins = json.loads(Path(manifest["resolved"]).read_text())["pins"]
     sources = {Path(path).name: Path(path) for path in manifest["vendor_notices"]}
-    expected = {row["license"] for row in [*rows.values(), *fragments.values()]}
+    inventories = [inventory] + ([inventory["native"]] if "native" in inventory else [])
+    expected = {row["license"] for item in inventories
+                for row in [*item["packages"].values(), *item["sourceFragments"].values()]}
     if len(sources) != len(manifest["vendor_notices"]) or set(sources) != expected:
         raise ValueError("Missing or unexpected vendored notice inputs")
     texts, evidence = {}, []
@@ -327,6 +344,12 @@ NESTED_SWIFT_NOTICES = frozenset({
     "Swift/swift_protobuf/Sources/protobuf/abseil/LICENSE",
     "Swift/swift_protobuf/Sources/protobuf/protobuf/LICENSE",
     "Swift/swift_protobuf/Sources/protobuf/protobuf/third_party/utf8_range/LICENSE",
+})
+
+
+EXPLICIT_SWIFT_NOTICES = NESTED_SWIFT_NOTICES | frozenset({
+    "Swift/swift_crypto/NOTICE.txt",
+    "Swift/swift_nio_ssl/NOTICE.txt",
 })
 
 
