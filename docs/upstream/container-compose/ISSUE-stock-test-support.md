@@ -15,3 +15,7 @@ Apple silicon, Swift 6.4, pinned Bazel 8.8, optimized stock configuration and mi
 ## Required result
 
 Authenticate current source, toolchain, five published archives and configured dependency variants. Build only missing fixture libraries in an isolated producer, seal their binary delta, and execute the stock Engine suite in a separate import-only consumer. Preserve fresh test XML/log, positive case counts and successful owned-server cleanup. Reject source or input drift, archive overwrites, cached test execution and any unlisted lower compilation. See the [change record](PR-stock-test-support.md).
+
+## First isolated attempt
+
+Source `d7b8ca2c319b16a743d5ba9320e21b64eead0e12` stops before compilation because the freshly generated `.build/.lock` in Swift Atomics differs from its archived copy. The offline overlap scan identifies exactly five such differences, all numeric SwiftPM process-ID files; every other overlapping metadata file matches. Generated package rules contain no reference to those files or globs that could consume them. The narrowly scoped correction preserves the authenticated archived lock bytes and records both hashes; any other differing metadata still fails. The failed attempt remains under `stock-test-support-v1`, with successful owned-server cleanup and host restoration. Native producer/consumer qualification remains pending.

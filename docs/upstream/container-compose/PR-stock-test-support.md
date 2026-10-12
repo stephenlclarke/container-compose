@@ -8,6 +8,8 @@ An opt-in local gate derives the missing stock test-fixture closure from the exa
 
 Offline admission regressions cover archive safety, graph derivation, overwrite rejection, import-only composition, configuration drift, prohibited lower compilation, generated-workspace identity, owned command selection and fresh test evidence. Source-graph discovery found exactly the three targets recorded in the [issue](ISSUE-stock-test-support.md). The actual producer/consumer qualification is pending; offline success is not evidence that native compilation or Engine test execution passes. Failed prior product-only analysis attempts remain retained.
 
+The first isolated attempt at `d7b8ca2c` fails before compilation on a SwiftPM process-ID lock collision. All five differing `.build/.lock` files are recorded separately from build inputs; no other overlapping metadata differs. The follow-on admission exception accepts only an unreferenced exact process-ID lock path, preserves archived bytes, and retains both hashes. Successful owned-server cleanup and host restoration are recorded; the failed attempt is not relabeled as passing.
+
 ## Compatibility and remaining risks
 
 Product recipes and pins are unchanged. The new supplement is test-only and cannot replace a product dependency. It is sealed only after successful fresh component execution and source/archive revalidation. This gate does not establish live Docker parity, performance parity, newest-stack integration, notarization, coverage or release readiness. The existing enhanced Core and published logging proof are reused without rerunning unchanged workloads.

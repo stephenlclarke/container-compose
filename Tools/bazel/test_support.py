@@ -71,6 +71,18 @@ def write_members(directory: Path, members: dict[str, bytes]) -> None:
         path.write_bytes(payload)
 
 
+def bookkeeping_collision(name: str, generated: bytes, published: bytes, build: str) -> dict:
+    # SwiftPM writes its generator PID here; it is not an input to any rule.
+    # Admit only this observed bookkeeping path, with no explicit or glob use.
+    if (name != '.build/.lock' or '.build' in build or '.lock' in build
+            or re.search(r'\bglob\s*\(', build)
+            or any(not re.fullmatch(rb'[1-9][0-9]{0,9}', value)
+                   or int(value) > 2147483647 for value in (generated, published))):
+        raise ValueError('Product metadata differs from generated package: ' + name)
+    return {'path': name, 'generatedSHA256': digest(generated),
+            'publishedSHA256': digest(published), 'disposition': 'authenticated-product-bytes-retained'}
+
+
 def tree_identity(root: Path) -> dict:
     files = {}
     for path in sorted(root.rglob('*')):
@@ -374,6 +386,7 @@ class Workspace:
         self.overrides = []
         self.overlay_directory = None
         self.testcase_count = None
+        self.metadata_dispositions = []
         self.base = [str(launcher.BAZEL), '--nosystem_rc', '--nohome_rc', '--noworkspace_rc',
                      '--bazelrc=' + str(self.workspace / '.bazelrc'),
                      '--output_user_root=' + str(launcher.SSD / 'output'),
@@ -446,6 +459,7 @@ class Workspace:
         for repo, package in packages.items():
             destination = directory / repo
             source = sources[repo]
+            original = (source / 'BUILD.bazel').read_text()
             if producer:
                 shutil.copytree(source, destination, symlinks=False)
                 # Repository generator metadata must not contain external links.
@@ -460,9 +474,10 @@ class Workspace:
                 path = destination / safe_name(name)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 if path.exists() and path.read_bytes() != payload:
-                    raise ValueError('Product metadata differs from generated package: ' + repo + '/' + name)
+                    disposition = bookkeeping_collision(name, path.read_bytes(), payload, original)
+                    self.metadata_dispositions.append(dict(disposition, repository=repo,
+                                                           stage='producer' if producer else 'consumer'))
                 path.write_bytes(payload)
-            original = (source / 'BUILD.bazel').read_text()
             if 'generatedBuildSHA256' in package:
                 if digest(original.encode()) != package['generatedBuildSHA256']:
                     raise ValueError('ArgumentParser generated build differs from published compilation')
@@ -472,6 +487,7 @@ class Workspace:
             (destination / 'BUILD.bazel').write_text(build)
             (destination / 'prebuilt.bzl').write_text(prebuilt)
             self.overrides.append('--override_repository=+dependencies+' + repo + '=' + str(destination))
+        write_json(self.output / 'metadata-dispositions.json', self.metadata_dispositions)
 
 
 def run(root: Path, output: Path, layer_paths: dict) -> dict:

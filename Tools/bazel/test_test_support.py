@@ -45,6 +45,48 @@ class TestSupportAdmissionTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         support.read_members(path)
 
+    def test_only_unreferenced_swiftpm_pid_lock_collision_is_admitted(self):
+        generated, published = b'63130', b'55558'
+        row = support.bookkeeping_collision('.build/.lock', generated, published, 'swift_library(name = "A")')
+        self.assertEqual(row, {'path': '.build/.lock', 'generatedSHA256': support.digest(generated),
+                               'publishedSHA256': support.digest(published),
+                               'disposition': 'authenticated-product-bytes-retained'})
+        for name, current, archived, build in [
+            ('.build/other', generated, published, ''),
+            ('Package.resolved', generated, published, ''),
+            ('.build/.lock', b'0', published, ''),
+            ('.build/.lock', generated, b'2147483648', ''),
+            ('.build/.lock', b'PID', published, ''),
+            ('.build/.lock', generated, b'55558\n', ''),
+            ('.build/.lock', generated, published, 'srcs = [".build/.lock"]'),
+            ('.build/.lock', generated, published, 'srcs = glob (["**"])'),
+        ]:
+            with self.subTest(name=name, current=current, archived=archived, build=build):
+                with self.assertRaisesRegex(ValueError, 'Product metadata differs'):
+                    support.bookkeeping_collision(name, current, archived, build)
+
+    def test_install_preserves_published_lock_and_records_both_identities(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source'
+            (source / '.build').mkdir(parents=True)
+            (source / '.build/.lock').write_bytes(b'63130')
+            (source / 'BUILD.bazel').write_text('recipe')
+            output = root / 'output'
+            output.mkdir()
+            workspace = support.Workspace(root, output, {}, root / 'recovery.json')
+            packages = {'swiftpkg_example': {'files': {'BUILD.bazel': b'recipe', '.build/.lock': b'55558'}}}
+            with patch.object(support.foundation, 'transformed_build', side_effect=lambda value: value):
+                with patch.object(support, 'overlay_build', return_value=('recipe', 'imports')):
+                    for producer in (True, False):
+                        workspace.install(packages, {'swiftpkg_example': source}, {'swiftpkg_example': {}}, producer)
+                        stage = 'producer' if producer else 'consumer'
+                        self.assertEqual((output / stage / 'swiftpkg_example/.build/.lock').read_bytes(), b'55558')
+            rows = json.loads((output / 'metadata-dispositions.json').read_text())
+            self.assertEqual([row['stage'] for row in rows], ['producer', 'consumer'])
+            self.assertTrue(all(row['generatedSHA256'] == support.digest(b'63130') for row in rows))
+            self.assertEqual((source / '.build/.lock').read_bytes(), b'63130')
+
     def test_derives_transitive_missing_targets_including_c(self):
         graph = {str(i): row for i, row in enumerate([
             graph_row('Existing.rspm.__impl'), graph_row('Server.rspm.__impl'),
