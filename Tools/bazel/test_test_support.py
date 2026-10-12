@@ -232,6 +232,29 @@ class TestSupportAdmissionTests(unittest.TestCase):
                 verify.assert_not_called()
 
 
+    def test_owned_invocation_uses_short_isolated_socket_scratch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / 'compose-stock-test-support-v2'
+            output.mkdir()
+            runner = support.Workspace(root, output, {}, root / 'recovery.json')
+            runner.workspace.mkdir()
+            def child(argv, log, environment, recovery):
+                flags = [value for value in argv if value.startswith('--test_tmpdir=')]
+                self.assertEqual(flags, ['--test_tmpdir=' + str(support.launcher.SSD / 't')])
+                scratch = Path(flags[0].split('=', 1)[1])
+                # Bazel's per-test hash and the real EngineFixture socket layout.
+                first = scratch / '_tmp' / ('a' * 32) / 'ccer-12345678' / 'engine.sock'
+                second = scratch / '_tmp' / ('b' * 32) / 'ccer-12345678' / 'engine.sock'
+                self.assertLess(len(str(first).encode()), 104)
+                self.assertNotEqual(first, second)
+                previous = scratch / output.name / first.relative_to(scratch)
+                self.assertGreaterEqual(len(str(previous).encode()), 104)
+                log.write_text('metadata only')
+                return 0
+            with patch.object(support.launcher, 'run_owned', side_effect=child):
+                runner.invoke('info', ['output_base'])
+
     def test_shutdown_clears_only_successful_recovery_marker(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

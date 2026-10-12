@@ -399,7 +399,7 @@ class Workspace:
                  '--features=swift.enable_testing', '--nocache_test_results',
                  '--run_under=//Tools/bazel:ssd_test_runner', '--test_env=TMPDIR', '--test_env=HOME',
                  '--test_output=errors', '--flaky_test_attempts=1', '--local_test_jobs=2',
-                 '--test_tmpdir=' + str(launcher.SSD / 't' / self.output.name),
+                 '--test_tmpdir=' + str(launcher.SSD / 't'),
                  '--repository_cache=' + str(launcher.SSD / 'repository'),
                  *self.overrides])
         if command in {'build', 'test'}:

@@ -10,6 +10,8 @@ Offline admission regressions cover archive safety, graph derivation, overwrite 
 
 The first isolated attempt at `d7b8ca2c` fails before compilation on a SwiftPM process-ID lock collision. All five differing `.build/.lock` files are recorded separately from build inputs; no other overlapping metadata differs. The follow-on admission exception accepts only an unreferenced exact process-ID lock path, preserves archived bytes, and retains both hashes. Successful owned-server cleanup and host restoration are recorded; the failed attempt is not relabeled as passing.
 
+The second attempt at `d7c0cb58` builds both producer and import-only consumer and executes 110 tests, then fails fixture setup at macOS's Unix socket path limit. The helper now selects the short enrolled SSD temporary root while keeping Bazel/fixture isolation. A regression checks the actual invocation flag and socket layout against the limit. The shared compiled-output cache remains configured; fresh successful test execution and measured cache reuse remain pending.
+
 ## Compatibility and remaining risks
 
 Product recipes and pins are unchanged. The new supplement is test-only and cannot replace a product dependency. It is sealed only after successful fresh component execution and source/archive revalidation. This gate does not establish live Docker parity, performance parity, newest-stack integration, notarization, coverage or release readiness. The existing enhanced Core and published logging proof are reused without rerunning unchanged workloads.
