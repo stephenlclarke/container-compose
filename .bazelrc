@@ -34,6 +34,9 @@ test --test_env=TMPDIR
 test --test_env=HOME
 build --symlink_prefix=/
 test --test_output=errors
+# Keep optimized Core/CLI modules importable by their internal unit tests.
+# Test-only features do not change product builds or compiled dependency imports.
+test --features=swift.enable_testing
 test --flaky_test_attempts=1
 test --local_test_jobs=2
 test --run_under=//Tools/bazel:ssd_test_runner
