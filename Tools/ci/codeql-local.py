@@ -142,7 +142,11 @@ TRUSTED_WORKFLOW_TOOL_ROOTS = {
     "linux64": (Path("/usr/bin"), Path("/bin")),
 }
 CODEQL_SOURCE_ISOLATION = "independent-clone-fsck-detached-raw-worktree-v2"
-CODEQL_BUILD_OUTPUT_PATH = "Tools/compose-normalizer/compose-normalizer"
+CODEQL_BUILD_OUTPUT_PATHS = {
+    "Tools/compose-normalizer/compose-normalizer",
+    "Tools/compose-normalizer/compose-volume-initializer-linux-arm64",
+    "Tools/compose-normalizer/compose-volume-initializer-linux-amd64",
+}
 CODEQL_SUPPORTED_IGNORE_FILES = (".gitignore",)
 CODEQL_CONFIG = Path(".github/codeql/codeql-config.yml")
 CODEQL_BASELINE = Path(".github/codeql/codeql-baseline.json")
@@ -1836,7 +1840,7 @@ def analyze(
             verify_exact_checkout(
                 exact_source,
                 commit,
-                expected_untracked={CODEQL_BUILD_OUTPUT_PATH},
+                expected_untracked=CODEQL_BUILD_OUTPUT_PATHS,
             )
             result_count, rule_count, baseline_sha256 = validate_sarif(
                 sarif, baseline

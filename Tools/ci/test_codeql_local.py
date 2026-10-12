@@ -2073,11 +2073,26 @@ class CodeQLLocalTests(unittest.TestCase):
             codeql.verify_exact_checkout(destination, commit)
             build_output = destination / "Tools/compose-normalizer/compose-normalizer"
             build_output.write_bytes(b"expected ignored build output")
+            for architecture in ("arm64", "amd64"):
+                initializer = destination / (
+                    "Tools/compose-normalizer/compose-volume-initializer-linux-"
+                    + architecture
+                )
+                initializer.write_bytes(b"expected Linux volume initializer")
             codeql.verify_exact_checkout(
                 destination,
                 commit,
-                expected_untracked={codeql.CODEQL_BUILD_OUTPUT_PATH},
+                expected_untracked=codeql.CODEQL_BUILD_OUTPUT_PATHS,
             )
+            unexpected_output = destination / "Tools/compose-normalizer/unexpected"
+            unexpected_output.write_bytes(b"unplanned build output")
+            with self.assertRaisesRegex(codeql.CodeQLError, "untracked paths"):
+                codeql.verify_exact_checkout(
+                    destination,
+                    commit,
+                    expected_untracked=codeql.CODEQL_BUILD_OUTPUT_PATHS,
+                )
+            unexpected_output.unlink()
             (destination / "Tools/compose-normalizer/main.go").write_text(
                 "package changed\n",
                 encoding="utf-8",
@@ -2086,7 +2101,7 @@ class CodeQLLocalTests(unittest.TestCase):
                 codeql.verify_exact_checkout(
                     destination,
                     commit,
-                    expected_untracked={codeql.CODEQL_BUILD_OUTPUT_PATH},
+                    expected_untracked=codeql.CODEQL_BUILD_OUTPUT_PATHS,
                 )
 
     def test_dry_run_reads_no_token_and_retains_sarif(self) -> None:
