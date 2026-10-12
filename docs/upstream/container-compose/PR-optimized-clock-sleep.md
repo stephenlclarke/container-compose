@@ -2,7 +2,7 @@
 
 ## Resulting behavior
 
-Core test helpers and the API-socket credential deadline use the existing cancellation-aware `ComposeTaskSleep` wrapper instead of generic `Task.sleep(for:)`. Stock Engine environment capture and foreground cancellation polling use the same wrapper. Sleep durations, error propagation, cleanup and test assertions remain unchanged. No dependency pin or binary-layer archive changes.
+Core test helpers and the API-socket credential deadline use the existing cancellation-aware `ComposeTaskSleep` wrapper instead of generic `Task.sleep(for:)`. Stock Engine environment capture and foreground cancellation polling use the same wrapper. The stock foreground I/O and launch test helpers also use the wrapper for their ten remaining short sleeps. Sleep durations, error propagation, cleanup and test assertions remain unchanged. No dependency pin or binary-layer archive changes.
 
 The Bazel test configuration enables internal imports in optimized project modules. The feature applies to test commands; product build configuration and all eight profile/group dependency recipe identities are unchanged. No command-line admission restriction is relaxed.
 
@@ -10,7 +10,7 @@ The Bazel test configuration enables internal imports in optimized project modul
 
 Before the correction, optimized Core invocation `2eb445f9-5dd5-42d1-9b76-786c4a28e726` aborts in the identified pending-operation helper. The original failure and crash report are retained. Corrected immutable source `e2aa25f059979e3a9a9060e192bf4ad5ff4740fa` passes all 1,310 enhanced Core cases and eight temporary-file cases without failures or skips. The retained combined attempt remains failed because its subsequent stock gate does not analyze; a separate Core-only receipt authenticates the already completed test outputs without rerunning them.
 
-Stock Engine component validation requires a server fixture outside the published product client closure. The full prebuilt attempt rejects missing `ContainerUnixHTTPServer`; the foundation-only attempt rejects its missing `NIOWebSocket` dependency. Neither executes a test case, and the importer retains its prohibition on source fallback. A separately qualified test-support closure is required. Repository-pinned Swift style checks pass for nine selected files; two changed legacy test-support files retain the repository's existing style exclusions. Markdown and whitespace checks pass. Independent source review found no correctness blocker.
+Stock Engine component validation, including the follow-on test-helper-only correction, requires a server fixture outside the published product client closure. The full prebuilt attempt rejects missing `ContainerUnixHTTPServer`; the foundation-only attempt rejects its missing `NIOWebSocket` dependency. Neither executes a test case, and the importer retains its prohibition on source fallback. A separately qualified test-support closure is required. Repository-pinned Swift style checks pass for nine selected files; two changed legacy test-support files retain the repository's existing style exclusions. Markdown and whitespace checks pass. Independent source review found no correctness blocker.
 
 ## Compatibility and remaining scope
 

@@ -14,6 +14,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
+import ComposeCore
 @testable import ComposeEngineRuntime
 import ContainerEngineWire
 import Darwin
@@ -56,7 +57,7 @@ struct EngineForegroundIOTests {
         let flags = fcntl(descriptor, F_GETFL)
         let input = try EngineForegroundInput(descriptor: descriptor)
         let task = Task { try await input.read() }
-        try await Task.sleep(for: .milliseconds(20))
+        try await ComposeTaskSleep.sleep(for: .milliseconds(20))
         let start = ContinuousClock.now
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }
@@ -89,7 +90,7 @@ struct EngineForegroundIOTests {
         let signalFlags = fcntl(descriptor, F_GETNOSIGPIPE)
         let output = try EngineForegroundOutput(descriptor: descriptor)
         let task = Task { try await output.write(Data(repeating: 97, count: 1024 * 1024)) }
-        try await Task.sleep(for: .milliseconds(20))
+        try await ComposeTaskSleep.sleep(for: .milliseconds(20))
         let start = ContinuousClock.now
         task.cancel()
         await #expect(throws: CancellationError.self) { try await task.value }

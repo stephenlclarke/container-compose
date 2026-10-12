@@ -48,13 +48,13 @@ struct EngineForegroundLaunchTests {
             while !(await responder.requests.contains { $0.target.contains("/kill?") }),
                   ContinuousClock.now < readyDeadline
             {
-                try await Task.sleep(for: .milliseconds(5))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
             }
             #expect(await responder.requests.contains { $0.target.contains("/kill?signal=SIGUSR1") })
             operation.cancel()
             let deadline = ContinuousClock.now.advanced(by: .seconds(2))
             while !output.restored, ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(5))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
             }
             #expect(output.restored)
             #expect(signals.restored)
@@ -222,7 +222,7 @@ extension EngineForegroundLaunchTests {
             defer { task.cancel() }
             let deadline = ContinuousClock.now.advanced(by: .seconds(3))
             while !(await responder.attachedBeforeStart), ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(5))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
             }
             try #require(await responder.attachedBeforeStart)
             task.cancel()
@@ -246,16 +246,16 @@ extension EngineForegroundLaunchTests {
             defer { task.cancel() }
             let readyDeadline = ContinuousClock.now.advanced(by: .seconds(3))
             while output.byteCount < 8, ContinuousClock.now < readyDeadline {
-                try await Task.sleep(for: .milliseconds(5))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
             }
             #expect(output.byteCount == 8)
             // Give the already-ended attachment time to deliver socket EOF.
             // The separate native wait deliberately remains unresolved.
-            try await Task.sleep(for: .milliseconds(50))
+            try await ComposeTaskSleep.sleep(for: .milliseconds(50))
             task.cancel()
             let cancellationDeadline = ContinuousClock.now.advanced(by: .seconds(2))
             while !output.restored, ContinuousClock.now < cancellationDeadline {
-                try await Task.sleep(for: .milliseconds(5))
+                try await ComposeTaskSleep.sleep(for: .milliseconds(5))
             }
             #expect(output.restored)
             // Bound the regression even before the fix; this is fixture cleanup,
@@ -292,7 +292,7 @@ extension EngineForegroundLaunchTests {
             await responder.delayStartResponse(payload: payload) {
                 let deadline = ContinuousClock.now.advanced(by: .seconds(3))
                 while output.byteCount < payload.count + 8, ContinuousClock.now < deadline {
-                    try await Task.sleep(for: .milliseconds(5))
+                    try await ComposeTaskSleep.sleep(for: .milliseconds(5))
                 }
                 return output.byteCount == payload.count + 8
             }
@@ -613,7 +613,7 @@ private actor ForegroundResponder: DockerHTTPResponder {
         Task {
             // Removal is observable before the attachment's final drain. Do not
             // let immediate output EOF hide a failure in the resize response.
-            try? await Task.sleep(for: .milliseconds(80))
+            try? await ComposeTaskSleep.sleep(for: .milliseconds(80))
             await session.cancel()
         }
     }
