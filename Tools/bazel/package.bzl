@@ -103,15 +103,7 @@ def compose_candidate(name, profile, resolved):
         profile = profile,
         go_inventory = "//Tools/bazel:licenses/inventory.json",
         sdk_notices = ["@main___download_0//:LICENSE", "@main___download_0//:PATENTS"],
-        source_swift_notices = [
-            "@swiftpkg_swift_crypto//:NOTICE.txt",
-            "@swiftpkg_swift_nio_ssl//:NOTICE.txt",
-            "@swiftpkg_containerization//:Sources/ContainerizationArchive/CArchive/COPYING",
-            "@swiftpkg_swift_nio//:Sources/CNIOLLHTTP/LICENSE",
-            "@swiftpkg_swift_protobuf//:Sources/protobuf/abseil/LICENSE",
-            "@swiftpkg_swift_protobuf//:Sources/protobuf/protobuf/LICENSE",
-            "@swiftpkg_swift_protobuf//:Sources/protobuf/protobuf/third_party/utf8_range/LICENSE",
-        ],
+        source_swift_notices = ["@compose_notice_exports//:notices"],
         vendor_inventory = "//Tools/bazel:licenses/vendored.json",
         vendor_notices = [
             "//Tools/bazel:licenses/boringssl-0226f30467f540a3f62ef48d453f93927da199b6.txt",

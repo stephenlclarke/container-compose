@@ -6,6 +6,7 @@ their native Bazel targets. This extension only selects immutable repository pin
 
 load("@rules_swift_package_manager//swiftpkg:defs.bzl", "swift_package")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("//Tools/bazel:notice_exports.bzl", "compose_notice_exports")
 
 def _selected_pins_impl(ctx):
     ctx.file("Package.resolved", ctx.attr.contents)
@@ -130,6 +131,7 @@ def _dependencies_impl(ctx):
                     patches = patches,
                     patch_args = ["-p1"],
                 )
+    compose_notice_exports(name = "compose_notice_exports")
     # The watched lockfile and profile fully determine immutable rule attributes.
     # Do not write a different generated-repository snapshot into the tracked
     # module lock every time the stock/enhanced profile changes.

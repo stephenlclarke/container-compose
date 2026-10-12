@@ -13,3 +13,9 @@ The admitted graph also advances Swift NIO to `0b18836bd8b0162e7e17a995a3fbee20e
 ## Scope and remaining proof
 
 Preserve default stock/enhanced provenance, selected-lock validation, all required inventories and non-distribution-ready flags. Offline regression and retained-input replay can verify notice assembly; actual native package smoke remains a separate root-owned gate. No compiled product, lower artifact or historical result is rebuilt or reclassified. See [the matching PR handoff](PR-native-package-nested-notices.md).
+
+## Native label-export follow-up
+
+Checkpoint v2 at `82748d5ba48d49a5c23d95caebb6222eb821c0f3` passed compilation, 1,825 unit cases and the three independent CLI/package unit targets, but package smoke analysis rejected the seven direct file labels: published native package BUILD files export `pkg_info.json`, not these existing source texts. Preserve the v2 log and receipts too.
+
+A separate metadata-only repository now locates the five selected package roots through their public `pkg_info.json` labels, reads exactly seven confined nonempty notice files and exports a closed public filegroup. Source and native selection use the same path. No published archive or cached package BUILD changes; the graph verifier still requires exact published BUILD hashes. All application `Sources` and `Tests` are unchanged by this packaging correction, permitting root to assess reuse of the successful compilation/unit evidence separately from fresh package qualification.

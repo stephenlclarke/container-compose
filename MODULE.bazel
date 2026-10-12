@@ -105,6 +105,7 @@ swift_deps.lockfiles(
 use_repo(
     swift_deps,
     "compose_selected_pins",
+    "compose_notice_exports",
     "swiftpkg_container",
     "swiftpkg_containerization",
     "swiftpkg_container_engine_api",
