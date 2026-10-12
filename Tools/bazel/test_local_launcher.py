@@ -38,6 +38,35 @@ from retain_evidence import retain, validate_client_environment
 
 
 class LauncherTests(unittest.TestCase):
+    def test_release_metadata_matches_build_and_configured_queries(self):
+        source = {"commit": "a" * 40, "dirty": False}
+        expected = run.release_metadata("build", ["--config=release"], source)
+        self.assertEqual(len(expected), 3)
+        for command in ("test", "coverage", "aquery", "cquery"):
+            self.assertEqual(run.release_metadata(command, ["--config=release"], source), expected)
+        self.assertEqual(run.release_metadata("aquery", [], source), [])
+        self.assertEqual(run.release_metadata("query", ["--config=release"], source), [])
+        with self.assertRaises(ValueError):
+            run.validated_args(["--define=DEVCONTAINER_COMMIT=fake"])
+
+    def test_shell_selects_new_python_only_for_explicit_native_admission(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for name in ("system", "native"):
+                interpreter = root / name
+                interpreter.write_text('#!/bin/bash\n[[ "${1:-}" == -c ]] && exit 0\nprintf "%s\\n" "' + name + '" "$@"\n')
+                interpreter.chmod(0o755)
+            script = root / "run.sh"
+            original = Path(run.__file__).with_suffix(".sh").read_text()
+            script.write_text(original.replace("/usr/bin/python3", str(root / "system"))
+                              .replace("/opt/homebrew/bin/python3", str(root / "native")))
+            for arguments, expected in ((["build", "--config=stock"], "system"),
+                                        (["build", "--config=enhanced"], "system"),
+                                        (["aquery", "--native-container-source=/source", "--native-layer-locks=/locks"], "native")):
+                result = subprocess.run(["/bin/bash", str(script), *arguments], check=True, capture_output=True, text=True)
+                self.assertEqual(result.stdout.splitlines()[0], expected)
+                self.assertEqual(result.stdout.splitlines()[2:], arguments)
+
     def test_profile_and_dependency_overrides(self) -> None:
         self.assertEqual(run.validated_args(['--config=stock', '//:unit_stock']),
                          ('stock', ['//:unit_stock']))

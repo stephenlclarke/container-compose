@@ -30,7 +30,7 @@ import tempfile
 import types
 
 VERIFIER_COMMIT = "fc5d94aeeaae2ce373480a65b7a7ae11c2897315"
-CLIENT_TESTS = frozenset({"//:ContainerAPIClientTests", "//:ContainerXPCTests"})
+CLIENT_TESTS = frozenset({"@swiftpkg_container//:ContainerAPIClientTests.rspm", "@swiftpkg_container//:ContainerXPCTests.rspm"})
 
 
 def options(arguments: list[str]) -> tuple[dict[str, Path], list[str]]:
@@ -144,9 +144,17 @@ def verify_client(layers, producer, sidecar: dict, manifest: dict,
         raise ValueError("native client portable proof identity differs")
     qualification = sidecar.get("qualification", {})
     tests = {name for row in qualification.get("invocations", []) for name in row.get("targets", [])}
+    reports = {row["label"]: row for invocation in qualification.get("invocations", [])
+               for row in invocation.get("reports", [])}
     if (qualification.get("passed") is not True or qualification.get("source") != commit
-            or qualification.get("group") != "container-sdk" or not CLIENT_TESTS.issubset(tests)):
-        raise ValueError("native client source qualification lacks client/XPC inventory")
+            or qualification.get("group") != "container-sdk" or not CLIENT_TESTS.issubset(tests)
+            or not CLIENT_TESTS.issubset(qualification.get("requiredTargets", []))
+            or not CLIENT_TESTS.issubset(reports)
+            or any(reports[name].get("executed", 0) <= 0 or reports[name].get("skipped") != 0
+                   or reports[name].get("reportSHA256", {}).get("test.xml") != sidecar.get("tests", {}).get(name)
+                   or not layers.SHA.fullmatch(sidecar.get("tests", {}).get(name, ""))
+                   for name in CLIENT_TESTS)):
+        raise ValueError("native client source qualification lacks authenticated client/XPC reports")
     outputs = manifest.get("payloadOutputs", {})
     files = sidecar.get("producerBuild", {}).get("files", {})
     if (not outputs or set(outputs) != {name for name in manifest["files"] if "/binary/" in name}
@@ -193,6 +201,8 @@ def cached_client(layers, archive: Path, manifest: dict, cache: Path, sha: str) 
 
 def admit(root: Path, native_root: Path, locks: Path, cache: Path,
           supplied: list[str], profile: str) -> dict:
+    if sys.version_info < (3, 10):
+        raise ValueError("native Container proof admission requires Python >= 3.10")
     configuration(root, native_root, supplied, profile)
     layers, producer, state = load_verifier(native_root)
     admission = layers.import_layers(root=native_root, locks=locks, cache=cache)

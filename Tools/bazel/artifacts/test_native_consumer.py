@@ -75,13 +75,40 @@ class NativeConsumerTests(unittest.TestCase):
                 separators=(",", ":")) + "\n").encode()).hexdigest(),
             proofBundle=copy.deepcopy(self.pair["proof"]),
             qualification={"passed": True, "group": "container-sdk", "source": self.commit,
-                           "invocations": [{"targets": sorted(consumer.CLIENT_TESTS)}]},
+                           "requiredTargets": sorted(consumer.CLIENT_TESTS),
+                           "invocations": [{"targets": sorted(consumer.CLIENT_TESTS),
+                             "reports": [{"label": label, "executed": 1, "skipped": 0,
+                                          "reportSHA256": {"test.xml": "e" * 64, "test.log": "f" * 64}}
+                                         for label in sorted(consumer.CLIENT_TESTS)]}]},
+            tests={label: "e" * 64 for label in consumer.CLIENT_TESTS},
             producerBuild={"files": {"configured/" + name: {"sha256": digest}
                                       for name, digest in files.items()}})
 
     def verify(self):
         consumer.verify_client(self.layers, self.producer, self.sidecar,
             self.manifest, self.pair, self.admission, {})
+
+    def test_published_qualification_schema_has_authenticated_client_xpc_reports(self):
+        observed = json.loads((Path(__file__).parent / "testdata/native-client-qualification.json").read_text())
+        self.sidecar.update(observed)
+        self.verify()
+        label = "@swiftpkg_container//:ContainerXPCTests.rspm"
+        report = next(row for invocation in self.sidecar["qualification"]["invocations"]
+                      for row in invocation["reports"] if row["label"] == label)
+        report["skipped"] = 1
+        with self.assertRaisesRegex(ValueError, "authenticated client/XPC"):
+            self.verify()
+        report["skipped"] = 0
+        self.sidecar["tests"][label] = "0" * 64
+        with self.assertRaisesRegex(ValueError, "authenticated client/XPC"):
+            self.verify()
+
+    def test_native_python_guard_rejects_system_python_before_importing_verifier(self):
+        with mock.patch.object(consumer.sys, "version_info", (3, 9, 6)), \
+             mock.patch.object(consumer, "load_verifier") as imported:
+            with self.assertRaisesRegex(ValueError, "Python >= 3.10"):
+                consumer.admit(self.root, self.native, self.root, self.root, [], "enhanced")
+            imported.assert_not_called()
 
     def test_explicit_options_require_complete_absolute_unique_paths_and_default_is_unchanged(self):
         selected, rest = consumer.options(["//:compose", "--config=release"])

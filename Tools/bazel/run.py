@@ -247,6 +247,14 @@ def run_owned(argv: list[str], log_path: Path, environment: dict[str, str],
             signal.signal(kind, handler)
 
 
+def release_metadata(command: str, arguments: list[str], source: dict) -> list[str]:
+    if '--config=release' not in arguments or command not in {'build', 'test', 'coverage', 'aquery', 'cquery'}:
+        return []
+    return [f'--define=DEVCONTAINER_COMMIT={source["commit"]}',
+            '--define=DEVCONTAINER_BUILD_LANE=candidate',
+            f'--define=DEVCONTAINER_SOURCE_DIRTY={str(source["dirty"]).lower()}']
+
+
 def execute(command: str, arguments: list[str], profile: str, environment: dict[str, str],
             recovery: Path) -> int:
     base = [str(BAZEL), '--nosystem_rc', '--nohome_rc', '--noworkspace_rc',
@@ -266,10 +274,7 @@ def execute(command: str, arguments: list[str], profile: str, environment: dict[
     if "COMPOSE_NATIVE_ADMISSION" in environment:
         (invocation / 'native-admission.json').write_text(environment["COMPOSE_NATIVE_ADMISSION"] + '\n')
     selected = base + [f'--config={profile}', *arguments]
-    if '--config=release' in arguments and command in {'build', 'test', 'coverage'}:
-        selected += [f'--define=DEVCONTAINER_COMMIT={before["commit"]}',
-                     '--define=DEVCONTAINER_BUILD_LANE=candidate',
-                     f'--define=DEVCONTAINER_SOURCE_DIRTY={str(before["dirty"]).lower()}']
+    selected += release_metadata(command, arguments, before)
     if command in {'build', 'test', 'coverage'}:
         selected.append(f'--disk_cache={SSD / "cache"}')
     if command in {'test', 'coverage'}:

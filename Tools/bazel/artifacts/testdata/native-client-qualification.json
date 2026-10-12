@@ -1,0 +1,208 @@
+{
+  "qualification": {
+    "group": "container-sdk",
+    "invocations": [
+      {
+        "eventsSHA256": "c4da19bd986792cb6f273226c08311afaa4cc89e67544bbb4c0c360306629f63",
+        "invocation": "418f3be2-2387-4150-afd0-ef99ce33faff",
+        "reports": [
+          {
+            "executed": 94,
+            "label": "@swiftpkg_container//:TerminalProgressTests.rspm",
+            "reportSHA256": {
+              "test.log": "04b91bac25a77b0634f345440e398547abe958b87eb1d06f30f557a5ec875046",
+              "test.xml": "fe4fc4b65c89a49bdc90f9c9d736755a76bc0309c8e0f29e4d1e163ef650bba1"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 6,
+            "label": "@swiftpkg_container//:SocketForwarderTests.rspm",
+            "reportSHA256": {
+              "test.log": "a1579dc1d40ee8e7c7313c6850db74eea59c7252f5d49369ad5396a94b7f3072",
+              "test.xml": "681034b37f77bfd5bb532bc95fcc96c6f4d5bdd1f85d4d69ca89bcc432c61cd6"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 1,
+            "label": "@swiftpkg_container//:CLITests.rspm",
+            "reportSHA256": {
+              "test.log": "be8830d6b2bec31ebca6ed3cde2dbb6d9a0bd124f5983602223b098b5c8adf34",
+              "test.xml": "a90036228b6e03ba92fcbeaa45fa7f5d82363f182a38aca1e41dedf62b3c4cd7"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 70,
+            "label": "@swiftpkg_container//:DNSServerTests.rspm",
+            "reportSHA256": {
+              "test.log": "1edb7ac15a427c7b70e578d633bbb692f3e9b970b0a98e0c4d71a30e0710fcc6",
+              "test.xml": "4f39fa20ce3ef7733d174bf583fa24049990fafa6305bd66585bc2226a15a94c"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 28,
+            "label": "@swiftpkg_container//:ContainerXPCTests.rspm",
+            "reportSHA256": {
+              "test.log": "06206eb1914015c23bbd86f5883b73b6924ca1e6e3853c3ea659ecdbfef532ee",
+              "test.xml": "203e7d0ba3f79de2a1a9e436dff6aea13eb478c329ae148a754e55807c36c2e9"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 14,
+            "label": "@swiftpkg_container//:ContainerVersionTests.rspm",
+            "reportSHA256": {
+              "test.log": "df0c326a775a5b282c7cc5a55a173b401afea45bb9a3907bcf8b0a46f5d4e4c7",
+              "test.xml": "5c86ad1866b3e6f35494634c525420ca7b8d76730795544820ec55843449af0f"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 81,
+            "label": "@swiftpkg_container//:ContainerPluginTests.rspm",
+            "reportSHA256": {
+              "test.log": "9256770f6491ca42bcbf7d09bfcff0ce95372fb99a4e80add61994546f7ca607",
+              "test.xml": "8d99fe1b2dfe106265e247671775cd646f7a33b8dd24adcbf49a2c9613d4fdee"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 5,
+            "label": "@swiftpkg_container//:ContainerOSTests.rspm",
+            "reportSHA256": {
+              "test.log": "317ac19de64929ff736590c364d137709da91ce8057344b5310456cc007310c7",
+              "test.xml": "c580a4a2292d78211258a4064f53df7ded01fc16356adbe1a81b442a4a07cd84"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 103,
+            "label": "@swiftpkg_container//:ContainerPersistenceTests.rspm",
+            "reportSHA256": {
+              "test.log": "c85f2af49bf9f01e70d6b9ed576b60e74938b4dbc1d9f799a5c55559a11e57be",
+              "test.xml": "6194101a8035e4371eb6e2bcce838766b236abafeb74955c0a2807a77568dc53"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 87,
+            "label": "@swiftpkg_container//:ContainerBuildTests.rspm",
+            "reportSHA256": {
+              "test.log": "cc4afb75d78645afa8bd2142f55a28fa24caaa01efce3ec5a0a01608cc6d33e4",
+              "test.xml": "01147240f1b644ef79b4428a064be34e70b5225c7e1d669102442e4c0391a8eb"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 1,
+            "label": "@swiftpkg_container//:ContainerBuilderPluginTests.rspm",
+            "reportSHA256": {
+              "test.log": "42e11aa5686fdf0a706c2b9cd96624e177fea6a5085c374fe4598e3a8ae6d4a6",
+              "test.xml": "367bc706d0490ce6478e2b1f28e6982e8c93762a4031e4d8b8125b510390b9a5"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 457,
+            "label": "@swiftpkg_container//:ContainerAPIClientTests.rspm",
+            "reportSHA256": {
+              "test.log": "70a4b569887db7440b1c3a5d2b9bab54d0cf6e8b019786a7bf16c8f8fa6bdf78",
+              "test.xml": "f809fe10a33747a58d117b4a728f9f381d9460a9b11f73739fe47c61b77ad355"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 208,
+            "label": "@swiftpkg_container//:ContainerCommandsTests.rspm",
+            "reportSHA256": {
+              "test.log": "33975a4c0de82afe1f302c790172c20fadb287d2ff68877c5228774f9d5e7328",
+              "test.xml": "67a082bcff6d3c743ee9ed518c848b178f7f07666344e669f771ae9967758a43"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 280,
+            "label": "@swiftpkg_container//:ContainerLoggingProvidersTests.rspm",
+            "reportSHA256": {
+              "test.log": "9841e77911118bbe31caed2f3fbb2310c3b580d24577fafd814c393edc9589d6",
+              "test.xml": "de4d20f207aa3a32c4883d8ca62675d976286c9160296aa49c236c0b87f7c5bb"
+            },
+            "skipped": 0
+          },
+          {
+            "executed": 298,
+            "label": "@swiftpkg_container//:ContainerResourceTests.rspm",
+            "reportSHA256": {
+              "test.log": "2642d970651f8d69d8926d4f84b098f766ef6e64afb3e1d0117d8837a0c018a3",
+              "test.xml": "b7e79f774718e6540253669c05c942f040463cfb90fc6396ab2cc2a4ca7c7ba1"
+            },
+            "skipped": 0
+          }
+        ],
+        "source": {
+          "diffSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "inputsSHA256": "607a3f7f408f3edafbb532c02ab119235e2d60e7025c6e99e9c279535c46321b",
+          "sourceSHA256": "91dbb140b80d0638ed2beb45319e8dbe5f1e0b4b9f32cf055bb68baefd82996a"
+        },
+        "targets": [
+          "@swiftpkg_container//:CLITests.rspm",
+          "@swiftpkg_container//:ContainerAPIClientTests.rspm",
+          "@swiftpkg_container//:ContainerBuildTests.rspm",
+          "@swiftpkg_container//:ContainerBuilderPluginTests.rspm",
+          "@swiftpkg_container//:ContainerCommandsTests.rspm",
+          "@swiftpkg_container//:ContainerLoggingProvidersTests.rspm",
+          "@swiftpkg_container//:ContainerOSTests.rspm",
+          "@swiftpkg_container//:ContainerPersistenceTests.rspm",
+          "@swiftpkg_container//:ContainerPluginTests.rspm",
+          "@swiftpkg_container//:ContainerResourceTests.rspm",
+          "@swiftpkg_container//:ContainerVersionTests.rspm",
+          "@swiftpkg_container//:ContainerXPCTests.rspm",
+          "@swiftpkg_container//:DNSServerTests.rspm",
+          "@swiftpkg_container//:SocketForwarderTests.rspm",
+          "@swiftpkg_container//:TerminalProgressTests.rspm"
+        ]
+      }
+    ],
+    "passed": true,
+    "qualificationSHA256": "55f5265608332c1d3417e3609bb86ec094651e3e06b227545160cd291d2d8243",
+    "requiredTargets": [
+      "@swiftpkg_container//:CLITests.rspm",
+      "@swiftpkg_container//:ContainerAPIClientTests.rspm",
+      "@swiftpkg_container//:ContainerBuildTests.rspm",
+      "@swiftpkg_container//:ContainerBuilderPluginTests.rspm",
+      "@swiftpkg_container//:ContainerCommandsTests.rspm",
+      "@swiftpkg_container//:ContainerLoggingProvidersTests.rspm",
+      "@swiftpkg_container//:ContainerOSTests.rspm",
+      "@swiftpkg_container//:ContainerPersistenceTests.rspm",
+      "@swiftpkg_container//:ContainerPluginTests.rspm",
+      "@swiftpkg_container//:ContainerResourceTests.rspm",
+      "@swiftpkg_container//:ContainerVersionTests.rspm",
+      "@swiftpkg_container//:ContainerXPCTests.rspm",
+      "@swiftpkg_container//:DNSServerTests.rspm",
+      "@swiftpkg_container//:SocketForwarderTests.rspm",
+      "@swiftpkg_container//:TerminalProgressTests.rspm"
+    ],
+    "schema": 1,
+    "source": "fc5d94aeeaae2ce373480a65b7a7ae11c2897315"
+  },
+  "tests": {
+    "@swiftpkg_container//:CLITests.rspm": "a90036228b6e03ba92fcbeaa45fa7f5d82363f182a38aca1e41dedf62b3c4cd7",
+    "@swiftpkg_container//:ContainerAPIClientTests.rspm": "f809fe10a33747a58d117b4a728f9f381d9460a9b11f73739fe47c61b77ad355",
+    "@swiftpkg_container//:ContainerBuildTests.rspm": "01147240f1b644ef79b4428a064be34e70b5225c7e1d669102442e4c0391a8eb",
+    "@swiftpkg_container//:ContainerBuilderPluginTests.rspm": "367bc706d0490ce6478e2b1f28e6982e8c93762a4031e4d8b8125b510390b9a5",
+    "@swiftpkg_container//:ContainerCommandsTests.rspm": "67a082bcff6d3c743ee9ed518c848b178f7f07666344e669f771ae9967758a43",
+    "@swiftpkg_container//:ContainerLoggingProvidersTests.rspm": "de4d20f207aa3a32c4883d8ca62675d976286c9160296aa49c236c0b87f7c5bb",
+    "@swiftpkg_container//:ContainerOSTests.rspm": "c580a4a2292d78211258a4064f53df7ded01fc16356adbe1a81b442a4a07cd84",
+    "@swiftpkg_container//:ContainerPersistenceTests.rspm": "6194101a8035e4371eb6e2bcce838766b236abafeb74955c0a2807a77568dc53",
+    "@swiftpkg_container//:ContainerPluginTests.rspm": "8d99fe1b2dfe106265e247671775cd646f7a33b8dd24adcbf49a2c9613d4fdee",
+    "@swiftpkg_container//:ContainerResourceTests.rspm": "b7e79f774718e6540253669c05c942f040463cfb90fc6396ab2cc2a4ca7c7ba1",
+    "@swiftpkg_container//:ContainerVersionTests.rspm": "5c86ad1866b3e6f35494634c525420ca7b8d76730795544820ec55843449af0f",
+    "@swiftpkg_container//:ContainerXPCTests.rspm": "203e7d0ba3f79de2a1a9e436dff6aea13eb478c329ae148a754e55807c36c2e9",
+    "@swiftpkg_container//:DNSServerTests.rspm": "4f39fa20ce3ef7733d174bf583fa24049990fafa6305bd66585bc2226a15a94c",
+    "@swiftpkg_container//:SocketForwarderTests.rspm": "681034b37f77bfd5bb532bc95fcc96c6f4d5bdd1f85d4d69ca89bcc432c61cd6",
+    "@swiftpkg_container//:TerminalProgressTests.rspm": "fe4fc4b65c89a49bdc90f9c9d736755a76bc0309c8e0f29e4d1e163ef650bba1"
+  }
+}
