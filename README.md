@@ -202,6 +202,8 @@ option for that command is green.
 The top-level help output is the quickest support overview. Run
 `container compose COMMAND --help` for command-specific option support.
 
+The retained prebuilt XCTest parity runner resolves the macOS SDK from the active Xcode developer directory and supplies it as `SDKROOT`; it fails closed when the selected SDK is missing or outside that directory. It does not rebuild test binaries or skip the selected filters. See the [prebuilt XCTest SDKROOT handoff](docs/upstream/container-compose/PR-prebuilt-xctest-sdkroot.md).
+
 In the unreleased Bazel candidate, `run` and `exec` preserve guest-command options such as `--help`, `--user` and `--workdir`: place Compose options before `SERVICE`, followed by the guest command and its arguments. `container compose run --help` displays Compose help; `container compose run web echo --help` passes `--help` to `echo`. See the [CLI boundary evidence](docs/guides/BAZEL.md#guest-command-argument-boundary) for tested scope; this is not a claim about the currently published stable binary.
 
 The unreleased stock Engine adapter also preserves digest-qualified image spelling for descriptor-verified devcontainer inspection and records logical network keys independently of custom native names. Matched live C01 now passes all original observations and cleanup with devcontainer `aa56f00` and Compose `1fe36f56`; enhanced qualification and stable release gates remain open. These changes add no Docker dependency and are not present in the currently published stable binary. See the [Bazel guide](docs/guides/BAZEL.md).

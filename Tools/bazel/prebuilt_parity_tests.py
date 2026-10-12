@@ -45,6 +45,30 @@ ROUTES = {RM_FILTER: ('core',), LIFECYCLE_FILTER: ('core',),
 PASS = re.compile(r'(?:Test run with|Executed) (\d+) tests? .*passed', re.IGNORECASE)
 
 
+def macos_sdkroot(environment: dict[str, str]) -> str:
+    """Resolve the macOS SDK selected by the active Xcode developer directory."""
+    try:
+        selected = environment.get('DEVELOPER_DIR')
+        if not selected:
+            selected = subprocess.check_output(['/usr/bin/xcode-select', '-p'], env=environment,
+                                               text=True, stderr=subprocess.STDOUT,
+                                               timeout=30).strip()
+        developer = Path(selected).expanduser().resolve(strict=True)
+        sdk = Path(subprocess.check_output(['/usr/bin/xcrun', '--sdk', 'macosx', '--show-sdk-path'],
+                                           env=environment, text=True, stderr=subprocess.STDOUT,
+                                           timeout=30).strip()).resolve(strict=True)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise RuntimeError('Could not resolve the active Xcode macOS SDK') from error
+    if (not developer.is_dir() or not sdk.is_dir() or sdk.parent.name != 'SDKs'
+            or not sdk.name.startswith('MacOSX')):
+        raise RuntimeError('The active developer directory did not provide a macOS SDK')
+    try:
+        sdk.relative_to(developer)
+    except ValueError as error:
+        raise RuntimeError('The resolved macOS SDK is outside the active developer directory') from error
+    return str(sdk)
+
+
 def test_workspace(runfiles: Path, binary_name: str, fixture: str | None = None) -> str:
     """Resolve the workspace actually materialized beside a native Bazel test."""
     matches = [entry for entry in runfiles.iterdir()
@@ -61,6 +85,7 @@ def run_filter(pattern: str, environment: dict[str, str]) -> dict[str, int]:
     """Never accept an unknown or zero-match filter as successful proof."""
     if pattern not in ROUTES:
         raise ValueError('Parity unit filter is not one of the original maintained selections')
+    sdkroot = macos_sdkroot(environment)
     counts = {}
     for profile in ROUTES[pattern]:
         key = 'COMPOSE_PREBUILT_' + profile.upper() + '_TEST'
@@ -70,7 +95,7 @@ def run_filter(pattern: str, environment: dict[str, str]) -> dict[str, int]:
         runfiles = binary.with_name(binary.name + '.runfiles')
         if not runfiles.is_dir():
             raise ValueError('Missing prebuilt ' + profile + ' test runfiles')
-        test_env = dict(environment, TESTBRIDGE_TEST_ONLY=pattern,
+        test_env = dict(environment, SDKROOT=sdkroot, TESTBRIDGE_TEST_ONLY=pattern,
                         TEST_SRCDIR=str(runfiles),
                         TEST_WORKSPACE=test_workspace(runfiles, binary.name))
         completed = subprocess.run([str(binary)], env=test_env, text=True,
