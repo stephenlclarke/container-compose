@@ -157,6 +157,8 @@ public struct ComposeExecutionOptions {
     public var emit: @Sendable (String) -> Void
     public var emitData: @Sendable (Data) -> Void
     /// Emits exact process-attachment bytes without adding record delimiters.
+    /// Callback chunks may contain multiple logical lines; concatenate their bytes
+    /// instead of treating callback boundaries as record boundaries.
     public var emitAttachedData: @Sendable (Data) -> Void
     public var copyInputArchive: @Sendable () -> FileHandle
     public var copyOutputArchive: @Sendable () -> FileHandle

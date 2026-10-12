@@ -277,14 +277,24 @@ extension ComposeOrchestrator {
 
 /// Incrementally frames attach chunks so Compose prefixes exactly once per
 /// logical line, including blank and unterminated final lines.
-private final class ComposeUpAttachedOutputRenderer: @unchecked Sendable {
+final class ComposeUpAttachedOutputRenderer: @unchecked Sendable {
+    private struct StreamState {
+        var buffer = Data()
+        var scanOffset = 0
+    }
+
     private let lock = NSLock()
     private let prefix: Data
     private let timestamps: Bool
     private let currentDate: @Sendable () -> Date
     private let emit: @Sendable (Data) -> Void
     private let timestampFormatter: ISO8601DateFormatter
-    private var pending: [ComposeLogStream: Data] = [:]
+    private var pending: [ComposeLogStream: StreamState] = [:]
+    // Preserve all output without waiting on a callback that may reenter append.
+    // A slow callback can therefore let queued batches accumulate temporarily.
+    private var emissionQueue: [Data?] = []
+    private var emissionQueueHead = 0
+    private var isDrainingEmissions = false
 
     init(
         target: ServiceContainerTarget,
@@ -311,53 +321,100 @@ private final class ComposeUpAttachedOutputRenderer: @unchecked Sendable {
 
     func append(_ record: ComposeLogRecord) {
         lock.lock()
-        var buffer = pending[record.stream] ?? Data()
-        buffer.append(record.payload)
-        let lines = Self.completeLines(in: &buffer)
-        pending[record.stream] = buffer
-        let rendered = lines.map { render($0, timestamp: record.timestamp, terminated: true) }
+        // Removing the value gives this append exclusive ownership of its Data
+        // storage so appending a chunk does not first copy the pending tail.
+        var state = pending.removeValue(forKey: record.stream) ?? StreamState()
+        state.buffer.append(record.payload)
+        var output = Data()
+        output.reserveCapacity(record.payload.count + prefix.count)
+        frameCompleteLines(in: &state, timestamp: record.timestamp, into: &output)
+        pending[record.stream] = state
+        let shouldDrain = enqueueEmissionLocked(output)
         lock.unlock()
-        for line in rendered {
-            emit(line)
-        }
+        if shouldDrain { drainEmissions() }
     }
 
     func flush() {
         lock.lock()
-        let lines = [ComposeLogStream.stdout, .stderr].compactMap { stream -> Data? in
-            guard let data = pending[stream], !data.isEmpty else { return nil }
-            return render(data, timestamp: nil, terminated: false)
+        var output = Data()
+        for stream in [ComposeLogStream.stdout, .stderr] {
+            guard let state = pending.removeValue(forKey: stream), !state.buffer.isEmpty else { continue }
+            appendRenderedPrefix(to: &output, timestamp: nil)
+            output.append(state.buffer)
         }
-        pending.removeAll()
+        let shouldDrain = enqueueEmissionLocked(output)
         lock.unlock()
-        for line in lines {
-            emit(line)
-        }
+        if shouldDrain { drainEmissions() }
     }
 
-    private func render(_ line: Data, timestamp: Date?, terminated: Bool) -> Data {
-        var output = prefix
-        if timestamps {
-            output.append(Data("\(timestampFormatter.string(from: timestamp ?? currentDate())) ".utf8))
-        }
-        output.append(line)
-        if terminated {
-            output.append(UInt8(ascii: "\n"))
-        }
-        return output
-    }
-
-    private static func completeLines(in data: inout Data) -> [Data] {
-        var lines: [Data] = []
-        while let newline = data.firstIndex(of: UInt8(ascii: "\n")) {
-            var line = Data(data[..<newline])
-            if line.last == UInt8(ascii: "\r") {
-                line.removeLast()
+    private func frameCompleteLines(
+        in state: inout StreamState,
+        timestamp: Date?,
+        into output: inout Data,
+    ) {
+        var offset = state.scanOffset
+        var lineStart = 0
+        var consumedPrefix = 0
+        state.buffer.withUnsafeBytes { bytes in
+            while offset < bytes.count {
+                if bytes[offset] == UInt8(ascii: "\n") {
+                    var lineEnd = offset
+                    if lineEnd > lineStart, bytes[lineEnd - 1] == UInt8(ascii: "\r") {
+                        lineEnd -= 1
+                    }
+                    appendRenderedPrefix(to: &output, timestamp: timestamp)
+                    output.append(contentsOf: bytes[lineStart..<lineEnd])
+                    output.append(UInt8(ascii: "\n"))
+                    consumedPrefix = offset + 1
+                    lineStart = consumedPrefix
+                }
+                offset += 1
             }
-            lines.append(line)
-            data.removeSubrange(...newline)
         }
-        return lines
+        if consumedPrefix > 0 {
+            state.buffer.removeSubrange(state.buffer.startIndex..<(state.buffer.startIndex + consumedPrefix))
+        }
+        // Bytes through the end were inspected. Keep the cursor at the end of
+        // the remaining unterminated tail so the next append scans only new data.
+        state.scanOffset = state.buffer.count
+    }
+
+    private func appendRenderedPrefix(to output: inout Data, timestamp: Date?) {
+        output.append(prefix)
+        if timestamps {
+            let renderedTimestamp = timestampFormatter.string(from: timestamp ?? currentDate())
+            output.append(contentsOf: renderedTimestamp.utf8)
+            output.append(UInt8(ascii: " "))
+        }
+    }
+
+    private func enqueueEmissionLocked(_ output: Data) -> Bool {
+        guard !output.isEmpty else { return false }
+        emissionQueue.append(output)
+        guard !isDrainingEmissions else { return false }
+        isDrainingEmissions = true
+        return true
+    }
+
+    private func drainEmissions() {
+        while true {
+            lock.lock()
+            guard emissionQueueHead < emissionQueue.count else {
+                emissionQueue.removeAll(keepingCapacity: true)
+                emissionQueueHead = 0
+                isDrainingEmissions = false
+                lock.unlock()
+                return
+            }
+            let data = emissionQueue[emissionQueueHead]!
+            // Release delivered buffers even if producers keep the queue busy.
+            emissionQueue[emissionQueueHead] = nil
+            emissionQueueHead += 1
+            lock.unlock()
+            // Reentrant producers must be able to enqueue and return, including
+            // callbacks that synchronously ask another thread to append output.
+            emit(data)
+        }
     }
 
     private static func name(for target: ServiceContainerTarget) -> String {

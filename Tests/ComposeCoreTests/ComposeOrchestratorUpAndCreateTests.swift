@@ -4847,12 +4847,12 @@ extension ComposeOrchestratorTests {
             },
         ).up(project: project, options: ComposeUpOptions())
 
-        #expect(emitted.messages == [
+        #expect(emitted.messages.joined() == [
             "api-1 | hello\n",
             "api-1 | \n",
             "api-1 | err\n",
             "api-1 | partial",
-        ])
+        ].joined())
     }
 
     @Test("up attach dependencies follows selected service and dependency logs")
