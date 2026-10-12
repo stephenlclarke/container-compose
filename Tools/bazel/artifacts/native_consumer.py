@@ -29,7 +29,7 @@ import sys
 import tempfile
 import types
 
-VERIFIER_COMMIT = "fc5d94aeeaae2ce373480a65b7a7ae11c2897315"
+VERIFIER_COMMIT = "557f05fdbab11f23bb27158ea3b54d55a2c4de92"
 CLIENT_TESTS = frozenset({"@swiftpkg_container//:ContainerAPIClientTests.rspm", "@swiftpkg_container//:ContainerXPCTests.rspm"})
 
 

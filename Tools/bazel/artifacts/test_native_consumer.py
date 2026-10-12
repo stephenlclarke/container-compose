@@ -204,7 +204,8 @@ class NativeConsumerTests(unittest.TestCase):
             consumer.configuration(self.root, self.native, ["--config=release"], "enhanced")
 
     def test_verifier_rejects_dirty_or_wrong_commit_before_import(self):
-        for state in ({"commit": self.commit, "dirty": True}, {"commit": "f" * 40, "dirty": False}):
+        for state in ({"commit": self.commit, "dirty": True}, {"commit": "f" * 40, "dirty": False},
+                      {"commit": "fc5d94aeeaae2ce373480a65b7a7ae11c2897315", "dirty": False}):
             with mock.patch("Tools.bazel.input_identity.source_identity", return_value=state), \
                  mock.patch.object(consumer.importlib, "import_module") as imported:
                 with self.assertRaises(ValueError):
