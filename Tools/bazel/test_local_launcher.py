@@ -38,6 +38,45 @@ from retain_evidence import retain, validate_client_environment
 
 
 class LauncherTests(unittest.TestCase):
+    def test_native_admission_is_retained_without_inheriting_it_into_bazel(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            scratch, retained = root / 'scratch', root / 'retained'
+            (scratch / 'invocations').mkdir(parents=True)
+            retained.mkdir()
+            admission = {'schema': 1, 'graph': 'container-native'}
+            environment = {'HOME': str(root), 'COMPOSE_NATIVE_ADMISSION': json.dumps(admission)}
+            source = {'commit': 'a' * 40, 'dirty': False, 'files': {}, 'tooling': {}}
+            identifier = '00000000-0000-0000-0000-000000000003'
+
+            def analyzed(arguments, log, child_environment, recovery):
+                self.assertNotIn('COMPOSE_NATIVE_ADMISSION', child_environment)
+                self.assertEqual(child_environment, {'HOME': str(root)})
+                events = Path(next(arg.split('=', 1)[1] for arg in arguments
+                                   if arg.startswith('--build_event_json_file=')))
+                events.write_text('\n'.join((
+                    json.dumps({'started': {'uuid': identifier, 'command': 'aquery'}}),
+                    json.dumps({'finished': {'exitCode': {'code': 0}}}))) + '\n')
+                log.write_text('actual child output\n')
+                return 0
+
+            with patch.object(run, 'SSD', scratch), patch.object(run, 'RETAINED', retained), \
+                 patch.object(run, 'source_snapshot', return_value=source), \
+                 patch.object(run, 'run_owned', side_effect=analyzed), \
+                 patch('artifacts.native_consumer.readmit') as readmit:
+                status = run.execute('aquery', ['--config=release'], 'enhanced', environment,
+                                     root / 'recovery.json')
+            self.assertEqual(status, 0)
+            readmit.assert_called_once_with(run.ROOT, admission, retained / 'native-binary-layers',
+                                            ['--config=release'], 'enhanced')
+            self.assertIn('COMPOSE_NATIVE_ADMISSION', environment)
+            with sqlite3.connect(retained / 'bazel-evidence.sqlite') as database:
+                manifest = json.loads(database.execute('SELECT manifest FROM invocations WHERE id=?',
+                                                       (identifier,)).fetchone()[0])
+                contents = database.execute('SELECT bytes FROM blobs WHERE sha256=?',
+                                            (manifest['native-admission.json'],)).fetchone()[0]
+            self.assertEqual(json.loads(contents), admission)
+
     def test_release_metadata_matches_build_and_configured_queries(self):
         source = {"commit": "a" * 40, "dirty": False}
         expected = run.release_metadata("build", ["--config=release"], source)

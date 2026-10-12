@@ -288,7 +288,11 @@ def execute(command: str, arguments: list[str], profile: str, environment: dict[
     recovery.write_text(json.dumps({'schema': 1, 'reason': 'in-flight Bazel client',
         'invocation': invocation.name}) + '\n')
     start = time.monotonic()
-    status = run_owned(selected, invocation / 'console.log', environment, recovery)
+    # Admission is launcher-owned evidence, never a Bazel client environment
+    # input. Keep it for post-run verification without copying it into BEP.
+    client_environment = {key: value for key, value in environment.items()
+                          if key != 'COMPOSE_NATIVE_ADMISSION'}
+    status = run_owned(selected, invocation / 'console.log', client_environment, recovery)
     (invocation / 'timing.json').write_text(json.dumps({'seconds': time.monotonic() - start,
         'profile': profile, 'command': command}, sort_keys=True) + '\n')
     validation = 0

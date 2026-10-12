@@ -168,7 +168,7 @@ def retain(events_path: Path, database: Path, scratch_root: Path) -> str:
     contents = {"events.json": event_bytes}
     contents.update({name: path.read_bytes() for name, path in evidence_paths(events, scratch_root).items()})
     contents.update({name: path.read_bytes() for name, path in artifact_paths(events, scratch_root).items()})
-    for name in ("owner.json", "qualification.json", "source-tests.json", "inputs-before.json", "inputs-after.json", "outcome.json", "timing.json", "console.log"):
+    for name in ("owner.json", "qualification.json", "source-tests.json", "native-admission.json", "inputs-before.json", "inputs-after.json", "outcome.json", "timing.json", "console.log"):
         path = events_path.with_name(name)
         if path.is_file():
             contents[name] = path.read_bytes()
