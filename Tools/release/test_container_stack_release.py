@@ -5048,6 +5048,8 @@ formula_digest="sha256:${DIGEST}"
                 "PARITY_PRESSURE_RECORDS": "32768",
                 "PARITY_DOCKER_HOST_ADDRESS": "docker.example.invalid",
                 "PARITY_CONTAINER_HOST_ADDRESS": "127.0.0.2",
+                "PARITY_SERVICE_MEMORY_MIB": "200",
+                "PARITY_RETAIN_FIXTURE_DIR": "1",
             }.items():
                 with self.subTest(parity_input=name):
                     self.assertNotEqual(
@@ -5079,6 +5081,53 @@ formula_digest="sha256:${DIGEST}"
             with self.subTest(parity_input=name):
                 self.assertIn(f"$({name})", parity_fingerprint)
         self.assertIn("$(DOCKER_COMPOSE_PARITY_TARGETS)", parity_fingerprint)
+
+    def test_make_forwards_parity_memory_and_fixture_retention(self) -> None:
+        probe = (
+            "parity-controls-probe:\n\t@$(PARITY_ENV) "
+            + shlex.quote(sys.executable)
+            + " -c "
+            + shlex.quote(
+                "import os; print(os.environ['PARITY_SERVICE_MEMORY_MIB']); "
+                "print(os.environ['PARITY_RETAIN_FIXTURE_DIR'])"
+            )
+            + "\n"
+        )
+        for values in (("0", "0"), ("200", "1")):
+            with self.subTest(values=values):
+                overrides = (
+                    []
+                    if values == ("0", "0")
+                    else [
+                        f"PARITY_SERVICE_MEMORY_MIB={values[0]}",
+                        f"PARITY_RETAIN_FIXTURE_DIR={values[1]}",
+                    ]
+                )
+                environment = self.non_interactive_environment()
+                environment.pop("PARITY_SERVICE_MEMORY_MIB", None)
+                environment.pop("PARITY_RETAIN_FIXTURE_DIR", None)
+                result = subprocess.run(
+                    [
+                        "make",
+                        "--no-print-directory",
+                        "-s",
+                        "-f",
+                        "Makefile",
+                        "-f",
+                        "-",
+                        "parity-controls-probe",
+                        *overrides,
+                    ],
+                    input=probe,
+                    cwd=ROOT,
+                    env=environment,
+                    text=True,
+                    capture_output=True,
+                    timeout=30,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), list(values))
 
     def test_phase5_builder_suites_are_unconditionally_restored(self) -> None:
         validation = STACK_RELEASE_VALIDATION.read_text(encoding="utf-8")
