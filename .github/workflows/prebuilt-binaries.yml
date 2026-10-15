@@ -853,7 +853,7 @@ jobs:
           cache: false
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
         with:
           languages: go
           build-mode: manual
@@ -901,7 +901,7 @@ jobs:
           [[ "${tag_ref}" == "${PUBLISH_SHA}" ]]
 
       - name: Analyze CodeQL release source
-        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
         with:
           category: "/language:swift-go"
 
@@ -1847,7 +1847,7 @@ jobs:
           subject-path: ${{ steps.authority-bundle.outputs.local_asset }}
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ steps.lane.outputs.asset }}
           path: |
@@ -1855,7 +1855,7 @@ jobs:
             ${{ runner.temp }}/${{ steps.lane.outputs.asset }}.sha256
 
       - name: Upload matched runtime workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ steps.runtime-package.outputs.asset }}
           path: |
@@ -1864,7 +1864,7 @@ jobs:
 
       - name: Upload exact Current VM-init workflow artifact
         if: needs.resolve-publish-context.outputs.ref_type == 'branch'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ steps.current-init-image.outputs.asset }}
           path: |
