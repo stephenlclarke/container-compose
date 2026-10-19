@@ -273,6 +273,7 @@ expect_container_behavior() {
         sed -n '1,120p' "$dry_run_output" >&2
         return 1
     fi
+    dry_run_output="$(python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --file "$dry_run_output")"
     if ! grep -F "container create --name $PROJECT_NAME-api-1" "$dry_run_output" >/dev/null; then
         error 'container-compose did not accept Deploy update and scheduler metadata in local dry-run up'
         sed -n '1,120p' "$dry_run_output" >&2

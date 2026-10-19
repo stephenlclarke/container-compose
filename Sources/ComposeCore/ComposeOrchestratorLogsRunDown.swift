@@ -508,11 +508,13 @@ public extension ComposeOrchestrator {
             service: preparation.service,
             requestedName: run.containerName,
         )
+        let managedLifecycleRun = !run.detach && hasLifecycleHooks(preparation.service)
+        // A non-TTY managed run must attach output before starting, even when
+        // Compose keeps stdin open by default. The attachment forwards stdin.
         let foregroundInteractiveRun = isForegroundInteractiveRun(
             service: preparation.service,
             options: run,
-        )
-        let managedLifecycleRun = !run.detach && hasLifecycleHooks(preparation.service)
+        ) && (!managedLifecycleRun || preparation.service.tty == true)
         let automaticRemove = run.remove && managedLifecycleRun && foregroundInteractiveRun
         try await removeRunOrphans(
             project: preparation.project,
@@ -528,16 +530,15 @@ public extension ComposeOrchestrator {
             automaticRemove: automaticRemove,
             foregroundInteractive: foregroundInteractiveRun,
         )
-        let arguments = try await oneOffRunArguments(
+        let launch = try await oneOffLaunchPlan(
             preparation: preparation,
             invocation: invocation,
             options: run,
         )
         let launchWithInheritedIO = foregroundInteractiveRun && !managedLifecycleRun
         try await launchOneOffRun(
-            arguments: arguments,
+            launch: launch,
             serviceName: preparation.service.name,
-            logging: runtimeLogConfiguration(service: preparation.service),
             options: run,
             inheritedIO: launchWithInheritedIO,
         )
@@ -580,21 +581,21 @@ public extension ComposeOrchestrator {
 
     /// Launches the runtime process and preserves a one-off process exit status.
     private func launchOneOffRun(
-        arguments: [String],
+        launch: ContainerServiceLaunchPlan,
         serviceName: String,
-        logging: ComposeLogConfiguration,
         options run: ComposeRunOptions,
         inheritedIO: Bool,
     ) async throws {
         do {
             try await runContainerWithProgress(
-                arguments,
+                launch.arguments,
                 message: "Running \(serviceName)",
                 options: ComposeContainerProgressRunOptions(
                     quiet: run.quiet,
                     inheritedIO: inheritedIO,
                     replaceProcess: inheritedIO,
-                    logging: logging,
+                    logging: launch.configuration.logging,
+                    configuration: launch.configuration,
                 ),
             )
         } catch let error as ComposeError {
@@ -607,7 +608,7 @@ public extension ComposeOrchestrator {
 
     /// Determines whether the runtime should inherit terminal input and output for a run.
     private func isForegroundInteractiveRun(service: ComposeService, options run: ComposeRunOptions) -> Bool {
-        !run.quiet && !run.detach && (service.tty == true || service.stdinOpen == true)
+        !run.detach && (service.tty == true || service.stdinOpen == true)
     }
 
     /// Validates hook execution before the run has allocated runtime resources.
@@ -633,12 +634,12 @@ public extension ComposeOrchestrator {
     }
 
     /// Renders the direct runtime invocation for a one-off container.
-    private func oneOffRunArguments(
+    private func oneOffLaunchPlan(
         preparation: ComposeRunServicePreparation,
         invocation: ComposeOneOffRunInvocation,
         options run: ComposeRunOptions,
-    ) async throws -> [String] {
-        try await runArguments(
+    ) async throws -> ContainerServiceLaunchPlan {
+        try await serviceLaunchPlan(
             project: preparation.project,
             service: preparation.service,
             options: RunArgumentOptions {
@@ -653,10 +654,7 @@ public extension ComposeOrchestrator {
                 // Cleanup stays manual to avoid racing output collection.
                 $0.remove = run.remove
                     && (!invocation.managedLifecycleRun
-                        || isForegroundInteractiveRun(
-                            service: preparation.service,
-                            options: run,
-                        ))
+                        || invocation.foregroundInteractive)
                 $0.oneOff = true
                 $0.publishedPorts = invocation.publishedPorts
                 $0.containerNameOverride = invocation.containerName
@@ -744,12 +742,8 @@ public extension ComposeOrchestrator {
         if let user = run.user {
             service.user = user
         }
-        if run.noTty {
-            service.tty = false
-        }
-        if run.interactive {
-            service.stdinOpen = true
-        }
+        service.tty = !run.noTty
+        service.stdinOpen = run.interactive
         if !run.useAliases {
             service.networkAliases = nil
         }
@@ -794,39 +788,41 @@ public extension ComposeOrchestrator {
         let project = try await projectByApplyingAPISocket(project)
         let service = project.services[service.name] ?? service
         let dependencies = dependencies.map { project.services[$0.name] ?? $0 }
-        let cache = ComposeImageHealthCheckCache()
-        let services = dependencies + [service]
-        let externalVolumeMounts = try await resolveExternalVolumeMounts(
-            project: project,
-            services: services,
+        let prepared = try await prepareRunDependencyServices(
+            project: project, service: service, dependencies: dependencies, options: run,
         )
+        // Docker starts dependencies before validating interactive terminal input,
+        // but rejects it before preparing the one-off image or waiting for health.
+        if run.interactive, !run.noTty, !run.inputIsTerminal {
+            throw ComposeError.invalidTerminalInput
+        }
+        let preparedProject = prepared.project
+        let preparedService = prepared.service
+        let cache = prepared.imageHealthCheckCache
+        let serviceMounts = try await resolveExternalVolumeMounts(project: preparedProject, services: [preparedService])
+        let externalVolumeMounts = prepared.externalVolumeMounts.merging(serviceMounts) { _, current in current }
         if run.build, service.build != nil {
-            try await build(project: project, services: [service.name], noCache: false, quiet: run.quietBuild)
+            try await build(project: preparedProject, services: [service.name], noCache: false, quiet: run.quietBuild)
         }
         try await applyPullPolicy(
             run.pullPolicy,
-            project: project,
-            services: [service],
+            project: preparedProject,
+            services: [preparedService],
             quiet: run.quietPull,
             quietBuild: run.quietBuild,
         )
-        try await validateRuntimeHealthChecks(project: project, services: services, cache: cache)
+        try await validateRuntimeHealthChecks(project: preparedProject, services: [preparedService], cache: cache)
         try await validateRuntimeImageVolumes(
-            project: project,
-            services: services,
+            project: preparedProject,
+            services: [preparedService],
             externalVolumeMounts: externalVolumeMounts,
             pullPolicy: run.pullPolicy,
         )
-        try await ensureResources(
-            project: projectBySelectingResources(project: project, services: services),
-        )
-        let preparedProject = try await startDependencyServices(
-            project: project,
-            services: dependencies,
-            externalVolumeMounts: externalVolumeMounts,
-            imageHealthCheckCache: cache,
-        )
-        let preparedService = preparedProject.services[service.name] ?? service
+        var oneOffResources = projectBySelectingResources(project: preparedProject, services: [preparedService])
+        let dependencyResources = projectBySelectingResources(project: project, services: dependencies)
+        oneOffResources.networks = oneOffResources.networks.filter { dependencyResources.networks[$0.key] == nil }
+        oneOffResources.volumes = oneOffResources.volumes.filter { dependencyResources.volumes[$0.key] == nil }
+        try await ensureResources(project: oneOffResources)
         if !run.noDeps {
             try await waitForDependencyConditions(project: preparedProject, service: preparedService)
         }
@@ -834,6 +830,31 @@ public extension ComposeOrchestrator {
             project: preparedProject,
             service: preparedService,
             externalVolumeMounts: externalVolumeMounts,
+            imageHealthCheckCache: cache,
+        )
+    }
+
+    /// Prepares only dependency-owned resources before the caller's input is validated.
+    private func prepareRunDependencyServices(
+        project: ComposeProject,
+        service: ComposeService,
+        dependencies: [ComposeService],
+        options run: ComposeRunOptions,
+    ) async throws -> ComposeRunServicePreparation {
+        let cache = ComposeImageHealthCheckCache()
+        let mounts = try await resolveExternalVolumeMounts(project: project, services: dependencies)
+        try await validateRuntimeHealthChecks(project: project, services: dependencies, cache: cache)
+        try await validateRuntimeImageVolumes(
+            project: project, services: dependencies, externalVolumeMounts: mounts, pullPolicy: run.pullPolicy,
+        )
+        try await ensureResources(project: projectBySelectingResources(project: project, services: dependencies))
+        let prepared = try await startDependencyServices(
+            project: project, services: dependencies, externalVolumeMounts: mounts, imageHealthCheckCache: cache,
+        )
+        return ComposeRunServicePreparation(
+            project: prepared,
+            service: prepared.services[service.name] ?? service,
+            externalVolumeMounts: mounts,
             imageHealthCheckCache: cache,
         )
     }

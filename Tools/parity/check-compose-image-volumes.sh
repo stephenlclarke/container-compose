@@ -58,6 +58,7 @@ STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 CONTAINER_BINARY="${CONTAINER_COMPOSE_CONTAINER:-container}"
 CONTAINER_COMPOSE_LIVE="${CONTAINER_COMPOSE_LIVE:-0}"
+COMPOSE_FULL_SUITE_MOUNT_JOURNAL="${COMPOSE_FULL_SUITE_MOUNT_JOURNAL:-}"
 DOCKER_COMPOSE_COMMAND=()
 PROJECT_NAME="container-compose-image-volumes-$RANDOM-$$"
 WORK_DIR=""
@@ -156,22 +157,36 @@ prepare_work_dir() {
 
 # Remove only this slice's project-scoped resources and temporary files.
 cleanup() {
-    "${DOCKER_COMPOSE_COMMAND[@]}" \
-        --project-directory "$FIXTURE_DIR" \
-        --project-name "$PROJECT_NAME" \
-        --file "$COMPOSE_FILE" \
-        down --volumes --remove-orphans >/dev/null 2>&1 || true
-    if ((CONTAINER_PROJECT_STARTED == 1)); then
-        "$CONTAINER_COMPOSE" \
-            --ansi never \
+    local status=$?
+    local can_down=1
+    if [[ -n "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL" && ! -f "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL" ]]; then
+        if ! python3 "$REPO_ROOT/Tools/bazel/full_suite.py" record-mounts \
+            --allow-partial --project "$PROJECT_NAME" \
+            --destination "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL"; then
+            error 'cannot enroll anonymous Docker mounts; preserving project containers for outer recovery'
+            can_down=0
+            ((status != 0)) || status=1
+        fi
+    fi
+    if ((can_down == 1)); then
+        "${DOCKER_COMPOSE_COMMAND[@]}" \
             --project-directory "$FIXTURE_DIR" \
             --project-name "$PROJECT_NAME" \
             --file "$COMPOSE_FILE" \
             down --volumes --remove-orphans >/dev/null 2>&1 || true
+        if ((CONTAINER_PROJECT_STARTED == 1)); then
+            "$CONTAINER_COMPOSE" \
+                --ansi never \
+                --project-directory "$FIXTURE_DIR" \
+                --project-name "$PROJECT_NAME" \
+                --file "$COMPOSE_FILE" \
+                down --volumes --remove-orphans >/dev/null 2>&1 || true
+        fi
     fi
     if [[ -n "$WORK_DIR" ]]; then
         rm -rf "$WORK_DIR"
     fi
+    exit "$status"
 }
 
 # Assert both Compose implementations preserve the explicit service mount.
@@ -420,6 +435,10 @@ expect_docker_runtime_behavior() {
         --project-name "$PROJECT_NAME" \
         --file "$COMPOSE_FILE" \
         up --build --detach --quiet-pull
+    if [[ -n "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL" ]]; then
+        python3 "$REPO_ROOT/Tools/bazel/full_suite.py" record-mounts \
+            --project "$PROJECT_NAME" --destination "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL"
+    fi
     assert_docker_runtime_behavior
 }
 

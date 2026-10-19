@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 import ArgumentParser
+import ComposeCore
 import ComposeRuntimeSPI
 import ContainerCommands
 import ContainerPersistence
@@ -84,11 +85,14 @@ public struct ContainerCommandLaunchManager: ComposeRuntimeContainerLaunching {
             options: request.logging.options,
         )
         do {
+            let arguments = try ComposeNativeImageProvenance.arguments(
+                request.arguments, expectedImage: request.configuration?.imageReference
+            )
             switch request.command {
             case .create:
-                return try await create(request.arguments, loggingRequest)
+                return try await create(arguments, loggingRequest)
             case .run:
-                return try await run(request.arguments, loggingRequest)
+                return try await run(arguments, loggingRequest)
             }
         } catch let exitCode as ArgumentParser.ExitCode {
             return exitCode.rawValue

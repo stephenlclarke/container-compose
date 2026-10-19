@@ -17,6 +17,7 @@
 import ComposeCore
 @testable import ComposeEngineRuntime
 import ComposeRuntimeSPI
+import ComposeTestStorage
 import ContainerEngineWire
 import ContainerUnixHTTPServer
 import Foundation
@@ -28,7 +29,7 @@ import Testing
 struct ComposeEngineRuntimeTests {
     @Test
     func `bundled volume initializer resolves Homebrew links and platform`() throws {
-        let root = FileManager.default.temporaryDirectory
+        let root = TestStorage.temporaryDirectory
             .appendingPathComponent("compose-engine-homebrew-\(UUID().uuidString)")
         let executable = root.appendingPathComponent(
             "Cellar/container-compose/current/libexec/container-plugins/compose/bin/compose"
@@ -790,7 +791,7 @@ struct EngineFixture {
     let volumeInitializerPath: String
 
     init() throws {
-        root = URL(fileURLWithPath: "/private/tmp")
+        root = TestStorage.temporaryDirectory
             .appendingPathComponent("ccer-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(
             at: root,

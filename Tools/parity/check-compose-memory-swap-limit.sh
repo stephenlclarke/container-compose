@@ -307,6 +307,8 @@ validate_container_compose_behavior() {
         else
             explicit_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$project" -f "$EXPLICIT_FILE" "$command" api)"
         fi
+        explicit_output="$(printf '%s' "$explicit_output" |
+            python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label "memory-swap-explicit-$command")"
         explicit_line="$(dry_run_api_line "$explicit_output" "$project")"
         if [[ -z "$explicit_line" ]] || ! line_has_memory_swap "$explicit_line" 134217728; then
             error "container-compose dry-run $command did not render --memory-swap 134217728"
@@ -316,6 +318,8 @@ validate_container_compose_behavior() {
     done
 
     default_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_PREFIX-default" -f "$DEFAULT_FILE" up api)"
+    default_output="$(printf '%s' "$default_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label memory-swap-default)"
     default_line="$(dry_run_api_line "$default_output" "$PROJECT_PREFIX-default")"
     if [[ -z "$default_line" ]] || ! line_has_memory_swap "$default_line" 134217728; then
         error 'container-compose dry-run up did not render Docker default --memory-swap 134217728'
@@ -324,6 +328,8 @@ validate_container_compose_behavior() {
     fi
 
     unlimited_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_PREFIX-unlimited" -f "$UNLIMITED_FILE" up api)"
+    unlimited_output="$(printf '%s' "$unlimited_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label memory-swap-unlimited)"
     unlimited_line="$(dry_run_api_line "$unlimited_output" "$PROJECT_PREFIX-unlimited")"
     if [[ -z "$unlimited_line" ]] || ! line_has_memory_swap "$unlimited_line" -1; then
         error 'container-compose dry-run up did not render --memory-swap -1'

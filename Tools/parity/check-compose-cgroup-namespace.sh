@@ -151,6 +151,7 @@ expect_container_behavior() {
     "$CONTAINER_COMPOSE" --ansi never --project-directory "$FIXTURE_DIR" -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" config --format json >"$config_output"
     assert_config_preserves_host_cgroup 'container-compose' "$config_output"
     "$CONTAINER_COMPOSE" --ansi never --dry-run --project-directory "$FIXTURE_DIR" -p "$PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up --no-start api >"$dry_run_output" 2>&1
+    dry_run_output="$(python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --file "$dry_run_output")"
     if ! grep -F "container create --name $PROJECT_NAME-api-1" "$dry_run_output" >/dev/null; then
         error 'container-compose did not accept cgroup: host in local dry-run up'
         sed -n '1,120p' "$dry_run_output" >&2

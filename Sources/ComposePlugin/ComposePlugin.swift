@@ -446,12 +446,12 @@ struct ComposePluginMain {
         if ComposeCLIHelp.renderRootIfNoCommand(arguments: arguments) {
             return
         }
-        let rewritten = ComposeArgumentRewriter.rewrite(arguments)
+        let rewritten = ComposeArgumentRewriter.argumentsForParsing(arguments)
         do {
             if let failure = try await ContainerPackageCompatibility.compatibilityFailure(
                 arguments: rewritten,
                 lane: composeBuildInfo.lane,
-                expectedRevisions: .init(
+                expectedRevisions: .forCompiledSDK(
                     container: composeBuildInfo.containerRef,
                     containerization: composeBuildInfo.containerizationRef,
                 ),
@@ -870,7 +870,7 @@ struct AlphaDryRun: AsyncParsableCommand {
             throw ComposeError.invalidProject("alpha dry-run requires a compose command after --")
         }
 
-        let arguments = ComposeArgumentRewriter.rewrite(global.rootArguments(forceDryRun: true) + nestedCommand)
+        let arguments = ComposeArgumentRewriter.argumentsForParsing(global.rootArguments(forceDryRun: true) + nestedCommand)
         await ComposePlugin.main(arguments)
     }
 }
@@ -1094,7 +1094,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
             let loadedVariables = try await global.loadVariables(options: composeOptions)
             let rendered = orchestrator().config(variables: loadedVariables)
             if let output {
-                try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
+                try ComposeTemporaryFiles.writeAtomically(Data(rendered.utf8), to: URL(fileURLWithPath: output))
                 return
             }
             if !rendered.isEmpty {
@@ -1127,7 +1127,7 @@ struct Config: AsyncParsableCommand, ComposeProjectCommand {
             try orchestrator().config(project: loadedProject, options: configOptions)
         }
         if let output {
-            try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
+            try ComposeTemporaryFiles.writeAtomically(Data(rendered.utf8), to: URL(fileURLWithPath: output))
             return
         }
         if !rendered.isEmpty {
@@ -1195,7 +1195,7 @@ struct Convert: AsyncParsableCommand, ComposeProjectCommand {
             try orchestrator().config(project: loadedProject, options: configOptions)
         }
         if let output {
-            try rendered.write(to: URL(fileURLWithPath: output), atomically: true, encoding: .utf8)
+            try ComposeTemporaryFiles.writeAtomically(Data(rendered.utf8), to: URL(fileURLWithPath: output))
             return
         }
         if !rendered.isEmpty {
@@ -1686,7 +1686,7 @@ struct Exec: AsyncParsableCommand, ComposeProjectCommand {
     var workdir: String?
     @Argument(help: "Service name.")
     var service: String
-    @Argument(parsing: .allUnrecognized, help: "Command and arguments.")
+    @Argument(parsing: .remaining, help: "Command and arguments.")
     var command: [String]
 
     /// Executes the requested command in an existing service container.
@@ -1721,10 +1721,14 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var remove = false
     @Flag(name: .shortAndLong, help: "Run the one-off container in the background.")
     var detach = false
-    @Flag(name: .shortAndLong, help: "Keep stdin open.")
-    var interactive = false
-    @Flag(name: [.customShort("T"), .customLong("no-tty"), .customLong("no-TTY")], help: "Disable pseudo-TTY allocation.")
-    var noTty = false
+    // The run-only rewriter supplies explicit Boolean values, preserving the
+    // difference between an omitted flag and an explicit false value.
+    @Option(name: .customLong("interactive"), help: "Keep stdin open. Enabled by default for Compose compatibility.")
+    var interactive: Bool?
+    @Option(name: .customLong("no-tty"), help: "Disable pseudo-TTY allocation. Auto-detected by default.")
+    var noTty: Bool?
+    @Option(name: .customLong("tty"), help: .hidden)
+    var tty: Bool?
     @Flag(name: .customLong("no-deps"), help: "Do not start linked services.")
     var noDeps = false
     @Flag(name: [.customShort("P"), .customLong("service-ports")], help: "Publish all ports declared by the service.")
@@ -1733,7 +1737,7 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var publish: [String] = []
     @Option(name: .customLong("pull"), help: "Image pull policy before running: always, missing, if_not_present, or never.")
     var pull: String?
-    @Flag(name: .shortAndLong, help: "Do not print anything to stdout.")
+    @Flag(name: .shortAndLong, help: "Suppress Compose progress without disconnecting guest input or output.")
     var quiet = false
     @Flag(name: .customLong("quiet-build"), help: "Suppress build progress output.")
     var quietBuild = false
@@ -1765,11 +1769,35 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
     var capDrop: [String] = []
     @Argument(help: "Service name.")
     var service: String
-    @Argument(parsing: .allUnrecognized, help: "Optional replacement command.")
+    @Argument(parsing: .remaining, help: "Optional replacement command.")
     var command: [String] = []
+
+    mutating func validate() throws {
+        try validateTerminalFlags()
+    }
+
+    private func validateTerminalFlags() throws {
+        if tty != nil, noTty != nil {
+            throw ValidationError("--tty and --no-tty can't be used together")
+        }
+    }
+
+    /// Docker Compose detects stdout first, then guards implicit piped stdin.
+    func terminalOptions(inputIsTerminal: Bool, outputIsTerminal: Bool) throws -> (interactive: Bool, noTty: Bool) {
+        try validateTerminalFlags()
+        var disabled = noTty ?? !outputIsTerminal
+        if let tty {
+            disabled = !tty
+        } else if noTty == nil, interactive == nil, !inputIsTerminal {
+            disabled = true
+        }
+        return (interactive ?? true, disabled)
+    }
 
     /// Runs a one-off service container with an optional command override.
     func run() async throws {
+        let inputIsTerminal = stdinIsTerminal()
+        let terminal = try terminalOptions(inputIsTerminal: inputIsTerminal, outputIsTerminal: stdoutIsTerminal())
         let loadedProject = try await project()
         do {
             try await orchestrator().run(
@@ -1780,8 +1808,9 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
                     $0.build = build
                     $0.remove = remove
                     $0.detach = detach
-                    $0.interactive = interactive
-                    $0.noTty = noTty
+                    $0.interactive = terminal.interactive
+                    $0.noTty = terminal.noTty
+                    $0.inputIsTerminal = inputIsTerminal
                     $0.noDeps = noDeps
                     $0.servicePorts = servicePorts
                     $0.publish = publish
@@ -1810,7 +1839,14 @@ struct Run: AsyncParsableCommand, ComposeProjectCommand {
 }
 
 /// Preserves a foreground `run` process status without adding error output.
-func throwRunCommandError(_ error: Error) throws -> Never {
+func throwRunCommandError(
+    _ error: Error,
+    emitError: (String) -> Void = { FileHandle.standardError.write(Data(($0 + "\n").utf8)) }
+) throws -> Never {
+    if let inputError = error as? ComposeError, inputError == .invalidTerminalInput {
+        emitError(inputError.description)
+        throw ExitCode(1)
+    }
     guard let runExit = error as? ComposeRunExitError else {
         throw error
     }

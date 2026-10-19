@@ -300,6 +300,8 @@ validate_container_compose_behavior() {
     assert_container_ipv6_gateway "$disabled_output" "fd00:10::53"
 
     disabled_up_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$DISABLED_COMPOSE_FILE" up api 2>&1)"
+    disabled_up_output="$(printf '%s' "$disabled_up_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label network-ipv6-disabled)"
     printf '%s\n' "$disabled_up_output" | grep -E '^\+ (.+/)?container network create --disable-ipv6 ' >/dev/null
     if printf '%s\n' "$disabled_up_output" | grep -E -- '--(subnet-v6|gateway-v6)' >/dev/null; then
         error 'container-compose forwarded IPv6 IPAM settings while IPv6 is disabled'

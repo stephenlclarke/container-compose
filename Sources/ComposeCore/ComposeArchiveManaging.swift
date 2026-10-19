@@ -98,7 +98,7 @@ public struct ComposeCommitImageArchiveRequest {
         service: ComposeService,
         options: ComposeCommitOptions,
         image: ImageConfiguration = ImageConfiguration(),
-        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        temporaryDirectory: URL = ComposeTemporaryFiles.defaultDirectory,
     ) {
         self.rootfsArchive = rootfsArchive
         self.output = output
@@ -118,7 +118,7 @@ public struct ComposeCommitImageArchiveRequest {
         healthCheck: ComposeImageHealthCheck? = nil,
         createdAt: Date = Date(),
         shellPath: String = ComposeRuntimeDefaults.shellExecutable,
-        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        temporaryDirectory: URL = ComposeTemporaryFiles.defaultDirectory,
     ) {
         self.init(
             rootfsArchive: rootfsArchive,

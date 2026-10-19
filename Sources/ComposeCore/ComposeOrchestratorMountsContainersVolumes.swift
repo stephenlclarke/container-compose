@@ -28,6 +28,7 @@ struct ComposeContainerProgressRunOptions: Sendable {
     let inheritedIO: Bool
     let replaceProcess: Bool
     let logging: ComposeLogConfiguration?
+    let configuration: ContainerServiceCreatePlan?
 
     init(
         quiet: Bool = false,
@@ -36,6 +37,7 @@ struct ComposeContainerProgressRunOptions: Sendable {
         inheritedIO: Bool = false,
         replaceProcess: Bool = false,
         logging: ComposeLogConfiguration? = nil,
+        configuration: ContainerServiceCreatePlan? = nil,
     ) {
         self.quiet = quiet
         self.check = check
@@ -43,12 +45,38 @@ struct ComposeContainerProgressRunOptions: Sendable {
         self.inheritedIO = inheritedIO
         self.replaceProcess = replaceProcess
         self.logging = logging
+        self.configuration = configuration
     }
 }
 
 extension ComposeOrchestrator {
     /// Appends a Compose mount in the form accepted by `container run`.
     func appendMount(_ mount: ComposeMount, context: MountRenderContext, args: inout [String]) throws {
+        try appendResolvedMount(resolvedMount(mount, context: context), args: &args)
+    }
+
+    /// Resolves names without discarding the normalized mount's policy fields.
+    func resolvedMount(_ mount: ComposeMount, context: MountRenderContext) throws -> ComposeResolvedMount {
+        guard let target = mount.target else {
+            throw ComposeError.invalidProject("\(mount.type == "tmpfs" ? "tmpfs" : "volume") mount is missing target")
+        }
+        let source = mount.source ?? ""
+        if mount.type == "tmpfs" || mount.type == "image" {
+            return ComposeResolvedMount(definition: mount, source: mount.source)
+        }
+        let mappedSource: String = if mount.type == "volume", !source.isEmpty {
+            volumeRuntimeName(project: context.project, composeName: source)
+        } else if source.isEmpty {
+            anonymousVolumeRuntimeName(context: context, target: target)
+        } else {
+            source
+        }
+        return ComposeResolvedMount(definition: mount, source: mappedSource)
+    }
+
+    /// Renders the already-resolved source without applying project names twice.
+    func appendResolvedMount(_ plan: ComposeResolvedMount, args: inout [String]) throws {
+        let mount = plan.definition
         if mount.type == "tmpfs" {
             guard let target = mount.target else {
                 throw ComposeError.invalidProject("tmpfs mount is missing target")
@@ -63,7 +91,7 @@ extension ComposeOrchestrator {
         guard let target = mount.target else {
             throw ComposeError.invalidProject("volume mount is missing target")
         }
-        let source = mount.source ?? ""
+        let source = plan.source ?? ""
         if nonEmpty(mount.imageSubpath) != nil, mount.type != "image" {
             throw ComposeError.invalidProject("image subpath is only supported for image mounts")
         }
@@ -83,13 +111,7 @@ extension ComposeOrchestrator {
             args.append(contentsOf: ["--mount", fields.joined(separator: ",")])
             return
         }
-        let mappedSource: String = if mount.type == "volume", !source.isEmpty {
-            volumeRuntimeName(project: context.project, composeName: source)
-        } else if source.isEmpty {
-            anonymousVolumeRuntimeName(context: context, target: target)
-        } else {
-            source
-        }
+        let mappedSource = source
 
         if mount.fileOwnerUID != nil || mount.fileOwnerGID != nil {
             guard mount.type == "bind" else {
@@ -723,6 +745,7 @@ extension ComposeOrchestrator {
         inheritedIO: Bool = false,
         replaceProcess: Bool = false,
         logging: ComposeLogConfiguration? = nil,
+        configuration: ContainerServiceCreatePlan? = nil,
     ) async throws -> CommandResult {
         if options.dryRun {
             options.emit("+ " + shellQuoted([options.containerBinary] + redactedLoggingArguments(arguments)))
@@ -739,6 +762,7 @@ extension ComposeOrchestrator {
                     command: command,
                     arguments: Array(arguments.dropFirst()),
                     logging: logging,
+                    configuration: configuration,
                 )
             )
             let result = CommandResult(status: status, stdout: "", stderr: "")
@@ -825,6 +849,7 @@ extension ComposeOrchestrator {
                 inheritedIO: runOptions.inheritedIO,
                 replaceProcess: runOptions.replaceProcess,
                 logging: runOptions.logging,
+                configuration: runOptions.configuration,
             )
         }
         return try await progressActivity(
@@ -839,6 +864,7 @@ extension ComposeOrchestrator {
                 inheritedIO: runOptions.inheritedIO,
                 replaceProcess: runOptions.replaceProcess,
                 logging: runOptions.logging,
+                configuration: runOptions.configuration,
             )
         }
     }

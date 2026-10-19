@@ -211,14 +211,16 @@ monotonic_nanoseconds() {
 }
 
 run_bounded() {
-    python3 -c '
+    PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 -c '
 import os
 import signal
 import subprocess
 import sys
+from Tools.parity.qualification_lease import child_command_lease
 
 timeout = float(sys.argv[1])
-process = subprocess.Popen(sys.argv[2:], start_new_session=True)
+with child_command_lease() as command_fds:
+    process = subprocess.Popen(sys.argv[2:], start_new_session=True, pass_fds=command_fds)
 try:
     raise SystemExit(process.wait(timeout=timeout))
 except subprocess.TimeoutExpired:
@@ -298,20 +300,37 @@ raise SystemExit(1 if failed else 0)
 PY
 
     if [[ -n "$PARITY_TIMING_OUTPUT" ]]; then
-        mkdir -p "$(dirname "$PARITY_TIMING_OUTPUT")"
-        cp "$TIMING_FILE" "$PARITY_TIMING_OUTPUT"
+        retain_partial_timings
         info "Timing report written to $PARITY_TIMING_OUTPUT"
     fi
 }
 
+retain_partial_timings() {
+    [[ -n "$PARITY_TIMING_OUTPUT" && -n "$TIMING_FILE" && -f "$TIMING_FILE" ]] || return 0
+    mkdir -p "$(dirname "$PARITY_TIMING_OUTPUT")" || return 1
+    if [[ ! -e "$PARITY_TIMING_OUTPUT" && ! -L "$PARITY_TIMING_OUTPUT" ]]; then
+        (set -o noclobber; cat "$TIMING_FILE" >"$PARITY_TIMING_OUTPUT") || return 1
+    fi
+    [[ -f "$PARITY_TIMING_OUTPUT" && ! -L "$PARITY_TIMING_OUTPUT" ]] &&
+        cmp -s "$TIMING_FILE" "$PARITY_TIMING_OUTPUT"
+}
+
 cleanup() {
     local status=$?
+    local preserve_fixture=0
+    if ! retain_partial_timings; then
+        warning "could not retain timings without changing $PARITY_TIMING_OUTPUT; preserving $FIXTURE_DIR"
+        preserve_fixture=1
+        ((status != 0)) || status=1
+    fi
 
     if [[ -n "$FIXTURE_DIR" ]]; then
         "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" down --remove-orphans >/dev/null 2>&1 || true
         CONTAINER_BIN="$CONTAINER_BINARY" CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
             "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" down --remove-orphans >/dev/null 2>&1 || true
-        rm -rf "$FIXTURE_DIR"
+        if ((preserve_fixture == 0)); then
+            rm -rf "$FIXTURE_DIR"
+        fi
     fi
 
     exit "$status"

@@ -38,18 +38,113 @@ struct ComposeSignalProxyTests {
 
     #if canImport(Darwin)
         @Test
-        func `supported signals are forwarded and handlers are restored`() async throws {
+        func `cancelled ownership waiter finishes without disturbing current owner`() async throws {
+            let gate = SignalProxyOwnershipTestGate()
             let events = SignalEventRecorder()
+            let first = Task {
+                try await DispatchComposeSignalProxy().withSignalProxy(
+                    signals: ["SIGHUP"], handler: { await events.append($0) },
+                    operation: { await gate.runFirstOperation() }
+                )
+            }
+            while await !gate.firstOperationStarted {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            let second = Task {
+                do {
+                    try await DispatchComposeSignalProxy().withSignalProxy(
+                        signals: ["SIGUSR1"], handler: { _ in /* No signal belongs to the cancelled waiter. */ },
+                        operation: { await events.append("unexpected-operation") }
+                    )
+                } catch is CancellationError {
+                    await events.append("cancelled")
+                }
+                await events.append("second-finished")
+            }
+            try await Task.sleep(for: .milliseconds(30))
+            second.cancel()
+            let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+            while await !events.contains("second-finished"), ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(await events.contains("cancelled"))
+            #expect(await !events.contains("unexpected-operation"))
+            #expect(Darwin.raise(SIGHUP) == 0)
+            let deliveryDeadline = ContinuousClock.now.advanced(by: .seconds(1))
+            while await !events.contains("SIGHUP"), ContinuousClock.now < deliveryDeadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(await events.contains("SIGHUP"))
+            await gate.releaseFirstOperation()
+            try await first.value
+            try await second.value
+        }
+
+        @Test(arguments: [false, true])
+        func `cancellation interrupts active signal handlers during operation and teardown`(_ duringTeardown: Bool) async throws {
+            let events = SignalEventRecorder()
+            let operation = Task {
+                do {
+                    try await DispatchComposeSignalProxy().withSignalProxy(
+                        signals: ["SIGUSR2"],
+                        handler: { _ in
+                            await events.append("handler-started")
+                            do {
+                                while await !events.contains("release-handler") {
+                                    try await Task.sleep(for: .milliseconds(5))
+                                }
+                            } catch is CancellationError {
+                                await events.append("handler-cancelled")
+                            } catch {
+                                Issue.record(error)
+                            }
+                        },
+                        operation: {
+                            #expect(Darwin.raise(SIGUSR2) == 0)
+                            while await !events.contains("handler-started") {
+                                try await Task.sleep(for: .milliseconds(5))
+                            }
+                            if !duringTeardown {
+                                try await Task.sleep(for: .seconds(30))
+                            }
+                        }
+                    )
+                } catch is CancellationError {
+                    await events.append("operation-cancelled")
+                }
+                await events.append("finished")
+            }
+            while await !events.contains("handler-started") {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            if duringTeardown {
+                try await Task.sleep(for: .milliseconds(30))
+            }
+            operation.cancel()
+            let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+            while await !events.contains("finished"), ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(await events.contains("finished"))
+            #expect(await events.contains("handler-cancelled"))
+            await events.append("release-handler")
+            try await operation.value
+        }
+
+        @Test(arguments: [SIGHUP, SIGUSR1, SIGUSR2])
+        func `supported signals are forwarded and handlers are restored`(_ signal: Int32) async throws {
+            let events = SignalEventRecorder()
+            let name = signal == SIGHUP ? "SIGHUP" : signal == SIGUSR1 ? "SIGUSR1" : "SIGUSR2"
 
             try await DispatchComposeSignalProxy().withSignalProxy(
-                signals: ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM"],
+                signals: ["SIGHUP", "SIGINT", "SIGQUIT", "SIGTERM", "SIGUSR1", "SIGUSR2"],
                 handler: { await events.append($0) },
                 operation: {
-                    guard Darwin.raise(SIGHUP) == 0 else {
+                    guard Darwin.raise(signal) == 0 else {
                         throw SignalProxyTestError.raiseFailed
                     }
                     for _ in 0 ..< 100 {
-                        if await events.contains("SIGHUP") {
+                        if await events.contains(name) {
                             return
                         }
                         try await Task.sleep(for: .milliseconds(10))
@@ -58,7 +153,7 @@ struct ComposeSignalProxyTests {
                 },
             )
 
-            #expect(await events.values == ["SIGHUP"])
+            #expect(await events.values == [name])
         }
 
         @Test

@@ -18,13 +18,6 @@ name: Prebuilt Binaries
 run-name: Prebuilt Binaries · ${{ inputs.ref || github.event.workflow_run.head_branch || github.ref_name }} · ${{ inputs.repair_tap && 'tap-repair' || 'package' }} · ${{ inputs.request_id || 'automatic' }}
 
 on:
-  workflow_run:
-    workflows:
-      - CI
-    types:
-      - completed
-    branches:
-      - main
   workflow_dispatch:
     inputs:
       ref:
@@ -65,7 +58,7 @@ jobs:
     name: Resolve Publish Context
     if: >
       github.repository == 'stephenlclarke/container-compose' &&
-      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     outputs:
       publish: ${{ steps.publish.outputs.publish }}

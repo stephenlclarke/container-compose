@@ -22,6 +22,7 @@ public struct ComposeNormalizer: Sendable {
 
     private let runner: CommandRunning
     private let fallbackLauncher: String
+    private let helperEnvironment: [String: String]?
 
     public init(
         runner: CommandRunning = ProcessRunner(),
@@ -29,11 +30,21 @@ public struct ComposeNormalizer: Sendable {
     ) {
         self.runner = runner
         self.fallbackLauncher = fallbackLauncher
+        helperEnvironment = nil
+    }
+
+    /// Tests can prove fallback selection without changing parallel tests' environment.
+    init(runner: CommandRunning = ProcessRunner(), fallbackLauncher: String, helperEnvironment: [String: String]) {
+        self.runner = runner
+        self.fallbackLauncher = fallbackLauncher
+        self.helperEnvironment = helperEnvironment
     }
 
     /// Normalizes Compose input options into the Swift orchestration model.
     public func normalize(options: ComposeOptions) async throws -> ComposeProject {
-        let invocation = try Self.normalizerInvocation(fallbackLauncher: fallbackLauncher)
+        let invocation = try Self.normalizerInvocation(
+            fallbackLauncher: fallbackLauncher, helperEnvironment: helperEnvironment,
+        )
         let arguments = Self.normalizerArguments(invocation: invocation, options: options)
 
         let result = try await runner.run(
@@ -57,7 +68,9 @@ public struct ComposeNormalizer: Sendable {
 
     /// Loads the runtime projection and compose-go's public Bridge model in one pass.
     public func bridgeProject(options: ComposeOptions) async throws -> ComposeBridgeProject {
-        let invocation = try Self.normalizerInvocation(fallbackLauncher: fallbackLauncher)
+        let invocation = try Self.normalizerInvocation(
+            fallbackLauncher: fallbackLauncher, helperEnvironment: helperEnvironment,
+        )
         let arguments = Self.normalizerArguments(
             invocation: invocation,
             options: options,
@@ -85,7 +98,9 @@ public struct ComposeNormalizer: Sendable {
 
     /// Returns the interpolation variables declared by the Compose model.
     public func variables(options: ComposeOptions) async throws -> [ComposeVariable] {
-        let invocation = try Self.normalizerInvocation(fallbackLauncher: fallbackLauncher)
+        let invocation = try Self.normalizerInvocation(
+            fallbackLauncher: fallbackLauncher, helperEnvironment: helperEnvironment,
+        )
         let arguments = Self.normalizerArguments(
             invocation: invocation,
             options: options,
@@ -113,7 +128,9 @@ public struct ComposeNormalizer: Sendable {
 
     /// Publishes the Compose model as a Docker Compose OCI project artifact.
     public func publish(options: ComposeOptions, publish: ComposePublishOptions) async throws -> ComposePublishResult {
-        let invocation = try Self.normalizerInvocation(fallbackLauncher: fallbackLauncher)
+        let invocation = try Self.normalizerInvocation(
+            fallbackLauncher: fallbackLauncher, helperEnvironment: helperEnvironment,
+        )
         let arguments = Self.normalizerArguments(
             invocation: invocation,
             options: options,
@@ -232,8 +249,11 @@ private extension ComposeNormalizer {
 
     /// Finds the normalizer from an explicit environment override, plugin
     /// resources, or a source checkout fallback.
-    static func normalizerInvocation(fallbackLauncher: String) throws -> NormalizerInvocation {
-        if let explicit = ProcessInfo.processInfo.environment["CONTAINER_COMPOSE_NORMALIZER"], !explicit.isEmpty {
+    static func normalizerInvocation(fallbackLauncher: String,
+                                     helperEnvironment: [String: String]?) throws -> NormalizerInvocation
+    {
+        let environment = helperEnvironment ?? ProcessInfo.processInfo.environment
+        if let explicit = environment["CONTAINER_COMPOSE_NORMALIZER"], !explicit.isEmpty {
             return NormalizerInvocation(executable: explicit, prefixArguments: [], workingDirectory: nil)
         }
 

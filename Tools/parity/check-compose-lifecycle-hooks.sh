@@ -34,6 +34,9 @@
 #                           lifecycle fixture through container-compose.
 #   DOCKER_COMPOSE          Docker Compose command to compare with. Defaults to
 #                           "docker compose" when available, otherwise docker-compose.
+#   COMPOSE_PARITY_TEST_RUNNER
+#                           Optional absolute executable accepting --filter REGEX
+#                           and running the already-built focused unit tests.
 #
 # This local parity check proves service-level pre_start ordering, inherited
 # mounts/networks/environment/user/workdir, once-per-stopped-service behavior,
@@ -450,7 +453,7 @@ check_container_runtime() {
 # Runs focused unit contracts without inheriting a live-runtime override.
 check_unit_contracts() {
     env -u CONTAINER_BIN -u CONTAINER_COMPOSE_CONTAINER \
-        swift test --disable-automatic-resolution \
+        "$REPO_ROOT/Tools/parity/run-unit-contracts.sh" --disable-automatic-resolution \
         --filter 'ComposeOrchestratorTests/(preStart|upCreatesEveryReplicaBeforeOnePreStart|runForeground|runReattachesInteractive|interactiveRunDetachKeys|runInterruption)'
 }
 
@@ -470,4 +473,6 @@ main() {
     info 'Docker Compose V2 and container-compose lifecycle-hook parity passed.'
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

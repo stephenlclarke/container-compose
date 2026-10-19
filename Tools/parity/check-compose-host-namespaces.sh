@@ -30,6 +30,8 @@
 #                                inspection. Defaults to container from PATH.
 #   CONTAINER_COMPOSE_LIVE       Set to 1 when an isolated matching Apple
 #                                runtime is running.
+#   COMPOSE_FULL_SUITE_QUALIFIED Require the preloaded fixture image on both
+#                                runtimes; never pull it during a qualified run.
 #   DOCKER_COMPOSE               Docker Compose command to compare with.
 #   PARITY_EVIDENCE_DIR          Directory for raw timing, JUnit, fingerprints,
 #                                and the human comparison matrix.
@@ -433,6 +435,40 @@ PY
     fi
 }
 
+# Prepare the warm bridge fixture without refreshing a qualified suite image.
+prepare_fixture_images() {
+    local fixture_image='alpine:3.20'
+    local docker_refs
+    local native_refs
+    local native_present
+
+    if [[ "${COMPOSE_FULL_SUITE_QUALIFIED:-0}" != 1 ]]; then
+        "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" pull --quiet bridge >/dev/null
+        "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" pull --quiet bridge >/dev/null
+        return
+    fi
+
+    docker_refs="$(docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}')"
+    if ! grep -Fx -- "$fixture_image" <<<"$docker_refs" >/dev/null; then
+        error "qualified Docker fixture image is missing: $fixture_image"
+        return 1
+    fi
+
+    native_refs="$("$CONTAINER_BINARY" image list --format json)"
+    native_present="$(printf '%s' "$native_refs" |
+        PYTHONPATH="$REPO_ROOT/Tools/bazel${PYTHONPATH:+:$PYTHONPATH}" python3 -c '
+import sys
+import full_suite
+images = full_suite.native_images(sys.stdin.read())
+print("yes" if any(full_suite.image_reference(name) == sys.argv[1]
+                   for name in images) else "no")
+' "$fixture_image")"
+    if [[ "$native_present" == no ]]; then
+        error "qualified native fixture image is missing: $fixture_image"
+        return 1
+    fi
+}
+
 # Initialize raw timing evidence and exact runtime fingerprints.
 initialize_timing_evidence() {
     local docker_compose_version
@@ -555,7 +591,7 @@ run_timed() {
     local repetition="$3"
     shift 3
 
-    python3 - \
+    PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 - \
         "$TIMING_TSV" \
         "$fixture" \
         "$lane" \
@@ -569,17 +605,20 @@ import signal
 import subprocess
 import sys
 import time
+from Tools.parity.qualification_lease import child_command_lease
 
 timing_path, fixture, lane, repetition, timeout_raw, *command = sys.argv[1:]
 timeout = float(timeout_raw)
 started = time.monotonic()
-process = subprocess.Popen(
-    command,
-    stdout=subprocess.DEVNULL,
-    stderr=subprocess.PIPE,
-    text=True,
-    start_new_session=True,
-)
+with child_command_lease() as command_fds:
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+        pass_fds=command_fds,
+    )
 outcome = "success"
 try:
     _, stderr = process.communicate(timeout=timeout)
@@ -717,8 +756,7 @@ validate_live_bridge_parity_and_timing() {
 
     "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" down --volumes --remove-orphans >/dev/null 2>&1 || true
     "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
-    "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$COMPOSE_FILE" pull --quiet bridge >/dev/null
-    "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" pull --quiet bridge >/dev/null
+    prepare_fixture_images
     initialize_timing_evidence
     TIMING_INITIALIZED=1
 
@@ -794,6 +832,8 @@ validate_container_compose_dry_run() {
     local unsupported_output
 
     up_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" up net bridge pid)"
+    up_output="$(printf '%s' "$up_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label host-namespaces-up)"
     net_line="$(dry_run_line_for_service "$up_output" net)"
     bridge_line="$(dry_run_line_for_service "$up_output" bridge)"
     pid_line="$(dry_run_line_for_service "$up_output" pid)"
@@ -811,6 +851,12 @@ validate_container_compose_dry_run() {
     run_net_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" run net true)"
     run_bridge_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" run bridge true)"
     run_pid_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$CONTAINER_PROJECT_NAME" -f "$COMPOSE_FILE" run pid true)"
+    run_net_output="$(printf '%s' "$run_net_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label host-namespaces-run-net)"
+    run_bridge_output="$(printf '%s' "$run_bridge_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label host-namespaces-run-bridge)"
+    run_pid_output="$(printf '%s' "$run_pid_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label host-namespaces-run-pid)"
     run_net_line="$(dry_run_line_for_service "$run_net_output" net)"
     run_bridge_line="$(dry_run_line_for_service "$run_bridge_output" bridge)"
     run_pid_line="$(dry_run_line_for_service "$run_pid_output" pid)"

@@ -273,6 +273,7 @@ expect_container_behavior() {
         sed -n '1,160p' "$detached_output" >&2
         return 1
     fi
+    detached_output="$(python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --file "$detached_output")"
     for service in replicated global; do
         if ! grep -F -- "container run --name $CONTAINER_PROJECT-$service-1 --detach" "$detached_output" >/dev/null; then
             error "container-compose did not plan detached startup for $service"
@@ -296,6 +297,7 @@ expect_container_behavior() {
         sed -n '1,160p' "$wait_output" >&2
         return 1
     fi
+    wait_output="$(python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --file "$wait_output")"
     for service in replicated global; do
         if ! grep -F -- "+ compose-runtime wait-ready --timeout 5 $CONTAINER_PROJECT-$service-1" "$wait_output" >/dev/null; then
             error "container-compose did not apply ordinary wait readiness to $service"

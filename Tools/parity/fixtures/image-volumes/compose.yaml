@@ -1,9 +1,11 @@
 services:
   implicit:
+    mem_limit: 256m
     build:
       context: .
 
   overridden:
+    mem_limit: 256m
     build:
       context: .
     volumes:
@@ -12,6 +14,7 @@ services:
         target: /image-data
 
   nocopy:
+    mem_limit: 256m
     build:
       context: .
     volumes:
@@ -22,6 +25,7 @@ services:
           nocopy: true
 
   subpath-preparer:
+    mem_limit: 256m
     image: alpine:3.22
     command: ["sh", "-ec", "mkdir -p /volume/nested"]
     volumes:
@@ -30,6 +34,7 @@ services:
         target: /volume
 
   subpath:
+    mem_limit: 256m
     build:
       context: .
     depends_on:
@@ -43,6 +48,7 @@ services:
           subpath: nested
 
   generic-named:
+    mem_limit: 256m
     build:
       context: .
       dockerfile: Dockerfile.generic
@@ -52,6 +58,7 @@ services:
         target: /generic-data
 
   generic-anonymous:
+    mem_limit: 256m
     build:
       context: .
       dockerfile: Dockerfile.generic
@@ -60,6 +67,7 @@ services:
         target: /generic-data
 
   generic-nocopy:
+    mem_limit: 256m
     build:
       context: .
       dockerfile: Dockerfile.generic
@@ -71,6 +79,7 @@ services:
           nocopy: true
 
   generic-missing:
+    mem_limit: 256m
     build:
       context: .
       dockerfile: Dockerfile.generic
@@ -80,6 +89,7 @@ services:
         target: /not-in-image
 
   nonroot:
+    mem_limit: 256m
     build:
       context: .
       dockerfile: Dockerfile.nonroot

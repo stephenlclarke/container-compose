@@ -32,6 +32,7 @@ public enum ComposeError: Error, CustomStringConvertible, Equatable {
     case unsupported(String)
     case missingNormalizer(String)
     case missingComposeFile
+    case invalidTerminalInput
 
     /// A user-facing error description suitable for CLI output.
     public var description: String {
@@ -50,6 +51,8 @@ public enum ComposeError: Error, CustomStringConvertible, Equatable {
             return "compose normalizer unavailable: \(message)"
         case .missingComposeFile:
             return "no configuration file provided: not found"
+        case .invalidTerminalInput:
+            return "cannot attach stdin to a TTY-enabled container because stdin is not a terminal"
         }
     }
 }

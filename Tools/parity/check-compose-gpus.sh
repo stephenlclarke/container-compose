@@ -224,6 +224,12 @@ validate_container_compose_behavior() {
     up_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up service-gpu deploy-gpu)"
     create_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" create service-gpu deploy-gpu)"
     run_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run service-gpu true)"
+    up_output="$(printf '%s' "$up_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label gpus-up)"
+    create_output="$(printf '%s' "$create_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label gpus-create)"
+    run_output="$(printf '%s' "$run_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label gpus-run)"
 
     for service in service-gpu deploy-gpu; do
         line="$(dry_run_service_line "$up_output" "$service")"

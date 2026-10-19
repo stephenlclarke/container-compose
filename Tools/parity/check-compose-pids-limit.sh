@@ -315,6 +315,12 @@ validate_container_compose_behavior() {
     up_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up api)"
     create_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" create api)"
     run_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run api true)"
+    up_output="$(printf '%s' "$up_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label pids-limit-up)"
+    create_output="$(printf '%s' "$create_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label pids-limit-create)"
+    run_output="$(printf '%s' "$run_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label pids-limit-run)"
     up_line="$(dry_run_api_line "$up_output" "$PROJECT_NAME")"
     create_line="$(dry_run_api_line "$create_output" "$PROJECT_NAME")"
     run_line="$(dry_run_api_line "$run_output" "$PROJECT_NAME")"
@@ -336,6 +342,8 @@ validate_container_compose_behavior() {
     fi
 
     unlimited_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$UNLIMITED_FILE" up api)"
+    unlimited_output="$(printf '%s' "$unlimited_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label pids-limit-unlimited)"
     unlimited_line="$(dry_run_api_line "$unlimited_output" "$PROJECT_NAME")"
     if [[ -z "$unlimited_line" ]] || ! line_omits_pids_limit "$unlimited_line"; then
         error "container-compose dry-run up rendered --pids-limit for pids_limit: -1"
@@ -344,6 +352,8 @@ validate_container_compose_behavior() {
     fi
 
     deploy_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$DEPLOY_PROJECT_NAME" -f "$DEPLOY_FILE" up api)"
+    deploy_output="$(printf '%s' "$deploy_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label pids-limit-deploy)"
     deploy_line="$(dry_run_api_line "$deploy_output" "$DEPLOY_PROJECT_NAME")"
     if [[ -z "$deploy_line" ]] || ! line_has_pids_limit "$deploy_line" 64; then
         error "container-compose dry-run up did not render --pids-limit 64 for deploy.resources.limits.pids"

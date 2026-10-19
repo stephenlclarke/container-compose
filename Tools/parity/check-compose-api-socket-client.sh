@@ -347,6 +347,7 @@ test -z "${DOCKER_CONFIG+x}"
 SCRIPT
     cat >"$ONE_OFF_PROBE" <<'SCRIPT'
 set -eu
+printf 'api-socket one-off: shell entered\n' >&2
 test -S /var/run/docker.sock
 test "$(stat -c %u:%g:%a /var/run/docker.sock)" = 0:991:660
 test "${DOCKER_CONFIG:-}" = /run/secrets/docker
@@ -357,8 +358,13 @@ if (printf x >>/run/secrets/docker/config.json) 2>/dev/null; then
 fi
 config_sha256="$(tr -d '[:space:]' </run/secrets/docker/config.json | sha256sum | awk '{print $1}')"
 test "$config_sha256" = "$EXPECTED_CONFIG_SHA256"
+printf 'api-socket one-off: socket and config verified\n' >&2
+printf 'api-socket one-off: before docker version\n' >&2
 docker version >/dev/null
+printf 'api-socket one-off: after docker version\n' >&2
+printf 'api-socket one-off: before docker ps IDs\n' >&2
 inventory="$(docker ps --no-trunc --format '{{.ID}}')"
+printf 'api-socket one-off: after docker ps IDs\n' >&2
 if ! grep -Fx "$EXPECTED_CONTAINER_ID" <<EOF >/dev/null
 $inventory
 EOF
@@ -367,7 +373,9 @@ then
         "$EXPECTED_CONTAINER_ID" "$inventory" >&2
     exit 1
 fi
+printf 'api-socket one-off: before docker ps names\n' >&2
 external_inventory="$(docker ps --no-trunc --format '{{.Names}}')"
+printf 'api-socket one-off: after docker ps names\n' >&2
 if ! grep -Fx "$EXPECTED_EXTERNAL_CONTAINER_NAME" <<EOF >/dev/null
 $external_inventory
 EOF
@@ -376,6 +384,7 @@ then
         "$EXPECTED_EXTERNAL_CONTAINER_NAME" "$external_inventory" >&2
     exit 1
 fi
+printf 'api-socket one-off: complete\n' >&2
 SCRIPT
     chmod 600 "$CLIENT_PROBE" "$OPT_OUT_PROBE" "$ONE_OFF_PROBE"
 }

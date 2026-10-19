@@ -1092,7 +1092,7 @@ struct DockerLoggingDriverOracleFixtureTests {
         let expectedMessages = [
             "stdout-ascii",
             "stderr-utf8-☃",
-            "stdout-binary-�\u{0000}-end",
+            "stdout-binary-\u{fffd}\u{0000}-end",
         ]
         let expectedLevels = [6, 3, 6]
         for transport in ["tcpNULTerminated", "udpDefaultGzip"] {
@@ -1441,7 +1441,7 @@ struct DockerLoggingDriverOracleFixtureTests {
         )
         #expect(
             try records.map { try string($0, "shortMessage") }
-                == ["stdout-ascii", "stderr-utf8-☃", "stdout-binary-�\u{0000}-end"],
+                == ["stdout-ascii", "stderr-utf8-☃", "stdout-binary-\u{fffd}\u{0000}-end"],
         )
         #expect(try records.map { try integer($0, "level") } == [6, 3, 6])
         for record in records {

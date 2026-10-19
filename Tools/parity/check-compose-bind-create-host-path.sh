@@ -269,6 +269,7 @@ expect_container_behavior() {
         -p "$PROJECT_NAME" \
         -f "$FIXTURE_DIR/compose.yml" \
         up --no-start defaulted >"$default_output" 2>&1
+    default_output="$(python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --file "$default_output")"
     if ! grep -F "container create --name $PROJECT_NAME-defaulted-1" "$default_output" >/dev/null; then
         error 'container-compose did not accept the default bind create_host_path policy'
         sed -n '1,120p' "$default_output" >&2

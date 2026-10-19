@@ -14,7 +14,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ComposeCore
+@testable import ComposeCore
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -23,7 +24,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes a compose file through compose-go")
     func normalizesComposeFileThroughComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -155,7 +156,7 @@ struct ComposeNormalizerTests {
                     worker: 10.10.0.11
                 - subnet: fd00:10::/64
                   gateway: fd00:10::53
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -295,7 +296,7 @@ struct ComposeNormalizerTests {
     @Test("normalizer preserves inspection-only IPAM options")
     func normalizerPreservesInspectionOnlyIPAMOptions() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: directory) }
@@ -312,7 +313,7 @@ struct ComposeNormalizerTests {
             ipam:
               options:
                 com.example.ipam: enabled
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -327,7 +328,7 @@ struct ComposeNormalizerTests {
     @Test("normalizer preserves source-ordered advanced IPAM model")
     func normalizerPreservesSourceOrderedAdvancedIPAMModel() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: directory) }
@@ -370,7 +371,7 @@ struct ComposeNormalizerTests {
                   gateway: fd78::1
                   aux_addresses:
                     dns6: fd78::2
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -413,7 +414,7 @@ struct ComposeNormalizerTests {
     @Test("normalizer maps automatic IPv6 enablement to VMnet allocation")
     func normalizerMapsAutomaticIPv6Enablement() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: directory) }
@@ -428,7 +429,7 @@ struct ComposeNormalizerTests {
         networks:
           backend:
             enable_ipv6: true
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -444,7 +445,7 @@ struct ComposeNormalizerTests {
     @Test("normalizer maps IPv6 disablement and suppresses an ignored IPv6 pool")
     func normalizerMapsIPv6Disablement() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? fileManager.removeItem(at: directory) }
@@ -462,7 +463,7 @@ struct ComposeNormalizerTests {
             ipam:
               config:
                 - subnet: fd00::/64
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -478,7 +479,7 @@ struct ComposeNormalizerTests {
     @Test("normalizer preserves entrypoint command and environment forms")
     func normalizerPreservesEntrypointCommandAndEnvironmentForms() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -505,7 +506,7 @@ struct ComposeNormalizerTests {
             image: alpine
             command: []
             entrypoint: []
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
 
@@ -527,7 +528,7 @@ struct ComposeNormalizerTests {
     @Test("normalizer resolves env file long syntax")
     func normalizerResolvesEnvFileLongSyntax() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -536,8 +537,8 @@ struct ComposeNormalizerTests {
 
         let envFile = directory.appendingPathComponent("service.env")
         let rawEnvFile = directory.appendingPathComponent("raw.env")
-        try "FROM_FILE=resolved\n".write(to: envFile, atomically: true, encoding: .utf8)
-        try "RAW_VALUE=\"$NOT_INTERPOLATED\"\n".write(to: rawEnvFile, atomically: true, encoding: .utf8)
+        try "FROM_FILE=resolved\n".writeFixture(to: envFile, encoding: .utf8)
+        try "RAW_VALUE=\"$NOT_INTERPOLATED\"\n".writeFixture(to: rawEnvFile, encoding: .utf8)
 
         let composeFile = directory.appendingPathComponent("compose.yml")
         try """
@@ -550,7 +551,7 @@ struct ComposeNormalizerTests {
                 required: false
               - path: raw.env
                 format: raw
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -606,7 +607,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes dynamic host-bound ports through compose-go")
     func normalizesDynamicHostBoundPortsThroughComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -624,7 +625,7 @@ struct ComposeNormalizerTests {
               - target: 53
                 host_ip: "::1"
                 protocol: udp
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -638,7 +639,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes supported build secrets through compose-go")
     func normalizesSupportedBuildSecretsThroughComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -679,7 +680,7 @@ struct ComposeNormalizerTests {
           external_token:
             external: true
             name: shared_build_secret
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -701,7 +702,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes volume nocopy for runtime initialization policy")
     func normalizesVolumeNoCopyForRuntimeInitializationPolicy() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -721,7 +722,7 @@ struct ComposeNormalizerTests {
                   nocopy: true
         volumes:
           cache: {}
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -741,7 +742,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes bind create host path policy")
     func normalizesBindCreateHostPathPolicy() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -764,7 +765,7 @@ struct ComposeNormalizerTests {
                 bind:
                   create_host_path: false
                   propagation: rslave
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -866,7 +867,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes network mode through compose-go")
     func normalizesNetworkModeThroughComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -881,7 +882,7 @@ struct ComposeNormalizerTests {
             network_mode: service:redis
           redis:
             image: redis:7
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -895,7 +896,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes supported deploy local fields through compose-go")
     func normalizesSupportedDeployLocalFieldsThroughComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -940,7 +941,7 @@ struct ComposeNormalizerTests {
               mode: global
               labels:
                 com.example.service: worker
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -980,7 +981,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes block IO config through compose-go")
     func normalizesBlockIOConfigThroughComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1009,7 +1010,7 @@ struct ComposeNormalizerTests {
               device_write_iops:
                 - path: "8:0"
                   rate: 2000
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -1029,7 +1030,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes deploy resource limits through compose-go")
     func normalizesDeployResourceLimitsThroughComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1054,7 +1055,7 @@ struct ComposeNormalizerTests {
                   devices:
                     - capabilities: [gpu]
                       count: all
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -1080,7 +1081,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes deploy restart policy through compose-go")
     func normalizesDeployRestartPolicyThroughComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1098,7 +1099,7 @@ struct ComposeNormalizerTests {
                 delay: 5s
                 max_attempts: 3
                 window: 30s
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -1118,7 +1119,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes deploy job modes through compose-go")
     func normalizesDeployJobModesThroughComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1133,7 +1134,7 @@ struct ComposeNormalizerTests {
             deploy:
               mode: replicated-job
               replicas: 2
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -1150,7 +1151,7 @@ struct ComposeNormalizerTests {
     @Test("normalizes start-first deploy update through compose-go")
     func normalizesStartFirstDeployUpdateThroughComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1165,7 +1166,7 @@ struct ComposeNormalizerTests {
             deploy:
               update_config:
                 order: start-first
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -1187,7 +1188,7 @@ struct ComposeNormalizerTests {
     @Test("normalizer infers project directory from the first compose file")
     func normalizerInfersProjectDirectoryFromFirstComposeFile() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1199,7 +1200,7 @@ struct ComposeNormalizerTests {
         services:
           web:
             image: nginx:latest
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
 
@@ -1211,7 +1212,7 @@ struct ComposeNormalizerTests {
     @Test("normalizer preserves healthchecks configs secrets and extensions")
     func normalizerPreservesHealthchecksConfigsSecretsAndExtensions() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1258,7 +1259,7 @@ struct ComposeNormalizerTests {
         secrets:
           app_secret:
             external: true
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
         let api = try #require(project.services["api"])
@@ -1280,7 +1281,7 @@ struct ComposeNormalizerTests {
     @Test("normalizer preserves develop watch triggers")
     func normalizerPreservesDevelopWatchTriggers() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1310,7 +1311,7 @@ struct ComposeNormalizerTests {
                     working_dir: /app
                     environment:
                       MODE: dev
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
         let api = try #require(project.services["api"])
@@ -1336,7 +1337,7 @@ struct ComposeNormalizerTests {
     @Test("normalizer preserves service lifecycle hooks")
     func normalizerPreservesServiceLifecycleHooks() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -1367,7 +1368,7 @@ struct ComposeNormalizerTests {
             pre_stop:
               - command: ["sh", "-c", "echo stopping"]
                 privileged: true
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(files: [composeFile.path]))
         let api = try #require(project.services["api"])
@@ -1483,7 +1484,7 @@ struct ComposeNormalizerTests {
         ])
 
         let currentDirectory = FileManager.default.currentDirectoryPath
-        _ = try await ComposeNormalizer(runner: runner, fallbackLauncher: "custom-env")
+        _ = try await ComposeNormalizer(runner: runner, fallbackLauncher: "custom-env", helperEnvironment: [:])
             .normalize(options: ComposeOptions(files: ["compose.yml"], projectDirectory: "/tmp/demo"))
 
         let command = try #require(runner.commands.first)
@@ -1746,7 +1747,8 @@ struct ComposeNormalizerTests {
         do {
             _ = try await ComposeNormalizer(runner: RecordingRunner(responses: [
                 CommandResult(status: 23, stdout: "", stderr: "bad compose"),
-            ])).normalize(options: ComposeOptions(files: ["compose.yml"]))
+            ]), fallbackLauncher: ComposeNormalizer.defaultFallbackLauncher, helperEnvironment: [:])
+                .normalize(options: ComposeOptions(files: ["compose.yml"]))
             Issue.record("Expected command failure")
         } catch let error as ComposeError {
             #expect(error == .commandFailed(

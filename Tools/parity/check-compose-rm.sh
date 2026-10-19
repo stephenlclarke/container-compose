@@ -26,6 +26,9 @@
 # ENVIRONMENT:
 #   DOCKER_COMPOSE  Docker Compose command to compare with. Defaults to
 #                   "docker compose" when available, otherwise docker-compose.
+#   COMPOSE_PARITY_TEST_RUNNER
+#                   Optional absolute executable accepting --filter REGEX and
+#                   running the already-built focused unit tests.
 #
 # This script is intentionally local-only and is not part of CI. It verifies the
 # Docker Compose V2 `rm` lifecycle behavior mirrored by container-compose:
@@ -214,7 +217,7 @@ check_docker_compose_rm() {
 
 # Verify the local container-compose implementation through focused tests.
 check_container_compose_rm_tests() {
-    swift test --disable-automatic-resolution --filter 'rmSkipsRunningContainersUnlessStopIsRequested|rmIgnoresContainersThatDisappearDuringRemoval|rmSupportsForceAndAnonymousVolumeRemoval|rmConfirmsBeforeStoppingContainers|rmStopSkipsStopForAlreadyStoppedContainers'
+    "$(dirname "$SELF_PATH")/run-unit-contracts.sh" --disable-automatic-resolution --filter 'rmSkipsRunningContainersUnlessStopIsRequested|rmIgnoresContainersThatDisappearDuringRemoval|rmSupportsForceAndAnonymousVolumeRemoval|rmConfirmsBeforeStoppingContainers|rmStopSkipsStopForAlreadyStoppedContainers'
 }
 
 # Run the local-only Docker Compose and container-compose parity check.
@@ -228,4 +231,6 @@ main() {
     printf 'Docker Compose/container-compose rm parity check passed for project %s\n' "$PROJECT_NAME"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

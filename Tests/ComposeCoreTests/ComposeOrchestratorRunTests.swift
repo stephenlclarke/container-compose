@@ -14,22 +14,191 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ComposeContainerRuntime
 @testable import ComposeCore
 import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 #if canImport(Darwin)
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
 #endif
+import ComposeTestStorage
 import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test(arguments: [false, true])
+    func runRejectsPipedTTYAfterStartingDependenciesBeforeJobPreparation(_ detached: Bool) async throws {
+        let runner = RecordingRunner()
+        let images = RecordingContainerImageManager(pullFailures: ["missing-job"])
+        let resources = RecordingContainerResourceManager()
+        let discovery = RecordingContainerDiscoveryManager()
+        let project = composeProject(name: "demo", services: [
+            "db": composeService(name: "db", image: "postgres") { $0.networkMode = "none" },
+            "job": composeService(name: "job", image: "missing-job") {
+                $0.networkMode = "none"
+                $0.dependsOn = ["db": ComposeDependency(condition: "service_healthy")]
+                $0.volumes = [ComposeMount(type: "volume", source: "job-data", target: "/data")]
+            },
+        ]) { $0.volumes = ["job-data": ComposeVolume(name: "job-data")] }
+        let run = ComposeRunOptions {
+            $0.inputIsTerminal = false
+            $0.detach = detached
+            $0.pullPolicy = "always"
+        }
+        do {
+            try await ComposeOrchestrator(
+                runner: runner,
+                dependencies: orchestratorDependencies {
+                    $0.imageManager = images
+                    $0.resourceManager = resources
+                    $0.discoveryManager = discovery
+                }
+            ).run(project: project, serviceName: "job", options: run)
+            Issue.record("Expected terminal validation failure")
+        } catch let error as ComposeError {
+            #expect(error == .invalidTerminalInput)
+        }
+        let commands = runner.commands.map(\.arguments)
+        #expect(commands.count == 1)
+        #expect(commands.first?.containsSequence(["--name", "demo-db-1"]) == true)
+        #expect(await discovery.getRequests == ["demo-db-1"])
+        #expect(await images.requests == [.healthCheck(reference: "postgres", platform: nil)])
+        #expect(await resources.requests.isEmpty)
+    }
+
+    @Test
+    func runTerminalInputValidationDependsOnInteractiveTTYAndCallerInput() async throws {
+        for interactive in [false, true] {
+            for tty in [false, true] {
+                for inputIsTerminal in [false, true] {
+                    let runner = RecordingRunner()
+                    let project = composeProject(
+                        name: "demo", services: ["job": ComposeService(name: "job", image: "alpine")]
+                    )
+                    let run = ComposeRunOptions {
+                        $0.noDeps = true
+                        $0.noTty = !tty
+                        $0.interactive = interactive
+                        $0.inputIsTerminal = inputIsTerminal
+                    }
+                    let rejected = interactive && tty && !inputIsTerminal
+                    do {
+                        try await ComposeOrchestrator(runner: runner).run(
+                            project: project, serviceName: "job", options: run
+                        )
+                        #expect(!rejected)
+                    } catch let error as ComposeError {
+                        #expect(rejected)
+                        #expect(error == .invalidTerminalInput)
+                    }
+                    #expect(runner.commands.count == (rejected ? 0 : 1))
+                }
+            }
+        }
+    }
+
+    @Test
+    func runSharedDependencyResourcesArePreparedOnce() async throws {
+        let runner = RecordingRunner()
+        let resources = RecordingContainerResourceManager()
+        let mount = ComposeMount(type: "volume", source: "shared", target: "/data")
+        let project = composeProject(name: "demo", services: [
+            "db": composeService(name: "db", image: "postgres") {
+                $0.networks = ["backend"]
+                $0.volumes = [mount]
+            },
+            "job": composeService(name: "job", image: "alpine") {
+                $0.networks = ["backend"]
+                $0.volumes = [mount]
+                $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+            },
+        ]) {
+            $0.networks = ["backend": ComposeNetwork(name: "backend")]
+            $0.volumes = ["shared": ComposeVolume(name: "shared")]
+        }
+        try await ComposeOrchestrator(runner: runner, resourceManager: resources).run(
+            project: project, serviceName: "job", options: ComposeRunOptions()
+        )
+        #expect(await resources.requests.map(\.name) == ["demo_backend", "demo_shared"])
+        #expect(runner.commands.count == 2)
+    }
+
+    @Test
+    func runDependenciesUsePreparedEngineRequestsBeforeTerminalRejection() async throws {
+        let runner = RecordingRunner()
+        let launcher = RecordingContainerLaunchManager()
+        let service = composeService(name: "db", image: "postgres") {
+            $0.networkMode = "none"
+            $0.command = ["sleep", "300"]
+        }
+        let project = composeProject(name: "demo", services: [
+            "db": service,
+            "job": composeService(name: "job", image: "alpine") {
+                $0.dependsOn = ["db": ComposeDependency(condition: "service_started")]
+            },
+        ])
+        let execution = ComposeExecutionOptions {
+            $0.runtimeCapabilities = .init(identifiers: ["io.github.stephenlclarke.container.logging-drivers.v1"])
+        }
+        let orchestrator = ComposeOrchestrator(
+            runner: runner, options: execution,
+            dependencies: orchestratorDependencies { $0.launchManager = launcher }
+        )
+        await #expect(throws: ComposeError.invalidTerminalInput) {
+            try await orchestrator.run(
+                project: project, serviceName: "job", options: ComposeRunOptions { $0.inputIsTerminal = false }
+            )
+        }
+        let requests = await launcher.requests
+        #expect(requests.count == 1)
+        let request = try #require(requests.first)
+        let configuration = try #require(request.configuration)
+        #expect(request.command == .run)
+        #expect(configuration.name == "demo-db-1")
+        #expect(configuration.detach)
+        #expect(!configuration.oneOff)
+        #expect(!configuration.autoRemove)
+        #expect(configuration.processOverrides.command == ["sleep", "300"])
+        #expect(runner.commands.isEmpty)
+    }
+
+    @Test(arguments: [false, true], [nil, true, false] as [Bool?])
+    func runTerminalSelectionOverridesServiceTTY(_ noTty: Bool, _ serviceTerminal: Bool?) async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(name: "demo", services: [
+            "job": composeService(name: "job", image: "alpine") { $0.tty = serviceTerminal },
+        ])
+        let options = ComposeRunOptions {
+            $0.noDeps = true
+            $0.noTty = noTty
+        }
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", options: options)
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.contains("--tty") == !noTty)
+        #expect(command.io == .replacingProcess)
+    }
+
+    @Test(arguments: [nil, true, false] as [Bool?], [nil, true, false] as [Bool?])
+    func runInteractiveSelectionOverridesServiceInput(_ explicit: Bool?, _ serviceInput: Bool?) async throws {
+        let runner = RecordingRunner()
+        let project = composeProject(name: "demo", services: [
+            "job": composeService(name: "job", image: "alpine") { $0.stdinOpen = serviceInput },
+        ])
+        let options = ComposeRunOptions {
+            $0.noDeps = true
+            $0.noTty = true
+            if let explicit {
+                $0.interactive = explicit
+            }
+        }
+        try await ComposeOrchestrator(runner: runner).run(project: project, serviceName: "job", options: options)
+        let command = try #require(runner.commands.first)
+        #expect(command.arguments.contains("--interactive") == (explicit ?? true))
+        #expect(command.io == (explicit == false ? .captured(input: nil) : .replacingProcess))
+    }
+
     @Test("run supports one-off containers and option flags")
     func runSupportsOneOffContainersAndOptionFlags() async throws {
         let directory = try temporaryDirectory()
@@ -831,7 +1000,6 @@ extension ComposeOrchestratorTests {
         ⠓ Pulling image alpine
         ✓ Pulling image alpine
         ⠓ Running job
-        ✓ Running job
 
         """)
         #expect(await imageManager.requests == [
@@ -871,7 +1039,7 @@ extension ComposeOrchestratorTests {
             }
         )
 
-        #expect(progress.snapshot.joined() == "⠓ Running job\n✓ Running job\n")
+        #expect(progress.snapshot.joined() == "⠓ Running job\n")
         #expect(await imageManager.requests == [
             .pull("alpine"),
             .healthCheck(reference: "alpine", platform: nil),
@@ -2433,6 +2601,12 @@ extension ComposeOrchestratorTests {
         #expect(runner.commands.isEmpty)
         let request = try #require(await launchManager.requests.first)
         #expect(request.command == .run)
+        let configuration = try #require(request.configuration)
+        #expect(configuration.oneOff)
+        #expect(configuration.autoRemove)
+        #expect(configuration.processOverrides.command == ["true"])
+        #expect(configuration.resolvedMounts != nil)
+        #expect(configuration.publishedPorts == [])
         #expect(request.logging == ComposeLogConfiguration(
             driver: "fluentd",
             options: [
@@ -2682,7 +2856,7 @@ extension ComposeOrchestratorTests {
     func runMapsBindPropagationValuesToVolumeOptions() async throws {
         let fileManager = FileManager.default
         for propagation in ["private", "rprivate", "shared", "rshared", "slave", "rslave"] {
-            let directory = fileManager.temporaryDirectory
+            let directory = TestStorage.temporaryDirectory
                 .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             defer {
@@ -2720,7 +2894,7 @@ extension ComposeOrchestratorTests {
     @Test("run rejects unsupported bind propagation values before runtime")
     func runRejectsUnsupportedBindPropagationValuesBeforeRuntime() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -2795,7 +2969,7 @@ extension ComposeOrchestratorTests {
     @Test("run rejects missing bind sources when create host path is disabled")
     func runRejectsMissingBindSourcesWhenCreateHostPathIsDisabled() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -3222,30 +3396,36 @@ extension ComposeOrchestratorTests {
         #expect(Array(command.suffix(3)) == ["alpine", "sleep", "60"])
     }
 
-    @Test("run quiet suppresses inherited terminal IO")
-    func runQuietSuppressesInheritedTerminalIO() async throws {
+    @Test("run quiet preserves guest IO without progress", arguments: [false, true])
+    func runQuietPreservesGuestIOWithoutProgress(_ terminal: Bool) async throws {
         let runner = RecordingRunner()
+        let progress = LockedStringRecorder()
         let project = ComposeProject(
             name: "demo",
             services: [
                 "job": composeService(name: "job", image: "alpine") {
-                    $0.tty = true
+                    $0.tty = terminal
                     $0.stdinOpen = true
                 },
             ]
         )
 
-        try await ComposeOrchestrator(runner: runner).run(
+        try await ComposeOrchestrator(
+            runner: runner,
+            options: progressReportingOptions(recordingTo: progress)
+        ).run(
             project: project,
             serviceName: "job",
             options: composeRunOptions(command: ["sh"]) {
                 $0.quiet = true
+                $0.noTty = !terminal
             }
         )
 
         let command = try #require(runner.commands.first?.arguments)
-        #expect(runner.commands.first?.io == .captured(input: nil))
-        #expect(command.contains("--tty"))
+        #expect(runner.commands.first?.io == .replacingProcess)
+        #expect(progress.snapshot.isEmpty)
+        #expect(command.contains("--tty") == terminal)
         #expect(command.contains("--interactive"))
         #expect(Array(command.suffix(2)) == ["alpine", "sh"])
     }

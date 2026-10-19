@@ -26,6 +26,7 @@ import ContainerResource
 #elseif canImport(Glibc)
     import Glibc
 #endif
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -1870,7 +1871,7 @@ extension ComposeOrchestratorTests {
 
     @Test("file pull metadata store persists pull dates")
     func filePullMetadataStorePersistsPullDates() async throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-tests-\(UUID().uuidString)", isDirectory: true)
         defer {
             try? FileManager.default.removeItem(at: directory)

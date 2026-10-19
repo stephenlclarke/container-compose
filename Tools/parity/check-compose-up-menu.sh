@@ -182,6 +182,9 @@ expect_status() {
         fi
         return 1
     fi
+    if [[ "$label" == container-compose* && "$expected" -eq 0 ]]; then
+        LAST_STDOUT_FILE="$(python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --file "$LAST_STDOUT_FILE")"
+    fi
 }
 
 # Assert a captured file includes expected text.

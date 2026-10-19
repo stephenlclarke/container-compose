@@ -137,6 +137,7 @@ extension ComposeOrchestrator {
         let attachment = prepareOneOffRunOutputAttachment(
             containerName: containerName,
             started: started,
+            forwardInput: service.stdinOpen == true,
         )
         defer { attachment.cancel() }
         try await started.wait()
@@ -223,6 +224,7 @@ extension ComposeOrchestrator {
     private func prepareOneOffRunOutputAttachment(
         containerName: String,
         started: ComposeOutputAttachReadiness,
+        forwardInput: Bool = false,
     ) -> Task<Void, any Error> {
         let attachManager = attachManager
         let emit = options.emitAttachedData
@@ -232,7 +234,7 @@ extension ComposeOrchestrator {
                     id: containerName,
                     stdout: true,
                     stderr: true,
-                    mode: .beforeStart,
+                    mode: forwardInput ? .beforeStartWithInput : .beforeStart,
                     onReady: {
                         // started is signalled by the distinct onStarted barrier.
                     },

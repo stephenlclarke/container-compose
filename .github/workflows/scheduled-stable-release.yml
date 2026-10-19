@@ -18,9 +18,6 @@ name: Scheduled Stable Release
 run-name: Unattended Stable Release · ${{ inputs.intent || 'milestone' }} · ${{ inputs.version_selector || 'auto' }}
 
 on:
-  schedule:
-    # Monday 09:17 UTC deliberately avoids the busiest minute of the hour.
-    - cron: "17 9 * * 1"
   workflow_dispatch:
     inputs:
       intent:

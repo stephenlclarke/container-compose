@@ -140,6 +140,8 @@ expect_container_dry_run() {
         --project-name "$PROJECT_NAME" \
         --file "$FIXTURE_FILE" \
         --dry-run up --no-start writer)"
+    output="$(printf '%s' "$output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label named-volume-reuse)"
     if [[ "$output" != *"container volume create"*"${PROJECT_NAME}_cache"* ]]; then
         error 'container-compose dry-run did not create the project named volume'
         printf '%s\n' "$output" >&2

@@ -15,7 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 /// User-visible service identity fields for create planning.
-public struct ContainerServiceCreateIdentity: Sendable {
+public struct ContainerServiceCreateIdentity: Codable, Equatable, Sendable {
     public var name: String
     public var imageReference: String
     public var oneOff: Bool
@@ -44,7 +44,13 @@ public struct ContainerServiceCreateIdentity: Sendable {
 }
 
 /// Runtime-specific service create fields.
-public struct ContainerServiceCreateRuntime: Sendable {
+public struct ContainerServiceCreateRuntime: Codable, Equatable, Sendable {
+    public var launchOptions: ComposeLaunchOptions
+    /// Nil until launch-time materialization and image-volume resolution finish.
+    public var resolvedMounts: [ComposeResolvedMount]?
+    public var tmpfs: [String]
+    public var networkAttachments: [ComposeNetworkCreateAttachment]
+    public var processOverrides: ComposeProcessOverrides
     public var initProcess: ComposeProcessConfiguration
     public var logging: ComposeLogConfiguration
     public var healthCheck: ComposeHealthCheck?
@@ -60,6 +66,11 @@ public struct ContainerServiceCreateRuntime: Sendable {
     public var memorySwapLimitInBytes: Int64?
 
     public init() {
+        launchOptions = ComposeLaunchOptions()
+        resolvedMounts = nil
+        tmpfs = []
+        networkAttachments = []
+        processOverrides = ComposeProcessOverrides()
         initProcess = ComposeRuntimeDefaults.shellProcess()
         logging = ComposeLogConfiguration.standard
         healthCheck = nil
@@ -81,9 +92,19 @@ public struct ContainerServiceCreateRuntime: Sendable {
 /// This is the boundary that lets Docker/Compose syntax stay in
 /// `container-compose` while later execution code can create containers through
 /// apple/container typed APIs instead of Docker-shaped CLI flags.
-public struct ContainerServiceCreatePlan: Sendable {
+public struct ContainerServiceCreatePlan: Codable, Equatable, Sendable {
+    public var launchOptions: ComposeLaunchOptions
+    public var environmentFiles: [String]
+    public var detach: Bool
+    /// Nil until launch-time allocation; an empty array means no published ports.
+    public var publishedPorts: [ComposePublishedPortBinding]?
+    public var resolvedMounts: [ComposeResolvedMount]?
+    public var tmpfs: [String]
+    public var networkAttachments: [ComposeNetworkCreateAttachment]
+    public var processOverrides: ComposeProcessOverrides
     public var name: String
     public var imageReference: String
+    public var imageSelection: ComposeImageSelection?
     public var oneOff: Bool
     public var autoRemove: Bool
     public var labels: [String: String]
@@ -108,6 +129,14 @@ public struct ContainerServiceCreatePlan: Sendable {
         runtime: ContainerServiceCreateRuntime = ContainerServiceCreateRuntime(),
     ) {
         name = identity.name
+        launchOptions = runtime.launchOptions
+        environmentFiles = []
+        detach = false
+        publishedPorts = nil
+        resolvedMounts = runtime.resolvedMounts
+        tmpfs = runtime.tmpfs
+        networkAttachments = runtime.networkAttachments
+        processOverrides = runtime.processOverrides
         imageReference = identity.imageReference
         oneOff = identity.oneOff
         autoRemove = identity.autoRemove

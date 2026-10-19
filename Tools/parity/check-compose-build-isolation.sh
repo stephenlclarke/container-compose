@@ -28,6 +28,9 @@
 #                      local SwiftPM debug build at .build/debug/compose.
 #   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
 #                      "docker compose" when available, otherwise docker-compose.
+#   PARITY_OUTPUT_IMAGE  Qualifier-selected fresh case image tag; local runs
+#                      generate a unique tag and remove it after the check.
+#   COMPOSE_FULL_SUITE_QUALIFIED  Require the qualifier-selected image tag.
 #
 # This script is intentionally local-only and is not part of CI. It verifies
 # Docker Compose V2 accepts service build.isolation values on the local builder,
@@ -46,6 +49,8 @@ STRICT=0
 CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-$REPO_ROOT/.build/debug/compose}"
 DOCKER_COMPOSE_COMMAND=()
 FIXTURE_DIR=""
+OUTPUT_IMAGE=""
+OUTPUT_IMAGE_ENROLLED=0
 
 # Print an informational message to stdout.
 info() {
@@ -125,6 +130,37 @@ check_tools() {
     fi
 }
 
+# Bind this build to a fresh, case-owned tag before Docker can replace one.
+select_output_image() {
+    if [[ -n "${PARITY_OUTPUT_IMAGE:-}" ]]; then
+        if [[ ! "$PARITY_OUTPUT_IMAGE" =~ ^example/api:build-isolation-cfq[0-9a-f]{32}$ ]]; then
+            error 'PARITY_OUTPUT_IMAGE is outside the qualified build-isolation namespace'
+            return 1
+        fi
+        OUTPUT_IMAGE="$PARITY_OUTPUT_IMAGE"
+    elif [[ "${COMPOSE_FULL_SUITE_QUALIFIED:-0}" == 1 ]]; then
+        error 'qualified build-isolation parity requires PARITY_OUTPUT_IMAGE'
+        return 1
+    else
+        OUTPUT_IMAGE="example/api:build-isolation-local-$RANDOM-$$"
+    fi
+}
+
+require_output_image_absent() {
+    # Use the successful image list rather than treating an inspect error as
+    # absence; Docker has reported listed aliases that inspect cannot resolve.
+    local refs
+    if ! refs="$(docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}')"; then
+        error 'cannot inventory Docker image tags before build-isolation parity'
+        return 1
+    fi
+    if grep -Fx -- "$OUTPUT_IMAGE" <<<"$refs" >/dev/null; then
+        error "build-isolation output image already exists: $OUTPUT_IMAGE"
+        return 1
+    fi
+    OUTPUT_IMAGE_ENROLLED=1
+}
+
 # Create a minimal build project with a platform-specific isolation request.
 create_fixture() {
     FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/compose-build-isolation.XXXXXX")"
@@ -132,21 +168,40 @@ create_fixture() {
     cat >"$FIXTURE_DIR/api/Dockerfile" <<'DOCKERFILE'
 FROM scratch
 DOCKERFILE
-    cat >"$FIXTURE_DIR/compose.yml" <<'YAML'
+    cat >"$FIXTURE_DIR/compose.yml" <<YAML
 services:
   api:
-    image: example/api:isolation
+    image: $OUTPUT_IMAGE
     build:
       context: ./api
       isolation: hyperv
 YAML
 }
 
-# Remove temporary fixture files.
+# Remove the enrolled standalone image tag and temporary fixture files.
 cleanup() {
+    local status=$?
+    trap - EXIT
+    if [[ "${COMPOSE_FULL_SUITE_QUALIFIED:-0}" != 1 && "$OUTPUT_IMAGE_ENROLLED" == 1 ]]; then
+        local refs
+        if ! refs="$(docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}')"; then
+            error 'cannot verify standalone build-isolation output image for cleanup'
+            if ((status == 0)); then status=1; fi
+        elif grep -Fx -- "$OUTPUT_IMAGE" <<<"$refs" >/dev/null; then
+            if ! docker image rm "$OUTPUT_IMAGE" >/dev/null; then
+                error 'cannot remove standalone build-isolation output image'
+                if ((status == 0)); then status=1; fi
+            elif ! refs="$(docker image ls --no-trunc --format '{{.Repository}}:{{.Tag}}')" ||
+                grep -Fx -- "$OUTPUT_IMAGE" <<<"$refs" >/dev/null; then
+                error 'standalone build-isolation output image remains after cleanup'
+                if ((status == 0)); then status=1; fi
+            fi
+        fi
+    fi
     if [[ -n "$FIXTURE_DIR" ]]; then
         rm -rf "$FIXTURE_DIR"
     fi
+    exit "$status"
 }
 
 # Assert config JSON preserves the Compose build isolation value.
@@ -154,7 +209,7 @@ assert_config_isolation() {
     local path="$1"
     local source="$2"
 
-    python3 - "$path" "$source" <<'PY'
+    python3 - "$path" "$source" "$OUTPUT_IMAGE" <<'PY'
 import json
 import pathlib
 import sys
@@ -162,6 +217,8 @@ import sys
 path = pathlib.Path(sys.argv[1])
 source = sys.argv[2]
 doc = json.loads(path.read_text(encoding="utf-8"))
+if doc.get("services", {}).get("api", {}).get("image") != sys.argv[3]:
+    raise SystemExit(f"{source} changed the selected image tag")
 isolation = doc.get("services", {}).get("api", {}).get("build", {}).get("isolation")
 if isolation != "hyperv":
     raise SystemExit(f"{source} rendered build.isolation {isolation!r}, want 'hyperv'")
@@ -173,7 +230,7 @@ assert_bake_omits_isolation() {
     local path="$1"
     local source="$2"
 
-    python3 - "$path" "$source" <<'PY'
+    python3 - "$path" "$source" "$OUTPUT_IMAGE" <<'PY'
 import json
 import pathlib
 import sys
@@ -184,7 +241,7 @@ doc = json.loads(path.read_text(encoding="utf-8"))
 target = doc.get("target", {}).get("api")
 if not isinstance(target, dict):
     raise SystemExit(f"{source} did not render an api target")
-if target.get("tags") != ["example/api:isolation"]:
+if target.get("tags") != [sys.argv[3]]:
     raise SystemExit(f"{source} rendered tags {target.get('tags')!r}")
 if "isolation" in target:
     raise SystemExit(f"{source} leaked build.isolation into bake JSON")
@@ -193,6 +250,7 @@ PY
 
 # Assert Docker Compose accepts and builds the fixture.
 expect_docker_build_accepts_isolation() {
+    require_output_image_absent
     "${DOCKER_COMPOSE_COMMAND[@]}" \
         --project-directory "$FIXTURE_DIR" \
         -f "$FIXTURE_DIR/compose.yml" \
@@ -245,6 +303,8 @@ expect_container_behavior() {
         --project-directory "$FIXTURE_DIR" \
         -f "$FIXTURE_DIR/compose.yml" \
         build api)"
+    dry_run_output="$(printf '%s' "$dry_run_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label build-isolation)"
     if [[ "$dry_run_output" != *"container build"* || "$dry_run_output" == *"--isolation"* ]]; then
         error 'container-compose did not mirror Docker Compose Buildx handling for build.isolation'
         printf '%s\n' "$dry_run_output" >&2
@@ -257,6 +317,7 @@ main() {
     parse_args "$@"
     detect_docker_compose
     check_tools
+    select_output_image
     create_fixture
     trap cleanup EXIT
 

@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 @testable import ComposePlugin
+import ComposeTestStorage
 import Foundation
 import Testing
 
@@ -24,7 +25,7 @@ struct ComposeBuildInfoTests {
     // swiftlint:disable:next identifier_name
     func `Local dependency paths override stale lockfile metadata`() throws {
         let fileManager = FileManager.default
-        let root = fileManager.temporaryDirectory.appendingPathComponent(
+        let root = TestStorage.temporaryDirectory.appendingPathComponent(
             "compose-build-info-\(UUID().uuidString)",
             isDirectory: true,
         )
@@ -56,7 +57,7 @@ struct ComposeBuildInfoTests {
         )
         try staleResolvedFile.write(
             to: composeRoot.appendingPathComponent("Package.resolved"),
-            atomically: true,
+            atomically: false,
             encoding: .utf8,
         )
 

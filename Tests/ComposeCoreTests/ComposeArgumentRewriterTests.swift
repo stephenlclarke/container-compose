@@ -722,6 +722,14 @@ extension ComposeArgumentRewriterTests {
 }
 
 extension ComposeArgumentRewriterTests {
+    @Test(arguments: [["-l--user"], ["-il--user"], ["-ie", "--tty=false"]])
+    func runTerminalNormalizationPreservesOptionDataAndGuestBoundary(_ flags: [String]) {
+        let arguments = ["run"] + flags + ["app", "-t", "--interactive=false"]
+        let rewritten = ComposeArgumentRewriter.argumentsForParsing(arguments)
+        #expect(Array(rewritten.suffix(4)) == ["app", "--", "-t", "--interactive=false"])
+        #expect(!ComposeArgumentRewriter.argumentsForOptionInspection(arguments).contains("--tty=true"))
+    }
+
     @Test
     func `keeps run flags before service name while preserving command arguments`() {
         let rewritten = ComposeArgumentRewriter.rewrite([
@@ -738,7 +746,7 @@ extension ComposeArgumentRewriterTests {
         #expect(rewritten == [
             "run",
             "-d",
-            "-T",
+            "--no-tty=true",
             "--rm",
             "--service-ports",
             "api",

@@ -51,7 +51,7 @@ jobs:
       github.repository == 'stephenlclarke/container-compose' &&
       (github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion != 'success')
-    runs-on: [self-hosted, macOS, ARM64, container-compose-current]
+    runs-on: macos-26
     timeout-minutes: 190
     steps:
       - name: Resolve restoration authority

@@ -1076,7 +1076,7 @@ extension ComposeOrchestrator {
             externalVolumeMounts: request.externalVolumeMounts,
         )
 
-        let arguments = try await runArguments(
+        let launch = try await serviceLaunchPlan(
             project: project,
             service: service,
             options: request.runOptions,
@@ -1084,11 +1084,12 @@ extension ComposeOrchestrator {
             imageHealthCheckCache: request.imageHealthCheckCache,
         )
         try await runContainerWithProgress(
-            arguments,
+            launch.arguments,
             message: reconcileProgressMessage(service: service, command: request.runOptions.command),
             options: ComposeContainerProgressRunOptions(
                 emitOutput: false,
-                logging: try runtimeLogConfiguration(service: service),
+                logging: launch.configuration.logging,
+                configuration: launch.configuration,
             ),
         )
         if request.runOptions.command == "run" {

@@ -32,6 +32,8 @@
 #                      "docker compose" when available, otherwise docker-compose.
 #   PARITY_TIMEOUT_SECONDS
 #                      Per-operation deadline in seconds. Defaults to 300.
+#   COMPOSE_FULL_SUITE_MOUNT_JOURNAL
+#                      Exact retained mount journal for unattended qualification.
 #
 # This script is intentionally local-only and is not part of CI. It validates
 # Docker Compose V2 running-container commit image config behavior with
@@ -183,17 +185,27 @@ YAML
 }
 
 cleanup() {
+    local status=$?
+    if [[ -n "${COMPOSE_FULL_SUITE_MOUNT_JOURNAL:-}" && ! -f "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL" ]]; then
+        if ! python3 "$REPO_ROOT/Tools/bazel/full_suite.py" record-mounts \
+            --allow-partial --project "$DOCKER_PROJECT_NAME" \
+            --destination "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL"; then
+            error 'cannot enroll anonymous Docker mounts; preserving project containers and fixture for outer recovery'
+            trap - EXIT
+            exit 1
+        fi
+    fi
     if [[ -n "$FIXTURE_DIR" ]]; then
         run_bounded_for "$CLEANUP_TIMEOUT_SECONDS" env \
             COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
             "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
-            down --remove-orphans >/dev/null 2>&1 || true
+            down --volumes --remove-orphans >/dev/null 2>&1 || true
         run_bounded_for "$CLEANUP_TIMEOUT_SECONDS" env \
             COMMIT_PARITY_IMAGE="$CONTAINER_BASE_IMAGE" \
             CONTAINER_BIN="$CONTAINER_BINARY" \
             CONTAINER_COMPOSE_CONTAINER="$CONTAINER_BINARY" \
             "$CONTAINER_COMPOSE" --ansi never -p "$CONTAINER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" \
-            down --remove-orphans >/dev/null 2>&1 || true
+            down --volumes --remove-orphans >/dev/null 2>&1 || true
         rm -rf "$FIXTURE_DIR"
     fi
     run_bounded_for "$CLEANUP_TIMEOUT_SECONDS" docker image rm -f "$DOCKER_IMAGE" >/dev/null 2>&1 || true
@@ -202,6 +214,8 @@ cleanup() {
         "$CONTAINER_BINARY" image delete --force "$CONTAINER_IMAGE" >/dev/null 2>&1 || true
     run_bounded_for "$CLEANUP_TIMEOUT_SECONDS" \
         "$CONTAINER_BINARY" image delete --force "$CONTAINER_BASE_IMAGE" >/dev/null 2>&1 || true
+    trap - EXIT
+    exit "$status"
 }
 
 build_fixture_images() {
@@ -215,6 +229,11 @@ build_fixture_images() {
 commit_with_docker_compose() {
     run_bounded env COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
         "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" up -d --quiet-pull api >/dev/null
+    if [[ -n "${COMPOSE_FULL_SUITE_MOUNT_JOURNAL:-}" ]]; then
+        python3 "$REPO_ROOT/Tools/bazel/full_suite.py" record-mounts \
+            --project "$DOCKER_PROJECT_NAME" \
+            --destination "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL"
+    fi
     run_bounded env COMMIT_PARITY_IMAGE="$DOCKER_BASE_IMAGE" \
         "${DOCKER_COMPOSE_COMMAND[@]}" -p "$DOCKER_PROJECT_NAME" -f "$FIXTURE_DIR/compose.yml" commit \
         --pause=false \

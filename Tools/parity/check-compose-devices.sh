@@ -266,6 +266,12 @@ validate_container_compose_behavior() {
     up_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" up api)"
     create_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" create api)"
     run_output="$("$CONTAINER_COMPOSE" --ansi never --dry-run -p "$PROJECT_NAME" -f "$COMPOSE_FILE" run api true)"
+    up_output="$(printf '%s' "$up_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label devices-up)"
+    create_output="$(printf '%s' "$create_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label devices-create)"
+    run_output="$(printf '%s' "$run_output" |
+        python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --label devices-run)"
     up_line="$(dry_run_api_line "$up_output")"
     create_line="$(dry_run_api_line "$create_output")"
     run_line="$(dry_run_api_line "$run_output")"

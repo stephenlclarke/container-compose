@@ -167,6 +167,9 @@ extension ComposeOrchestrator {
         guard let image = serviceImage(project: project, service: service) else {
             throw ComposeError.invalidProject("service '\(service.name)' has no image or build")
         }
+        let selection = options.dryRun ? nil
+            : try await imageManager.selectImageForCreation(image, platform: service.platform)
+        let metadataService = service.selectingImage(selection)
         let supplementalGroups = try runtimeSupplementalGroups(service: service)
         let oomScoreAdj = try runtimeOOMScoreAdj(service: service)
         let baseProcess = serviceCreateBaseProcess(
@@ -178,7 +181,7 @@ extension ComposeOrchestrator {
         let healthCheck = planOptions.resolveHealthCheck
             ? try await runtimeHealthCheck(
                 project: project,
-                service: service,
+                service: metadataService,
                 cache: request.imageHealthCheckCache,
                 baseProcess: baseProcess,
             )
@@ -186,37 +189,60 @@ extension ComposeOrchestrator {
         let restartPolicy = planOptions.includeRestartPolicy
             ? try runtimeRestartPolicy(service: service) ?? .no
             : .no
-        let identity = try ContainerServiceCreateIdentity(
+        let identity = try serviceCreateIdentity(request: request, image: image)
+        let runtime = try serviceCreateRuntime(
+            project: project,
+            service: service,
+            baseProcess: baseProcess,
+            healthCheck: healthCheck,
+            restartPolicy: restartPolicy,
+        )
+        var plan = ContainerServiceCreatePlan(identity: identity, runtime: runtime)
+        plan.imageSelection = selection
+        return plan
+    }
+
+    private func serviceCreateIdentity(
+        request: ServiceCreatePlanRequest, image: String
+    ) throws -> ContainerServiceCreateIdentity {
+        let service = request.service
+        return try ContainerServiceCreateIdentity(
             name: request.runtimeName,
             imageReference: image,
-            oneOff: planOptions.oneOff,
-            autoRemove: planOptions.autoRemove,
+            oneOff: request.options.oneOff,
+            autoRemove: request.options.autoRemove,
             labels: serviceCreateLabels(
-                project: project,
+                project: request.project,
                 service: service,
-                oneOff: planOptions.oneOff,
+                oneOff: request.options.oneOff,
                 externalVolumeMounts: request.externalVolumeMounts,
                 labelOverrides: request.labelOverrides,
             ),
             annotations: effectiveServiceAnnotations(service: service),
             exposedPorts: service.expose ?? [],
         )
-        let runtime = try serviceCreateRuntime(
-            service: service,
-            baseProcess: baseProcess,
-            healthCheck: healthCheck,
-            restartPolicy: restartPolicy,
-        )
-        return ContainerServiceCreatePlan(identity: identity, runtime: runtime)
     }
 
     private func serviceCreateRuntime(
+        project: ComposeProject,
         service: ComposeService,
         baseProcess: ComposeProcessConfiguration,
         healthCheck: ComposeHealthCheck?,
         restartPolicy: ComposeRestartPolicy,
     ) throws -> ContainerServiceCreateRuntime {
         var runtime = ContainerServiceCreateRuntime()
+        runtime.launchOptions = try serviceLaunchOptions(service: service)
+        runtime.tmpfs = service.tmpfs ?? []
+        runtime.networkAttachments = try serviceNetworkAttachments(project: project, service: service)
+        runtime.processOverrides = ComposeProcessOverrides(
+            command: service.command,
+            entrypoint: service.entrypoint,
+            environment: service.environment ?? [:],
+            workingDirectory: service.workingDir,
+            user: service.user,
+            terminal: service.tty == true,
+            openStandardInput: service.stdinOpen == true
+        )
         runtime.initProcess = baseProcess
         runtime.logging = try runtimeLogConfiguration(service: service)
         runtime.healthCheck = healthCheck
@@ -265,41 +291,49 @@ extension ComposeOrchestrator {
 
     /// Builds one network attachment value accepted by apple/container.
     func networkAttachmentArgument(project: ComposeProject, service: ComposeService, network: String) throws -> String {
-        var argument = networkRuntimeName(project: project, composeName: network)
-        var options: [String] = []
-        if self.options.runtimeCapabilities.supportsNetworkAliasesV1 {
-            for alias in try networkAliasValues(service: service, network: network) {
-                options.append("alias=\(alias)")
-            }
+        try networkAttachmentPlan(project: project, service: service, network: network).nativeArgument
+    }
+
+    /// Keeps network mode and route ordering identical across launch providers.
+    func serviceNetworkAttachments(project: ComposeProject, service: ComposeService) throws -> [ComposeNetworkCreateAttachment] {
+        if isNoNetworkMode(service.networkMode) {
+            return [.init(network: "none")]
         }
-        if self.options.runtimeCapabilities.supportsNetworkScopedAliasesV1 {
-            for mapping in try networkScopedLinkAliasValues(project: project, service: service, network: network) {
-                options.append("dns-alias=\(mapping)")
-            }
+        if isHostNetworkMode(service.networkMode) {
+            return [.init(network: "host")]
         }
-        if let macAddress = networkMACAddress(service: service, network: network) {
-            options.append("mac=\(macAddress)")
+        if isBridgeNetworkMode(service.networkMode) {
+            return [.init(network: "default")]
         }
-        if let mtu = try service.networkOptions?[network]?.networkMTU() {
-            options.append("mtu=\(mtu)")
+        return try orderedNetworkAttachments(service: service).map {
+            try networkAttachmentPlan(project: project, service: service, network: $0)
         }
-        if self.options.runtimeCapabilities.supportsNetworkScopedAliasesV1 {
-            if let interfaceName = try networkGuestInterfaceName(service: service, network: network) {
-                options.append("interface=\(interfaceName)")
-            }
-            try options.append(contentsOf: networkStaticAddressOptions(
-                project: project,
-                service: service,
-                network: network,
-            ))
-            for address in try networkLinkLocalIPValues(service: service, network: network) {
-                options.append("address=\(address)")
-            }
+    }
+
+    func networkAttachmentPlan(
+        project: ComposeProject, service: ComposeService, network: String
+    ) throws -> ComposeNetworkCreateAttachment {
+        var attachment = ComposeNetworkCreateAttachment(
+            network: networkRuntimeName(project: project, composeName: network)
+        )
+        if options.runtimeCapabilities.supportsNetworkAliasesV1 {
+            attachment.aliases = try networkAliasValues(service: service, network: network)
         }
-        if !options.isEmpty {
-            argument += "," + options.joined(separator: ",")
+        if options.runtimeCapabilities.supportsNetworkScopedAliasesV1 {
+            attachment.scopedAliasMappings = try networkScopedLinkAliasValues(
+                project: project, service: service, network: network
+            )
         }
-        return argument
+        attachment.macAddress = networkMACAddress(service: service, network: network)
+        attachment.mtu = try service.networkOptions?[network]?.networkMTU()
+        if options.runtimeCapabilities.supportsNetworkScopedAliasesV1 {
+            attachment.interfaceName = try networkGuestInterfaceName(service: service, network: network)
+            let addresses = try networkStaticAddresses(project: project, service: service, network: network)
+            attachment.ipv4Address = addresses.ipv4
+            attachment.ipv6Address = addresses.ipv6
+            attachment.linkLocalAddresses = try networkLinkLocalIPValues(service: service, network: network)
+        }
+        return attachment
     }
 
     /// Returns source-scoped link aliases for one service network attachment.

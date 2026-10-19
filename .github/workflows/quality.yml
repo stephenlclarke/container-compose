@@ -20,31 +20,11 @@ on:
   push:
     branches:
       - main
-    paths:
-      - ".github/workflows/quality.yml"
-      - ".swiftformat"
-      - ".swiftlint.yml"
-      - "Package.swift"
-      - "Package.resolved"
-      - "Sources/**"
-      - "Tests/**"
-      - "Tools/ci/run-swift-test.sh"
   pull_request:
     types:
       - opened
       - synchronize
       - reopened
-    paths:
-      - ".github/workflows/quality.yml"
-      - ".swiftformat"
-      - ".swiftlint.yml"
-      - "Package.swift"
-      - "Package.resolved"
-      - "Sources/**"
-      - "Tests/**"
-      - "Tools/ci/run-swift-test.sh"
-  schedule:
-    - cron: "23 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -82,15 +62,15 @@ jobs:
             pull_request)
               gh api "repos/${GITHUB_REPOSITORY}/pulls/${{ github.event.pull_request.number }}/files" \
                 --paginate \
-                --jq '.[].filename' > "$changed_files"
+                --jq '.[] | .filename, (.previous_filename // empty)' > "$changed_files"
               ;;
             push)
               before="${{ github.event.before }}"
               after="${GITHUB_SHA}"
               if [[ "$before" =~ ^0+$ ]] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
-                git diff-tree --no-commit-id --name-only -r "$after" > "$changed_files"
+                git diff-tree --no-commit-id --name-only --no-renames -r "$after" > "$changed_files"
               else
-                git diff --name-only "$before" "$after" > "$changed_files"
+                git diff --no-renames --name-only "$before" "$after" > "$changed_files"
               fi
               ;;
             *)
@@ -102,6 +82,9 @@ jobs:
 
           heavy=false
           swift=false
+          if [[ ! -s "$changed_files" ]]; then
+            heavy=true
+          fi
           while IFS= read -r path; do
             case "$path" in
               *.md|docs/*|Formula/*)
@@ -111,7 +94,7 @@ jobs:
                 ;;
             esac
             case "$path" in
-              Package.swift|Package.resolved|Package.stock.resolved|Sources/**|Tests/**|*.swift)
+              Package.swift|Package.resolved|Package.stock.resolved|Sources/**|Tests/**|*.swift|.swiftformat|.swiftlint.yml|.github/workflows/quality.yml|Tools/ci/swift-style.py|Tools/ci/test_swift_style.py)
                 swift=true
                 ;;
             esac
@@ -123,7 +106,7 @@ jobs:
   swift-address-sanitizer:
     name: Swift ASan
     needs: changes
-    if: (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.swift == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.changes.outputs.swift == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -258,9 +241,9 @@ jobs:
         working-directory: container-compose
 
   swift-thread-sanitizer:
-    name: Swift TSan Nightly
+    name: Swift TSan
     needs: changes
-    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.changes.outputs.swift == 'true'
+    if: github.event_name == 'workflow_dispatch' && needs.changes.outputs.swift == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -397,7 +380,7 @@ jobs:
   swift-style:
     name: SwiftLint/SwiftFormat
     needs: changes
-    if: github.event_name != 'schedule' && needs.changes.outputs.swift == 'true'
+    if: github.event_name != 'schedule' && needs.changes.outputs.heavy == 'true'
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -405,15 +388,31 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify exact Swift style source
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}"
+          actual="$(git rev-parse HEAD)"
+          if [[ ! "$expected" =~ ^[0-9a-f]{40}$ ]] || [[ "$actual" != "$expected" ]]; then
+            printf 'Swift style checkout does not match the event source SHA\n' >&2
+            exit 1
+          fi
 
       - name: Run deterministic Swift style checks
         shell: bash
         run: |
           set -euo pipefail
+          export SWIFT_STYLE_REQUIRE_PATHS=1
+          if [[ "${{ needs.changes.outputs.swift }}" != "true" ]]; then
+            export SWIFT_STYLE_ALL=1
+          fi
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
               export SWIFT_STYLE_BASE="${{ github.event.pull_request.base.sha }}"
-              export SWIFT_STYLE_HEAD="${GITHUB_SHA}"
+              export SWIFT_STYLE_HEAD="${{ github.event.pull_request.head.sha }}"
               ;;
             push)
               before="${{ github.event.before }}"

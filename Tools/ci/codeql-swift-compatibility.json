@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "language": "swift",
+  "expected_count": 2,
+  "explanation": "codeql-swift-compatibility.md",
+  "dependency": {
+    "identity": "swift-certificates",
+    "repository": "https://github.com/apple/swift-certificates.git",
+    "revision": "c8aece90ea05f9866bd392a5bf13b5cae56c0e03",
+    "lockfiles": [
+      "Package.resolved",
+      "Package.stock.resolved"
+    ],
+    "checkout": ".build/checkouts/swift-certificates",
+    "file": ".build/checkouts/swift-certificates/Sources/X509/Signature.swift",
+    "sha256": "e14dc383e9105e72f34196b06618bcec7659cb48b89dedfe0cb70a481547d305"
+  },
+  "findings": [
+    {
+      "id": "rsa-sha1-verification",
+      "rule_id": "swift/weak-sensitive-data-hashing",
+      "uri": ".build/checkouts/swift-certificates/Sources/X509/Signature.swift",
+      "region": {
+        "startLine": 371,
+        "startColumn": 83,
+        "endColumn": 84
+      },
+      "partial_fingerprints": {
+        "primaryLocationLineHash": "e2a8c3e0df5f126c:1",
+        "primaryLocationStartColumnFingerprint": "70"
+      }
+    },
+    {
+      "id": "rsa-sha1-signing",
+      "rule_id": "swift/weak-sensitive-data-hashing",
+      "uri": ".build/checkouts/swift-certificates/Sources/X509/Signature.swift",
+      "region": {
+        "startLine": 536,
+        "startColumn": 74,
+        "endColumn": 75
+      },
+      "partial_fingerprints": {
+        "primaryLocationLineHash": "4dd7b22711daafb7:1",
+        "primaryLocationStartColumnFingerprint": "61"
+      }
+    }
+  ]
+}

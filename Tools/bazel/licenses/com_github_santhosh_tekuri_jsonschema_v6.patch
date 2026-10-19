@@ -1,0 +1,42 @@
+diff --git a/BUILD.bazel b/BUILD.bazel
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -0,0 +1,26 @@
++# Metadata-only overlay; upstream source and dependency versions are unchanged.
++load("@rules_license//rules:license.bzl", "license")
++load("@rules_license//rules:package_info.bzl", "package_info")
++load("@package_metadata//rules:package_metadata.bzl", "package_metadata")
++
++package_info(
++    name = "gazelle_generated_package_info",
++    package_name = "github.com/santhosh-tekuri/jsonschema/v6",
++    package_version = "6.0.1",
++    package_url = "https://github.com/santhosh-tekuri/jsonschema/v6",
++    purl = "pkg:golang/github.com/santhosh-tekuri/jsonschema/v6@v6.0.1",
++    visibility = ["//visibility:public"],
++)
++package_metadata(
++    name = "package_metadata",
++    purl = "pkg:golang/github.com/santhosh-tekuri/jsonschema/v6@v6.0.1",
++    visibility = ["//visibility:public"],
++)
++license(
++    name = "cf_notice_0",
++    license_text = "LICENSE",
++    package_name = "github.com/santhosh-tekuri/jsonschema/v6",
++    package_version = "v6.0.1",
++    package_url = "https://github.com/santhosh-tekuri/jsonschema/v6",
++)
++
+diff --git a/REPO.bazel b/REPO.bazel
+new file mode 100644
+--- /dev/null
++++ b/REPO.bazel
+@@ -0,0 +1,7 @@
++repo(
++    default_package_metadata = [
++        "//:gazelle_generated_package_info",
++        "//:package_metadata",
++        "//:cf_notice_0",
++    ],
++)

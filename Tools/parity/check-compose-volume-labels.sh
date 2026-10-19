@@ -28,6 +28,8 @@
 #                      local SwiftPM debug build at .build/debug/compose.
 #   DOCKER_COMPOSE     Docker Compose command to compare with. Defaults to
 #                      "docker compose" when available, otherwise docker-compose.
+#   COMPOSE_FULL_SUITE_MOUNT_JOURNAL
+#                      Exact retained mount journal for unattended qualification.
 #
 # This script is intentionally local-only and is not part of CI. It verifies
 # Docker Compose V2 preserves service long-form `volume.labels`, applies those
@@ -52,6 +54,7 @@ DOCKER_COMPOSE_COMMAND=()
 FIXTURE_DIR=""
 PROJECT_NAME="cc-volume-labels-$RANDOM"
 ONE_OFF_NAME="$PROJECT_NAME-oneoff"
+COMPOSE_FULL_SUITE_MOUNT_JOURNAL="${COMPOSE_FULL_SUITE_MOUNT_JOURNAL:-}"
 
 # Print an informational line to stdout.
 info() {
@@ -175,8 +178,18 @@ YAML
 
 # Remove temporary fixture files and Docker Compose resources.
 cleanup() {
+    local status=$?
+    if [[ -n "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL" && ! -f "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL" ]]; then
+        if ! python3 "$REPO_ROOT/Tools/bazel/full_suite.py" record-mounts \
+            --allow-partial --project "$PROJECT_NAME" \
+            --destination "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL"; then
+            error 'cannot enroll anonymous Docker mounts; preserving project containers and fixture for outer recovery'
+            trap - EXIT
+            exit 1
+        fi
+    fi
     if [[ -n "$FIXTURE_DIR" ]]; then
-        docker rm --force "$ONE_OFF_NAME" >/dev/null 2>&1 || true
+        docker rm --force --volumes "$ONE_OFF_NAME" >/dev/null 2>&1 || true
         "${DOCKER_COMPOSE_COMMAND[@]}" \
             --project-directory "$FIXTURE_DIR" \
             -p "$PROJECT_NAME" \
@@ -184,6 +197,8 @@ cleanup() {
             down -v --remove-orphans >/dev/null 2>&1 || true
         rm -rf "$FIXTURE_DIR"
     fi
+    trap - EXIT
+    exit "$status"
 }
 
 # Print the anonymous volume mounted at /scratch by one Docker container.
@@ -321,6 +336,11 @@ expect_docker_behavior() {
         -p "$PROJECT_NAME" \
         -f "$FIXTURE_DIR/compose.yml" \
         run --no-deps --name "$ONE_OFF_NAME" anon true >/dev/null
+    if [[ -n "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL" ]]; then
+        python3 "$REPO_ROOT/Tools/bazel/full_suite.py" record-mounts \
+            --project "$PROJECT_NAME" \
+            --destination "$COMPOSE_FULL_SUITE_MOUNT_JOURNAL"
+    fi
     assert_docker_runtime_labels
     assert_docker_anonymous_volume_identity
 }
@@ -378,6 +398,7 @@ expect_container_behavior() {
         -p "$PROJECT_NAME" \
         -f "$FIXTURE_DIR/compose.yml" \
         up --no-start >"$up_output" 2>&1
+    up_output="$(python3 "$REPO_ROOT/Tools/parity/normalize-container-command-output.py" --file "$up_output")"
     if ! grep -F 'container volume create' "$up_output" >/dev/null ||
         ! grep -F -- '--label com.example.mount=anonymous-service' "$up_output" >/dev/null; then
         error 'container-compose did not render labeled anonymous volume creation'

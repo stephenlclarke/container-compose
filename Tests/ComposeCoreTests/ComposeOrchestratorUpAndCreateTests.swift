@@ -14,23 +14,104 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-import ComposeContainerRuntime
 @testable import ComposeCore
 import ComposeRuntimeSPI
 import ContainerizationArchive
 import ContainerizationError
 import ContainerizationExtras
-import ContainerizationOCI
-import ContainerResource
 #if canImport(Darwin)
     import Darwin
 #elseif canImport(Glibc)
     import Glibc
 #endif
+import ComposeTestStorage
 import Foundation
 import Testing
 
 extension ComposeOrchestratorTests {
+    @Test("volume labels preserve the logical key in native and dry-run creation", arguments: ["cache", "shared-cache"])
+    func volumeLabelsPreserveLogicalKey(runtimeName: String) async throws {
+        let project = composeProject(name: "demo", services: [:])
+        let volume = ComposeVolume(name: runtimeName, labels: [
+            "com.apple.container.compose.volume": "incorrect",
+            "com.docker.compose.volume": "cache",
+            "com.example.volume": "retained",
+        ])
+        let resources = RecordingContainerResourceManager()
+        try await ComposeOrchestrator(runner: RecordingRunner(responses: []), resourceManager: resources)
+            .ensureVolume(project: project, composeName: "cache", volume: volume)
+        let requests = await resources.requests
+        #expect(requests.count == 1)
+        guard case let .createVolume(request) = try #require(requests.first) else {
+            Issue.record("Expected native volume creation")
+            return
+        }
+        #expect(request.name == (runtimeName == "cache" ? "demo_cache" : runtimeName))
+        #expect(request.labels["com.apple.container.compose.volume"] == "cache")
+        #expect(request.labels["com.docker.compose.volume"] == "cache")
+        #expect(request.labels["com.example.volume"] == "retained")
+        let emitted = MessageRecorder()
+        try await ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }))
+            .ensureVolume(project: project, composeName: "cache", volume: volume)
+        let command = try #require(emitted.messages.first)
+        #expect(command.contains("--label com.apple.container.compose.volume=cache"))
+        #expect(command.contains("--label com.example.volume=retained"))
+        #expect(!command.contains("incorrect"))
+        #expect(command.hasSuffix(request.name))
+    }
+
+    @Test("contradictory Docker volume labels fail before creation", arguments: [false, true])
+    func volumeLabelsRejectConflictingDockerMirror(dryRun: Bool) async throws {
+        let project = composeProject(name: "demo", services: [:])
+        let volume = ComposeVolume(name: "shared-cache", labels: ["com.docker.compose.volume": "other"])
+        let resources = RecordingContainerResourceManager()
+        let emitted = MessageRecorder()
+        let orchestrator = ComposeOrchestrator(
+            runner: RecordingRunner(responses: []),
+            options: ComposeExecutionOptions(dryRun: dryRun, emit: { emitted.append($0) }),
+            resourceManager: resources,
+        )
+        await #expect(throws: ComposeError.invalidProject(
+            "volume 'cache' label 'com.docker.compose.volume' must match its logical key"
+        )) {
+            try await orchestrator.ensureVolume(project: project, composeName: "cache", volume: volume)
+        }
+        #expect(await resources.requests.isEmpty)
+        #expect(emitted.messages.isEmpty)
+    }
+
+    @Test("network labels preserve the logical key in native and dry-run creation", arguments: ["default", "shared-backend"])
+    func networkLabelsPreserveLogicalKey(runtimeName: String) async throws {
+        let project = composeProject(name: "demo", services: [:])
+        let network = ComposeNetwork(
+            name: runtimeName,
+            options: ComposeNetwork.Options(labels: [
+                "com.apple.container.compose.network": "incorrect",
+                "com.example.network": "retained",
+            ])
+        )
+        let resources = RecordingContainerResourceManager()
+        try await ComposeOrchestrator(runner: RecordingRunner(responses: []), resourceManager: resources)
+            .ensureNetwork(project: project, composeName: "default", network: network)
+        let requests = await resources.requests
+        #expect(requests.count == 1)
+        guard case let .createNetwork(request) = try #require(requests.first) else {
+            Issue.record("Expected native network creation")
+            return
+        }
+        #expect(request.name == (runtimeName == "default" ? "demo_default" : runtimeName))
+        #expect(request.labels["com.apple.container.compose.network"] == "default")
+        #expect(request.labels["com.example.network"] == "retained")
+        let emitted = MessageRecorder()
+        try await ComposeOrchestrator(options: ComposeExecutionOptions(dryRun: true, emit: { emitted.append($0) }))
+            .ensureNetwork(project: project, composeName: "default", network: network)
+        let command = try #require(emitted.messages.first)
+        #expect(command.contains("--label com.apple.container.compose.network=default"))
+        #expect(command.contains("--label com.example.network=retained"))
+        #expect(!command.contains("incorrect"))
+        #expect(command.hasSuffix(request.name))
+    }
+
     @Test("up creates resources and runs services with compose labels")
     func upCreatesResourcesAndRunsServicesWithComposeLabels() async throws {
         let runner = RecordingRunner(responses: [
@@ -2037,7 +2118,7 @@ extension ComposeOrchestratorTests {
     @Test("create maps bind propagation to volume options")
     func createMapsBindPropagationToVolumeOptions() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -4036,7 +4117,7 @@ extension ComposeOrchestratorTests {
     @Test("up accepts deploy endpoint mode metadata normalized by compose-go")
     func upAcceptsDeployEndpointModeMetadataNormalizedByComposeGo() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -4050,7 +4131,7 @@ extension ComposeOrchestratorTests {
             image: alpine:3.20
             deploy:
               endpoint_mode: dnsrr
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -4077,7 +4158,7 @@ extension ComposeOrchestratorTests {
     @Test("up projects deploy memory reservations while retaining CPU reservation metadata")
     func upProjectsDeployMemoryReservationsWhileRetainingCPUReservationMetadata() async throws {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory
+        let directory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer {
@@ -4094,7 +4175,7 @@ extension ComposeOrchestratorTests {
                 reservations:
                   cpus: "0.25"
                   memory: 32M
-        """.write(to: composeFile, atomically: true, encoding: .utf8)
+        """.writeFixture(to: composeFile, encoding: .utf8)
 
         let project = try await ComposeNormalizer().normalize(options: ComposeOptions(
             files: [composeFile.path],
@@ -5168,7 +5249,7 @@ extension ComposeOrchestratorTests {
         ])
         let logManager = RecordingContainerLogManager(outputs: ["ignored"])
         let menuController = RecordingComposeUpMenuController(actions: [.toggleWatch])
-        let temporaryDirectory = FileManager.default.temporaryDirectory
+        let temporaryDirectory = TestStorage.temporaryDirectory
             .appendingPathComponent("container-compose-menu-watch-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer {

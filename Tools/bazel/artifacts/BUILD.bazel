@@ -1,0 +1,3 @@
+# Copyright 2026 container-compose project authors. SPDX-License-Identifier: Apache-2.0
+
+exports_files(["argument_parser_import.BUILD.bazel", "argument-parser.lock.json", "foundation_import.bzl"])

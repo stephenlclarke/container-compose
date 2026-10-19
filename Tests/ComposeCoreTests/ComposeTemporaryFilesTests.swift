@@ -15,11 +15,76 @@
 //===----------------------------------------------------------------------===//
 
 @testable import ComposeCore
+import ComposeTestStorage
 import Foundation
 import Testing
 
 @Suite("Secure temporary paths")
 struct ComposeTemporaryFilesTests {
+    @Test
+    func `atomic publication preserves contents permissions and cleanup`() throws {
+        let directory = try ComposeTemporaryFiles.createDirectory(prefix: "compose-atomic-")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("payload")
+        try ComposeTemporaryFiles.writeAtomically(Data("first".utf8), to: file)
+        #expect(try permissions(at: file) == 0o600)
+        try ComposeTemporaryFiles.writeAtomically(Data("second".utf8), to: file, permissions: 0o444)
+        #expect(try Data(contentsOf: file) == Data("second".utf8))
+        #expect(try permissions(at: file) == 0o444)
+        #expect(throws: Error.self) {
+            try ComposeTemporaryFiles.writeAtomically(Data(), to: directory)
+        }
+        #expect(throws: Error.self) {
+            try ComposeTemporaryFiles.writeAtomically(Data(), to: directory.appendingPathComponent("missing/child"))
+        }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == ["payload"])
+    }
+
+    @Test
+    func `atomic publication replaces a symlink without modifying its target`() throws {
+        let directory = try ComposeTemporaryFiles.createDirectory(prefix: "compose-atomic-link-")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("target")
+        try Data("preserve".utf8).write(to: file)
+        let link = directory.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: file)
+        try ComposeTemporaryFiles.writeAtomically(Data("published".utf8), to: link)
+        #expect(try Data(contentsOf: file) == Data("preserve".utf8))
+        #expect(try Data(contentsOf: link) == Data("published".utf8))
+        #expect(try FileManager.default
+            .attributesOfItem(atPath: link.path)[.type] as? FileAttributeType == .typeRegular)
+    }
+
+    @Test
+    func `absolute caller scratch overrides the Foundation default`() {
+        let fallback = URL(fileURLWithPath: "/fallback")
+        #expect(ComposeTemporaryFiles.resolveDirectory(
+            environment: ["TMPDIR": "/scratch/child/../test"],
+            fallback: fallback
+        ).path == "/scratch/test")
+        for environment in [[:], ["TMPDIR": ""], ["TMPDIR": "relative"]] {
+            #expect(ComposeTemporaryFiles.resolveDirectory(environment: environment, fallback: fallback) == fallback)
+        }
+        if ProcessInfo.processInfo.environment["BAZEL_TEST"] == "1" {
+            #expect(ComposeTemporaryFiles.defaultDirectory.resolvingSymlinksInPath() == TestStorage.temporaryDirectory)
+        }
+    }
+
+    @Test
+    func `creating private files refuses existing files and symlinks`() throws {
+        let directory = try ComposeTemporaryFiles.createDirectory(prefix: "compose-exclusive-")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let target = directory.appendingPathComponent("target")
+        try Data("preserve".utf8).write(to: target)
+        let link = directory.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        for existing in [target, link, directory, directory.appendingPathComponent("missing/child")] {
+            #expect(throws: Error.self) { _ = try ComposeTemporaryFiles.createFile(at: existing) }
+        }
+        #expect(try Data(contentsOf: target) == Data("preserve".utf8))
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == target.path)
+    }
+
     @Test
     func `standard temporary root creates private directories and files`() throws {
         let directory = try ComposeTemporaryFiles.createDirectory(prefix: "compose-permissions-")
@@ -35,7 +100,7 @@ struct ComposeTemporaryFilesTests {
 
     @Test
     func `shared temporary root retains private child permissions`() throws {
-        let sharedRoot = FileManager.default.temporaryDirectory
+        let sharedRoot = TestStorage.temporaryDirectory
             .appendingPathComponent("compose-shared-tmp-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(
             at: sharedRoot,
