@@ -1,0 +1,102 @@
+class Container < Formula
+  desc "Create and run Linux containers using lightweight virtual machines"
+  homepage "https://apple.github.io/container/documentation/"
+  url "https://github.com/stephenlclarke/container-compose/releases/download/0.16.0/container-release-arm64.tar.gz"
+  version "0.16.0"
+  sha256 "d4a9bd8e9d332b0bfbf67fc5b0b3a99c977b66d6cc50f5954b36f3263a2cf696"
+  license "Apache-2.0"
+
+  depends_on arch: :arm64
+  depends_on macos: :sequoia
+
+  resource "release-notices" do
+    url "https://github.com/stephenlclarke/container-compose/releases/download/0.16.0/container-runtime-notices.tar.gz"
+    sha256 "@RUNTIME_NOTICES_SHA256@"
+  end
+
+  def install
+    bin.install "bin/container"
+    bin.install "bin/container-apiserver"
+    bin.install "bin/container-engine"
+    bin.install "bin/update-container.sh"
+    bin.install "bin/uninstall-container.sh"
+    libexec.install "libexec/ensure-container-stopped.sh"
+    libexec.install "libexec/container"
+
+    generate_completions_from_executable bin/"container", "--generate-completion-script"
+
+    bin.env_script_all_files libexec/"bin", CONTAINER_INSTALL_ROOT: opt_prefix
+
+    resource("release-notices").stage do
+      notice_names = ["LICENSE", "THIRD-PARTY-NOTICES.md", "SOURCE-AVAILABILITY.md"]
+      notice_files = Pathname.pwd.children.sort
+      odie "Runtime release notices have an unexpected layout" unless notice_files.map(&:basename).map(&:to_s).sort == notice_names.sort
+      notice_files.each do |file|
+        odie "Runtime release notice is not a regular text file" unless file.file? && !file.symlink?
+        text = File.read(file, encoding: "UTF-8")
+        odie "Runtime release notice is not nonempty UTF-8 text" unless text.valid_encoding? && !text.empty? && !text.include?("\0")
+      end
+      (libexec/"share/licenses/container").install notice_files
+    end
+  end
+
+  def post_install
+    compose_plugin = HOMEBREW_PREFIX/"opt/container-compose/libexec/container-plugins/compose"
+    return unless compose_plugin.directory?
+
+    # Register only the installed plugin in this formula's own keg. Never stop
+    # services or replace an existing foreign file, directory, or link.
+    runtime_root = prefix.realpath
+    compose_root = (HOMEBREW_CELLAR/"container-compose").realpath
+    odie "Runtime keg ownership changed" unless runtime_root == prefix && File.stat(runtime_root).uid == Process.uid
+    compose_keg = (HOMEBREW_PREFIX/"opt/container-compose").realpath
+    odie "Compose plugin escapes its installed keg" unless compose_keg.parent == compose_root && compose_plugin.realpath == compose_keg/"libexec/container-plugins/compose"
+    odie "Compose plugin ownership changed" unless File.stat(compose_plugin.realpath).uid == Process.uid
+    plugin_parent = prefix/"libexec"
+    odie "Runtime plugin parent is aliased" unless plugin_parent.directory? && !plugin_parent.symlink? && plugin_parent.realpath == plugin_parent
+    plugin_dir = plugin_parent/"container-plugins"
+    if plugin_dir.exist? || plugin_dir.symlink?
+      odie "Runtime plugin directory is aliased" unless plugin_dir.directory? && !plugin_dir.symlink? && plugin_dir.realpath == plugin_dir
+    else
+      plugin_dir.mkpath
+    end
+    odie "Runtime plugin directory ownership changed" unless File.stat(plugin_dir).uid == Process.uid
+    plugin_link = plugin_dir/"compose"
+    if plugin_link.symlink?
+      odie "Refusing to replace a foreign Compose link" unless plugin_link.readlink == compose_plugin && plugin_link.realpath == compose_plugin.realpath
+      return
+    end
+    odie "Refusing to replace an existing Compose entry" if plugin_link.exist?
+    ln_s compose_plugin, plugin_link
+  end
+
+  def caveats
+    <<~EOS
+      This formula installs the stable prebuilt package asset:
+        container-release-arm64.tar.gz
+
+      If stephenlclarke/tap/container-compose is installed, this formula links
+      the Compose plugin into:
+        #{opt_prefix}/libexec/container-plugins/compose
+    EOS
+  end
+
+  service do
+    run [opt_bin/"container", "system", "start"]
+    working_dir var
+    log_path var/"log/container.log"
+    error_log_path var/"log/container.log"
+  end
+
+  test do
+    assert_match "container CLI version 0.0.0 (commit: f86fea2)", shell_output("#{bin}/container --version")
+    assert_match "List running containers", shell_output("#{bin}/container list --help")
+    assert_predicate bin/"container-engine", :executable?
+    assert_predicate libexec/"container/helpers/container-semantic-helper", :executable?
+    assert_path_exists libexec/"container/services/journald/container-journald-service.oci.tar"
+    assert_path_exists libexec/"container/services/gelf/container-gelf-service.oci.tar"
+    assert_path_exists libexec/"share/licenses/container/LICENSE"
+    assert_path_exists libexec/"share/licenses/container/THIRD-PARTY-NOTICES.md"
+    assert_path_exists libexec/"share/licenses/container/SOURCE-AVAILABILITY.md"
+  end
+end
