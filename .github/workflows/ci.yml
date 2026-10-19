@@ -261,6 +261,10 @@ jobs:
             | not
           ' "${RUNNER_TEMP}/stock-dependencies.json"
 
+      - name: Build normalizer before timed runtime tests
+        working-directory: container-compose/Tools/compose-normalizer
+        run: go build -o "${RUNNER_TEMP}/compose-normalizer" .
+
       - name: Build and test the stock runtime
         working-directory: container-compose
         run: |
