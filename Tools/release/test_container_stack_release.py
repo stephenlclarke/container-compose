@@ -5046,6 +5046,8 @@ formula_digest="sha256:${DIGEST}"
                 "PARITY_COMPARABLE_NOISE_PCT": "4",
                 "PARITY_SINK_STALL_SECONDS": "3",
                 "PARITY_PRESSURE_RECORDS": "32768",
+                "PARITY_RETAIN_FIXTURE_DIR": "1",
+                "PARITY_SERVICE_MEMORY_MIB": "256",
                 "PARITY_DOCKER_HOST_ADDRESS": "docker.example.invalid",
                 "PARITY_CONTAINER_HOST_ADDRESS": "127.0.0.2",
             }.items():

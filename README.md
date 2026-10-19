@@ -337,3 +337,5 @@ The Apple-facing drafts under [docs/upstream/](docs/upstream/README.md) are curr
 
 This project uses the Apache License, Version 2.0, matching the license used by
 [`apple/container`](https://github.com/apple/container).
+
+Release checkpoint keys include the existing service-memory and fixture-retention parity inputs; see the [PR 708 check fix](docs/PR-pr708-parity-fingerprint.md).
