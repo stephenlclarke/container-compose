@@ -1,11 +1,11 @@
 module github.com/stephenlclarke/container-compose/Tools/compose-normalizer
 
-go 1.26.3
+go 1.26.8
 
 require (
 	github.com/DefangLabs/secret-detector v0.0.0-20250403165618-22662109213e
 	github.com/compose-spec/compose-go/v2 v2.14.0
-	github.com/containerd/containerd/v2 v2.3.5
+	github.com/containerd/containerd/v2 v2.3.6
 	github.com/containerd/errdefs v1.0.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.7.2+incompatible
