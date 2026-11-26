@@ -24,6 +24,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).parents[2]
@@ -101,6 +102,15 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
                 fallback_branch,
             )
 
+    @patch.dict(
+        os.environ,
+        {
+            "GNUMAKEFLAGS": "--silent",
+            "MAKEFLAGS": "-- SWIFT=make-swift-override",
+            "SWIFT": "env-swift-override",
+            "SWIFT_RESOLVED_FLAGS": "--build-system native",
+        },
+    )
     def test_uses_resolved_remote_dependencies_without_local_overlays(self) -> None:
         result = build_release_dry_run(
             "CONTAINER_PACKAGE_PATH=",
