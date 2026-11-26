@@ -10,6 +10,7 @@ log="${SWIFT_TEST_RESULT_LOG:-.build/swift-test.log}"
 attempts="${SWIFT_TEST_ATTEMPTS:-2}"
 tail_lines="${SWIFT_TEST_TAIL_LINES:-200}"
 accept_signal_13="${SWIFT_TEST_ACCEPT_SIGNAL_13:-1}"
+require_executed="${SWIFT_TEST_REQUIRE_EXECUTED:-0}"
 python="${PYTHON:-python3}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -29,8 +30,15 @@ has_test_failure_output() {
 
 report_swift_testing_counts() {
   local summary
+  local summary_args=("$log")
+  if [[ "$require_executed" == "1" ]]; then
+    summary_args+=(--require-executed)
+  fi
 
-  summary="$("$python" "$script_dir/summarize-swift-testing.py" "$log")"
+  if ! summary="$("$python" "$script_dir/summarize-swift-testing.py" "${summary_args[@]}")"; then
+    tail -n "$tail_lines" "$log" >&2
+    return 1
+  fi
   printf '%s\n' "$summary" >>"$log"
 }
 

@@ -22,9 +22,11 @@ import re
 from pathlib import Path
 
 
-TEST_RUN_PATTERN = re.compile(r"^[✔✘] Test run with ([0-9]+) tests?\b")
-EXECUTED_TEST_PATTERN = re.compile(r'^[✔✘] Test ".*" (?:passed|failed)\b')
-SKIPPED_TEST_PATTERN = re.compile(r'^➜ Test ".*" skipped:')
+# Swift Testing uses different symbols and spacing on different toolchains.
+TEST_EVENT_PREFIX = r"^(?:\S+[ \t]+)?Test "
+TEST_RUN_PATTERN = re.compile(TEST_EVENT_PREFIX + r"run with ([0-9]+) tests?\b")
+EXECUTED_TEST_PATTERN = re.compile(TEST_EVENT_PREFIX + r'".*" (?:passed|failed)\b')
+SKIPPED_TEST_PATTERN = re.compile(TEST_EVENT_PREFIX + r'".*" skipped:')
 
 
 def testing_counts(log: str) -> tuple[int, int]:
@@ -55,9 +57,18 @@ def main() -> int:
         description="Summarize executed and explicitly skipped Swift tests."
     )
     parser.add_argument("log", type=Path)
+    parser.add_argument(
+        "--require-executed",
+        action="store_true",
+        help="fail if the log has no evidence of executed tests",
+    )
     args = parser.parse_args()
 
-    executed, skipped = testing_counts(args.log.read_text(encoding="utf-8"))
+    executed, skipped = testing_counts(
+        args.log.read_text(encoding="utf-8", errors="replace")
+    )
+    if args.require_executed and executed == 0:
+        parser.error("Swift Testing reported no executed tests")
     print(f"Swift Testing evidence: executed={executed} skipped={skipped}")
     return 0
 

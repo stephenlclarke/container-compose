@@ -891,11 +891,13 @@ exit 113
             self.write_fake_container(fake_container)
             command_marker = temporary_root / "command-ran"
             environment = self.runtime_environment()
+            # Each supervised setup command needs its own process scan on macOS.
+            startup_budget = 18
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
                     "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "6",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": str(startup_budget),
                     "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
                     "MARKER_INSPECTION_STARTED": str(marker_inspection_started),
                     "PATH": f"{fake_bin}:{environment['PATH']}",
@@ -909,12 +911,14 @@ exit 113
                 env=environment,
                 capture_output=True,
                 text=True,
-                timeout=9,
+                timeout=startup_budget + 7,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
-            self.assertLess(time.monotonic() - started, 8)
-            self.assertTrue(marker_inspection_started.exists())
+            self.assertTrue(
+                marker_inspection_started.exists(), result.stdout + result.stderr
+            )
+            self.assertLess(time.monotonic() - started, startup_budget + 5)
             self.assertFalse(command_marker.exists())
 
     def test_scopes_candidate_namespace_and_exports_public_socket(self) -> None:
@@ -2657,12 +2661,13 @@ exit 113
             command_marker = temporary_root / "command-ran"
             validation_started = temporary_root / "source-validation-started"
             environment = self.runtime_environment()
+            startup_budget = 12
             environment.update(
                 {
                     "CONTAINER_RUNTIME_APP_ROOT": str(temporary_root / "app-root"),
                     "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
                     "CONTAINERIZATION_INIT_SOURCE_PATH": str(source),
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "3",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": str(startup_budget),
                     "CONTAINER_TEST_LOG": str(temporary_root / "container.log"),
                     "SOURCE_VALIDATION_STARTED": str(validation_started),
                     "PATH": f"{fake_bin}:{environment['PATH']}",
@@ -2676,12 +2681,12 @@ exit 113
                 env=environment,
                 capture_output=True,
                 text=True,
-                timeout=7,
+                timeout=startup_budget + 7,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
-            self.assertLess(time.monotonic() - started, 6)
-            self.assertTrue(validation_started.exists())
+            self.assertTrue(validation_started.exists(), result.stdout + result.stderr)
+            self.assertLess(time.monotonic() - started, startup_budget + 5)
             self.assertFalse(command_marker.exists())
 
     def test_stages_clean_init_source_and_separate_build_scratch(self) -> None:
@@ -2903,6 +2908,7 @@ exit 113
             )
             fake_sleep.chmod(0o755)
             first_start = temporary_root / "first-start"
+            startup_budget = 30
             fake_container = fake_bin / "container-cli"
             init_repo = temporary_root / "container"
             init_repo.mkdir()
@@ -2915,8 +2921,10 @@ exit 113
                 body=(
                     'if [[ "$*" == *"system start"* ]]; then\n'
                     '  if [[ -e "${FIRST_START:?}" ]]; then\n'
-                    "    /bin/sleep 30\n"
+                    "    exec /bin/sleep 90\n"
                     "  fi\n"
+                    # Make the first start outlast the cleanup allowance below.
+                    "  /bin/sleep 7\n"
                     '  touch "${FIRST_START:?}"\n'
                     "fi\n"
                 ),
@@ -2927,13 +2935,14 @@ exit 113
                     "CONTAINER_RUNTIME_APP_ROOT": str(app_root),
                     "CONTAINER_RUNTIME_INIT_BLOCK_REPO": str(init_repo),
                     "CONTAINER_RUNTIME_LOCK_FILE": str(temporary_root / "runtime.lock"),
-                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": "8",
+                    "CONTAINER_RUNTIME_START_DEADLINE_SECONDS": str(startup_budget),
                     "CONTAINER_TEST_LOG": str(container_log),
                     "FIRST_START": str(first_start),
                     "PATH": f"{fake_bin}:{environment['PATH']}",
                 }
             )
 
+            started = time.monotonic()
             result = subprocess.run(
                 [str(SCRIPT), str(fake_container), "/usr/bin/touch", str(command_marker)],
                 cwd=ROOT,
@@ -2941,14 +2950,17 @@ exit 113
                 check=False,
                 capture_output=True,
                 text=True,
-                timeout=11,
+                timeout=startup_budget + 7,
             )
 
             self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
             self.assertFalse(command_marker.exists())
             self.assertTrue(first_start.exists(), result.stdout + result.stderr)
             invocations = container_log.read_text(encoding="utf-8")
-            self.assertEqual(invocations.count("system start"), 2)
+            self.assertEqual(
+                invocations.count("system start"), 2, result.stdout + result.stderr
+            )
+            self.assertLess(time.monotonic() - started, startup_budget + 5)
 
     def test_stale_runtime_stop_hang_consumes_the_shared_startup_deadline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

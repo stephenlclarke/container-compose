@@ -1030,6 +1030,7 @@ swift-runtime-test: container-stack-build-if-needed build swift-runtime-test-bui
 		./scripts/run-with-container-runtime.sh "$$container_binary" \
 		env CONTAINER_COMPOSE_RUN_RUNTIME_TESTS=1 COMPOSE_TEST_BINARY="$(COMPOSE_TEST_BINARY)" \
 		PYTHON="$(PYTHON)" SWIFT_TEST_RESULT_LOG="$(SWIFT_RUNTIME_TEST_RESULT_LOG)" SWIFT_TEST_ATTEMPTS=1 \
+		SWIFT_TEST_REQUIRE_EXECUTED=1 SWIFT_TEST_ACCEPT_SIGNAL_13=0 \
 		Tools/ci/run-swift-test.sh $(SWIFT) test $(SWIFT_RESOLVED_FLAGS) --skip-build \
 		--filter "$(SWIFT_RUNTIME_TEST_FILTER)" $(SWIFT_TEST_RUN_FLAGS) $(SWIFT_TEST_FLAGS)
 

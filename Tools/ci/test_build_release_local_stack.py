@@ -19,13 +19,39 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).parents[2]
+
+
+def build_release_dry_run(*overrides: str) -> subprocess.CompletedProcess[str]:
+    """Exercise the Makefile defaults, not the enclosing CI invocation."""
+    environment = os.environ.copy()
+    for name in (
+        "GNUMAKEFLAGS",
+        "MAKEFLAGS",
+        "MAKEOVERRIDES",
+        "MFLAGS",
+        "SWIFT",
+        "SWIFT_RELEASE_FLAGS",
+        "SWIFT_RESOLVED_FLAGS",
+    ):
+        environment.pop(name, None)
+
+    return subprocess.run(
+        ["make", "-n", *overrides, "build-release"],
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 class BuildReleaseLocalStackTests(unittest.TestCase):
@@ -40,20 +66,12 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
             container_commit = "a" * 40
             container_tree = "b" * 40
 
-            result = subprocess.run(
-                [
-                    "make",
-                    "-n",
-                    f"CONTAINER_PACKAGE_PATH={container}",
-                    f"CONTAINER_PACKAGE_COMMIT={container_commit}",
-                    f"CONTAINER_PACKAGE_TREE={container_tree}",
-                    f"CONTAINERIZATION_PACKAGE_PATH={containerization}",
-                    f"CONTAINER_ENGINE_API_PACKAGE_PATH={engine_api}",
-                    "build-release",
-                ],
-                cwd=ROOT,
-                capture_output=True,
-                text=True,
+            result = build_release_dry_run(
+                f"CONTAINER_PACKAGE_PATH={container}",
+                f"CONTAINER_PACKAGE_COMMIT={container_commit}",
+                f"CONTAINER_PACKAGE_TREE={container_tree}",
+                f"CONTAINERIZATION_PACKAGE_PATH={containerization}",
+                f"CONTAINER_ENGINE_API_PACKAGE_PATH={engine_api}",
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -84,19 +102,20 @@ class BuildReleaseLocalStackTests(unittest.TestCase):
                 fallback_branch,
             )
 
+    @patch.dict(
+        os.environ,
+        {
+            "GNUMAKEFLAGS": "--silent",
+            "MAKEFLAGS": "-- SWIFT=make-swift-override",
+            "SWIFT": "env-swift-override",
+            "SWIFT_RESOLVED_FLAGS": "--build-system native",
+        },
+    )
     def test_uses_resolved_remote_dependencies_without_local_overlays(self) -> None:
-        result = subprocess.run(
-            [
-                "make",
-                "-n",
-                "CONTAINER_PACKAGE_PATH=",
-                "CONTAINERIZATION_PACKAGE_PATH=",
-                "CONTAINER_ENGINE_API_PACKAGE_PATH=",
-                "build-release",
-            ],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
+        result = build_release_dry_run(
+            "CONTAINER_PACKAGE_PATH=",
+            "CONTAINERIZATION_PACKAGE_PATH=",
+            "CONTAINER_ENGINE_API_PACKAGE_PATH=",
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)

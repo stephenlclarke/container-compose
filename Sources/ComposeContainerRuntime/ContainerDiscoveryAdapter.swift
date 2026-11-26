@@ -196,7 +196,7 @@ public struct ContainerClientDiscoveryManager: ContainerDiscoveryManaging {
         // Lifecycle-v2 transient states do not all have a corresponding legacy
         // RuntimeStatus. Fetch one coherent unfiltered view and apply the
         // Docker-visible active-state projection from its lifecycle authority.
-        let filters = ContainerListFilters().withoutMachines()
+        let filters = ContainerListFilters().withoutPlugins([ResourcePluginValues.machine])
         let views = try await client.listLifecycleViews(filters: filters)
         let summaries = views.map(ComposeContainerSummary.init(lifecycleView:))
         guard !all else {
