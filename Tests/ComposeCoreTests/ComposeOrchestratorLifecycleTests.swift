@@ -3365,11 +3365,15 @@ extension ComposeOrchestratorTests {
         #expect(missing == nil)
 
         let filters = await client.lifecycleViewFilters
-        #expect(filters.count == 3)
-        #expect(filters[0].status == nil)
-        #expect(filters[0].labels[ResourceLabelKeys.plugin] == ContainerListFilters.exclude("machine"))
-        #expect(filters[1].status == nil)
-        #expect(filters[1].labels[ResourceLabelKeys.plugin] == ContainerListFilters.exclude("machine"))
+        try #require(filters.count == 3)
+        for filter in filters.prefix(2) {
+            #expect(filter.status == nil)
+            let pattern = try #require(filter.labels[ResourceLabelKeys.plugin])
+            let regex = try Regex(pattern)
+            #expect(!ResourcePluginValues.machine.contains(regex))
+            #expect("".contains(regex))
+            #expect(ResourcePluginValues.cluster.contains(regex))
+        }
         #expect(filters[2].ids.isEmpty)
         #expect(filters[2].labels.isEmpty)
         #expect(await client.getRequests.isEmpty)

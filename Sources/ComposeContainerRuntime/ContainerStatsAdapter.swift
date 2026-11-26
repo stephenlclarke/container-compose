@@ -51,8 +51,9 @@ public struct ContainerStatsAPIClient: ContainerStatsAPIClienting {
 
     public init(
         list: @escaping List = {
-            try await ContainerClient().list(filters: ContainerListFilters(ids: $0).withoutMachines())
-                .map { ComposeStatsTarget(id: $0.id, status: $0.status.rawValue) }
+            try await ContainerClient().list(
+                filters: ContainerListFilters(ids: $0).withoutPlugins([ResourcePluginValues.machine]),
+            ).map { ComposeStatsTarget(id: $0.id, status: $0.status.rawValue) }
         },
         stats: @escaping Stats = { try await ContainerClient().stats(id: $0) },
     ) {
@@ -64,7 +65,7 @@ public struct ContainerStatsAPIClient: ContainerStatsAPIClienting {
         self.init(
             list: {
                 try await containerClient().list(
-                    filters: ContainerListFilters(ids: $0).withoutMachines(),
+                    filters: ContainerListFilters(ids: $0).withoutPlugins([ResourcePluginValues.machine]),
                 ).map { ComposeStatsTarget(id: $0.id, status: $0.status.rawValue) }
             },
             stats: { try await containerClient().stats(id: $0) },
