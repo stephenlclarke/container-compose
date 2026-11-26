@@ -332,7 +332,7 @@ jobs:
           printf 'DEMO_OUTPUT=%s\n' "${demo_output}" >> "${GITHUB_ENV}"
 
       - name: Retain exact Current demo workflow artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: current-demo-${{ needs.resolve-current.outputs.sha }}
           path: ${{ env.DEMO_OUTPUT }}
@@ -341,7 +341,7 @@ jobs:
 
       - name: Save bounded demo diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: current-demo-diagnostics-${{ needs.resolve-current.outputs.sha }}
           path: |

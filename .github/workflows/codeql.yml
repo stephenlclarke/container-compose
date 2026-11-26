@@ -113,13 +113,13 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "${RELEASE_SHA}" ]]
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: Tools/compose-normalizer/go.mod
           cache: false
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
         with:
           languages: go
           build-mode: manual
@@ -159,7 +159,7 @@ jobs:
           [[ -z "$(git status --porcelain --untracked-files=no)" ]]
 
       - name: Analyze
-        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
         with:
           category: "/language:swift-go"
 
