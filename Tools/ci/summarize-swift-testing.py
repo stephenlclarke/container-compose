@@ -57,11 +57,18 @@ def main() -> int:
         description="Summarize executed and explicitly skipped Swift tests."
     )
     parser.add_argument("log", type=Path)
+    parser.add_argument(
+        "--require-executed",
+        action="store_true",
+        help="fail if the log has no evidence of executed tests",
+    )
     args = parser.parse_args()
 
     executed, skipped = testing_counts(
         args.log.read_text(encoding="utf-8", errors="replace")
     )
+    if args.require_executed and executed == 0:
+        parser.error("Swift Testing reported no executed tests")
     print(f"Swift Testing evidence: executed={executed} skipped={skipped}")
     return 0
 

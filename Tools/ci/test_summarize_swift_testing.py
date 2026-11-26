@@ -18,6 +18,7 @@
 """Unit tests for explicit Swift Testing evidence counts."""
 
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -106,6 +107,40 @@ class SwiftTestingSummaryTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "2 skipped tests from 1 discovered"):
             summary.testing_counts(log)
+
+    def test_runner_requires_evidence_when_requested(self) -> None:
+        """An empty or fully skipped run must not pass the live test gate."""
+        runner = Path(__file__).with_name("run-swift-test.sh")
+        cases = (
+            ("warning: no matching tests", False),
+            (
+                '➜ Test "live" skipped: "requires runtime"\n'
+                "✔ Test run with 1 test passed",
+                False,
+            ),
+            ("􁁛  Test run with 1 test passed after 0.001 seconds.", True),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            environment = {
+                **os.environ,
+                "PYTHON": sys.executable,
+                "SWIFT_TEST_RESULT_LOG": str(Path(directory) / "swift-test.log"),
+                "SWIFT_TEST_REQUIRE_EXECUTED": "1",
+            }
+            for output, expected_success in cases:
+                with self.subTest(output=output):
+                    result = subprocess.run(
+                        ["bash", str(runner), sys.executable, "-c", f"print({output!r})"],
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode == 0, expected_success, result)
+                    if expected_success:
+                        self.assertIn("executed=1 skipped=0", result.stdout)
+                    else:
+                        self.assertIn("reported no executed tests", result.stderr)
 
 
 if __name__ == "__main__":
