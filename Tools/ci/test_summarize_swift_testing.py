@@ -61,6 +61,21 @@ class SwiftTestingSummaryTests(unittest.TestCase):
 
         self.assertEqual(summary.testing_counts(log), (2, 1))
 
+    def test_counts_xcode_output_with_sf_symbols(self) -> None:
+        """The event text is stable when Xcode changes the leading symbols."""
+        events = (
+            '􁁛  Test "native" passed after 0.001 seconds.\n'
+            '􀄵  Test "live" skipped: "requires runtime"\n'
+        )
+
+        self.assertEqual(summary.testing_counts(events), (1, 1))
+        self.assertEqual(
+            summary.testing_counts(
+                events + "􁁛  Test run with 4 tests in 1 suite passed after 0.001 seconds."
+            ),
+            (3, 1),
+        )
+
     def test_rejects_more_skips_than_discovered_tests(self) -> None:
         """Malformed summaries cannot produce a negative executed count."""
         log = """

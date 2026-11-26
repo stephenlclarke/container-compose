@@ -22,9 +22,11 @@ import re
 from pathlib import Path
 
 
-TEST_RUN_PATTERN = re.compile(r"^[✔✘] Test run with ([0-9]+) tests?\b")
-EXECUTED_TEST_PATTERN = re.compile(r'^[✔✘] Test ".*" (?:passed|failed)\b')
-SKIPPED_TEST_PATTERN = re.compile(r'^➜ Test ".*" skipped:')
+# Swift Testing uses different symbols and spacing on different toolchains.
+TEST_EVENT_PREFIX = r"^(?:\S+[ \t]+)?Test "
+TEST_RUN_PATTERN = re.compile(TEST_EVENT_PREFIX + r"run with ([0-9]+) tests?\b")
+EXECUTED_TEST_PATTERN = re.compile(TEST_EVENT_PREFIX + r'".*" (?:passed|failed)\b')
+SKIPPED_TEST_PATTERN = re.compile(TEST_EVENT_PREFIX + r'".*" skipped:')
 
 
 def testing_counts(log: str) -> tuple[int, int]:
