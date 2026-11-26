@@ -59,7 +59,9 @@ def main() -> int:
     parser.add_argument("log", type=Path)
     args = parser.parse_args()
 
-    executed, skipped = testing_counts(args.log.read_text(encoding="utf-8"))
+    executed, skipped = testing_counts(
+        args.log.read_text(encoding="utf-8", errors="replace")
+    )
     print(f"Swift Testing evidence: executed={executed} skipped={skipped}")
     return 0
 

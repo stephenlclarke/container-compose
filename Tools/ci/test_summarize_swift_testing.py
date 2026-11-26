@@ -18,6 +18,9 @@
 """Unit tests for explicit Swift Testing evidence counts."""
 
 import importlib.util
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -65,7 +68,7 @@ class SwiftTestingSummaryTests(unittest.TestCase):
         """The event text is stable when Xcode changes the leading symbols."""
         events = (
             '􁁛  Test "native" passed after 0.001 seconds.\n'
-            '􀄵  Test "live" skipped: "requires runtime"\n'
+            '􀙟  Test "live" skipped: "requires runtime"\n'
         )
 
         self.assertEqual(summary.testing_counts(events), (1, 1))
@@ -75,6 +78,23 @@ class SwiftTestingSummaryTests(unittest.TestCase):
             ),
             (3, 1),
         )
+
+    def test_cli_counts_events_after_invalid_utf8(self) -> None:
+        """Concurrent log writers can interrupt a multibyte status symbol."""
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "swift-test.log"
+            log_path.write_bytes(
+                b"\xf4\x80warning: interleaved tool output\n"
+                + "􁁛  Test run with 2 tests in 1 suite passed after 0.001 seconds.\n".encode()
+            )
+            result = subprocess.run(
+                [sys.executable, summary.__file__, str(log_path)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(result.stdout, "Swift Testing evidence: executed=2 skipped=0\n")
 
     def test_rejects_more_skips_than_discovered_tests(self) -> None:
         """Malformed summaries cannot produce a negative executed count."""
