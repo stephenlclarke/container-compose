@@ -134,7 +134,7 @@ func Get(ctx context.Context, resolver remotes.Resolver, ref reference.Named) (s
 }
 
 // Copy mounts/copies an image descriptor chain into the target repository.
-func Copy(ctx context.Context, resolver remotes.Resolver, image reference.Named, named reference.Named) (spec.Descriptor, error) {
+func Copy(ctx context.Context, resolver remotes.Resolver, image, named reference.Named) (spec.Descriptor, error) {
 	src, desc, err := resolver.Resolve(ctx, image.String())
 	if err != nil {
 		return spec.Descriptor{}, err

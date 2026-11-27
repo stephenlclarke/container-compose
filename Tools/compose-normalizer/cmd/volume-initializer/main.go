@@ -341,8 +341,7 @@ func writeJournal(
 func replacePublishingJournal(
 	path, transaction string,
 	entries []transactionJournalEntry,
-	root transactionRootMetadata,
-	finalRoot transactionRootMetadata,
+	root, finalRoot transactionRootMetadata,
 ) error {
 	return publishJournal(path, transactionJournal{
 		Version: 5, Transaction: transaction, Phase: journalPhasePublishing,

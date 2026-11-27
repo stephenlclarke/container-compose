@@ -11,13 +11,23 @@ guidance remains in [INSTALL.md](../guides/INSTALL.md).
 
 ## Current Stable Release
 
+[`0.16.0`](https://github.com/stephenlclarke/container-compose/releases/tag/0.16.0)
+was published for macOS arm64 on 6 October 2026 from Compose source
+`5a60352febdbd2db04216c65b9b60443b1bf5d39`. Its matched Bazel-built product
+passed 27 runtime tests and 66 parity cases. The notarized archive includes
+exact runtime-pair and source provenance. Its 28 benchmark samples cover a
+bounded workload against a historical Docker reference, not general
+same-host performance parity.
+
+### Previous stable baseline
+
 [`0.15.1`](https://github.com/stephenlclarke/container-compose/releases/tag/0.15.1)
 was published for macOS arm64 on 13 September 2026 from exact tag commit
 `81a2263adf30127a3cf774ffdaf56bd23e2f81c1`. The release notes and
 attached manifests record its exact matched Container, Containerization,
 builder-shim, builder-image, and SwiftNIO SSL authorities.
 
-The immutable stable quality snapshot reports 86.7% aggregate coverage, 0.3%
+The immutable 0.15.1 quality snapshot reports 86.7% aggregate coverage, 0.3%
 duplicated lines, 43,027 lines of code, 40 code smells, 10 hours 18 minutes of
 technical debt, zero bugs or vulnerabilities, and A reliability, security, and
 maintainability ratings. Those figures describe the release tag, not current
@@ -26,6 +36,8 @@ maintainability ratings. Those figures describe the release tag, not current
 duplication, and 43,119 lines of code, with zero bugs, vulnerabilities, code
 smells, security hotspots, or technical debt after the later quality cleanup.
 Coverage remains below the repository's 90% objective.
+
+### Current channel
 
 Stable and Current Homebrew artifacts are Developer ID signed, checksummed,
 attested, and bound to their matched runtime stacks. Current candidates use an
@@ -51,8 +63,8 @@ If Compose `main` or a sibling head advances during the final publication
 window, the closure check fails visibly and the later exact-main run replaces
 the temporarily installable candidate with the newest coherent stack. The feed
 and formulae therefore identify the installable candidate; the source-bearing
-revision identifies where runtime behavior changed. Current does not alter the
-stable 0.15.1 contract or the stable-release-bound DocC site.
+revision identifies where runtime behavior changed. Current does not alter
+the stable release contract or the stable-release-bound DocC site.
 
 The candidate additionally carries reviewed runtime corrections for changing
 Kubernetes control-plane addresses, unreadable image entries and build
