@@ -26,7 +26,7 @@ import (
 )
 
 // ReplaceExtendsFile changes service.extends.file in an input YAML stream.
-func ReplaceExtendsFile(in []byte, service string, value string) ([]byte, error) {
+func ReplaceExtendsFile(in []byte, service, value string) ([]byte, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(in, &doc); err != nil {
 		return nil, err
@@ -111,7 +111,7 @@ func getMapping(root *yaml.Node, key string) (*yaml.Node, error) {
 	return nil, fmt.Errorf("key %v not found", key)
 }
 
-func replace(in []byte, line int, column int, value string) []byte {
+func replace(in []byte, line, column int, value string) []byte {
 	var out []byte
 	currentLine := 1
 	position := 0

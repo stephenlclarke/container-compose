@@ -459,7 +459,7 @@ func main() {
 }
 
 // run parses helper flags and writes canonical Compose project JSON.
-func run(args []string, stdout io.Writer, stderr io.Writer) int {
+func run(args []string, stdout, stderr io.Writer) int {
 	var files stringList
 	var profiles stringList
 	var envFiles stringList

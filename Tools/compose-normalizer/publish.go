@@ -954,7 +954,7 @@ func processPublishExtends(ctx context.Context, project *types.Project, files ma
 	return layers, nil
 }
 
-func processPublishFile(ctx context.Context, file string, project *types.Project, extendsFiles map[string]string, envFiles map[string]string) ([]byte, error) {
+func processPublishFile(ctx context.Context, file string, project *types.Project, extendsFiles, envFiles map[string]string) ([]byte, error) {
 	content, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
@@ -980,7 +980,7 @@ func loadPublishSourceProject(ctx context.Context, file string, content []byte, 
 	}, publishSourceLoadOptions(project))
 }
 
-func replacePublishServiceFileReferences(content []byte, services types.Services, extendsFiles map[string]string, envFiles map[string]string) ([]byte, error) {
+func replacePublishServiceFileReferences(content []byte, services types.Services, extendsFiles, envFiles map[string]string) ([]byte, error) {
 	var err error
 	for name, service := range services {
 		content, err = replacePublishEnvFiles(content, name, service, envFiles)
